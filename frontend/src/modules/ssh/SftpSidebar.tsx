@@ -300,7 +300,7 @@ export default function SftpSidebar({ sessionId }: Props) {
               <Folder size={14} className="shrink-0 text-amber-400" />
               <span className="truncate text-slate-300">{dir.name}</span>
               <span className="ml-auto text-[10px] text-slate-600 opacity-0 group-hover:opacity-100">
-                {formatPermissions(dir.permissions)}
+                {formatPermissions(parseInt(dir.permissions, 8))}
               </span>
             </div>
           </div>
