@@ -1,0 +1,31 @@
+{
+  "id": "timestamp-convert",
+  "name": "时间戳转换",
+  "version": "1.0.0",
+  "description": "Unix 时间戳与日期字符串互转",
+  "author": "SmartBox",
+  "icon": "clock",
+  "commands": [
+    {
+      "id": "ts-to-date",
+      "label": "时间戳 → 日期",
+      "description": "将 Unix 毫秒/秒时间戳转为可读日期",
+      "icon": "calendar",
+      "keywords": ["timestamp", "时间戳", "日期", "convert", "转换"]
+    },
+    {
+      "id": "date-to-ts",
+      "label": "日期 → 时间戳",
+      "description": "将日期字符串转为 Unix 时间戳（毫秒）",
+      "icon": "clock",
+      "keywords": ["timestamp", "时间戳", "日期", "convert", "转换"]
+    }
+  ],
+  "panels": [
+    {
+      "id": "timestamp-panel",
+      "title": "时间戳工具",
+      "icon": "clock"
+    }
+  ]
+}

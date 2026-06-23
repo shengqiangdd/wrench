@@ -1,0 +1,31 @@
+{
+  "id": "regex-tester",
+  "name": "正则测试器",
+  "version": "1.0.0",
+  "description": "正则表达式在线测试与调试工具",
+  "author": "SmartBox",
+  "icon": "search-code",
+  "commands": [
+    {
+      "id": "regex-test",
+      "label": "测试正则表达式",
+      "description": "使用当前选中文本测试正则匹配",
+      "icon": "search",
+      "keywords": ["regex", "正则", "regular expression", "测试", "匹配"]
+    },
+    {
+      "id": "regex-replace",
+      "label": "正则替换",
+      "description": "使用正则表达式进行替换操作",
+      "icon": "replace",
+      "keywords": ["regex", "正则", "replace", "替换"]
+    }
+  ],
+  "panels": [
+    {
+      "id": "regex-panel",
+      "title": "正则工具",
+      "icon": "search-code"
+    }
+  ]
+}

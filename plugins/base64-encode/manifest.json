@@ -1,0 +1,31 @@
+{
+  "id": "base64-encode",
+  "name": "Base64 编解码",
+  "version": "1.0.0",
+  "description": "Base64 编码与解码工具",
+  "author": "SmartBox",
+  "icon": "file-digit",
+  "commands": [
+    {
+      "id": "base64-encode",
+      "label": "Base64 编码",
+      "description": "将选中文本或剪贴板内容编码为 Base64",
+      "icon": "lock",
+      "keywords": ["base64", "encode", "编码", "加密"]
+    },
+    {
+      "id": "base64-decode",
+      "label": "Base64 解码",
+      "description": "将 Base64 内容解码为原始文本",
+      "icon": "unlock",
+      "keywords": ["base64", "decode", "解码", "解密"]
+    }
+  ],
+  "panels": [
+    {
+      "id": "base64-panel",
+      "title": "Base64 工具",
+      "icon": "file-digit"
+    }
+  ]
+}

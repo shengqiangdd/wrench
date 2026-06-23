@@ -1,0 +1,38 @@
+{
+  "id": "json-formatter",
+  "name": "JSON 格式化",
+  "version": "1.0.0",
+  "description": "格式化、压缩和验证 JSON 数据",
+  "author": "SmartBox",
+  "icon": "braces",
+  "commands": [
+    {
+      "id": "json-format",
+      "label": "格式化 JSON",
+      "description": "美化当前编辑器中的 JSON 内容",
+      "icon": "braces",
+      "keywords": ["json", "format", "格式化", "美化"]
+    },
+    {
+      "id": "json-compress",
+      "label": "压缩 JSON",
+      "description": "压缩当前编辑器中的 JSON 为单行",
+      "icon": "compress",
+      "keywords": ["json", "compress", "压缩", "minify"]
+    },
+    {
+      "id": "json-validate",
+      "label": "验证 JSON",
+      "description": "检查当前 JSON 是否有语法错误",
+      "icon": "check-circle",
+      "keywords": ["json", "validate", "验证", "检查"]
+    }
+  ],
+  "panels": [
+    {
+      "id": "json-formatter-panel",
+      "title": "JSON 工具",
+      "icon": "braces"
+    }
+  ]
+}
