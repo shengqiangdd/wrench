@@ -5,7 +5,7 @@ WORKDIR /app
 
 # 安装前端依赖
 COPY frontend/package.json ./frontend/
-RUN cd frontend && npm install --registry=https://registry.npmmirror.com
+RUN cd frontend && npm install
 
 # 构建前端
 COPY frontend/ ./frontend/
