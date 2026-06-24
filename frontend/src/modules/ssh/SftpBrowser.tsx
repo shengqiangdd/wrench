@@ -558,11 +558,11 @@ export default function SftpBrowser({
         type: 'sftp', connectionId: sessionId, operation: 'readfile', path: entry.path,
       })
       if (resp.type === 'sftp-result' && resp.operation === 'readfile') {
-        const blob = new Blob([Uint8Array.from(atob(resp.data as string), c => c.charCodeAt(0))])
-        const url = URL.createObjectURL(blob)
+        // 用 data URL 替代 blob URL，避免 CSP 阻止
+        const bytes = Uint8Array.from(atob(resp.data as string), c => c.charCodeAt(0))
+        const dataUrl = `data:application/octet-stream;base64,${resp.data}`
         const a = document.createElement('a')
-        a.href = url; a.download = entry.name; a.click()
-        URL.revokeObjectURL(url)
+        a.href = dataUrl; a.download = entry.name; a.click()
       }
     } catch (err) {
       alert('下载失败: ' + (err as Error).message)
