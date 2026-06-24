@@ -289,16 +289,33 @@ export default function SftpSidebar({ sessionId }: Props) {
   const [creatingDir, setCreatingDir] = useState(false)
   const [createName, setCreateName] = useState('')
   const [previewEntry, setPreviewEntry] = useState<SftpEntry | null>(null)
+  const [sftpReady, setSftpReady] = useState(false)
 
   const wsClient = getWsClient()
   const fileStore = useFileStore()
   const notifyRef = useRef<HTMLDivElement>(null)
 
+  // 监听 sftp-ready 事件
+  useEffect(() => {
+    if (!sessionId) {
+      setSftpReady(false)
+      return
+    }
+    setSftpReady(false)
+    const unsub = wsClient.on('sftp-ready', (data) => {
+      if (data.connectionId === sessionId) {
+        setSftpReady(true)
+      }
+    })
+    return () => unsub()
+  }, [sessionId, wsClient])
+
   // 读取目录 — 去掉 useCallback 对 wsClient 的依赖，直接用 ref
   const wsRef = useRef(wsClient)
   wsRef.current = wsClient
+  const retryCountRef = useRef(0)
 
-  const listDir = useCallback(async (dirPath: string) => {
+  const listDir = useCallback(async (dirPath: string, retryOnNotReady = true) => {
     if (!sessionId) return
     setLoading(true)
     setError(null)
@@ -312,29 +329,46 @@ export default function SftpSidebar({ sessionId }: Props) {
       if (resp.type === 'sftp-result' && resp.operation === 'list') {
         setCurrentPath(dirPath)
         setEntries(resp.files as SftpEntry[])
+        retryCountRef.current = 0
       }
     } catch (err) {
-      setError((err as Error).message)
+      const msg = (err as Error).message
+      if (msg.includes('SFTP_NOT_READY') && retryOnNotReady && retryCountRef.current < 5) {
+        retryCountRef.current++
+        setTimeout(() => listDir(dirPath, true), 1000)
+        return
+      }
+      setError(msg)
+      retryCountRef.current = 0
     } finally {
       setLoading(false)
     }
-  }, [sessionId]) // 只依赖 sessionId
+  }, [sessionId])
 
   // sessionId 变化时加载
   useEffect(() => {
     if (sessionId) {
-      // 重置状态
       setCurrentPath('/')
       setEntries([])
       setError(null)
-      // 用 setTimeout 确保状态已重置
-      const timer = setTimeout(() => listDir('/'), 0)
+      setSftpReady(false)
+      retryCountRef.current = 0
+      const timer = setTimeout(() => listDir('/', true), 300)
       return () => clearTimeout(timer)
     } else {
       setEntries([])
       setCurrentPath('/')
+      setSftpReady(false)
     }
-  }, [sessionId, listDir])
+  }, [sessionId])
+
+  // sftp-ready 后自动刷新
+  useEffect(() => {
+    if (sftpReady && sessionId) {
+      retryCountRef.current = 0
+      listDir(currentPath, false)
+    }
+  }, [sftpReady])
 
   // 关闭右键菜单（全局点击）
   useEffect(() => {

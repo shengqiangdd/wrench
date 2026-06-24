@@ -310,14 +310,31 @@ function SftpBrowser({
   const [creatingFile, setCreatingFile] = useState(false)
   const [creatingDir, setCreatingDir] = useState(false)
   const [createName, setCreateName] = useState('')
+  const [sftpReady, setSftpReady] = useState(false)
   const fileStore = useFileStore()
   const notifyRef = useRef<HTMLDivElement>(null)
+
+  // 监听 sftp-ready 事件
+  useEffect(() => {
+    if (!sessionId) {
+      setSftpReady(false)
+      return
+    }
+    setSftpReady(false)
+    const unsub = wsClient.on('sftp-ready', (data) => {
+      if (data.connectionId === sessionId) {
+        setSftpReady(true)
+      }
+    })
+    return () => unsub()
+  }, [sessionId, wsClient])
 
   // 读取目录 — 用 ref 避免 wsClient 引用变动导致 useCallback 失效
   const wsClientRef = useRef(wsClient)
   wsClientRef.current = wsClient
+  const retryCountRef = useRef(0)
 
-  const listDir = useCallback(async (dirPath: string) => {
+  const listDir = useCallback(async (dirPath: string, retryOnNotReady = true) => {
     if (!sessionId) return
     setLoading(true)
     setError(null)
@@ -331,27 +348,46 @@ function SftpBrowser({
       if (resp.type === 'sftp-result' && resp.operation === 'list') {
         setCurrentPath(dirPath)
         setEntries(resp.files as SftpEntry[])
+        retryCountRef.current = 0
       }
     } catch (err) {
-      setError((err as Error).message)
+      const msg = (err as Error).message
+      // SFTP 未就绪时自动重试（最多 5 次，间隔 1 秒）
+      if (msg.includes('SFTP_NOT_READY') && retryOnNotReady && retryCountRef.current < 5) {
+        retryCountRef.current++
+        setTimeout(() => listDir(dirPath, true), 1000)
+        return
+      }
+      setError(msg)
+      retryCountRef.current = 0
     } finally {
       setLoading(false)
     }
   }, [sessionId])
 
-  // 初始化 — sessionId 变化时自动加载根目录
+  // 初始化 — sessionId 变化时自动加载根目录（监听 sftpReady 变化自动重试）
   useEffect(() => {
     if (sessionId) {
       setCurrentPath('/')
       setEntries([])
       setError(null)
-      const timer = setTimeout(() => listDir('/'), 0)
+      retryCountRef.current = 0
+      const timer = setTimeout(() => listDir('/', true), 300)
       return () => clearTimeout(timer)
     } else {
       setEntries([])
       setCurrentPath('/')
+      setSftpReady(false)
     }
   }, [sessionId])
+
+  // sftp-ready 后自动刷新一次
+  useEffect(() => {
+    if (sftpReady && sessionId) {
+      retryCountRef.current = 0
+      listDir(currentPath, false)
+    }
+  }, [sftpReady])
 
   // 关闭右键菜单
   useEffect(() => {
@@ -371,8 +407,9 @@ function SftpBrowser({
   // 删除文件/目录
   const handleDelete = async (entry: SftpEntry) => {
     if (!sessionId) return
+    if (!confirm(`确定删除 ${entry.type === 'directory' ? '目录' : '文件'} "${entry.name}" 吗？`)) return
     try {
-      await wsClient.request({
+      await wsClientRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: entry.type === 'directory' ? 'rmdir' : 'unlink',
@@ -393,7 +430,7 @@ function SftpBrowser({
       : ''
     const newPath = parentPath ? `${parentPath}/${newName}` : newName
     try {
-      await wsClient.request({
+      await wsClientRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: 'rename',
@@ -413,7 +450,7 @@ function SftpBrowser({
     if (!sessionId || !createName.trim()) return
     const fullPath = currentPath === '/' ? `/${createName}` : `${currentPath}/${createName}`
     try {
-      await wsClient.request({
+      await wsClientRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: type === 'directory' ? 'mkdir' : 'writefile',
@@ -441,7 +478,7 @@ function SftpBrowser({
     }
 
     try {
-      const resp = await wsClient.request({
+      const resp = await wsClientRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: 'readfile',
@@ -461,7 +498,6 @@ function SftpBrowser({
           sessionId,
         }
         fileStore.openFile(tab)
-        // 移动端自动展开编辑器
         setContextMenu(null)
       }
     } catch (err) {
@@ -473,7 +509,7 @@ function SftpBrowser({
   const handleDownload = async (entry: SftpEntry) => {
     if (!sessionId || entry.type === 'directory') return
     try {
-      const resp = await wsClient.request({
+      const resp = await wsClientRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: 'readfile',
