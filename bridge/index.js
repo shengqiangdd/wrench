@@ -497,20 +497,49 @@ function handleResize(ws, connectionId, payload) {
   }
 }
 
-// ========== SFTP 操作 ==========
+// ========== SFTP 操作（带 sudo 降级） ==========
+
+/**
+ * 判断错误是否为权限错误（Permission denied / EACCES / EPERM）
+ */
+function isPermissionError(err) {
+  if (!err) return false
+  const msg = (err.message || err.code || '').toLowerCase()
+  return msg.includes('permission denied') || msg.includes('eacces') || msg.includes('eperm')
+}
+
+/**
+ * 通过 SSH exec 执行 sudo 命令，返回退出码和标准输出
+ */
+function sudoExec(conn, command, callback) {
+  conn.ssh.exec(command, { pty: false }, (err, stream) => {
+    if (err) return callback(err)
+    let stdout = ''
+    let stderr = ''
+    stream.on('data', (chunk) => { stdout += chunk.toString('utf-8') })
+    stream.stderr.on('data', (chunk) => { stderr += chunk.toString('utf-8') })
+    stream.on('close', (exitCode) => {
+      if (exitCode !== 0) {
+        callback(new Error(stderr.trim() || `sudo 命令退出码: ${exitCode}`))
+      } else {
+        callback(null, stdout)
+      }
+    })
+  })
+}
 
 function handleSftp(ws, connectionId, requestId, payload) {
   const conn = connections.get(connectionId)
-  if (!conn || !conn.sftp) {
-    return sendError(ws, connectionId, requestId, 'SFTP_NOT_READY', 'SFTP 未就绪')
+  if (!conn || !conn.ssh) {
+    return sendError(ws, connectionId, requestId, 'NOT_CONNECTED', 'SSH 未连接')
   }
 
   const { operation } = payload
 
   switch (operation) {
     case 'list': {
+      if (!conn.sftp) return sendError(ws, connectionId, requestId, 'SFTP_NOT_READY', 'SFTP 未就绪（列表需要 SFTP）')
       const { path: dirPath } = payload
-      // 规范化：根目录传 '.' 给 ssh2，同时正确拼接路径前缀
       const readPath = dirPath === '/' ? '.' : dirPath.replace(/\/+$/, '')
       const prefix = dirPath === '/' ? '/' : (dirPath || '').replace(/\/+$/, '') + '/'
       conn.sftp.readdir(readPath, (err, list) => {
@@ -523,10 +552,7 @@ function handleSftp(ws, connectionId, requestId, payload) {
           files: (list || []).map(item => ({
             name: item.filename,
             path: prefix + item.filename,
-            // 部分 SFTP 实现不填充 mode，此时通过长列表格式（如果有）判断
-            // 核心判断：检查 S_IFDIR 标志位 (0o40000)，若无 mode 数据则默认 file
             type: (item.attrs.mode && (item.attrs.mode & 0o40000)) ? 'directory' : 'file',
-            // 额外兜底：如果 item 有 longname，尝试从中提取目录标志
             _longnameType: (item.longname && item.longname.startsWith('d')) ? 'directory' : undefined,
             size: item.attrs.size,
             modifyTime: item.attrs.mtime * 1000,
@@ -540,6 +566,7 @@ function handleSftp(ws, connectionId, requestId, payload) {
     }
 
     case 'stat': {
+      if (!conn.sftp) return sendError(ws, connectionId, requestId, 'SFTP_NOT_READY', 'SFTP 未就绪（stat 需要 SFTP）')
       const { path: targetPath } = payload
       conn.sftp.stat(targetPath, (err, attrs) => {
         if (err) return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
@@ -555,6 +582,7 @@ function handleSftp(ws, connectionId, requestId, payload) {
     }
 
     case 'readfile': {
+      if (!conn.sftp) return sendError(ws, connectionId, requestId, 'SFTP_NOT_READY', 'SFTP 未就绪（读取需要 SFTP）')
       const { path: filePath } = payload
       conn.sftp.readFile(filePath, (err, data) => {
         if (err) return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
@@ -572,85 +600,177 @@ function handleSftp(ws, connectionId, requestId, payload) {
     case 'writefile': {
       const { path: filePath, content } = payload
       const buf = Buffer.from(content, 'base64')
-      conn.sftp.writeFile(filePath, buf, (err) => {
-        if (err) return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
-        sendJson(ws, {
-          type: 'sftp-result',
-          connectionId,
-          requestId,
-          operation: 'writefile',
-          success: true,
+
+      // 先试 SFTP
+      if (conn.sftp) {
+        conn.sftp.writeFile(filePath, buf, (err) => {
+          if (!err) {
+            return sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'writefile', success: true })
+          }
+          if (!isPermissionError(err)) {
+            return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
+          }
+          // 权限错误 → 降级 sudo
+          console.log(`[SFTP] writefile permission denied, falling back to sudo: ${filePath}`)
+          writeFileWithSudo(ws, conn, connectionId, requestId, filePath, buf)
         })
-      })
+      } else {
+        writeFileWithSudo(ws, conn, connectionId, requestId, filePath, buf)
+      }
       break
     }
 
     case 'mkdir': {
       const { path: dirPath } = payload
-      // 确保使用绝对路径，避免相对路径歧义
       const absPath = dirPath.startsWith('/') ? dirPath : '/' + dirPath
-      // 自定义 mode：0755 (八进制)
-      conn.sftp.mkdir(absPath, { mode: 0o755 }, (err) => {
-        if (err) return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
-        sendJson(ws, {
-          type: 'sftp-result',
-          connectionId,
-          requestId,
-          operation: 'mkdir',
-          success: true,
+
+      if (conn.sftp) {
+        conn.sftp.mkdir(absPath, { mode: 0o755 }, (err) => {
+          if (!err) {
+            return sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'mkdir', success: true })
+          }
+          if (!isPermissionError(err)) {
+            return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
+          }
+          console.log(`[SFTP] mkdir permission denied, falling back to sudo: ${absPath}`)
+          mkdirWithSudo(ws, conn, connectionId, requestId, absPath)
         })
-      })
+      } else {
+        mkdirWithSudo(ws, conn, connectionId, requestId, absPath)
+      }
       break
     }
 
     case 'rmdir': {
       const { path: dirPath } = payload
-      conn.sftp.rmdir(dirPath, (err) => {
-        if (err) return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
-        sendJson(ws, {
-          type: 'sftp-result',
-          connectionId,
-          requestId,
-          operation: 'rmdir',
-          success: true,
+      if (conn.sftp) {
+        conn.sftp.rmdir(dirPath, (err) => {
+          if (!err) {
+            return sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'rmdir', success: true })
+          }
+          if (!isPermissionError(err)) {
+            return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
+          }
+          console.log(`[SFTP] rmdir permission denied, falling back to sudo: ${dirPath}`)
+          rmdirWithSudo(ws, conn, connectionId, requestId, dirPath)
         })
-      })
+      } else {
+        rmdirWithSudo(ws, conn, connectionId, requestId, dirPath)
+      }
       break
     }
 
     case 'unlink': {
       const { path: filePath } = payload
-      conn.sftp.unlink(filePath, (err) => {
-        if (err) return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
-        sendJson(ws, {
-          type: 'sftp-result',
-          connectionId,
-          requestId,
-          operation: 'unlink',
-          success: true,
+      if (conn.sftp) {
+        conn.sftp.unlink(filePath, (err) => {
+          if (!err) {
+            return sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'unlink', success: true })
+          }
+          if (!isPermissionError(err)) {
+            return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
+          }
+          console.log(`[SFTP] unlink permission denied, falling back to sudo: ${filePath}`)
+          unlinkWithSudo(ws, conn, connectionId, requestId, filePath)
         })
-      })
+      } else {
+        unlinkWithSudo(ws, conn, connectionId, requestId, filePath)
+      }
       break
     }
 
     case 'rename': {
       const { fromPath, toPath } = payload
-      conn.sftp.rename(fromPath, toPath, (err) => {
-        if (err) return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
-        sendJson(ws, {
-          type: 'sftp-result',
-          connectionId,
-          requestId,
-          operation: 'rename',
-          success: true,
+      if (conn.sftp) {
+        conn.sftp.rename(fromPath, toPath, (err) => {
+          if (!err) {
+            return sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'rename', success: true })
+          }
+          if (!isPermissionError(err)) {
+            return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
+          }
+          console.log(`[SFTP] rename permission denied, falling back to sudo: ${fromPath} -> ${toPath}`)
+          renameWithSudo(ws, conn, connectionId, requestId, fromPath, toPath)
         })
-      })
+      } else {
+        renameWithSudo(ws, conn, connectionId, requestId, fromPath, toPath)
+      }
       break
     }
 
     default:
       sendError(ws, connectionId, requestId, 'UNKNOWN_OPERATION', `未知 SFTP 操作: ${operation}`)
   }
+}
+
+// ========== sudo 降级实现 ==========
+
+function writeFileWithSudo(ws, conn, connectionId, requestId, filePath, buf) {
+  // 先创建父目录（如果不存在）
+  const parentDir = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '.'
+  const createParentCmd = `sudo mkdir -p ${escapeShellArg(parentDir)}`
+
+  sudoExec(conn, createParentCmd, (err) => {
+    if (err) {
+      // 父目录创建失败不是致命错误，继续尝试写文件
+      console.log(`[sudo-writefile] mkdir -p warning: ${err.message}`)
+    }
+
+    // 用 base64 + base64 -d | sudo tee 写文件（避免特殊字符问题）
+    const b64Content = buf.toString('base64')
+    const cmd = `echo ${escapeShellArg(b64Content)} | base64 -d | sudo tee ${escapeShellArg(filePath)} > /dev/null`
+    sudoExec(conn, cmd, (err2) => {
+      if (err2) return sendError(ws, connectionId, requestId, 'SUDO_ERROR', `写入失败: ${err2.message}`)
+      sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'writefile', success: true })
+    })
+  })
+}
+
+function mkdirWithSudo(ws, conn, connectionId, requestId, absPath) {
+  const cmd = `sudo mkdir -p ${escapeShellArg(absPath)}`
+  sudoExec(conn, cmd, (err) => {
+    if (err) return sendError(ws, connectionId, requestId, 'SUDO_ERROR', `创建目录失败: ${err.message}`)
+    // 设置目录权限为 0755
+  const chmodCmd = `sudo chmod 755 ${escapeShellArg(absPath)}`
+  sudoExec(conn, chmodCmd, () => {
+    sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'mkdir', success: true })
+  })
+  })
+}
+
+function rmdirWithSudo(ws, conn, connectionId, requestId, dirPath) {
+  const cmd = `sudo rm -rf ${escapeShellArg(dirPath)}`
+  sudoExec(conn, cmd, (err) => {
+    if (err) return sendError(ws, connectionId, requestId, 'SUDO_ERROR', `删除目录失败: ${err.message}`)
+    sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'rmdir', success: true })
+  })
+}
+
+function unlinkWithSudo(ws, conn, connectionId, requestId, filePath) {
+  const cmd = `sudo rm -f ${escapeShellArg(filePath)}`
+  sudoExec(conn, cmd, (err) => {
+    if (err) return sendError(ws, connectionId, requestId, 'SUDO_ERROR', `删除文件失败: ${err.message}`)
+    sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'unlink', success: true })
+  })
+}
+
+function renameWithSudo(ws, conn, connectionId, requestId, fromPath, toPath) {
+  const cmd = `sudo mv ${escapeShellArg(fromPath)} ${escapeShellArg(toPath)}`
+  sudoExec(conn, cmd, (err) => {
+    if (err) return sendError(ws, connectionId, requestId, 'SUDO_ERROR', `重命名失败: ${err.message}`)
+    sendJson(ws, { type: 'sftp-result', connectionId, requestId, operation: 'rename', success: true })
+  })
+}
+
+/**
+ * 安全的 shell 转义（只允许字母数字/./-_ 通过，其余加引号）
+ */
+function escapeShellArg(arg) {
+  if (!arg) return "''"
+  // 只包含安全字符则直接返回
+  if (/^[a-zA-Z0-9./_\-@:,=+~]+$/.test(arg)) return arg
+  // 否则用单引号包裹（并处理单引号本身）
+  return "'" + arg.replace(/'/g, "'\\''") + "'"
 }
 
 // ========== 连接清理 ==========
