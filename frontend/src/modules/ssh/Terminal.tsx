@@ -57,8 +57,6 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
 
  // 初始化 xterm 实例
  const initTerminal = useCallback(() => {
- if (disposedRef.current) return null
-
  const term = new XTerm({
  cursorBlink: true,
  cursorStyle: 'block',
@@ -86,8 +84,10 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  useEffect(() => {
  if (!containerRef.current) return
 
- const { term, fitAddon } = initTerminal()!
- if (!term) return
+ disposedRef.current = false
+ const result = initTerminal()
+ if (!result) return
+ const { term, fitAddon } = result
 
  const container = containerRef.current
  term.open(container)
@@ -177,20 +177,19 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  })
  })
 
- // 定时检查 term 是否还存活（避免残留 rAF 导致崩溃）
- const healthCheck = setInterval(() => {
- if (disposedRef.current) {
- clearInterval(healthCheck)
- return
- }
- // 如果容器不在 DOM 中（已被 React 卸载但 cleanup 未执行），主动清理
- if (!document.contains(container)) {
- disposedRef.current = true
- observer.disconnect()
- try { term.dispose() } catch {}
- clearInterval(healthCheck)
- }
- }, 3000)
+  // 定时检查 term 是否还存活（避免残留 rAF 导致崩溃）
+  const healthCheck = setInterval(() => {
+    if (disposedRef.current || !document.contains(container)) {
+      clearInterval(healthCheck)
+      if (!disposedRef.current) {
+        // 容器已从 DOM 摘除，标记销毁
+        disposedRef.current = true
+        observer.disconnect()
+        try { term.dispose() } catch {}
+      }
+      return
+    }
+  }, 3000)
 
  return () => {
  disposedRef.current = true
@@ -279,52 +278,52 @@ export function SplitContainer({
  else groupB.push(splits[i])
  }
 
-  return (
-    <div
-      className={`flex flex-1 overflow-hidden ${
-        firstDirection === 'vertical' ? 'flex-col' : 'flex-row'
-      }`}
-      style={{ minHeight: 0 }}
-    >
-      <div
-        key="group-a"
-        className="flex overflow-hidden"
-        style={{ flex: groupA.length, minHeight: 0, minWidth: 0 }}
-      >
-        <SplitContainer
-          key={`split-a-${groupA.map(s => s.id).join('-')}`}
-          splits={groupA}
-          onSplit={onSplit}
-          onRemove={onRemove}
-          onConnectionChange={onConnectionChange}
-          connections={connections}
-        />
-      </div>
+ return (
+ <div
+ className={`flex flex-1 overflow-hidden ${
+ firstDirection === 'vertical' ? 'flex-col' : 'flex-row'
+ }`}
+ style={{ minHeight: 0 }}
+ >
+ <div
+ key="group-a"
+ className="flex overflow-hidden"
+ style={{ flex: groupA.length, minHeight: 0, minWidth: 0 }}
+ >
+ <SplitContainer
+ key={`split-a-${groupA.map(s => s.id).join('-')}`}
+ splits={groupA}
+ onSplit={onSplit}
+ onRemove={onRemove}
+ onConnectionChange={onConnectionChange}
+ connections={connections}
+ />
+ </div>
 
-      {/* 分割线 */}
-      <div
-        key="divider"
-        className={`shrink-0 bg-slate-700/50 ${
-          firstDirection === 'vertical' ? 'h-px' : 'w-px'
-        }`}
-      />
+ {/* 分割线 */}
+ <div
+ key="divider"
+ className={`shrink-0 bg-slate-700/50 ${
+ firstDirection === 'vertical' ? 'h-px' : 'w-px'
+ }`}
+ />
 
-      <div
-        key="group-b"
-        className="flex overflow-hidden"
-        style={{ flex: groupB.length, minHeight: 0, minWidth: 0 }}
-      >
-        <SplitContainer
-          key={`split-b-${groupB.map(s => s.id).join('-')}`}
-          splits={groupB}
-          onSplit={onSplit}
-          onRemove={onRemove}
-          onConnectionChange={onConnectionChange}
-          connections={connections}
-        />
-      </div>
-    </div>
-  )
+ <div
+ key="group-b"
+ className="flex overflow-hidden"
+ style={{ flex: groupB.length, minHeight: 0, minWidth: 0 }}
+ >
+ <SplitContainer
+ key={`split-b-${groupB.map(s => s.id).join('-')}`}
+ splits={groupB}
+ onSplit={onSplit}
+ onRemove={onRemove}
+ onConnectionChange={onConnectionChange}
+ connections={connections}
+ />
+ </div>
+ </div>
+ )
 }
 
 // 单个分屏面板

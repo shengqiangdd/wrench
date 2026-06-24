@@ -62,15 +62,19 @@ export default function SshPlaceholder() {
 
   // ─── 建立 SSH 连接（防重复点击） ───
 
+  const connectingRefs = useRef<Set<string>>(new Set())
+
   const handleConnect = useCallback(async (connectionId: string, targetSessionId?: string) => {
     const conn = connections.find((c) => c.id === connectionId)
-    if (!conn || connectingRef.current) return null
+    if (!conn) return null
 
-    connectingRef.current = true
+    const sessionId = targetSessionId || `sess_${connectionId}_${Date.now()}`
+    if (connectingRefs.current.has(sessionId)) return null
+    connectingRefs.current.add(sessionId)
+
     setConnecting(true)
 
     const store = useSshStore.getState()
-    const sessionId = targetSessionId || `sess_${connectionId}_${Date.now()}`
 
     try {
       await wsClient.request({
@@ -101,7 +105,7 @@ export default function SshPlaceholder() {
       console.error('SSH 连接失败:', err)
       return null
     } finally {
-      connectingRef.current = false
+      connectingRefs.current.delete(sessionId)
       setConnecting(false)
     }
   }, [connections, wsClient])
