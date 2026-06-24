@@ -583,17 +583,21 @@ function handleSftp(ws, connectionId, requestId, payload) {
             connectionId,
             requestId,
             operation: 'list',
-            files: (list || []).map(item => ({
-              name: item.filename,
-              path: prefix + item.filename,
-              type: (item.attrs.mode && (item.attrs.mode & 0o40000)) ? 'directory' : 'file',
-              _longnameType: (item.longname && item.longname.startsWith('d')) ? 'directory' : undefined,
-              size: item.attrs.size,
-              modifyTime: item.attrs.mtime * 1000,
-              permissions: item.attrs.mode ? (item.attrs.mode & 0o777).toString(8) : '755',
-              owner: '',
-              group: '',
-            })),
+            files: (list || []).map(item => {
+              // 通过 longname 首字符识别类型：d=目录, l=符号链接(可能指向目录)
+              const longnameType = item.longname ? item.longname[0] : ''
+              const isDir = longnameType === 'd' || longnameType === 'l'
+              return {
+                name: item.filename,
+                path: prefix + item.filename,
+                type: isDir ? 'directory' : 'file',
+                size: item.attrs.size,
+                modifyTime: item.attrs.mtime * 1000,
+                permissions: item.attrs.mode ? (item.attrs.mode & 0o777).toString(8) : '755',
+                owner: '',
+                group: '',
+              }
+            }),
           })
         })
       }

@@ -184,7 +184,13 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
       unsubConnected()
       unsubDisconnected()
       unsubError()
+      // 关键：断开 xterm 与 DOM 的关联，阻止残留的 rAF 回调
+      try { term._core?.viewport?._innerRefresh?.(); } catch {}
       term.dispose()
+      // 清空容器 DOM 避免任何残留引用
+      if (container) {
+        container.innerHTML = ''
+      }
       terminalRef.current = null
       fitAddonRef.current = null
     }
