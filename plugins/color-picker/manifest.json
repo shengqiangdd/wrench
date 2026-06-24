@@ -1,0 +1,38 @@
+{
+  "id": "color-picker",
+  "name": "颜色转换工具",
+  "version": "1.0.0",
+  "description": "HEX / RGB / HSL 颜色格式互转和预览",
+  "author": "SmartBox",
+  "icon": "palette",
+  "commands": [
+    {
+      "id": "color-hex-to-rgb",
+      "label": "HEX → RGB",
+      "description": "将 #FF0000 格式转为 rgb(255, 0, 0)",
+      "icon": "palette",
+      "keywords": ["color", "颜色", "hex", "rgb", "转换"]
+    },
+    {
+      "id": "color-rgb-to-hex",
+      "label": "RGB → HEX",
+      "description": "将 rgb(255, 0, 0) 格式转为 #FF0000",
+      "icon": "palette",
+      "keywords": ["color", "颜色", "rgb", "hex", "转换"]
+    },
+    {
+      "id": "color-to-hsl",
+      "label": "转为 HSL",
+      "description": "将 HEX/RGB 转为 HSL 格式",
+      "icon": "palette",
+      "keywords": ["color", "颜色", "hsl", "转换"]
+    }
+  ],
+  "panels": [
+    {
+      "id": "color-panel",
+      "title": "颜色工具",
+      "icon": "palette"
+    }
+  ]
+}

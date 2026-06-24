@@ -37,7 +37,7 @@ expressWs(app)
 
 // 中间件
 app.use(cors())
-app.use(express.json({ limit: '5mb' }))
+app.use(express.json({ limit: '100mb' }))
 
 // ========== HTTP API 路由 ==========
 
@@ -136,6 +136,121 @@ app.post('/api/ssh/exec', (req, res) => {
       stream.close()
     }, 30000)
   })
+})
+
+// ─── 插件市场 API ───
+
+// 默认插件市场源
+const MARKET_INDEX_URL = process.env.MARKET_INDEX_URL || 'https://raw.githubusercontent.com/shengqiangdd/smartbox-plugins/main/index.json'
+
+// 获取市场插件列表
+app.get('/api/market/index', async (req, res) => {
+  try {
+    const response = await fetch(MARKET_INDEX_URL, {
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!response.ok) {
+      return res.status(502).json({ error: `Market fetch failed: HTTP ${response.status}` })
+    }
+    const data = await response.json()
+    res.json(data)
+  } catch (err: any) {
+    res.status(502).json({ error: `Failed to fetch market index: ${err.message}` })
+  }
+})
+
+// 安装插件（从市场下载 manifest + plugin.js 到 plugins/ 目录）
+app.post('/api/plugins/install', async (req, res) => {
+  const { pluginId, manifestUrl, pluginUrl } = req.body
+  if (!pluginId || !manifestUrl || !pluginUrl) {
+    return res.status(400).json({ error: 'Missing pluginId, manifestUrl, or pluginUrl' })
+  }
+
+  const targetDir = path.join(pluginsDir, pluginId)
+
+  // 安全校验：不允许路径穿越
+  if (!targetDir.startsWith(pluginsDir)) {
+    return res.status(400).json({ error: 'Invalid plugin ID' })
+  }
+
+  // 检查是否已安装
+  if (fs.existsSync(targetDir)) {
+    return res.status(409).json({ error: `Plugin "${pluginId}" is already installed` })
+  }
+
+  try {
+    // 创建目录
+    fs.mkdirSync(targetDir, { recursive: true })
+
+    // 下载 manifest.json
+    const manResp = await fetch(manifestUrl, { signal: AbortSignal.timeout(15000) })
+    if (!manResp.ok) throw new Error(`Failed to download manifest: HTTP ${manResp.status}`)
+    const manifestText = await manResp.text()
+
+    // 验证 manifest 格式
+    try {
+      const manifest = JSON.parse(manifestText)
+      if (!manifest.id || !manifest.name) {
+        throw new Error('Invalid manifest: missing id or name')
+      }
+    } catch (parseErr: any) {
+      fs.rmSync(targetDir, { recursive: true, force: true })
+      return res.status(400).json({ error: `Invalid manifest format: ${parseErr.message}` })
+    }
+
+    fs.writeFileSync(path.join(targetDir, 'manifest.json'), manifestText, 'utf-8')
+
+    // 下载 plugin.js
+    const jsResp = await fetch(pluginUrl, { signal: AbortSignal.timeout(30000) })
+    if (!jsResp.ok) throw new Error(`Failed to download plugin JS: HTTP ${jsResp.status}`)
+    const jsText = await jsResp.text()
+
+    // 安全检查：简单验证 JS 代码不为空
+    if (!jsText.trim()) {
+      fs.rmSync(targetDir, { recursive: true, force: true })
+      return res.status(400).json({ error: 'Plugin JS is empty' })
+    }
+
+    fs.writeFileSync(path.join(targetDir, 'plugin.js'), jsText, 'utf-8')
+
+    res.json({
+      success: true,
+      pluginId,
+      message: `Plugin "${pluginId}" installed successfully`,
+    })
+  } catch (err: any) {
+    // 清理残留目录
+    try { fs.rmSync(targetDir, { recursive: true, force: true }) } catch {}
+    res.status(500).json({ error: `Install failed: ${err.message}` })
+  }
+})
+
+// 卸载插件
+app.post('/api/plugins/uninstall', (req, res) => {
+  const { pluginId } = req.body
+  if (!pluginId) {
+    return res.status(400).json({ error: 'Missing pluginId' })
+  }
+
+  const targetDir = path.join(pluginsDir, pluginId)
+  if (!targetDir.startsWith(pluginsDir)) {
+    return res.status(400).json({ error: 'Invalid plugin ID' })
+  }
+
+  if (!fs.existsSync(targetDir)) {
+    return res.status(404).json({ error: `Plugin "${pluginId}" not found` })
+  }
+
+  try {
+    fs.rmSync(targetDir, { recursive: true, force: true })
+    res.json({
+      success: true,
+      pluginId,
+      message: `Plugin "${pluginId}" uninstalled`,
+    })
+  } catch (err: any) {
+    res.status(500).json({ error: `Uninstall failed: ${err.message}` })
+  }
 })
 
 // 获取单个插件的 Manifest
@@ -705,6 +820,117 @@ function handleSftp(ws, connectionId, requestId, payload) {
       break
     }
 
+    // ─── 分块上传 ───
+    case 'chunk_start': {
+      const { path: targetPath } = payload
+      if (!conn.sftp) {
+        return sendError(ws, connectionId, requestId, 'SFTP_NOT_READY', '分块上传需要 SFTP')
+      }
+
+      // 创建唯一的临时文件路径
+      const tmpId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const tmpPath = `/tmp/.smartbox_chunk_${tmpId}`
+
+      conn.sftp.open(tmpPath, 'w', 0o644, (openErr, handle) => {
+        if (openErr) {
+          return sendError(ws, connectionId, requestId, 'SFTP_ERROR', `创建临时文件失败: ${openErr.message}`)
+        }
+        // 记录分块状态
+        const chunkKey = `${connectionId}:${tmpPath}`
+        global.__chunkUploads = global.__chunkUploads || new Map()
+        global.__chunkUploads.set(chunkKey, { handle, tmpPath, targetPath, writeOffset: 0 })
+
+        sendJson(ws, {
+          type: 'sftp-result',
+          connectionId,
+          requestId,
+          operation: 'chunk_start',
+          success: true,
+          chunkId: tmpId,
+          tmpPath,
+        })
+      })
+      break
+    }
+
+    case 'chunk_append': {
+      const { chunkId, content } = payload
+      const tmpPath = `/tmp/.smartbox_chunk_${chunkId}`
+      const chunkKey = `${connectionId}:${tmpPath}`
+
+      global.__chunkUploads = global.__chunkUploads || new Map()
+      const state = global.__chunkUploads.get(chunkKey)
+      if (!state) {
+        return sendError(ws, connectionId, requestId, 'CHUNK_NOT_FOUND', '分块上传会话不存在，请重新开始')
+      }
+
+      const buf = Buffer.from(content, 'base64')
+      const { handle } = state
+      const writeOffset = state.writeOffset
+
+      conn.sftp.write(handle, buf, 0, buf.length, writeOffset, (writeErr) => {
+        if (writeErr) {
+          return sendError(ws, connectionId, requestId, 'SFTP_ERROR', `写入分块失败: ${writeErr.message}`)
+        }
+        state.writeOffset += buf.length
+        sendJson(ws, {
+          type: 'sftp-result',
+          connectionId,
+          requestId,
+          operation: 'chunk_append',
+          success: true,
+          bytesWritten: buf.length,
+          totalWritten: state.writeOffset,
+        })
+      })
+      break
+    }
+
+    case 'chunk_finish': {
+      const { chunkId, targetPath } = payload
+      const tmpPath = `/tmp/.smartbox_chunk_${chunkId}`
+      const chunkKey = `${connectionId}:${tmpPath}`
+
+      global.__chunkUploads = global.__chunkUploads || new Map()
+      const state = global.__chunkUploads.get(chunkKey)
+      if (!state) {
+        return sendError(ws, connectionId, requestId, 'CHUNK_NOT_FOUND', '分块上传会话不存在')
+      }
+
+      const { handle } = state
+
+      // 关闭 handle
+      conn.sftp.close(handle, (closeErr) => {
+        global.__chunkUploads.delete(chunkKey)
+        if (closeErr) {
+          return sendError(ws, connectionId, requestId, 'SFTP_ERROR', `关闭临时文件失败: ${closeErr.message}`)
+        }
+
+        const finalPath = targetPath || state.targetPath
+        // 确保父目录存在
+        const parentDir = finalPath.includes('/') ? finalPath.substring(0, finalPath.lastIndexOf('/')) : '.'
+        const mkdirCmd = `sudo mkdir -p ${escapeShellArg(parentDir)}`
+        sudoExec(conn, mkdirCmd, () => {
+          // sudo mv 到目标位置
+          const mvCmd = `sudo mv ${escapeShellArg(tmpPath)} ${escapeShellArg(finalPath)} && sudo chmod 644 ${escapeShellArg(finalPath)}`
+          sudoExec(conn, mvCmd, (mvErr) => {
+            if (mvErr) {
+              return sendError(ws, connectionId, requestId, 'SUDO_ERROR', `移动文件失败: ${mvErr.message}`)
+            }
+            sendJson(ws, {
+              type: 'sftp-result',
+              connectionId,
+              requestId,
+              operation: 'chunk_finish',
+              success: true,
+              path: finalPath,
+            })
+          })
+        })
+      })
+      break
+    }
+
     case 'mkdir': {
       const { path: dirPath } = payload
       const absPath = dirPath.startsWith('/') ? dirPath : '/' + dirPath
@@ -923,6 +1149,14 @@ function cleanupConnection(connectionId) {
   }
 
   if (conn.sftp) {
+    // 清理此连接的分块上传
+    global.__chunkUploads = global.__chunkUploads || new Map()
+    for (const [key, state] of global.__chunkUploads) {
+      if (key.startsWith(`${connectionId}:`)) {
+        try { conn.sftp.close(state.handle) } catch (_) { /* ignore */ }
+        global.__chunkUploads.delete(key)
+      }
+    }
     try { conn.sftp.end() } catch (_) { /* ignore */ }
   }
   if (conn.ssh) {
@@ -973,6 +1207,36 @@ if (fs.existsSync(frontendDist)) {
       res.status(404).json({ error: 'Not Found' })
     }
   })
+}
+
+// ─── 开发模式插件热加载：监听 plugins 目录变化 ───
+
+const isDev = process.env.NODE_ENV !== 'production'
+
+if (isDev && fs.existsSync(pluginsDir)) {
+  let watchTimer: ReturnType<typeof setTimeout> | null = null
+
+  fs.watch(pluginsDir, { recursive: true }, (eventType, filename) => {
+    // 防抖：500ms 内多次变更只通知一次
+    if (watchTimer) clearTimeout(watchTimer)
+    watchTimer = setTimeout(() => {
+      // 通知所有已连接的 WebSocket 客户端
+      try {
+        const wss = app.getWss()
+        if (wss) {
+          const msg = JSON.stringify({ type: 'plugins-changed' })
+          for (const client of wss.clients) {
+            if (client.readyState === 1) { // WebSocket.OPEN
+              client.send(msg)
+            }
+          }
+        }
+      } catch (_) { /* ignore */ }
+      console.log(`[Bridge] Plugins changed, notified ${wss?.clients?.size || 0} clients`)
+    }, 500)
+  })
+
+  console.log(`[Bridge] Plugin hot-reload watching: ${pluginsDir}`)
 }
 
 // ========== 启动服务器 ==========

@@ -1,0 +1,52 @@
+{
+  "id": "case-converter",
+  "name": "命名风格转换",
+  "version": "1.0.0",
+  "description": "变量/函数/文件名在 camelCase / PascalCase / snake_case / kebab-case / UPPER_CASE 之间互转",
+  "author": "SmartBox",
+  "icon": "text-aa",
+  "commands": [
+    {
+      "id": "case-to-camel",
+      "label": "转 camelCase",
+      "description": "转换为驼峰式命名: helloWorld",
+      "icon": "text-aa",
+      "keywords": ["case", "命名", "camel", "驼峰"]
+    },
+    {
+      "id": "case-to-pascal",
+      "label": "转 PascalCase",
+      "description": "转换为大驼峰命名: HelloWorld",
+      "icon": "text-aa",
+      "keywords": ["case", "命名", "pascal", "大驼峰"]
+    },
+    {
+      "id": "case-to-snake",
+      "label": "转 snake_case",
+      "description": "转换为下划线命名: hello_world",
+      "icon": "text-aa",
+      "keywords": ["case", "命名", "snake", "下划线"]
+    },
+    {
+      "id": "case-to-kebab",
+      "label": "转 kebab-case",
+      "description": "转换为连字符命名: hello-world",
+      "icon": "text-aa",
+      "keywords": ["case", "命名", "kebab", "连字符"]
+    },
+    {
+      "id": "case-to-upper",
+      "label": "转 UPPER_CASE",
+      "description": "转换为大写命名: HELLO_WORLD",
+      "icon": "text-aa",
+      "keywords": ["case", "命名", "upper", "大写"]
+    }
+  ],
+  "panels": [
+    {
+      "id": "case-panel",
+      "title": "命名转换",
+      "icon": "text-aa"
+    }
+  ]
+}

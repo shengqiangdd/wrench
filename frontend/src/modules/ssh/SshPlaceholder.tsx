@@ -321,16 +321,19 @@ export default function SshPlaceholder() {
     ? allSessions.map((s) => ({ id: s.id, name: s.connectionName }))
     : connections.map((c) => ({ id: c.id, name: c.name }))
 
-  // 计算每个 syncGroup 下的分屏数（用于终端命令同步广播）
-  // 当开启同步的分屏收到 onData 时，广播到同组其他分屏
-  // 这需要通过 wsClient.send 实现
+  // ─── 命令同步广播 ───
+  // 用 ref 跟踪最新的 splits，避免 useCallback 闭包过期
+  const splitsRef = useRef(splits)
+  splitsRef.current = splits
+
   const handleTerminalData = useCallback(
     (sessionId: string, data: string) => {
       // 查找这个 session 所在的分屏和同步组
-      const split = splits.find((s) => s.sessionId === sessionId)
+      const currentSplits = splitsRef.current
+      const split = currentSplits.find((s) => s.sessionId === sessionId)
       if (!split?.syncGroup) return
       // 广播到同组其他分屏
-      const groupMembers = splits.filter(
+      const groupMembers = currentSplits.filter(
         (s) => s.syncGroup === split.syncGroup && s.sessionId !== sessionId,
       )
       for (const member of groupMembers) {
@@ -341,7 +344,7 @@ export default function SshPlaceholder() {
         })
       }
     },
-    [splits, wsClient],
+    [wsClient],
   )
 
   // 在 TerminalView 的 onData 中注入 handleTerminalData

@@ -1,8 +1,10 @@
+import { lazy, Suspense } from 'react'
 import { useAppStore } from '../../stores/app-store'
-import SshPlaceholder from '../../modules/ssh/SshPlaceholder'
-import FileManager from '../../modules/file-manager/FileManager'
-import PluginsPage from '../../modules/plugins/PluginsPage'
-import SettingsPanel from '../../modules/settings/SettingsPanel'
+
+const SshPlaceholder = lazy(() => import('../../modules/ssh/SshPlaceholder'))
+const FileManager = lazy(() => import('../../modules/file-manager/FileManager'))
+const PluginsPage = lazy(() => import('../../modules/plugins/PluginsPage'))
+const SettingsPanel = lazy(() => import('../../modules/settings/SettingsPanel'))
 
 const NAVS = ['ssh', 'files', 'plugins', 'settings'] as const
 
@@ -11,6 +13,14 @@ const PAGES: Record<string, React.ReactNode> = {
   files: <FileManager />,
   plugins: <PluginsPage />,
   settings: <SettingsPanel />,
+}
+
+function Loading() {
+  return (
+    <div className="flex h-full w-full items-center justify-center">
+      <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
+    </div>
+  )
 }
 
 export default function MainContent() {
@@ -24,7 +34,9 @@ export default function MainContent() {
           className="flex h-full w-full flex-1 flex-col overflow-hidden"
           style={{ display: nav === activeNav ? 'flex' : 'none' }}
         >
-          {PAGES[nav] || null}
+          <Suspense fallback={<Loading />}>
+            {PAGES[nav] || null}
+          </Suspense>
         </div>
       ))}
     </main>

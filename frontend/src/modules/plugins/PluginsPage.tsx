@@ -1,13 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Puzzle, Check, X, Loader2, RefreshCw, AlertCircle, Shield, Terminal, Play } from 'lucide-react'
+import { Puzzle, Check, X, Loader2, RefreshCw, AlertCircle, Shield, Terminal, Play, Globe } from 'lucide-react'
 import { fetchPlugins, fetchPluginCode, unloadPlugin } from '../../services/pluginManager'
 import { usePluginStore } from '../../stores/plugin-store'
+import { getWsClient } from '../../services/websocket'
 import PluginSandbox from '../../components/PluginSandbox'
 import { pluginSandboxManager } from '../../services/pluginSandboxManager'
 import type { PluginCatalogItem } from '../../services/pluginManager'
 import type { PluginSandboxHandle } from '../../components/PluginSandbox'
+import PluginMarket from './PluginMarket'
+
+type TabId = 'installed' | 'market'
 
 export default function PluginsPage() {
+  const [tab, setTab] = useState<TabId>('installed')
   const [catalog, setCatalog] = useState<PluginCatalogItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -94,6 +99,12 @@ export default function PluginsPage() {
   // 只加载一次
   useEffect(() => {
     loadPlugins()
+
+    // 监听插件热加载通知（开发模式）
+    const unsub = getWsClient().on('plugins-changed', () => {
+      handleReload()
+    })
+    return unsub
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isPluginEnabled = (pluginId: string) => {
@@ -133,60 +144,96 @@ export default function PluginsPage() {
 
   return (
     <div className="flex h-full flex-col p-6">
-      {/* 标题栏 */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Puzzle size={20} className="text-slate-400" />
-          <h2 className="text-lg font-semibold text-slate-200">插件</h2>
-          {catalog.length > 0 && (
-            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-400">
-              {catalog.length} 个
-            </span>
+      {/* 标题栏 + 标签切换 */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Puzzle size={20} className="text-slate-400" />
+              <h2 className="text-lg font-semibold text-slate-200">插件</h2>
+            </div>
+
+            {/* 标签页切换 */}
+            <div className="flex rounded-lg border border-slate-700/50 bg-slate-900 p-0.5">
+              <button
+                onClick={() => setTab('installed')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  tab === 'installed'
+                    ? 'bg-slate-700/60 text-slate-200 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <Puzzle size={13} />
+                已安装
+                {catalog.length > 0 && (
+                  <span className="ml-0.5 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
+                    {catalog.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setTab('market')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  tab === 'market'
+                    ? 'bg-slate-700/60 text-slate-200 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <Globe size={13} />
+                市场
+              </button>
+            </div>
+          </div>
+
+          {tab === 'installed' && (
+            <div className="flex items-center gap-2">
+              {catalog.length > 0 && (
+                <span className="flex items-center gap-1 text-[11px] text-emerald-500/70">
+                  <Shield size={12} />
+                  沙箱隔离
+                </span>
+              )}
+              <button
+                onClick={handleReload}
+                disabled={loading}
+                className="btn-secondary flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                刷新
+              </button>
+            </div>
           )}
-        </div>
-        <div className="flex items-center gap-2">
-          {catalog.length > 0 && (
-            <span className="flex items-center gap-1 text-[11px] text-emerald-500/70">
-              <Shield size={12} />
-              沙箱隔离
-            </span>
-          )}
-          <button
-            onClick={handleReload}
-            disabled={loading}
-            className="btn-secondary flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            刷新
-          </button>
         </div>
       </div>
 
-      {/* 加载中 */}
-      {loading && catalog.length === 0 && (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-center">
-            <Loader2 size={32} className="mx-auto mb-3 animate-spin text-slate-500" />
-            <p className="text-sm text-slate-500">正在加载插件...</p>
-          </div>
-        </div>
-      )}
+      {/* 已安装标签页 */}
+      {tab === 'installed' && (
+        <>
+          {/* 加载中 */}
+          {loading && catalog.length === 0 && (
+            <div className="flex flex-1 items-center justify-center">
+              <div className="text-center">
+                <Loader2 size={32} className="mx-auto mb-3 animate-spin text-slate-500" />
+                <p className="text-sm text-slate-500">正在加载插件...</p>
+              </div>
+            </div>
+          )}
 
-      {/* 错误状态 */}
-      {error && !loading && renderTick >= 0 && (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-center">
-            <AlertCircle size={40} className="mx-auto mb-3 text-red-400" />
-            <p className="text-sm text-red-400">{error}</p>
-            <button onClick={handleReload} className="mt-4 rounded-lg bg-slate-800 px-4 py-2 text-xs text-slate-300 hover:bg-slate-700">
-              重试
-            </button>
-          </div>
-        </div>
-      )}
+          {/* 错误状态 */}
+          {error && !loading && renderTick >= 0 && (
+            <div className="flex flex-1 items-center justify-center">
+              <div className="text-center">
+                <AlertCircle size={40} className="mx-auto mb-3 text-red-400" />
+                <p className="text-sm text-red-400">{error}</p>
+                <button onClick={handleReload} className="mt-4 rounded-lg bg-slate-800 px-4 py-2 text-xs text-slate-300 hover:bg-slate-700">
+                  重试
+                </button>
+              </div>
+            </div>
+          )}
 
-      {/* 空状态 */}
-      {!loading && !error && catalog.length === 0 && (
+          {/* 空状态 */}
+          {!loading && !error && catalog.length === 0 && (
         <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-slate-700/50">
           <div className="text-center">
             <Puzzle size={48} className="mx-auto mb-3 text-slate-600" />
@@ -326,6 +373,15 @@ export default function PluginsPage() {
                 ))}
             </div>
           </div>
+        </div>
+      )}
+        </>
+      )}
+
+      {/* 市场标签页 */}
+      {tab === 'market' && (
+        <div className="flex-1 overflow-hidden">
+          <PluginMarket />
         </div>
       )}
     </div>

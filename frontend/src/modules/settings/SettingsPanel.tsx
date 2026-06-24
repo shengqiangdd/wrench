@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   Settings,
   Moon,
@@ -13,11 +13,22 @@ import {
   ChevronDown,
   Server,
   Pencil,
+  Download,
+  Upload,
+  Lock,
+  Unlock,
+  AlertTriangle,
 } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useAiStore } from '../../stores/ai-store'
 import { AI_PROVIDERS } from '../../types/ai'
 import type { AiProvider } from '../../types/ai'
+import {
+  exportConfig,
+  importConfigFromFile,
+  importEncryptedFile,
+} from '../../services/importExport'
+import { ConfirmModal } from '../../components/ConfirmModal'
 
 export default function SettingsPanel() {
   const theme = useAppStore((s) => s.theme)
@@ -32,6 +43,18 @@ export default function SettingsPanel() {
   const [customModel, setCustomModel] = useState('')
   const [showCustomInput, setShowCustomInput] = useState(false)
   const [customBaseUrl, setCustomBaseUrl] = useState('')
+
+  // ─── 导入导出状态 ───
+  const [exportPassword, setExportPassword] = useState('')
+  const [showExportPassword, setShowExportPassword] = useState(false)
+  const [importPassword, setImportPassword] = useState('')
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [importingFile, setImportingFile] = useState<File | null>(null)
+  const [importError, setImportError] = useState('')
+  const [isImporting, setIsImporting] = useState(false)
+  const [showExportConfirm, setShowExportConfirm] = useState(false)
+  const [showReloadConfirm, setShowReloadConfirm] = useState(false)
+  const [pendingReload, setPendingReload] = useState(false)
 
   const themeOptions = [
     { value: 'dark' as const, label: '深色', icon: Moon },
@@ -85,6 +108,65 @@ export default function SettingsPanel() {
       setCustomModel('')
     }
   }, [customModel, setAiConfig])
+
+  // ─── 导入导出处理函数 ───
+
+  const handleImportClick = useCallback(() => {
+    setImportingFile(null)
+    setImportError('')
+    setIsImporting(true)
+    importConfigFromFile().catch((err: any) => {
+      setImportError(err.message || '导入失败')
+    }).finally(() => {
+      setIsImporting(false)
+    })
+  }, [])
+
+  const handleConfirmImport = useCallback(() => {
+    if (!importingFile) return
+    setIsImporting(true)
+    importEncryptedFile(importingFile, importPassword)
+      .then(() => {
+        setShowImportDialog(false)
+        setImportingFile(null)
+        setImportPassword('')
+        setImportError('')
+        setShowReloadConfirm(true)
+      })
+      .catch((err: any) => {
+        setImportError(err.message || '导入失败')
+      })
+      .finally(() => setIsImporting(false))
+  }, [importingFile, importPassword])
+
+  const handleExportWithoutPassword = useCallback(() => {
+    setShowExportConfirm(false)
+    exportConfig()
+  }, [])
+
+  const handleExportWithPassword = useCallback(() => {
+    if (!exportPassword.trim()) return
+    exportConfig(exportPassword.trim())
+    setShowExportPassword(false)
+    setExportPassword('')
+  }, [exportPassword])
+
+  // 监听加密导入事件
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      setImportingFile(detail.file)
+      setShowImportDialog(true)
+      detail.resolve(new Promise<void>((resolve, reject) => {
+        // 密码输入后 handleConfirmImport 会调用 detail.reject/resolve
+        // 这里通过全局变量暂存
+        ;(window as any).__importResolve = resolve
+        ;(window as any).__importReject = reject
+      }))
+    }
+    window.addEventListener('smartbox-import-needs-password', handler)
+    return () => window.removeEventListener('smartbox-import-needs-password', handler)
+  }, [])
 
   return (
     <div className="flex h-full flex-col overflow-y-auto p-6">
@@ -400,6 +482,61 @@ export default function SettingsPanel() {
           </div>
         </section>
 
+        {/* ─── 数据管理 ─── */}
+        <section>
+          <h3 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-400">
+            <Download size={14} />
+            数据管理
+          </h3>
+
+          <div className="space-y-3">
+            {/* 导出 */}
+            <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-slate-300">导出配置</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    导出 SSH 连接、AI 配置、插件状态和 UI 偏好
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowExportConfirm(true)}
+                  className="btn-ghost flex items-center gap-1.5 text-xs"
+                >
+                  <Download size={14} />
+                  导出
+                </button>
+              </div>
+            </div>
+
+            {/* 导入 */}
+            <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-slate-300">导入配置</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    导入 .smartbox 文件，现有连接不会被覆盖
+                  </p>
+                </div>
+                <button
+                  onClick={handleImportClick}
+                  disabled={isImporting}
+                  className="btn-ghost flex items-center gap-1.5 text-xs"
+                >
+                  <Upload size={14} />
+                  {isImporting ? '导入中...' : '导入'}
+                </button>
+              </div>
+            </div>
+
+            {/* 提示信息 */}
+            <p className="text-[11px] text-slate-600 leading-relaxed px-1">
+              <AlertTriangle size={11} className="inline-block mr-1 text-amber-500/70" />
+              敏感数据（密码、私钥、API Key）导出时包含在文件中。建议使用密码加密导出，确保传输安全。
+            </p>
+          </div>
+        </section>
+
         {/* ─── 关于 ─── */}
         <section>
           <h3 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -417,6 +554,120 @@ export default function SettingsPanel() {
           </div>
         </section>
       </div>
+
+      {/* ── 导出确认弹窗 ── */}
+      <ConfirmModal
+        open={showExportConfirm}
+        title="导出配置"
+        message="是否加密导出的配置？加密后需要密码才能导入。建议加密导出以防敏感信息泄露。"
+        confirmText="加密导出"
+        cancelText="明文导出"
+        onConfirm={() => setShowExportPassword(true)}
+        onCancel={handleExportWithoutPassword}
+      />
+
+      {/* ── 导出密码输入弹窗 ── */}
+      {showExportPassword && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowExportPassword(false)} />
+          <div className="relative z-10 w-full max-w-sm rounded-lg border border-slate-700/50 bg-slate-900 p-5 shadow-2xl">
+            <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+              <Lock size={14} className="text-smartbox-400" />
+              设置导出密码
+            </h3>
+            <p className="mt-2 text-xs text-slate-400">
+              导入此文件时需要输入此密码
+            </p>
+            <input
+              type="password"
+              value={exportPassword}
+              onChange={(e) => setExportPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleExportWithPassword()
+              }}
+              className="input mt-3"
+              placeholder="输入导出密码"
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowExportPassword(false)
+                  setExportPassword('')
+                }}
+                className="rounded-md border border-slate-600/50 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-300"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleExportWithPassword}
+                className="rounded-md bg-smartbox-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-smartbox-500"
+              >
+                确认导出
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 导入密码输入弹窗 ── */}
+      {showImportDialog && importingFile && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60"
+            onClick={() => {
+              setShowImportDialog(false)
+              setImportingFile(null)
+              setImportError('')
+            }}
+          />
+          <div className="relative z-10 w-full max-w-sm rounded-lg border border-slate-700/50 bg-slate-900 p-5 shadow-2xl">
+            <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+              <Unlock size={14} className="text-smartbox-400" />
+              输入解密密码
+            </h3>
+            <p className="mt-2 text-xs text-slate-400">
+              此配置文件已加密，请输入导出时设置的密码
+            </p>
+            <input
+              type="password"
+              value={importPassword}
+              onChange={(e) => {
+                setImportPassword(e.target.value)
+                setImportError('')
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleConfirmImport()
+              }}
+              className="input mt-3"
+              placeholder="输入解密密码"
+              autoFocus
+            />
+            {importError && (
+              <p className="mt-2 text-xs text-red-400">{importError}</p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowImportDialog(false)
+                  setImportingFile(null)
+                  setImportError('')
+                  setImportPassword('')
+                }}
+                className="rounded-md border border-slate-600/50 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-300"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmImport}
+                disabled={isImporting}
+                className="rounded-md bg-smartbox-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-smartbox-500 disabled:opacity-50"
+              >
+                {isImporting ? '导入中...' : '确认导入'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

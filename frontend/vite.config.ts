@@ -3,11 +3,29 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
+function isExternal(id: string, pkg: string) {
+  return id.includes(`/node_modules/${pkg}/`)
+}
+
 export default defineConfig({
   build: {
     minify: 'terser',
     terserOptions: {
       compress: { drop_console: true },
+    },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // 将大库拆为独立 chunk，提高缓存复用率
+          if (isExternal(id, 'xterm')) return 'vendor-xterm'
+          if (isExternal(id, '@codemirror')) return 'vendor-codemirror'
+          if (isExternal(id, 'codemirror')) return 'vendor-codemirror'
+          if (isExternal(id, 'react-router')) return 'vendor-router'
+          if (isExternal(id, 'zustand')) return 'vendor-state'
+          if (isExternal(id, 'lucide-react')) return 'vendor-lucide'
+          if (isExternal(id, 'idb')) return 'vendor-idb'
+        },
+      },
     },
   },
   plugins: [
@@ -51,7 +69,6 @@ export default defineConfig({
           },
         ],
       },
-      minify: false,
     }),
   ],
   resolve: {

@@ -8,6 +8,11 @@ import {
   FolderOpen,
   Terminal,
   Search,
+  Zap,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import ConnectionForm from './ConnectionForm'
@@ -27,10 +32,13 @@ export default function ConnectionList({ onConnect }: Props) {
   const [editId, setEditId] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
 
-  // 按分组归类
+  const QUICK_PREFIX = 'quick_'
+
+  // 按分组归类（过滤掉快速连接，它在快速连接栏里展示）
   const grouped = connections.reduce<
     Record<string, { label: string; items: SshConnection[] }>
   >((acc, conn) => {
+    if (conn.id.startsWith(QUICK_PREFIX)) return acc
     const key = conn.group || '_ungrouped'
     if (!acc[key]) {
       acc[key] = {
@@ -62,10 +70,45 @@ export default function ConnectionList({ onConnect }: Props) {
     }
   }
 
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [quickHost, setQuickHost] = useState('')
+  const [quickPort, setQuickPort] = useState('22')
+  const [quickUser, setQuickUser] = useState('root')
+  const [quickPassword, setQuickPassword] = useState('')
+  const [quickShowPwd, setQuickShowPwd] = useState(false)
+
+  const doQuickConnect = () => {
+    if (!quickHost.trim() || !quickUser.trim()) return
+    const tempId = `${QUICK_PREFIX}${Date.now()}`
+    // 先清理旧的快速连接
+    const store = useSshStore.getState()
+    for (const c of store.connections) {
+      if (c.id.startsWith(QUICK_PREFIX)) {
+        store.deleteConnection(c.id)
+      }
+    }
+    // 添加临时连接
+    store.addConnection({
+      id: tempId,
+      name: `⚡ ${quickUser.trim()}@${quickHost.trim()}`,
+      host: quickHost.trim(),
+      port: parseInt(quickPort) || 22,
+      username: quickUser.trim(),
+      authType: quickPassword ? 'password' : 'none',
+      password: quickPassword || undefined,
+      createdAt: Date.now(),
+    })
+    selectConnection(tempId)
+    if (onConnect) onConnect(tempId)
+    // 重置密码并折叠
+    setQuickPassword('')
+    setQuickOpen(false)
+  }
+
   return (
     <div className="flex h-full flex-col p-4">
       {/* 工具栏 */}
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-2 flex items-center gap-2">
         <div className="relative flex-1">
           <input
             className="input w-full pl-8 text-xs"
@@ -88,6 +131,73 @@ export default function ConnectionList({ onConnect }: Props) {
           <Plus size={14} />
           新建
         </button>
+      </div>
+
+      {/* 快速连接 */}
+      <div className="mb-3 rounded-lg border border-amber-600/20 bg-amber-500/5">
+        <button
+          onClick={() => setQuickOpen(!quickOpen)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-xs text-amber-400/80 hover:text-amber-300"
+        >
+          {quickOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <Zap size={14} />
+          <span className="font-medium">快速连接</span>
+          <span className="text-[10px] text-slate-600">不保存凭据，一次性的临时连接</span>
+        </button>
+
+        {quickOpen && (
+          <div className="border-t border-amber-600/15 px-3 pb-3 pt-2">
+            <div className="mb-2 flex gap-2">
+              <input
+                className="input flex-1 text-xs"
+                placeholder="主机地址"
+                value={quickHost}
+                onChange={(e) => setQuickHost(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && doQuickConnect()}
+              />
+              <input
+                className="input w-16 text-xs text-center"
+                placeholder="端口"
+                value={quickPort}
+                onChange={(e) => setQuickPort(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && doQuickConnect()}
+              />
+            </div>
+            <div className="mb-2 flex gap-2">
+              <input
+                className="input flex-1 text-xs"
+                placeholder="用户名"
+                value={quickUser}
+                onChange={(e) => setQuickUser(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && doQuickConnect()}
+              />
+              <div className="relative flex-1">
+                <input
+                  className="input w-full pr-8 text-xs"
+                  type={quickShowPwd ? 'text' : 'password'}
+                  placeholder="密码（可选）"
+                  value={quickPassword}
+                  onChange={(e) => setQuickPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && doQuickConnect()}
+                />
+                <button
+                  onClick={() => setQuickShowPwd(!quickShowPwd)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                >
+                  {quickShowPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={doQuickConnect}
+              disabled={!quickHost.trim() || !quickUser.trim()}
+              className="btn-primary flex w-full items-center justify-center gap-1.5 py-1.5 text-xs disabled:opacity-50"
+            >
+              <Zap size={14} />
+              快速连接 {quickUser.trim()}@{quickHost.trim() || '...'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 连接列表 */}

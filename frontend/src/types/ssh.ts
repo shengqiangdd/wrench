@@ -1,4 +1,4 @@
-export type AuthType = 'password' | 'key'
+export type AuthType = 'password' | 'key' | 'none'
 
 export interface SshConnection {
   id: string

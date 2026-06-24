@@ -1,0 +1,52 @@
+{
+  "id": "hash-generator",
+  "name": "哈希生成器",
+  "version": "1.0.0",
+  "description": "MD5 / SHA-1 / SHA-256 / SHA-512 哈希值生成",
+  "author": "SmartBox",
+  "icon": "fingerprint",
+  "commands": [
+    {
+      "id": "hash-md5",
+      "label": "MD5 哈希",
+      "description": "计算当前内容的 MD5 哈希值",
+      "icon": "fingerprint",
+      "keywords": ["md5", "hash", "哈希", "加密"]
+    },
+    {
+      "id": "hash-sha1",
+      "label": "SHA-1 哈希",
+      "description": "计算当前内容的 SHA-1 哈希值",
+      "icon": "fingerprint",
+      "keywords": ["sha1", "sha-1", "hash", "哈希"]
+    },
+    {
+      "id": "hash-sha256",
+      "label": "SHA-256 哈希",
+      "description": "计算当前内容的 SHA-256 哈希值",
+      "icon": "fingerprint",
+      "keywords": ["sha256", "sha-256", "hash", "哈希"]
+    },
+    {
+      "id": "hash-sha512",
+      "label": "SHA-512 哈希",
+      "description": "计算当前内容的 SHA-512 哈希值",
+      "icon": "fingerprint",
+      "keywords": ["sha512", "sha-512", "hash", "哈希"]
+    },
+    {
+      "id": "hash-all",
+      "label": "所有哈希",
+      "description": "一次性计算 MD5 / SHA-1 / SHA-256 / SHA-512",
+      "icon": "list",
+      "keywords": ["hash", "all", "所有", "全部哈希"]
+    }
+  ],
+  "panels": [
+    {
+      "id": "hash-panel",
+      "title": "哈希工具",
+      "icon": "fingerprint"
+    }
+  ]
+}

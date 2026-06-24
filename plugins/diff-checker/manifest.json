@@ -1,0 +1,24 @@
+{
+  "id": "diff-checker",
+  "name": "文本对比工具",
+  "version": "1.0.0",
+  "description": "行级文本差异对比，高亮显示新增/删除/修改的行",
+  "author": "SmartBox",
+  "icon": "git-compare",
+  "commands": [
+    {
+      "id": "diff-compare",
+      "label": "比较差异",
+      "description": "与剪贴板内容进行行级对比",
+      "icon": "git-compare",
+      "keywords": ["diff", "对比", "比较", "差异", "git", "patch"]
+    }
+  ],
+  "panels": [
+    {
+      "id": "diff-panel",
+      "title": "差异对比",
+      "icon": "git-compare"
+    }
+  ]
+}

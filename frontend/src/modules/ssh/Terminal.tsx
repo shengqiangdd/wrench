@@ -4,6 +4,7 @@ import { FitAddon } from 'xterm-addon-fit'
 import { SearchAddon } from 'xterm-addon-search'
 import 'xterm/css/xterm.css'
 import { getWsClient } from '../../services/websocket'
+import { Search, X, ChevronUp, ChevronDown } from 'lucide-react'
 
 /** 分屏面板配置 */
 export interface SplitPanel {
@@ -53,8 +54,15 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  const containerRef = useRef<HTMLDivElement>(null)
  const terminalRef = useRef<XTerm | null>(null)
  const fitAddonRef = useRef<FitAddon | null>(null)
+ const searchAddonRef = useRef<SearchAddon | null>(null)
  const connectedRef = useRef(false)
  const disposedRef = useRef(false)
+ // 搜索状态
+ const [showSearch, setShowSearch] = useState(false)
+ const [searchQuery, setSearchQuery] = useState('')
+ const [searchMatchIndex, setSearchMatchIndex] = useState(0)
+ const [searchMatchCount, setSearchMatchCount] = useState(0)
+ const searchInputRef = useRef<HTMLInputElement>(null)
  /** generation ID：每次 mount 递增，防止旧实例的异步回调污染新实例 */
  const genRef = useRef(0)
  const wsClient = getWsClient()
@@ -89,6 +97,7 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
 
  term.loadAddon(fitAddon)
  term.loadAddon(searchAddon)
+ searchAddonRef.current = searchAddon
 
  const container = containerRef.current
  term.open(container)
@@ -105,75 +114,75 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  fitAddonRef.current = fitAddon
 
  // 发送终端数据到后端（shell 模式）
-  // ─── 快捷键注册 ───
-  // Ctrl+C: 选中文本时复制，未选中时发送 SIGINT
-  // Ctrl+V / Shift+Insert: 粘贴
-  // Ctrl+Shift+C: 强制复制 / Ctrl+Shift+V: 强制粘贴
-  term.attachCustomKeyEventHandler((e) => {
-    const { key, ctrlKey, shiftKey, type } = e
+ // ─── 快捷键注册 ───
+ // Ctrl+C: 选中文本时复制，未选中时发送 SIGINT
+ // Ctrl+V / Shift+Insert: 粘贴
+ // Ctrl+Shift+C: 强制复制 / Ctrl+Shift+V: 强制粘贴
+ term.attachCustomKeyEventHandler((e) => {
+ const { key, ctrlKey, shiftKey, type } = e
 
-    // Ctrl+Shift+C → 复制选中文本
-    if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'c') {
-      const selection = term.getSelection()
-      if (selection) {
-        navigator.clipboard.writeText(selection).catch(() => {})
-        term.clearSelection()
-      }
-      return false  // 阻止发送到终端
-    }
+ // Ctrl+Shift+C → 复制选中文本
+ if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'c') {
+ const selection = term.getSelection()
+ if (selection) {
+ navigator.clipboard.writeText(selection).catch(() => {})
+ term.clearSelection()
+ }
+ return false // 阻止发送到终端
+ }
 
-    // Ctrl+Shift+V → 粘贴
-    if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'v') {
-      navigator.clipboard.readText().then((text) => {
-        if (text) {
-          const encoded = btoa(unescape(encodeURIComponent(text)))
-          wsClient.send({ type: 'exec', connectionId, data: encoded })
-          onTerminalData?.(encoded)
-        }
-      }).catch(() => {})
-      return false
-    }
+ // Ctrl+Shift+V → 粘贴
+ if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'v') {
+ navigator.clipboard.readText().then((text) => {
+ if (text) {
+ const encoded = btoa(unescape(encodeURIComponent(text)))
+ wsClient.send({ type: 'exec', connectionId, data: encoded })
+ onTerminalData?.(encoded)
+ }
+ }).catch(() => {})
+ return false
+ }
 
-    // Ctrl+C → 有选中则复制，否则放行（终端发 SIGINT）
-    if (type === 'keydown' && ctrlKey && !shiftKey && key.toLowerCase() === 'c') {
-      const selection = term.getSelection()
-      if (selection) {
-        navigator.clipboard.writeText(selection).catch(() => {})
-        term.clearSelection()
-        return false  // 阻止 SIGINT
-      }
-      return true  // 放行给终端（发送 SIGINT）
-    }
+ // Ctrl+C → 有选中则复制，否则放行（终端发 SIGINT）
+ if (type === 'keydown' && ctrlKey && !shiftKey && key.toLowerCase() === 'c') {
+ const selection = term.getSelection()
+ if (selection) {
+ navigator.clipboard.writeText(selection).catch(() => {})
+ term.clearSelection()
+ return false // 阻止 SIGINT
+ }
+ return true // 放行给终端（发送 SIGINT）
+ }
 
-    // Ctrl+V / Shift+Insert → 粘贴
-    if (type === 'keydown' && (
-      (ctrlKey && !shiftKey && key.toLowerCase() === 'v') ||
-      (!ctrlKey && shiftKey && key === 'Insert')
-    )) {
-      navigator.clipboard.readText().then((text) => {
-        if (text) {
-          const encoded = btoa(unescape(encodeURIComponent(text)))
-          wsClient.send({ type: 'exec', connectionId, data: encoded })
-          onTerminalData?.(encoded)
-        }
-      }).catch(() => {})
-      return false
-    }
+ // Ctrl+V / Shift+Insert → 粘贴
+ if (type === 'keydown' && (
+ (ctrlKey && !shiftKey && key.toLowerCase() === 'v') ||
+ (!ctrlKey && shiftKey && key === 'Insert')
+ )) {
+ navigator.clipboard.readText().then((text) => {
+ if (text) {
+ const encoded = btoa(unescape(encodeURIComponent(text)))
+ wsClient.send({ type: 'exec', connectionId, data: encoded })
+ onTerminalData?.(encoded)
+ }
+ }).catch(() => {})
+ return false
+ }
 
-    return true
-  })
+ return true
+ })
 
-  term.onData((data) => {
-    // 将用户输入以 base64 编码发送
-    const encoded = btoa(unescape(encodeURIComponent(data)))
-    wsClient.send({
-      type: 'exec',
-      connectionId,
-      data: encoded,
-    })
-    // 命令同步：广播到同组其他分屏
-    onTerminalData?.(encoded)
-  })
+ term.onData((data) => {
+ // 将用户输入以 base64 编码发送
+ const encoded = btoa(unescape(encodeURIComponent(data)))
+ wsClient.send({
+ type: 'exec',
+ connectionId,
+ data: encoded,
+ })
+ // 命令同步：广播到同组其他分屏
+ onTerminalData?.(encoded)
+ })
 
  // 监听终端数据（来自后端）
  const unsubData = wsClient.on('data', (msg) => {
@@ -249,10 +258,26 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  })
  })
 
+ // ─── Ctrl+Shift+F 搜索 ───
+ const searchKeyHandler = (e: KeyboardEvent) => {
+ if (e.ctrlKey && e.shiftKey && e.key === 'f') {
+ e.preventDefault()
+ setShowSearch(s => !s)
+ if (!showSearch) setTimeout(() => searchInputRef.current?.focus(), 50)
+ }
+ if (e.key === 'Escape') {
+ setShowSearch(false)
+ setSearchQuery('')
+ term.focus()
+ }
+ }
+ window.addEventListener('keydown', searchKeyHandler)
+
  // 清理函数
  return () => {
  clearTimeout(fitTimer)
  observer.disconnect()
+ window.removeEventListener('keydown', searchKeyHandler)
  unsubData()
  unsubConnected()
  unsubDisconnected()
@@ -260,15 +285,74 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  try { term.dispose() } catch {}
  terminalRef.current = null
  fitAddonRef.current = null
+ searchAddonRef.current = null
  }
  }, [connectionId, sessionId, onTerminalData])
 
+ // ─── 搜索函数 ───
+ const doSearch = useCallback((query: string, dir: 'next' | 'prev' = 'next') => {
+ const sa = searchAddonRef.current
+ if (!sa || !query.trim()) return
+ try {
+ if (dir === 'prev') {
+ sa.findPrevious(query)
+ } else {
+ sa.findNext(query)
+ }
+ } catch { /* ignore */ }
+ }, [])
+
  return (
+ <div className={`relative flex flex-col ${className}`} style={{ minHeight: 0 }}>
+ {/* 搜索面板 */}
+ {showSearch && (
+ <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-1 border-t border-slate-700/50 bg-slate-900 px-2 py-1">
+ <Search size={13} className="shrink-0 text-slate-500" />
+ <input
+ ref={searchInputRef}
+ value={searchQuery}
+ onChange={(e) => setSearchQuery(e.target.value)}
+ onKeyDown={(e) => {
+ if (e.key === 'Enter') doSearch(searchQuery, e.shiftKey ? 'prev' : 'next')
+ if (e.key === 'Escape') { setShowSearch(false); setSearchQuery(''); terminalRef.current?.focus() }
+ }}
+ placeholder="搜索终端内容..."
+ className="flex-1 rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-200 outline-none placeholder:text-slate-600"
+ />
+ {searchQuery.trim() && (
+ <span className="text-[10px] text-slate-600">
+ {searchMatchCount > 0 ? `${searchMatchIndex + 1}/${searchMatchCount}` : '0'}
+ </span>
+ )}
+ <button
+ onClick={() => doSearch(searchQuery, 'prev')}
+ disabled={!searchQuery.trim()}
+ className="btn-icon text-slate-500 hover:text-slate-300 disabled:opacity-30"
+ title="上一个 (Shift+Enter)"
+ >
+ <ChevronUp size={13} />
+ </button>
+ <button
+ onClick={() => doSearch(searchQuery, 'next')}
+ disabled={!searchQuery.trim()}
+ className="btn-icon text-slate-500 hover:text-slate-300 disabled:opacity-30"
+ title="下一个 (Enter)"
+ >
+ <ChevronDown size={13} />
+ </button>
+ <button
+ onClick={() => { setShowSearch(false); setSearchQuery(''); terminalRef.current?.focus() }}
+ className="btn-icon text-slate-500 hover:text-slate-300"
+ >
+ <X size={12} />
+ </button>
+ </div>
+ )}
  <div
  ref={containerRef}
- className={`overflow-hidden bg-slate-950 px-1 ${className}`}
- style={{ minHeight: 0 }}
+ className="flex-1 overflow-hidden bg-slate-950 px-1"
  />
+ </div>
  )
 }
 
@@ -492,6 +576,7 @@ function SplitPane({
  syncGroups,
  activeSplitId,
  onSetActiveSplit,
+ onTerminalData,
 }: {
  split: SplitDef
  onSplit: (id: string, direction: 'vertical' | 'horizontal') => void
@@ -512,6 +597,7 @@ function SplitPane({
 
  // 拖拽状态
  const [dragOver, setDragOver] = useState<'none' | 'left' | 'right' | 'top' | 'bottom'>('none')
+ const dragOverRef = useRef<'none' | 'left' | 'right' | 'top' | 'bottom'>('none')
  const dragRef = useRef<string | null>(null)
 
  const handleDragStart = (e: React.DragEvent) => {
@@ -537,22 +623,24 @@ function SplitPane({
  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
  const x = e.clientX - rect.left
  const y = e.clientY - rect.top
- const threshold = 0.3 // 30% 边缘触发
+ const threshold = 0.25 // 25% 边缘触发
 
+ let pos: 'none' | 'left' | 'right' | 'top' | 'bottom' = 'none'
  if (x / rect.width < threshold) {
- setDragOver('left')
+ pos = 'left'
  } else if (x / rect.width > 1 - threshold) {
- setDragOver('right')
+ pos = 'right'
  } else if (y / rect.height < threshold) {
- setDragOver('top')
+ pos = 'top'
  } else if (y / rect.height > 1 - threshold) {
- setDragOver('bottom')
- } else {
- setDragOver('none')
+ pos = 'bottom'
  }
+ dragOverRef.current = pos
+ setDragOver(pos)
  }
 
  const handleDragLeave = () => {
+ dragOverRef.current = 'none'
  setDragOver('none')
  }
 
@@ -561,11 +649,27 @@ function SplitPane({
  const sourceId = e.dataTransfer.getData('text/plain')
  if (!sourceId || sourceId === split.id || !onMerge) return
  setDragOver('none')
- // 映射 dragOver 状态到位置
- const posMap: Record<string, 'left' | 'right' | 'top' | 'bottom'> = {
- left: 'left', right: 'right', top: 'top', bottom: 'bottom',
+
+ // 直接用鼠标位置计算 drop 位置（避免 state 过期）
+ const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+ const x = e.clientX - rect.left
+ const y = e.clientY - rect.top
+ const threshold = 0.25
+
+ let pos: 'left' | 'right' | 'top' | 'bottom' = 'left'
+ if (x / rect.width < threshold) {
+ pos = 'left'
+ } else if (x / rect.width > 1 - threshold) {
+ pos = 'right'
+ } else if (y / rect.height < threshold) {
+ pos = 'top'
+ } else if (y / rect.height > 1 - threshold) {
+ pos = 'bottom'
+ } else {
+ // 中心区域：根据分屏方向决定默认插入位置
+ pos = split.direction === 'vertical' ? 'right' : 'bottom'
  }
- const pos = posMap[dragOver] || 'left'
+
  onMerge(sourceId, split.id, pos)
  }
 
@@ -680,9 +784,10 @@ function SplitPane({
 
  {/* 终端 */}
  <TerminalView
- connectionId={split.connectionId}
- sessionId={split.sessionId}
- className="flex-1"
+  connectionId={split.connectionId}
+  sessionId={split.sessionId}
+  className="flex-1"
+  onTerminalData={onTerminalData ? (data: string) => onTerminalData(split.sessionId, data) : undefined}
  />
  </div>
  )

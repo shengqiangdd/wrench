@@ -11,7 +11,8 @@
  * - sftp-ready 事件监听保障首次加载
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import VirtualList from '../../components/VirtualList'
 import {
   Folder,
   File,
@@ -36,6 +37,8 @@ import {
   Eye,
   Save,
   ExternalLink,
+  Search,
+  ChevronDown,
 } from 'lucide-react'
 import { useFileStore } from '../../stores/file-store'
 import { getWsClient } from '../../services/websocket'
@@ -98,22 +101,64 @@ function formatPerms(mode: number): string {
   return s.split('').map(c => p[parseInt(c)] || '---').join('')
 }
 
+/** 文件扩展名 → CodeMirror 语言标识映射 */
+const LANGUAGE_MAP: Record<string, string> = {
+  // JavaScript / TypeScript
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  ts: 'typescript', mts: 'typescript', cts: 'typescript',
+  jsx: 'jsx', tsx: 'tsx',
+  // Python
+  py: 'python', pyw: 'python', pyx: 'python',
+  // Go
+  go: 'go',
+  // Rust
+  rs: 'rust', rlib: 'rust',
+  // Java
+  java: 'java', class: 'java', jar: 'java',
+  // C / C++
+  c: 'c', cpp: 'cpp', cxx: 'cpp', cc: 'cpp',
+  h: 'c', hpp: 'cpp', hxx: 'cpp',
+  // CSS / 预处理器
+  css: 'css', scss: 'scss', less: 'less', sass: 'scss',
+  // HTML / 模板
+  html: 'html', htm: 'html', xhtml: 'html', vue: 'vue',
+  // XML
+  xml: 'xml', svg: 'xml', xsd: 'xml', xsl: 'xml',
+  // 数据格式
+  json: 'json', json5: 'json', jsonc: 'json',
+  yaml: 'yaml', yml: 'yaml', toml: 'toml',
+  csv: 'text', tsv: 'text',
+  // Markdown / 文档
+  md: 'markdown', mdx: 'markdown', markdown: 'markdown',
+  txt: 'text', log: 'text', diff: 'text', patch: 'text',
+  // 数据库
+  sql: 'sql', pgsql: 'sql', mysql: 'sql', sqlite: 'sql',
+  // Shell
+  sh: 'shell', bash: 'shell', zsh: 'shell', fish: 'shell',
+  // PHP
+  php: 'php', phtml: 'php', php3: 'php', php4: 'php', php5: 'php', php7: 'php', php8: 'php',
+  // Ruby
+  rb: 'ruby', rbs: 'ruby', gemfile: 'ruby', rake: 'ruby',
+  // Perl
+  pl: 'perl', pm: 'perl', t: 'perl',
+  // Lua
+  lua: 'lua',
+  // WebAssembly
+  wast: 'wast', wat: 'wast',
+  // Liquid 模板
+  liquid: 'liquid',
+  // Kubernetes / DevOps
+  dockerfile: 'dockerfile', docker: 'dockerfile',
+  env: 'dotenv', conf: 'nginx', cfg: 'ini', ini: 'ini',
+  makefile: 'makefile', mk: 'makefile',
+  terraform: 'hcl', tf: 'hcl', tfvars: 'hcl',
+  // 没有后缀或未知
+  '': 'text',
+}
+
 function detectLanguage(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || ''
-  const map: Record<string, string> = {
-    js: 'javascript', ts: 'typescript', jsx: 'jsx', tsx: 'tsx',
-    py: 'python', go: 'go', rs: 'rust', java: 'java',
-    c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
-    css: 'css', scss: 'scss', less: 'less',
-    html: 'html', htm: 'html', xml: 'xml', svg: 'xml',
-    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
-    md: 'markdown', txt: 'text', log: 'text',
-    sql: 'sql', sh: 'shell', bash: 'shell', zsh: 'shell',
-    php: 'php', rb: 'ruby', pl: 'perl', lua: 'lua',
-    dockerfile: 'dockerfile', docker: 'dockerfile',
-    env: 'dotenv', conf: 'nginx', cfg: 'ini',
-  }
-  return map[ext] || 'text'
+  return LANGUAGE_MAP[ext] || 'text'
 }
 
 /** 兜底的复制方案：当 navigator.clipboard 不可用时使用 */
@@ -335,7 +380,15 @@ export default function SftpBrowser({
   const [creatingDir, setCreatingDir] = useState(false)
   const [createName, setCreateName] = useState('')
   const [previewEntry, setPreviewEntry] = useState<SftpEntry | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; name: string; pct?: number } | null>(null)
   const [sftpReady, setSftpReady] = useState(false)
+  // 搜索
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showSearch, setShowSearch] = useState(false)
+  const [recursiveSearching, setRecursiveSearching] = useState(false)
+  const [allEntries, setAllEntries] = useState<SftpEntry[]>([])
+  const searchInputRef = useRef<HTMLInputElement>(null)
   // 弹窗提示（替代 alert）
   const [alertModal, setAlertModal] = useState<{ title: string; message: string } | null>(null)
   // 确认模态框（替代 confirm）
@@ -354,6 +407,7 @@ export default function SftpBrowser({
   const retryCountRef = useRef(0)
   const fileStore = useFileStore()
   const notifyRef = useRef<HTMLDivElement>(null)
+  const dragCounterRef = useRef(0)
 
   // 监听 sftp-ready 事件
   useEffect(() => {
@@ -440,6 +494,54 @@ export default function SftpBrowser({
   }
   const goHome = () => listDir('/')
   const refresh = () => listDir(currentPath)
+
+  // ─── 递归搜索 ───
+
+  const recursiveSearch = useCallback(async (dir: string, query: string): Promise<SftpEntry[]> => {
+    if (!sessionId) return []
+    const results: SftpEntry[] = []
+    const q = query.toLowerCase()
+    try {
+      const resp = await wsRef.current.request({
+        type: 'sftp',
+        connectionId: sessionId,
+        operation: 'list',
+        path: dir,
+      }, 15000)
+      if (resp.type === 'sftp-result' && resp.operation === 'list') {
+        const items = resp.files as SftpEntry[]
+        for (const item of items) {
+          if (item.name.toLowerCase().includes(q)) {
+            results.push({ ...item, path: dir === '/' ? `/${item.name}` : `${dir}/${item.name}` })
+          }
+          if (item.type === 'directory') {
+            const subDir = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`
+            const sub = await recursiveSearch(subDir, q)
+            results.push(...sub)
+          }
+        }
+      }
+    } catch {
+      // 无权限目录就跳过
+    }
+    return results
+  }, [sessionId])
+
+  const doRecursiveSearch = useCallback(async (query: string) => {
+    if (!query.trim() || !sessionId) return
+    setRecursiveSearching(true)
+    setAllEntries([])
+    try {
+      const results = await recursiveSearch(currentPath, query.trim())
+      setAllEntries(results)
+      setShowSearch(false)
+      setSearchQuery('')
+    } catch (err) {
+      setAlertModal({ title: '搜索失败', message: (err as Error).message })
+    } finally {
+      setRecursiveSearching(false)
+    }
+  }, [sessionId, currentPath, recursiveSearch])
 
   // ─── 操作处理 ───
 
@@ -608,8 +710,184 @@ export default function SftpBrowser({
     setContextMenu({ x: e.clientX, y: e.clientY, entry: null })
   }
 
+  // ─── 拖拽上传 ───
+
+  const CHUNK_SIZE = 5 * 1024 * 1024 // 每块 5MB
+  const CHUNK_THRESHOLD = 50 * 1024 * 1024 // 超过 50MB 才分块
+
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        const comma = result.indexOf(',')
+        resolve(comma > -1 ? result.slice(comma + 1) : result)
+      }
+      reader.onerror = () => reject(new Error(`读取文件失败: ${file.name}`))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const uploadSmallFile = useCallback(async (file: File, targetDir: string) => {
+    const data = await readFileAsBase64(file)
+    const remotePath = targetDir === '/' ? `/${file.name}` : `${targetDir}/${file.name}`
+    await wsClient.request({
+      type: 'sftp',
+      connectionId: sessionId,
+      operation: 'writefile',
+      path: remotePath,
+      content: data,
+    })
+  }, [sessionId, wsClient])
+
+  const uploadLargeFile = useCallback(async (file: File, targetDir: string, onChunkProgress?: (pct: number) => void) => {
+    const remotePath = targetDir === '/' ? `/${file.name}` : `${targetDir}/${file.name}`
+
+    // 1. chunk_start
+    const startResult: any = await wsClient.request({
+      type: 'sftp',
+      connectionId: sessionId,
+      operation: 'chunk_start',
+      path: remotePath,
+    })
+    if (!startResult.success) throw new Error(startResult.error || '分块上传初始化失败')
+    const { chunkId } = startResult
+
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+    let offset = 0
+    const fileReader = new FileReader()
+
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = file.slice(offset, offset + CHUNK_SIZE)
+      const b64 = await new Promise<string>((resolve, reject) => {
+        fileReader.onload = () => {
+          const result = fileReader.result as string
+          const comma = result.indexOf(',')
+          resolve(comma > -1 ? result.slice(comma + 1) : result)
+        }
+        fileReader.onerror = () => reject(new Error(`读取分块 ${i + 1}/${totalChunks} 失败`))
+        fileReader.readAsDataURL(chunk)
+      })
+
+      await wsClient.request({
+        type: 'sftp',
+        connectionId: sessionId,
+        operation: 'chunk_append',
+        chunkId,
+        content: b64,
+      })
+
+      offset += CHUNK_SIZE
+      onChunkProgress?.(Math.round(((i + 1) / totalChunks) * 100))
+    }
+
+    // 3. chunk_finish
+    await wsClient.request({
+      type: 'sftp',
+      connectionId: sessionId,
+      operation: 'chunk_finish',
+      chunkId,
+      targetPath: remotePath,
+    })
+  }, [sessionId, wsClient])
+
+  const uploadFile = useCallback(async (file: File, targetDir: string, onChunkProgress?: (pct: number) => void) => {
+    if (file.size >= CHUNK_THRESHOLD) {
+      await uploadLargeFile(file, targetDir, onChunkProgress)
+    } else {
+      await uploadSmallFile(file, targetDir)
+      onChunkProgress?.(100)
+    }
+  }, [uploadSmallFile, uploadLargeFile])
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    dragCounterRef.current++
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) setDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    dragCounterRef.current--
+    if (dragCounterRef.current === 0) setDragOver(false)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation()
+  }, [])
+
+    const doUpload = useCallback(async (files: File[], targetDir: string) => {
+    // 单文件且 >= 50MB -> 分块进度模式
+    if (files.length === 1 && files[0].size >= CHUNK_THRESHOLD) {
+      const file = files[0]
+      setUploadProgress({ current: 0, total: 100, name: file.name, pct: 0 })
+      try {
+        await uploadFile(file, targetDir, (pct: number) => {
+          setUploadProgress({ current: pct, total: 100, name: file.name, pct })
+        })
+      } catch (err: any) {
+        setUploadProgress(null)
+        setAlertModal({ title: '上传失败', message: err.message })
+        return
+      }
+      setUploadProgress(null)
+      listDir(currentPath)
+      setAlertModal({ title: '上传完成', message: `成功上传 ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB) 到 ${targetDir}` })
+      return
+    }
+
+    // 普通进度：文件列表
+    setUploadProgress({ current: 0, total: files.length, name: files[0].name })
+    let successCount = 0; let errorCount = 0; const errors: string[] = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      setUploadProgress({ current: i + 1, total: files.length, name: file.name })
+      try {
+        await uploadFile(file, targetDir); successCount++
+      } catch (err: any) {
+        errorCount++; errors.push(err.message)
+      }
+    }
+    setUploadProgress(null)
+    listDir(currentPath)
+    const title = errorCount === 0 ? '上传完成' : '上传完成（有错误）'
+    const msg = errorCount === 0
+      ? `成功上传 ${successCount} 个文件到 ${targetDir}`
+      : `成功 ${successCount}，失败 ${errorCount}
+${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.length - 3} 个错误` : ''}`
+    setAlertModal({ title, message: msg })
+  }, [uploadFile, listDir, currentPath])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    setDragOver(false); dragCounterRef.current = 0
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length === 0) return
+    if (!sessionId) { setAlertModal({ title: '无法上传', message: '请先连接到 SSH 服务器' }); return }
+    doUpload(files, currentPath)
+  }, [sessionId, currentPath, doUpload])
+
+  const handleUploadToDir = useCallback((targetDir: string) => {
+    const input = document.createElement('input')
+    input.type = 'file'; input.multiple = true
+    input.onchange = () => {
+      const files = input.files
+      if (!files || files.length === 0) return
+      if (!sessionId) { setAlertModal({ title: '无法上传', message: '请先连接到 SSH 服务器' }); return }
+      doUpload(Array.from(files), targetDir)
+    }
+    input.click()
+  }, [sessionId, doUpload])
+
   const pathParts = currentPath.split('/').filter(Boolean)
-  const { dirs, files } = sortEntries(entries)
+  const { dirs, files } = useMemo(() => sortEntries(entries), [entries])
+  // 合并为扁平列表用于虚拟滚动
+  const flatEntries = useMemo(() => {
+    if (entries.length === 0) return []
+    const dirItems = dirs.map((d) => ({ ...d, _isDir: true as const }))
+    const fileItems = files.map((f) => ({ ...f, _isDir: false as const }))
+    return [...dirItems, ...fileItems]
+  }, [dirs, files, entries.length])
 
   return (
     <div className={`flex h-full flex-col bg-slate-950 ${widthClass || ''}`}>
@@ -657,7 +935,65 @@ export default function SftpBrowser({
         >
           <FolderPlus size={14} />
         </button>
+        <div className="mx-1 h-4 w-px bg-slate-700/50" />
+        <button
+          onClick={() => handleUploadToDir(currentPath)}
+          className="btn-icon text-slate-500 hover:text-slate-300" title="上传文件"
+        >
+          <Upload size={14} />
+        </button>
+        <div className="flex-1" />
+        <button
+          onClick={() => {
+            setShowSearch(s => !s)
+            if (!showSearch) setTimeout(() => searchInputRef.current?.focus(), 50)
+          }}
+          className={`btn-icon ${showSearch ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}
+          title="搜索文件"
+        >
+          <Search size={14} />
+        </button>
       </div>
+
+      {/* 搜索栏 */}
+      {showSearch && (
+        <div className="flex items-center gap-1 border-b border-slate-700/30 px-2 py-1">
+          <Search size={13} className="shrink-0 text-slate-500" />
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                if (e.ctrlKey || e.metaKey) {
+                  doRecursiveSearch(searchQuery)
+                } else {
+                  // Enter → 本地过滤
+                }
+              }
+              if (e.key === 'Escape') { setShowSearch(false); setSearchQuery('') }
+            }}
+            placeholder={`在当前目录搜索... (Ctrl+Enter 递归搜索)`}
+            className="flex-1 rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-200 outline-none placeholder:text-slate-600"
+            autoFocus
+          />
+          <button
+            onClick={() => doRecursiveSearch(searchQuery)}
+            disabled={!searchQuery.trim() || !sessionId}
+            className="btn-ghost flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-40"
+            title="递归搜索子目录（Ctrl+Enter）"
+          >
+            <ChevronDown size={11} />
+            递归
+          </button>
+          <button
+            onClick={() => { setShowSearch(false); setSearchQuery('') }}
+            className="btn-icon text-slate-500 hover:text-slate-300"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       {/* 面包屑 */}
       <div className="flex items-center gap-0.5 overflow-x-auto border-b border-slate-700/30 px-2 py-1 text-xs">
@@ -714,50 +1050,82 @@ export default function SftpBrowser({
         </div>
       )}
 
+      {/* 上传进度条 */}
+      {uploadProgress && (
+        <div className="mx-2 mt-1 flex items-center gap-2 rounded bg-blue-500/10 px-3 py-1.5 text-xs text-blue-300">
+          <Loader2 size={12} className="animate-spin shrink-0" />
+          <span className="flex-1 truncate">
+            上传 {uploadProgress.current}/{uploadProgress.total}: {uploadProgress.name}
+          </span>
+          <span className="shrink-0 text-blue-400">
+            {Math.round((uploadProgress.current / uploadProgress.total) * 100)}%
+          </span>
+        </div>
+      )}
+
+      {/* 拖拽悬浮遮罩 */}
+      {dragOver && sftpReady && (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center"
+          style={{ pointerEvents: 'none' }}
+        >
+          <div className="rounded-xl border-2 border-dashed border-blue-500/40 bg-blue-500/5 px-8 py-6 text-center">
+            <Upload size={32} className="mx-auto text-blue-400" />
+            <p className="mt-2 text-sm font-medium text-blue-300">拖拽上传到当前目录</p>
+            <p className="mt-1 text-xs text-blue-400/60">{currentPath}</p>
+          </div>
+        </div>
+      )}
+
       {/* 文件列表 */}
       <div
-        className="flex-1 overflow-y-auto"
+        className="relative flex-1 overflow-hidden"
         onContextMenu={handleEmptyContextMenu}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
-        {/* 目录 */}
-        {dirs.map((dir) => (
-          <div key={dir.path}>
-            <div
-              className="group flex cursor-pointer items-center gap-1 px-2 py-1 text-xs hover:bg-slate-800/50"
-              onClick={() => navigateTo(dir.path)}
-              onContextMenu={(e) => handleEntryContextMenu(e, dir)}
-            >
-              <Folder size={14} className="shrink-0 text-amber-400" />
-              <span className="flex-1 truncate text-slate-300">{dir.name}</span>
-              <span className="text-[10px] text-slate-600 opacity-0 group-hover:opacity-100">
-                {formatPerms(parseInt(dir.permissions, 8))}
-              </span>
-            </div>
-          </div>
-        ))}
-
-        {/* 文件 — 单击查看，双击编辑 */}
-        {files.map((file) => (
-          <div
-            key={file.path}
-            className="group flex cursor-pointer items-center gap-2 px-2 py-1 text-xs hover:bg-slate-800/50"
-            onClick={() => openForView(file)}
-            onDoubleClick={() => handleFileDoubleClick(file)}
-            onContextMenu={(e) => handleEntryContextMenu(e, file)}
-          >
-            {getFileIcon(file.name)}
-            <span className="flex-1 truncate text-slate-300">{file.name}</span>
-            <span className="shrink-0 text-[10px] text-slate-600">{formatSize(file.size)}</span>
-          </div>
-        ))}
-
-        {/* 空状态 */}
-        {!loading && entries.length === 0 && (
-          <div className="flex flex-col items-center py-8 text-slate-600" onContextMenu={handleEmptyContextMenu}>
+        {!loading && entries.length === 0 ? (
+          <div className="flex flex-col items-center pt-8 text-slate-600" onContextMenu={handleEmptyContextMenu}>
             <Folder size={24} />
             <p className="mt-1 text-xs">空目录</p>
             <p className="mt-2 text-[10px] text-slate-600">右键空白处新建文件或文件夹</p>
           </div>
+        ) : (
+          <VirtualList
+            items={flatEntries}
+            itemHeight={24}
+            className="h-full"
+            virtualizeThreshold={100}
+            getKey={(item) => item.path}
+            renderItem={(item) =>
+              item._isDir ? (
+                <div
+                  className="group flex cursor-pointer items-center gap-1 px-2 py-1 text-xs hover:bg-slate-800/50"
+                  onClick={() => navigateTo(item.path)}
+                  onContextMenu={(e) => handleEntryContextMenu(e, item)}
+                >
+                  <Folder size={14} className="shrink-0 text-amber-400" />
+                  <span className="flex-1 truncate text-slate-300">{item.name}</span>
+                  <span className="text-[10px] text-slate-600 opacity-0 group-hover:opacity-100">
+                    {formatPerms(parseInt(item.permissions, 8))}
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="group flex cursor-pointer items-center gap-2 px-2 py-1 text-xs hover:bg-slate-800/50"
+                  onClick={() => openForView(item)}
+                  onDoubleClick={() => handleFileDoubleClick(item)}
+                  onContextMenu={(e) => handleEntryContextMenu(e, item)}
+                >
+                  {getFileIcon(item.name)}
+                  <span className="flex-1 truncate text-slate-300">{item.name}</span>
+                  <span className="shrink-0 text-[10px] text-slate-600">{formatSize(item.size)}</span>
+                </div>
+              )
+            }
+          />
         )}
       </div>
 
@@ -799,8 +1167,11 @@ export default function SftpBrowser({
                 </>
               )}
               {contextMenu.entry.type === 'directory' && (
-                <button className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700" disabled>
-                  <Upload size={12} /> 上传到此（WIP）
+                <button
+                  onClick={() => { handleUploadToDir(contextMenu.entry!.path); setContextMenu(null) }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
+                >
+                  <Upload size={12} /> 上传到此
                 </button>
               )}
               <div className="mx-2 my-1 border-t border-slate-700/50" />
