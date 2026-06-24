@@ -313,13 +313,16 @@ function SftpBrowser({
   const fileStore = useFileStore()
   const notifyRef = useRef<HTMLDivElement>(null)
 
-  // 读取目录
+  // 读取目录 — 用 ref 避免 wsClient 引用变动导致 useCallback 失效
+  const wsClientRef = useRef(wsClient)
+  wsClientRef.current = wsClient
+
   const listDir = useCallback(async (dirPath: string) => {
     if (!sessionId) return
     setLoading(true)
     setError(null)
     try {
-      const resp = await wsClient.request({
+      const resp = await wsClientRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: 'list',
@@ -334,12 +337,16 @@ function SftpBrowser({
     } finally {
       setLoading(false)
     }
-  }, [sessionId, wsClient])
+  }, [sessionId])
 
-  // 初始化
+  // 初始化 — sessionId 变化时自动加载根目录
   useEffect(() => {
     if (sessionId) {
-      listDir('/')
+      setCurrentPath('/')
+      setEntries([])
+      setError(null)
+      const timer = setTimeout(() => listDir('/'), 0)
+      return () => clearTimeout(timer)
     } else {
       setEntries([])
       setCurrentPath('/')

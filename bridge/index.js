@@ -507,9 +507,10 @@ function handleSftp(ws, connectionId, requestId, payload) {
   switch (operation) {
     case 'list': {
       const { path: dirPath } = payload
-      // 规范化父路径：去掉尾部斜杠，确保根目录为 '/'
-      const parent = dirPath === '/' ? '' : (dirPath || '').replace(/\/+$/, '')
-      conn.sftp.readdir(dirPath || '.', (err, list) => {
+      // 规范化：根目录传 '.' 给 ssh2，同时正确拼接路径前缀
+      const readPath = dirPath === '/' ? '.' : dirPath.replace(/\/+$/, '')
+      const prefix = dirPath === '/' ? '/' : (dirPath || '').replace(/\/+$/, '') + '/'
+      conn.sftp.readdir(readPath, (err, list) => {
         if (err) return sendError(ws, connectionId, requestId, 'SFTP_ERROR', err.message)
         sendJson(ws, {
           type: 'sftp-result',
@@ -518,7 +519,7 @@ function handleSftp(ws, connectionId, requestId, payload) {
           operation: 'list',
           files: (list || []).map(item => ({
             name: item.filename,
-            path: parent + '/' + item.filename,
+            path: prefix + item.filename,
             type: (item.attrs.mode & 0o40000) ? 'directory' : 'file',
             size: item.attrs.size,
             modifyTime: item.attrs.mtime * 1000,

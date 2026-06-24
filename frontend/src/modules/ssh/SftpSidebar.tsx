@@ -5,7 +5,8 @@
  * - 树形目录浏览 + 面包屑导航
  * - 新建文件/文件夹（工具栏按钮 + 右键空白处菜单）
  * - 删除、重命名、复制路径
- * - 双击文件打开编辑（使用文件管理器编辑器）
+ * - 单击文件查看内容（模态框只读/编辑模式）
+ * - 双击文件打开查看
  * - 文件下载
  * - 右键菜单（文件和空白处）
  */
@@ -32,6 +33,9 @@ import {
   X,
   Check,
   Loader2,
+  Eye,
+  Save,
+  Terminal,
 } from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import { useFileStore } from '../../stores/file-store'
@@ -96,6 +100,179 @@ function detectLanguage(filename: string): string {
   return map[ext] || 'text'
 }
 
+// ─── 文件查看/编辑模态框 ───
+
+interface FilePreviewModalProps {
+  entry: SftpEntry
+  sessionId: string
+  onClose: () => void
+  onSaved: () => void
+}
+
+function FilePreviewModal({ entry, sessionId, onClose, onSaved }: FilePreviewModalProps) {
+  const [content, setContent] = useState<string>('')
+  const [originalContent, setOriginalContent] = useState<string>('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const wsClient = getWsClient()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    loadFile()
+  }, [entry.path])
+
+  const loadFile = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const resp = await wsClient.request({
+        type: 'sftp',
+        connectionId: sessionId,
+        operation: 'readfile',
+        path: entry.path,
+      })
+      if (resp.type === 'sftp-result' && resp.operation === 'readfile') {
+        const decoded = atob(resp.data as string)
+        setContent(decoded)
+        setOriginalContent(decoded)
+      }
+    } catch (err) {
+      setError('读取失败: ' + (err as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSaveMsg(null)
+    try {
+      const encoded = btoa(content)
+      await wsClient.request({
+        type: 'sftp',
+        connectionId: sessionId,
+        operation: 'writefile',
+        path: entry.path,
+        content: encoded,
+      })
+      setOriginalContent(content)
+      setSaveMsg('✅ 已保存')
+      setTimeout(() => setSaveMsg(null), 2000)
+      onSaved()
+    } catch (err) {
+      setSaveMsg('❌ 保存失败: ' + (err as Error).message)
+      setTimeout(() => setSaveMsg(null), 3000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const isDirty = content !== originalContent
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="mx-4 flex max-h-[80vh] w-full max-w-3xl flex-col rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between border-b border-slate-700/50 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            {getFileIcon(entry.name)}
+            <span className="text-sm font-medium text-slate-200">{entry.name}</span>
+            <span className="text-[10px] text-slate-500">
+              {formatSize(entry.size)} · {entry.path}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            {!editMode && (
+              <button
+                onClick={() => setEditMode(true)}
+                className="btn-icon text-slate-500 hover:text-sky-400"
+                title="编辑"
+              >
+                <Edit3 size={14} />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="btn-icon text-slate-500 hover:text-slate-300"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* 内容区 */}
+        <div className="flex-1 overflow-auto p-0">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 size={24} className="animate-spin text-slate-500" />
+            </div>
+          ) : error ? (
+            <div className="p-4 text-sm text-red-400">{error}</div>
+          ) : editMode ? (
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="h-[50vh] w-full resize-none border-0 bg-transparent p-4 font-mono text-sm text-slate-200 outline-none"
+              spellCheck={false}
+            />
+          ) : (
+            <pre className="h-[50vh] w-full overflow-auto whitespace-pre-wrap break-all p-4 font-mono text-sm text-slate-300">
+              {content}
+            </pre>
+          )}
+        </div>
+
+        {/* 底部工具栏 */}
+        <div className="flex items-center justify-between border-t border-slate-700/50 px-4 py-2">
+          <div className="flex items-center gap-2">
+            {editMode && (
+              <button
+                onClick={() => setEditMode(false)}
+                className="btn-ghost text-xs text-slate-400 hover:text-slate-300"
+              >
+                取消编辑
+              </button>
+            )}
+            {saveMsg && (
+              <span className={`text-xs ${saveMsg.includes('❌') ? 'text-red-400' : 'text-emerald-400'}`}>
+                {saveMsg}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {!editMode && (
+              <span className="text-[10px] text-slate-600">点击右上角 ✏️ 编辑</span>
+            )}
+            {editMode && (
+              <button
+                onClick={handleSave}
+                disabled={saving || !isDirty}
+                className={`btn-primary flex items-center gap-1 px-3 py-1.5 text-xs ${
+                  !isDirty ? 'opacity-50' : ''
+                }`}
+              >
+                {saving ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Save size={12} />
+                )}
+                保存
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── 主组件 ───
 
 export default function SftpSidebar({ sessionId }: Props) {
@@ -111,19 +288,22 @@ export default function SftpSidebar({ sessionId }: Props) {
   const [creatingFile, setCreatingFile] = useState(false)
   const [creatingDir, setCreatingDir] = useState(false)
   const [createName, setCreateName] = useState('')
+  const [previewEntry, setPreviewEntry] = useState<SftpEntry | null>(null)
 
   const wsClient = getWsClient()
   const fileStore = useFileStore()
   const notifyRef = useRef<HTMLDivElement>(null)
 
-  // 读取目录
+  // 读取目录 — 去掉 useCallback 对 wsClient 的依赖，直接用 ref
+  const wsRef = useRef(wsClient)
+  wsRef.current = wsClient
+
   const listDir = useCallback(async (dirPath: string) => {
-    console.log('[SFTP] listDir called', dirPath, sessionId)
     if (!sessionId) return
     setLoading(true)
     setError(null)
     try {
-      const resp = await wsClient.request({
+      const resp = await wsRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: 'list',
@@ -138,12 +318,18 @@ export default function SftpSidebar({ sessionId }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [sessionId, wsClient])
+  }, [sessionId]) // 只依赖 sessionId
 
   // sessionId 变化时加载
   useEffect(() => {
     if (sessionId) {
-      listDir('/')
+      // 重置状态
+      setCurrentPath('/')
+      setEntries([])
+      setError(null)
+      // 用 setTimeout 确保状态已重置
+      const timer = setTimeout(() => listDir('/'), 0)
+      return () => clearTimeout(timer)
     } else {
       setEntries([])
       setCurrentPath('/')
@@ -169,8 +355,9 @@ export default function SftpSidebar({ sessionId }: Props) {
 
   const handleDelete = async (entry: SftpEntry) => {
     if (!sessionId) return
+    if (!confirm(`确定删除 ${entry.type === 'directory' ? '目录' : '文件'} "${entry.name}" 吗？`)) return
     try {
-      await wsClient.request({
+      await wsRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: entry.type === 'directory' ? 'rmdir' : 'unlink',
@@ -190,7 +377,7 @@ export default function SftpSidebar({ sessionId }: Props) {
       : ''
     const newPath = parentPath ? `${parentPath}/${newName}` : newName
     try {
-      await wsClient.request({
+      await wsRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: 'rename',
@@ -206,11 +393,10 @@ export default function SftpSidebar({ sessionId }: Props) {
   }
 
   const handleCreate = async (type: 'file' | 'directory') => {
-    console.log('[SFTP] handleCreate called', type, createName, sessionId)
     if (!sessionId || !createName.trim()) return
     const fullPath = currentPath === '/' ? `/${createName}` : `${currentPath}/${createName}`
     try {
-      await wsClient.request({
+      await wsRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: type === 'directory' ? 'mkdir' : 'writefile',
@@ -226,45 +412,15 @@ export default function SftpSidebar({ sessionId }: Props) {
     }
   }
 
-  const openInEditor = async (entry: SftpEntry) => {
-    if (!sessionId || entry.type === 'directory') return
-    const tabId = `sftp_${sessionId}_${entry.path}`
-    if (fileStore.openTabs.some(t => t.id === tabId)) {
-      fileStore.setActiveTab(tabId)
-      return
-    }
-    try {
-      const resp = await wsClient.request({
-        type: 'sftp',
-        connectionId: sessionId,
-        operation: 'readfile',
-        path: entry.path,
-      })
-      if (resp.type === 'sftp-result' && resp.operation === 'readfile') {
-        const decoded = atob(resp.data as string)
-        const tab: FileTab = {
-          id: tabId,
-          name: entry.name,
-          path: entry.path,
-          source: 'sftp',
-          language: detectLanguage(entry.name),
-          content: decoded,
-          originalContent: decoded,
-          isDirty: false,
-          sessionId,
-        }
-        fileStore.openFile(tab)
-        setContextMenu(null)
-      }
-    } catch (err) {
-      alert('打开文件失败: ' + (err as Error).message)
-    }
+  const openForView = (entry: SftpEntry) => {
+    if (entry.type === 'directory') return
+    setPreviewEntry(entry)
   }
 
   const handleDownload = async (entry: SftpEntry) => {
     if (!sessionId || entry.type === 'directory') return
     try {
-      const resp = await wsClient.request({
+      const resp = await wsRef.current.request({
         type: 'sftp',
         connectionId: sessionId,
         operation: 'readfile',
@@ -287,16 +443,13 @@ export default function SftpSidebar({ sessionId }: Props) {
 
   // ─── 右键事件 ───
 
-  // 文件/目录上右键
   const handleEntryContextMenu = (e: React.MouseEvent, entry: SftpEntry) => {
     e.preventDefault()
     e.stopPropagation()
     setContextMenu({ x: e.clientX, y: e.clientY, entry })
   }
 
-  // 空白处右键（在文件列表区域空白处右键）
   const handleEmptyContextMenu = (e: React.MouseEvent) => {
-    // 只在右键时触发
     if (e.type !== 'contextmenu') return
     e.preventDefault()
     setContextMenu({ x: e.clientX, y: e.clientY, entry: null })
@@ -387,7 +540,7 @@ export default function SftpSidebar({ sessionId }: Props) {
         </div>
       )}
 
-      {/* 文件列表 — 右键空白处弹出菜单 */}
+      {/* 文件列表 */}
       <div
         className="flex-1 overflow-y-auto"
         onContextMenu={handleEmptyContextMenu}
@@ -409,12 +562,13 @@ export default function SftpSidebar({ sessionId }: Props) {
           </div>
         ))}
 
-        {/* 文件列表 */}
+        {/* 文件列表 — 单击查看、双击编辑 */}
         {files.map((file) => (
           <div
             key={file.path}
             className="group flex cursor-pointer items-center gap-2 px-2 py-1 text-xs hover:bg-slate-800/50"
-            onDoubleClick={() => openInEditor(file)}
+            onClick={() => openForView(file)}
+            onDoubleClick={() => openForView(file)}
             onContextMenu={(e) => handleEntryContextMenu(e, file)}
           >
             {getFileIcon(file.name)}
@@ -447,15 +601,14 @@ export default function SftpSidebar({ sessionId }: Props) {
           onClick={(e) => e.stopPropagation()}
         >
           {contextMenu.entry ? (
-            /* 文件/目录上的右键菜单 */
             <>
               {contextMenu.entry.type === 'file' && (
                 <>
                   <button
-                    onClick={() => openInEditor(contextMenu.entry!)}
+                    onClick={() => { openForView(contextMenu.entry!); setContextMenu(null) }}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
                   >
-                    <FileCode size={12} /> 编辑
+                    <Eye size={12} /> 查看
                   </button>
                   <button
                     onClick={() => handleDownload(contextMenu.entry!)}
@@ -498,7 +651,6 @@ export default function SftpSidebar({ sessionId }: Props) {
               </button>
             </>
           ) : (
-            /* 空白处右键菜单 - 新建文件/文件夹 */
             <>
               <button
                 onClick={() => { setCreatingFile(true); setCreatingDir(false); setCreateName(''); setContextMenu(null) }}
@@ -556,6 +708,16 @@ export default function SftpSidebar({ sessionId }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── 文件查看/编辑模态框 ── */}
+      {previewEntry && (
+        <FilePreviewModal
+          entry={previewEntry}
+          sessionId={sessionId}
+          onClose={() => setPreviewEntry(null)}
+          onSaved={() => refresh()}
+        />
       )}
     </div>
   )
