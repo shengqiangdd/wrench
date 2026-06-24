@@ -15,6 +15,8 @@ export interface SplitDef {
   connectionId: string
   sessionId: string
   direction: 'vertical' | 'horizontal'
+  /** 命令同步组：同一组的分屏会同步输入（空字符串表示不同步） */
+  syncGroup?: string
 }
 
 /** 文件管理页面连接状态 */

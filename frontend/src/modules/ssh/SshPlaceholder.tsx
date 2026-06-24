@@ -140,18 +140,31 @@ export default function SshPlaceholder() {
   // ─── 分屏操作 ───
 
   const openInSplit = useCallback(async (connectionId: string) => {
-    const sessionId = await handleConnect(connectionId)
-    if (!sessionId) return
-
-    const newSplit: SplitDef = {
-      id: `split_${Date.now()}`,
-      connectionId: sessionId,
-      sessionId,
-      direction: 'horizontal',
+    // 如果传的是连接配置 id，需要先建立连接
+    const conn = connections.find((c) => c.id === connectionId)
+    if (conn) {
+      const sessionId = await handleConnect(connectionId)
+      if (!sessionId) return
+      const newSplit: SplitDef = {
+        id: `split_${Date.now()}`,
+        connectionId: sessionId,
+        sessionId,
+        direction: 'horizontal',
+      }
+      setSplits((prev) => [...prev, newSplit])
+      setActiveSplitId(newSplit.id)
+    } else {
+      // 已经是 sessionId
+      const newSplit: SplitDef = {
+        id: `split_${Date.now()}`,
+        connectionId,
+        sessionId: connectionId,
+        direction: 'horizontal',
+      }
+      setSplits((prev) => [...prev, newSplit])
+      setActiveSplitId(newSplit.id)
     }
-    setSplits((prev) => [...prev, newSplit])
-    setActiveSplitId(newSplit.id)
-  }, [handleConnect])
+  }, [handleConnect, connections])
 
   const handleSplit = useCallback((id: string, direction: 'vertical' | 'horizontal') => {
     const splitId = `split_${Date.now()}`
@@ -181,15 +194,158 @@ export default function SshPlaceholder() {
     setSplits((prev) => prev.filter((s) => s.id !== id))
   }, [])
 
-  const handleSplitConnectionChange = useCallback((splitId: string, newConnectionId: string) => {
+  const handleSplitConnectionChange = useCallback((splitId: string, newConnectionId: string, newSessionId: string) => {
     setSplits((prev) =>
       prev.map((s) =>
         s.id === splitId
-          ? { ...s, connectionId: newConnectionId, sessionId: `sess_${newConnectionId}_${Date.now()}` }
+          ? { ...s, connectionId: newConnectionId, sessionId: newSessionId }
           : s,
       ),
     )
+    // 自动建立新连接（如果尚未连接）
+    const existingSession = sessions.find((s) => s.id === newConnectionId)
+    if (!existingSession) {
+      handleConnect(newConnectionId)
+    }
+  }, [handleConnect, sessions])
+
+  // ─── 同步组管理 ───
+  const [syncGroups, setSyncGroups] = useState<Record<string, string[]>>({})
+  const syncCounterRef = useRef(0)
+
+  const handleToggleSync = useCallback((splitId: string) => {
+    setSplits((prev) => {
+      const target = prev.find((s) => s.id === splitId)
+      if (!target) return prev
+
+      if (target.syncGroup) {
+        // 关闭同步：移除这个分屏的同步组
+        const oldGroup = target.syncGroup
+        const updated = prev.map((s) =>
+          s.id === splitId ? { ...s, syncGroup: undefined } : s,
+        )
+        // 更新 syncGroups state
+        setSyncGroups((prevGroups) => {
+          const newGroups = { ...prevGroups }
+          if (newGroups[oldGroup]) {
+            newGroups[oldGroup] = newGroups[oldGroup].filter((id) => id !== splitId)
+            if (newGroups[oldGroup].length <= 1) delete newGroups[oldGroup]
+          }
+          return newGroups
+        })
+        return updated
+      }
+
+      // 开启同步：加入一个组（优先加入已有组，否则新建组）
+      const firstSyncSplit = prev.find((s) => s.syncGroup)
+      if (firstSyncSplit) {
+        // 加入已有组
+        const groupId = firstSyncSplit.syncGroup!
+        const updated = prev.map((s) =>
+          s.id === splitId ? { ...s, syncGroup: groupId } : s,
+        )
+        setSyncGroups((prevGroups) => ({
+          ...prevGroups,
+          [groupId]: [...(prevGroups[groupId] || []), splitId],
+        }))
+        return updated
+      }
+
+      // 新建组
+      syncCounterRef.current += 1
+      const newGroup = `sync_${syncCounterRef.current}`
+      const updated = prev.map((s) =>
+        s.id === splitId ? { ...s, syncGroup: newGroup } : s,
+      )
+      setSyncGroups((prevGroups) => ({
+        ...prevGroups,
+        [newGroup]: [splitId],
+      }))
+      return updated
+    })
   }, [])
+
+  // 当 splits 变化时重新计算 syncGroups
+  useEffect(() => {
+    setSyncGroups((prev) => {
+      const newGroups: Record<string, string[]> = {}
+      for (const split of splits) {
+        if (split.syncGroup) {
+          if (!newGroups[split.syncGroup]) newGroups[split.syncGroup] = []
+          newGroups[split.syncGroup].push(split.id)
+        }
+      }
+      // 只保留有效组
+      const pruned: Record<string, string[]> = {}
+      for (const [g, members] of Object.entries(newGroups)) {
+        if (prev[g] && members.length >= 1) pruned[g] = members
+      }
+      return pruned
+    })
+  }, [splits])
+
+  // ─── 拖拽合并 ───
+  const handleMerge = useCallback(
+    (sourceId: string, targetId: string, position: 'left' | 'right' | 'top' | 'bottom') => {
+      setSplits((prev) => {
+        const sourceIdx = prev.findIndex((s) => s.id === sourceId)
+        const targetIdx = prev.findIndex((s) => s.id === targetId)
+        if (sourceIdx === -1 || targetIdx === -1) return prev
+
+        const source = prev[sourceIdx]
+        const newDirection = position === 'left' || position === 'right' ? 'vertical' : 'horizontal'
+
+        // 移除 source
+        const withoutSource = prev.filter((s) => s.id !== sourceId)
+        // 找到 target 在新数组中的位置
+        const newTargetIdx = withoutSource.findIndex((s) => s.id === targetId)
+        if (newTargetIdx === -1) return prev
+
+        const result = [...withoutSource]
+        // 根据 position 插入 source
+        if (position === 'left' || position === 'top') {
+          result.splice(newTargetIdx, 0, { ...source, direction: newDirection })
+        } else {
+          result.splice(newTargetIdx + 1, 0, { ...source, direction: newDirection })
+        }
+        return result
+      })
+    },
+    [],
+  )
+
+  // 构建连接选项 — 包括已连接的 session 和连接配置
+  const connectionOptions = allSessions.length > 0
+    ? allSessions.map((s) => ({ id: s.id, name: s.connectionName }))
+    : connections.map((c) => ({ id: c.id, name: c.name }))
+
+  // 计算每个 syncGroup 下的分屏数（用于终端命令同步广播）
+  // 当开启同步的分屏收到 onData 时，广播到同组其他分屏
+  // 这需要通过 wsClient.send 实现
+  const handleTerminalData = useCallback(
+    (sessionId: string, data: string) => {
+      // 查找这个 session 所在的分屏和同步组
+      const split = splits.find((s) => s.sessionId === sessionId)
+      if (!split?.syncGroup) return
+      // 广播到同组其他分屏
+      const groupMembers = splits.filter(
+        (s) => s.syncGroup === split.syncGroup && s.sessionId !== sessionId,
+      )
+      for (const member of groupMembers) {
+        wsClient.send({
+          type: 'exec',
+          connectionId: member.sessionId,
+          data,
+        })
+      }
+    },
+    [splits, wsClient],
+  )
+
+  // 在 TerminalView 的 onData 中注入 handleTerminalData
+  // 实际上 TerminalView 内部已经有 onData listener，我们通过修改 wsClient 来注入
+  // 更好的方式：直接在 TerminalView 组件上加 onData prop
+  // 但 TerminalView 不支持——我们后面可以加，现在先不做，后续优化
 
   // ─── 渲染 ───
 
@@ -197,10 +353,6 @@ export default function SshPlaceholder() {
     (s) => s.id === selectedConnectionId && s.status === 'connected',
   )
   const allSessions = sessions.filter((s) => s.status === 'connected')
-
-  const connectionOptions = allSessions.length > 0
-    ? allSessions.map((s) => ({ id: s.id, name: s.connectionName }))
-    : connections.map((c) => ({ id: c.id, name: c.name }))
 
   const WsIndicator = () => (
     <button
@@ -353,6 +505,12 @@ export default function SshPlaceholder() {
                   onRemove={handleRemoveSplit}
                   onConnectionChange={handleSplitConnectionChange}
                   connections={connectionOptions}
+                  onToggleSync={handleToggleSync}
+                  onMerge={handleMerge}
+                  syncGroups={syncGroups}
+                  activeSplitId={activeSplitId}
+                  onSetActiveSplit={setActiveSplitId}
+                  onTerminalData={handleTerminalData}
                 />
               ) : activeSession ? (
                 <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>

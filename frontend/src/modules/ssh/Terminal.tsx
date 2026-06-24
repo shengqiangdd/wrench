@@ -21,6 +21,8 @@ interface Props {
  className?: string
  onConnected?: () => void
  onDisconnected?: () => void
+ /** 命令同步：收到用户输入时回调（用于广播到同组其他分屏） */
+ onTerminalData?: (data: string) => void
 }
 
 // 主题配色（与终端一致）
@@ -47,7 +49,7 @@ const TERMINAL_THEME = {
  brightWhite: '#f1f5f9',
 }
 
-export default function TerminalView({ connectionId, sessionId, className = '', onConnected, onDisconnected }: Props) {
+export default function TerminalView({ connectionId, sessionId, className = '', onConnected, onDisconnected, onTerminalData }: Props) {
  const containerRef = useRef<HTMLDivElement>(null)
  const terminalRef = useRef<XTerm | null>(null)
  const fitAddonRef = useRef<FitAddon | null>(null)
@@ -109,6 +111,8 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  connectionId,
  data: encoded,
  })
+ // 命令同步：广播到同组其他分屏
+ onTerminalData?.(encoded)
  })
 
  // 监听终端数据（来自后端）
@@ -160,11 +164,15 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  }
  })
 
- // Resize 监听
- const observer = new ResizeObserver(() => {
+ // Resize 监听 — 用 rAF 确保 DOM 就绪后再 fit
+ const doFit = () => {
+ if (disposedRef.current) return
+ requestAnimationFrame(() => {
  if (disposedRef.current) return
  try { fitAddon.fit() } catch { /* ignore */ }
  })
+ }
+ const observer = new ResizeObserver(doFit)
  observer.observe(container)
 
  // 发送 resize 到后端
@@ -177,24 +185,24 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  })
  })
 
-  // 定时检查 term 是否还存活（避免残留 rAF 导致崩溃）
-  const healthCheck = setInterval(() => {
-    if (disposedRef.current) {
-      clearInterval(healthCheck)
-      return
-    }
-    if (!document.contains(container)) {
-      clearInterval(healthCheck)
-      disposedRef.current = true
-      observer.disconnect()
-      try {
-        if (terminalRef.current) {
-          terminalRef.current.dispose()
-          terminalRef.current = null
-        }
-      } catch {}
-    }
-  }, 3000)
+ // 定时检查 term 是否还存活（避免残留 rAF 导致崩溃）
+ const healthCheck = setInterval(() => {
+ if (disposedRef.current) {
+ clearInterval(healthCheck)
+ return
+ }
+ if (!document.contains(container)) {
+ clearInterval(healthCheck)
+ disposedRef.current = true
+ observer.disconnect()
+ try {
+ if (terminalRef.current) {
+ terminalRef.current.dispose()
+ terminalRef.current = null
+ }
+ } catch {}
+ }
+ }, 3000)
 
  return () => {
  disposedRef.current = true
@@ -237,8 +245,19 @@ interface SplitContainerProps {
  splits: SplitDef[]
  onSplit: (id: string, direction: 'vertical' | 'horizontal') => void
  onRemove: (id: string) => void
- onConnectionChange: (id: string, connectionId: string) => void
+ onConnectionChange: (id: string, connectionId: string, sessionId: string) => void
  connections: Array<{ id: string; name: string }>
+ /** 命令同步切换 */
+ onToggleSync?: (id: string) => void
+ /** 拖动合并 */
+ onMerge?: (sourceId: string, targetId: string, position: 'left' | 'right' | 'top' | 'bottom') => void
+ /** 同步组映射：syncGroup → split ID 列表 */
+ syncGroups?: Record<string, string[]>
+ /** 当前活跃的分屏 ID */
+ activeSplitId?: string | null
+ onSetActiveSplit?: (id: string) => void
+ /** 命令同步：分屏收到的终端输入 */
+ onTerminalData?: (sessionId: string, data: string) => void
 }
 
 export function SplitContainer({
@@ -247,6 +266,12 @@ export function SplitContainer({
  onRemove,
  onConnectionChange,
  connections,
+ onToggleSync,
+ onMerge,
+ syncGroups,
+ activeSplitId,
+ onSetActiveSplit,
+ onTerminalData,
 }: SplitContainerProps) {
  if (splits.length === 0) return null
 
@@ -260,16 +285,20 @@ export function SplitContainer({
  onRemove={onRemove}
  onConnectionChange={onConnectionChange}
  connections={connections}
+ onToggleSync={onToggleSync}
+ onMerge={onMerge}
+ syncGroups={syncGroups}
+ activeSplitId={activeSplitId}
+ onSetActiveSplit={onSetActiveSplit}
+ onTerminalData={onTerminalData}
  />
  )
  }
 
- // 多个分屏：根据各自方向分组
+ // 多个分屏：按 50/50 分配
  const firstDirection = splits[0].direction
  const groupA: SplitDef[] = []
  const groupB: SplitDef[] = []
-
- // 按 50/50 分配或按方向分组
  const mid = Math.ceil(splits.length / 2)
  for (let i = 0; i < splits.length; i++) {
  if (i < mid) groupA.push(splits[i])
@@ -289,12 +318,18 @@ export function SplitContainer({
  style={{ flex: groupA.length, minHeight: 0, minWidth: 0 }}
  >
  <SplitContainer
- key={`split-a-${groupA.map(s => s.id).join('-')}`}
+ key={`split-a-${groupA.map((s) => s.id).join('-')}`}
  splits={groupA}
  onSplit={onSplit}
  onRemove={onRemove}
  onConnectionChange={onConnectionChange}
  connections={connections}
+ onToggleSync={onToggleSync}
+ onMerge={onMerge}
+ syncGroups={syncGroups}
+ activeSplitId={activeSplitId}
+ onSetActiveSplit={onSetActiveSplit}
+ onTerminalData={onTerminalData}
  />
  </div>
 
@@ -311,14 +346,20 @@ export function SplitContainer({
  className="flex overflow-hidden"
  style={{ flex: groupB.length, minHeight: 0, minWidth: 0 }}
  >
- <SplitContainer
- key={`split-b-${groupB.map(s => s.id).join('-')}`}
- splits={groupB}
- onSplit={onSplit}
- onRemove={onRemove}
- onConnectionChange={onConnectionChange}
- connections={connections}
- />
+      <SplitContainer
+        key={`split-b-${groupB.map((s) => s.id).join('-')}`}
+        splits={groupB}
+        onSplit={onSplit}
+        onRemove={onRemove}
+        onConnectionChange={onConnectionChange}
+        connections={connections}
+        onToggleSync={onToggleSync}
+        onMerge={onMerge}
+        syncGroups={syncGroups}
+        activeSplitId={activeSplitId}
+        onSetActiveSplit={onSetActiveSplit}
+        onTerminalData={onTerminalData}
+      />
  </div>
  </div>
  )
@@ -331,21 +372,126 @@ function SplitPane({
  onRemove,
  onConnectionChange,
  connections,
+ onToggleSync,
+ onMerge,
+ syncGroups,
+ activeSplitId,
+ onSetActiveSplit,
 }: {
  split: SplitDef
  onSplit: (id: string, direction: 'vertical' | 'horizontal') => void
  onRemove: (id: string) => void
- onConnectionChange: (id: string, connectionId: string) => void
+ onConnectionChange: (id: string, connectionId: string, sessionId: string) => void
  connections: Array<{ id: string; name: string }>
+ onToggleSync?: (id: string) => void
+ onMerge?: (sourceId: string, targetId: string, position: 'left' | 'right' | 'top' | 'bottom') => void
+ syncGroups?: Record<string, string[]>
+ activeSplitId?: string | null
+ onSetActiveSplit?: (id: string) => void
 }) {
+ const isSyncOn = !!split.syncGroup
+ const groupId = split.syncGroup || ''
+ const groupMembers = (groupId && syncGroups?.[groupId]) || []
+ const isActive = activeSplitId === split.id
+
+ // 拖拽状态
+ const [dragOver, setDragOver] = useState<'none' | 'left' | 'right' | 'top' | 'bottom'>('none')
+ const dragRef = useRef<string | null>(null)
+
+ const handleDragStart = (e: React.DragEvent) => {
+ dragRef.current = split.id
+ e.dataTransfer.effectAllowed = 'move'
+ e.dataTransfer.setData('text/plain', split.id)
+ // 让拖拽时显示一个半透明卡片
+ const el = e.currentTarget as HTMLElement
+ el.classList.add('opacity-40')
+ }
+
+ const handleDragEnd = (e: React.DragEvent) => {
+ dragRef.current = null
+ setDragOver('none')
+ const el = e.currentTarget as HTMLElement
+ el.classList.remove('opacity-40')
+ }
+
+ const handleDragOver = (e: React.DragEvent) => {
+ e.preventDefault()
+ e.dataTransfer.dropEffect = 'move'
+ // 判断鼠标在拖拽目标中的位置
+ const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+ const x = e.clientX - rect.left
+ const y = e.clientY - rect.top
+ const threshold = 0.3 // 30% 边缘触发
+
+ if (x / rect.width < threshold) {
+ setDragOver('left')
+ } else if (x / rect.width > 1 - threshold) {
+ setDragOver('right')
+ } else if (y / rect.height < threshold) {
+ setDragOver('top')
+ } else if (y / rect.height > 1 - threshold) {
+ setDragOver('bottom')
+ } else {
+ setDragOver('none')
+ }
+ }
+
+ const handleDragLeave = () => {
+ setDragOver('none')
+ }
+
+ const handleDrop = (e: React.DragEvent) => {
+ e.preventDefault()
+ const sourceId = e.dataTransfer.getData('text/plain')
+ if (!sourceId || sourceId === split.id || !onMerge) return
+ setDragOver('none')
+ // 映射 dragOver 状态到位置
+ const posMap: Record<string, 'left' | 'right' | 'top' | 'bottom'> = {
+ left: 'left', right: 'right', top: 'top', bottom: 'bottom',
+ }
+ const pos = posMap[dragOver] || 'left'
+ onMerge(sourceId, split.id, pos)
+ }
+
+ // 计算边框高亮
+ const borderStyles = (() => {
+ if (dragOver === 'none') return {}
+ const color = 'rgba(34, 211, 238, 0.5)' // cyan-400
+ switch (dragOver) {
+ case 'left': return { borderLeft: `3px solid ${color}` }
+ case 'right': return { borderRight: `3px solid ${color}` }
+ case 'top': return { borderTop: `3px solid ${color}` }
+ case 'bottom': return { borderBottom: `3px solid ${color}` }
+ }
+ })()
+
  return (
- <div className="flex flex-1 flex-col overflow-hidden" style={{ minHeight: 0 }}>
+ <div
+ className={`flex flex-1 flex-col overflow-hidden transition-shadow ${
+ isActive ? 'ring-1 ring-cyan-500/40' : ''
+ }`}
+ style={{ minHeight: 0, ...borderStyles }}
+ onClick={() => onSetActiveSplit?.(split.id)}
+ draggable
+ onDragStart={handleDragStart}
+ onDragEnd={handleDragEnd}
+ onDragOver={handleDragOver}
+ onDragLeave={handleDragLeave}
+ onDrop={handleDrop}
+ >
  {/* 分屏工具栏 */}
  <div className="flex items-center justify-between border-b border-slate-700/50 bg-slate-900/80 px-2 py-1">
  <div className="flex items-center gap-1">
  <select
  value={split.connectionId}
- onChange={(e) => onConnectionChange(split.id, e.target.value)}
+ onChange={(e) => {
+ const val = e.target.value
+ // 如果是 sessionId（已连接），直接使用；否则需要新建连接
+ const isSession = connections.some((c) => c.id === val)
+ if (isSession) {
+ onConnectionChange(split.id, val, `sess_${val}_${Date.now()}`)
+ }
+ }}
  className="max-w-[120px] truncate rounded bg-transparent text-[11px] text-slate-400 outline-none hover:text-slate-300"
  >
  {connections.map((c) => (
@@ -356,9 +502,32 @@ function SplitPane({
  </select>
  </div>
  <div className="flex items-center gap-0.5">
+ {/* 命令同步开关 */}
+ {onToggleSync && (
+ <button
+ onClick={(e) => { e.stopPropagation(); onToggleSync(split.id) }}
+ className={`btn-icon relative ${
+ isSyncOn ? 'text-cyan-400' : 'text-slate-600 hover:text-slate-400'
+ }`}
+ title={
+ isSyncOn
+ ? `命令同步中 (${groupMembers.length} 个分屏)`
+ : '开启命令同步'
+ }
+ >
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+ <path d="M5 12h14M12 5l7 7-7 7" />
+ </svg>
+ {isSyncOn && groupMembers.length > 1 && (
+ <span className="absolute -right-1 -top-1 flex h-3 w-3 items-center justify-center rounded-full bg-cyan-500 text-[8px] text-white">
+ {groupMembers.length}
+ </span>
+ )}
+ </button>
+ )}
  {/* 垂直分屏 */}
  <button
- onClick={() => onSplit(split.id, 'vertical')}
+ onClick={(e) => { e.stopPropagation(); onSplit(split.id, 'vertical') }}
  className="btn-icon text-slate-600 hover:text-slate-400"
  title="垂直分屏"
  >
@@ -369,7 +538,7 @@ function SplitPane({
  </button>
  {/* 水平分屏 */}
  <button
- onClick={() => onSplit(split.id, 'horizontal')}
+ onClick={(e) => { e.stopPropagation(); onSplit(split.id, 'horizontal') }}
  className="btn-icon text-slate-600 hover:text-slate-400"
  title="水平分屏"
  >
@@ -381,7 +550,7 @@ function SplitPane({
  <div className="mx-1 h-3 w-px bg-slate-700/50" />
  {/* 关闭分屏 */}
  <button
- onClick={() => onRemove(split.id)}
+ onClick={(e) => { e.stopPropagation(); onRemove(split.id) }}
  className="btn-icon text-slate-600 hover:text-red-400"
  title="关闭分屏"
  >
