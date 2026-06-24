@@ -390,6 +390,7 @@ function SplitPane({
  syncGroups?: Record<string, string[]>
  activeSplitId?: string | null
  onSetActiveSplit?: (id: string) => void
+ onTerminalData?: (sessionId: string, data: string) => void
 }) {
  const isSyncOn = !!split.syncGroup
  const groupId = split.syncGroup || ''
