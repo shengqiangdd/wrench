@@ -96,7 +96,9 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
 
  // 延迟执行 fit 确保容器已渲染
  const fitTimer = setTimeout(() => {
+ if (containerRef.current && containerRef.current.offsetWidth > 0 && containerRef.current.offsetHeight > 0) {
  try { fitAddon.fit() } catch { /* ignore */ }
+ }
  }, 50)
 
  terminalRef.current = term
@@ -139,7 +141,10 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  connectedRef.current = true
  term.focus()
  setTimeout(() => {
- try { fitAddon.fit() } catch { /* ignore */ }
+   const c = containerRef.current
+   if (c && c.offsetWidth > 0 && c.offsetHeight > 0) {
+     try { fitAddon.fit() } catch { /* ignore */ }
+   }
  }, 100)
  onConnected?.()
  }
@@ -169,6 +174,8 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  if (disposedRef.current) return
  requestAnimationFrame(() => {
  if (disposedRef.current) return
+ const container = containerRef.current
+ if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return
  try { fitAddon.fit() } catch { /* ignore */ }
  })
  }
@@ -262,6 +269,43 @@ interface SplitContainerProps {
  onTerminalData?: (sessionId: string, data: string) => void
 }
 
+/**
+ * 从扁平 splits 数组构建树形布局。
+ * 合并相邻同方向分屏为一组，不同方向时另起一组，递归构建。
+ */
+function buildSplitTree(splits: SplitDef[]): SplitDef[] {
+ if (splits.length <= 1) return splits
+
+ // 找到第一个方向不同的分界点
+ const firstDir = splits[0].direction
+ // 从右往左找，这样最内层的方向优先
+ let splitIdx = -1
+ for (let i = splits.length - 1; i >= 1; i--) {
+ if (splits[i].direction !== firstDir) {
+ // 方向变化点：这个 split 用它的 direction（内层），前面用 firstDir（外层）
+ splitIdx = i
+ break
+ }
+ }
+
+ if (splitIdx === -1) {
+ // 全部同方向：平铺
+ return splits
+ }
+
+ // 方向变化：内层（splitIdx 之后）和外层（splitIdx 之前）方向不同
+ // 以外层方向包裹内层
+ const outerDir = firstDir
+ const innerSplits = splits.slice(splitIdx)
+ const outerSplits = splits.slice(0, splitIdx)
+
+ // 递归构建内层和外层
+ const innerResult = buildSplitTree(innerSplits)
+ const outerResult = buildSplitTree(outerSplits)
+
+ return [...outerResult, ...innerResult]
+}
+
 export function SplitContainer({
  splits,
  onSplit,
@@ -277,7 +321,7 @@ export function SplitContainer({
 }: SplitContainerProps) {
  if (splits.length === 0) return null
 
- // 单个分屏
+ // 单个分屏或同方向平铺
  if (splits.length === 1) {
  return (
  <SplitPane
@@ -297,31 +341,69 @@ export function SplitContainer({
  )
  }
 
- // 多个分屏：按 50/50 分配
- const firstDirection = splits[0].direction
- const groupA: SplitDef[] = []
- const groupB: SplitDef[] = []
- const mid = Math.ceil(splits.length / 2)
- for (let i = 0; i < splits.length; i++) {
- if (i < mid) groupA.push(splits[i])
- else groupB.push(splits[i])
+ // 构建树形布局：找到方向变化点
+ const firstDir = splits[0].direction
+ // 从右往左找第一个方向不同的分界点
+ let splitIdx = splits.length
+ for (let i = splits.length - 1; i >= 1; i--) {
+ if (splits[i].direction !== firstDir) {
+ splitIdx = i
+ break
  }
+ }
+
+ // 全部同方向 → 直接平铺
+ if (splitIdx === splits.length) {
+ return (
+ <div
+ className={`flex flex-1 overflow-hidden ${
+ splits[0].direction === 'vertical' ? 'flex-col' : 'flex-row'
+ }`}
+ style={{ minHeight: 0 }}
+ >
+ {splits.map((s, i) => (
+ <div key={s.id} className="flex overflow-hidden" style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+ {i > 0 && (
+ <div
+ className={`shrink-0 bg-slate-700/50 ${
+ splits[0].direction === 'vertical' ? 'h-px' : 'w-px'
+ }`}
+ />
+ )}
+ <SplitPane
+ split={s}
+ onSplit={onSplit}
+ onRemove={onRemove}
+ onConnectionChange={onConnectionChange}
+ connections={connections}
+ onToggleSync={onToggleSync}
+ onMerge={onMerge}
+ syncGroups={syncGroups}
+ activeSplitId={activeSplitId}
+ onSetActiveSplit={onSetActiveSplit}
+ onTerminalData={onTerminalData}
+ />
+ </div>
+ ))}
+ </div>
+ )
+ }
+
+ // 有方向变化：外层用 firstDir，内层用另一个方向
+ const outerSplits = splits.slice(0, splitIdx)
+ const innerSplits = splits.slice(splitIdx)
 
  return (
  <div
  className={`flex flex-1 overflow-hidden ${
- firstDirection === 'vertical' ? 'flex-col' : 'flex-row'
+ firstDir === 'vertical' ? 'flex-col' : 'flex-row'
  }`}
  style={{ minHeight: 0 }}
  >
- <div
- key="group-a"
- className="flex overflow-hidden"
- style={{ flex: groupA.length, minHeight: 0, minWidth: 0 }}
- >
+ <div className="flex overflow-hidden" style={{ flex: outerSplits.length, minHeight: 0, minWidth: 0 }}>
  <SplitContainer
- key={`split-a-${groupA.map((s) => s.id).join('-')}`}
- splits={groupA}
+ key={`outer-${outerSplits.map((s) => s.id).join('-')}`}
+ splits={outerSplits}
  onSplit={onSplit}
  onRemove={onRemove}
  onConnectionChange={onConnectionChange}
@@ -335,33 +417,27 @@ export function SplitContainer({
  />
  </div>
 
- {/* 分割线 */}
  <div
- key="divider"
  className={`shrink-0 bg-slate-700/50 ${
- firstDirection === 'vertical' ? 'h-px' : 'w-px'
+ firstDir === 'vertical' ? 'h-px' : 'w-px'
  }`}
  />
 
- <div
- key="group-b"
- className="flex overflow-hidden"
- style={{ flex: groupB.length, minHeight: 0, minWidth: 0 }}
- >
-      <SplitContainer
-        key={`split-b-${groupB.map((s) => s.id).join('-')}`}
-        splits={groupB}
-        onSplit={onSplit}
-        onRemove={onRemove}
-        onConnectionChange={onConnectionChange}
-        connections={connections}
-        onToggleSync={onToggleSync}
-        onMerge={onMerge}
-        syncGroups={syncGroups}
-        activeSplitId={activeSplitId}
-        onSetActiveSplit={onSetActiveSplit}
-        onTerminalData={onTerminalData}
-      />
+ <div className="flex overflow-hidden" style={{ flex: innerSplits.length, minHeight: 0, minWidth: 0 }}>
+ <SplitContainer
+ key={`inner-${innerSplits.map((s) => s.id).join('-')}`}
+ splits={innerSplits}
+ onSplit={onSplit}
+ onRemove={onRemove}
+ onConnectionChange={onConnectionChange}
+ connections={connections}
+ onToggleSync={onToggleSync}
+ onMerge={onMerge}
+ syncGroups={syncGroups}
+ activeSplitId={activeSplitId}
+ onSetActiveSplit={onSetActiveSplit}
+ onTerminalData={onTerminalData}
+ />
  </div>
  </div>
  )
