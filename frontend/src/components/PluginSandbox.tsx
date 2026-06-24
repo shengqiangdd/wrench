@@ -361,7 +361,7 @@ export default function PluginSandbox({
         ref={iframeRef}
         title={`沙箱: ${manifest.name}`}
         className="h-full w-full border-0"
-        sandbox="allow-scripts allow-same-origin"
+        sandbox="allow-scripts"
         style={{ background: 'transparent' }}
       />
     </div>
