@@ -105,17 +105,75 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  fitAddonRef.current = fitAddon
 
  // 发送终端数据到后端（shell 模式）
- term.onData((data) => {
- // 将用户输入以 base64 编码发送
- const encoded = btoa(unescape(encodeURIComponent(data)))
- wsClient.send({
- type: 'exec',
- connectionId,
- data: encoded,
- })
- // 命令同步：广播到同组其他分屏
- onTerminalData?.(encoded)
- })
+  // ─── 快捷键注册 ───
+  // Ctrl+C: 选中文本时复制，未选中时发送 SIGINT
+  // Ctrl+V / Shift+Insert: 粘贴
+  // Ctrl+Shift+C: 强制复制 / Ctrl+Shift+V: 强制粘贴
+  term.attachCustomKeyEventHandler((e) => {
+    const { key, ctrlKey, shiftKey, type } = e
+
+    // Ctrl+Shift+C → 复制选中文本
+    if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'c') {
+      const selection = term.getSelection()
+      if (selection) {
+        navigator.clipboard.writeText(selection).catch(() => {})
+        term.clearSelection()
+      }
+      return false  // 阻止发送到终端
+    }
+
+    // Ctrl+Shift+V → 粘贴
+    if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'v') {
+      navigator.clipboard.readText().then((text) => {
+        if (text) {
+          const encoded = btoa(unescape(encodeURIComponent(text)))
+          wsClient.send({ type: 'exec', connectionId, data: encoded })
+          onTerminalData?.(encoded)
+        }
+      }).catch(() => {})
+      return false
+    }
+
+    // Ctrl+C → 有选中则复制，否则放行（终端发 SIGINT）
+    if (type === 'keydown' && ctrlKey && !shiftKey && key.toLowerCase() === 'c') {
+      const selection = term.getSelection()
+      if (selection) {
+        navigator.clipboard.writeText(selection).catch(() => {})
+        term.clearSelection()
+        return false  // 阻止 SIGINT
+      }
+      return true  // 放行给终端（发送 SIGINT）
+    }
+
+    // Ctrl+V / Shift+Insert → 粘贴
+    if (type === 'keydown' && (
+      (ctrlKey && !shiftKey && key.toLowerCase() === 'v') ||
+      (!ctrlKey && shiftKey && key === 'Insert')
+    )) {
+      navigator.clipboard.readText().then((text) => {
+        if (text) {
+          const encoded = btoa(unescape(encodeURIComponent(text)))
+          wsClient.send({ type: 'exec', connectionId, data: encoded })
+          onTerminalData?.(encoded)
+        }
+      }).catch(() => {})
+      return false
+    }
+
+    return true
+  })
+
+  term.onData((data) => {
+    // 将用户输入以 base64 编码发送
+    const encoded = btoa(unescape(encodeURIComponent(data)))
+    wsClient.send({
+      type: 'exec',
+      connectionId,
+      data: encoded,
+    })
+    // 命令同步：广播到同组其他分屏
+    onTerminalData?.(encoded)
+  })
 
  // 监听终端数据（来自后端）
  const unsubData = wsClient.on('data', (msg) => {
@@ -141,10 +199,10 @@ export default function TerminalView({ connectionId, sessionId, className = '', 
  connectedRef.current = true
  term.focus()
  setTimeout(() => {
-   const c = containerRef.current
-   if (c && c.offsetWidth > 0 && c.offsetHeight > 0) {
-     try { fitAddon.fit() } catch { /* ignore */ }
-   }
+ const c = containerRef.current
+ if (c && c.offsetWidth > 0 && c.offsetHeight > 0) {
+ try { fitAddon.fit() } catch { /* ignore */ }
+ }
  }, 100)
  onConnected?.()
  }
