@@ -163,6 +163,7 @@ export default function SettingsPanel() {
               </a>
             </label>
             <div className="relative">
+              <form onSubmit={(e) => e.preventDefault()}>
               <input
                 type={showApiKey ? 'text' : 'password'}
                 value={aiConfig.apiKey}
@@ -171,6 +172,7 @@ export default function SettingsPanel() {
                 placeholder="sk-or-v1-..."
                 autoComplete="off"
               />
+              </form>
               <button
                 onClick={() => setShowApiKey(!showApiKey)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-300"
