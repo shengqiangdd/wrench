@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import CommandPalette from './components/CommandPalette'
+import Toast from './components/Toast'
 import { useAppStore } from './stores/app-store'
 import { initGlobalAPI } from './global-api'
 
@@ -30,6 +31,7 @@ function AppContent() {
     <>
       <CommandPalette />
       <Layout />
+      <Toast />
     </>
   )
 }

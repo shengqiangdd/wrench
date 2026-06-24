@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Puzzle, Check, X, Loader2, RefreshCw, AlertCircle, Shield, Terminal } from 'lucide-react'
+import { Puzzle, Check, X, Loader2, RefreshCw, AlertCircle, Shield, Terminal, Play } from 'lucide-react'
 import { fetchPlugins, fetchPluginCode, unloadPlugin } from '../../services/pluginManager'
 import { usePluginStore } from '../../stores/plugin-store'
 import PluginSandbox from '../../components/PluginSandbox'
+import { pluginSandboxManager } from '../../services/pluginSandboxManager'
 import type { PluginCatalogItem } from '../../services/pluginManager'
 import type { PluginSandboxHandle } from '../../components/PluginSandbox'
 
@@ -238,12 +239,24 @@ export default function PluginsPage() {
                       {plugin.commands && plugin.commands.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {plugin.commands.map((cmd) => (
-                            <span
+                            <button
                               key={cmd.id}
-                              className="rounded bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-400"
+                              onClick={() => {
+                                if (enabled) {
+                                  pluginSandboxManager.executeCommand(plugin.id, cmd.id)
+                                }
+                              }}
+                              disabled={!enabled}
+                              title={cmd.description || cmd.label || cmd.id}
+                              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] transition-colors ${
+                                enabled
+                                  ? 'bg-slate-800/50 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                                  : 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
+                              }`}
                             >
+                              {enabled && <Play size={8} className="shrink-0" />}
                               {cmd.label || cmd.id}
-                            </span>
+                            </button>
                           ))}
                         </div>
                       )}
