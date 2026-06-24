@@ -29,6 +29,7 @@ import { closeBrackets } from '@codemirror/autocomplete'
 import { useFileStore } from '../stores/file-store'
 import { getWsClient } from '../services/websocket'
 import { Loader2, Save } from 'lucide-react'
+import { pluginSandboxManager } from '../services/pluginSandboxManager'
 
 export default function CodeMirrorEditor() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -104,6 +105,8 @@ export default function CodeMirrorEditor() {
       if (update.docChanged) {
         const content = update.state.doc.toString()
         fileStore.updateFileContent(activeTab.id, content)
+        // 同步到插件沙箱
+        pluginSandboxManager.syncEditorContent(content, activeTab.language)
       }
     })
 

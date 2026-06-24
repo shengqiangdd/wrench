@@ -21,6 +21,16 @@ interface SandboxMessage {
   payload: Record<string, unknown>
 }
 
+/** lazy import 避免循环依赖 */
+let _fileStore: any = null
+function getFileStore() {
+  if (!_fileStore) {
+    // 动态 import，仅在需要时加载
+    import('../stores/file-store').then(m => { _fileStore = m.useFileStore })
+  }
+  return _fileStore
+}
+
 export interface PluginSandboxHandle {
   executeCommand: (commandId: string, args?: unknown[]) => void
   updateEditorContent: (content: string | null, language: string | null) => void
@@ -155,6 +165,10 @@ export default function PluginSandbox({
     }
   };
 
+  // ── 编辑器内容缓存（由主应用推送） ──
+  var _editorContent = null;
+  var _editorLanguage = null;
+
   // ── 插件状态 ──
   var __commandHandlers__ = {};
 
@@ -181,11 +195,11 @@ export default function PluginSandbox({
       isRegistered = true;
       sendToHost('registerCommand', { command: { id: id, label: label, description: desc } });
     },
-    getEditorContent: function() { return null; },
+    getEditorContent: function() { return _editorContent; },
     setEditorContent: function(content) {
       sendToHost('setEditorContent', { content: content });
     },
-    getCurrentFileLanguage: function() { return null; },
+    getCurrentFileLanguage: function() { return _editorLanguage; },
     showNotification: function(message, type) {
       sendToHost('showNotification', { message: String(message), type: type || 'info' });
     },
@@ -213,9 +227,16 @@ export default function PluginSandbox({
         if (handler) {
           try { handler(); } catch(e) { console.error('[Plugin] Command error:', e); }
         }
+      } else if (msg.type === 'editorContentUpdate') {
+        // 主应用推送编辑器内容更新
+        if (msg.content !== undefined) _editorContent = msg.content;
+        if (msg.language !== undefined) _editorLanguage = msg.language;
       }
     }
   });
+
+  // ── 请求当前编辑器内容（初始化缓存） ──
+  sendToHost('getEditorContent', {});
 
   sendToHost('sandboxReady', {});
 
@@ -303,6 +324,36 @@ export default function PluginSandbox({
           onError?.(error)
           break
         }
+        case 'setEditorContent': {
+          // 插件写入编辑器内容
+          const fileStore = getFileStore()
+          if (fileStore) {
+            const state = fileStore.getState()
+            const content = data.payload.content as string
+            if (state.activeTabId && content !== undefined) {
+              state.updateFileContent(state.activeTabId, content)
+            }
+          }
+          break
+        }
+        case 'getEditorContent': {
+          // 插件请求编辑器内容 → 回复
+          const fileStore = getFileStore()
+          if (fileStore) {
+            const state = fileStore.getState()
+            const activeTab = state.openTabs?.find((t: any) => t.id === state.activeTabId)
+            const iframe = iframeRef.current
+            if (iframe?.contentWindow) {
+              iframe.contentWindow.postMessage({
+                source: 'smartbox-host',
+                type: 'editorContentUpdate',
+                content: activeTab?.content ?? null,
+                language: activeTab?.language ?? null,
+              }, '*')
+            }
+          }
+          break
+        }
       }
     }
 
@@ -325,7 +376,15 @@ export default function PluginSandbox({
           args: args || [],
         }, '*')
       },
-      updateEditorContent: (_content, _language) => {},
+      updateEditorContent: (content, language) => {
+        const iframe = iframeRef.current
+        iframe?.contentWindow?.postMessage({
+          source: 'smartbox-host',
+          type: 'editorContentUpdate',
+          content,
+          language,
+        }, '*')
+      },
       destroy: () => {
         const iframe = iframeRef.current
         if (iframe) { iframe.src = 'about:blank' }

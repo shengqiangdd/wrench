@@ -1,83 +1,30 @@
 # 智盒 (SmartBox) — 开发进度日志
 
-## 2026-06-23 — M1 初始化阶段完成 🚀
+## 2026-06-24 — 插件编辑器通道打通 + TODO 重校 🚀
 
 ### 本日完成
 
-#### M1 脚手架搭建（全部完成 ✅）
-- ✅ Vite 6 + React 18 + TypeScript strict 项目初始化
-- ✅ Tailwind CSS 3 + 自定义 smartbox 主题色配置
-- ✅ ESLint + Prettier 配置
-- ✅ 4 个核心 TypeScript 类型模块（ssh/file/plugin/ai）
-- ✅ 完整目录结构 + @/ 路径别名
+#### 🧩 插件 ⇄ 编辑器双向通道（核心修复）
+- ✅ 沙箱内 `getEditorContent()` 从硬编码 `null` 改为缓存变量 `_editorContent`
+- ✅ 沙箱初始化时主动请求当前编辑器内容并缓存
+- ✅ 主应用处理 `setEditorContent` 消息 → 写入 fileStore
+- ✅ 主应用处理 `getEditorContent` 消息 → 回复当前文件内容
+- ✅ 编辑器内容变化时 `pluginSandboxManager.syncEditorContent()` 推送到所有沙箱
+- ✅ `updateEditorContent()` handle 从空函数改为真正 postMessage 推送
 
-#### M2 核心骨架（部分完成 ✅）
-- ✅ 三栏布局系统（Sidebar + Main + RightPanel）
-- ✅ 移动端底部导航（< 768px）
-- ✅ 深色/浅色/跟随系统主题切换
-- ✅ 5 个 Zustand Stores（app/ssh/file/ai/plugin）
-- ✅ SSH Bridge 后端服务（WebSocket + ssh2 + SFTP）
-  - SSH 连接（密码/密钥认证）
-  - 终端数据流（base64 编码）
-  - SFTP 全部操作（list/read/write/rename/delete/mkdir/chmod）
-  - 心跳检测 + 错误处理 + 优雅关闭
+**效果**：JSON 格式化、Base64 等插件现在能真正读/写编辑器内容了。
 
-#### 构建验证
-- ✅ `vite build` 构建成功（2.49s）
-- 产物: JS 344KB / CSS 20.6KB / gzip < 90KB
-
-### 技术决策
-1. Tailwind 3.4.19 + PostCSS 方案（Tailwind 4 native 绑定与 Node 18 不兼容）
-2. vite-plugin-pwa 在 M5 阶段启用（避免 Node 18 的 terser 兼容问题）
-3. 消息协议使用 JSON + base64 编码（兼容二进制数据）
-4. 后端使用纯 ES module 语法（Node 18 原生支持）
-
-## 2026-06-23 — M2 SSH + SFTP 核心骨架完成 🚀
-
-### 新增完成
-
-#### M2 网络层
-- ✅ WebSocket 客户端（services/websocket.ts）
-  - 自动重连（指数退避 1s→30s，最多10次）
-  - requestId 请求-响应匹配模式
-  - 心跳检测（25s），状态监听器
-
-#### M2 SSH 连接管理
-- ✅ ConnectionForm 新建/编辑弹窗
-- ✅ ConnectionList 分组列表 + 搜索过滤 + 一键连接
-- ✅ 密码认证/密钥认证（私钥粘贴）
-
-#### M2 xterm.js 终端
-- ✅ 完整终端组件（深色主题配色）
-- ✅ WebSocket ↔ xterm 双向数据流（base64）
-- ✅ FitAddon + ResizeObserver 自适应
-- ✅ 多 Tab 终端管理 + 状态指示灯 + 清屏
-
-#### M2 SFTP 侧边栏
-- ✅ SftpSidebar 树形文件浏览器（目录/文件列表）
-- ✅ 面包屑导航（可点击跳转）
-- ✅ 文件图标（按扩展名智能识别）
-- ✅ 文件和目录预览（权限/大小/时间）
-- ✅ 右键菜单（下载/编辑/上传/复制路径/删除）
-- ✅ 路径导航（根/上级/刷新）
-
-#### M2 数据持久化（IndexedDB）
-- ✅ services/db.ts — 基于 idb 的类型安全封装
-- ✅ 4 张表：connections / plugin_data / settings / ai_sessions
-- ✅ 自动迁移（数据库版本管理）
-- ✅ 快捷函数：saveConnection/listConnections/getSetting/setSetting
-
-#### M2 加密层
-- ✅ services/crypto.ts — AES-GCM + PBKDF2 100k 迭代
-- ✅ encrypt / decrypt / verifyPassword / createMasterPassword
-- ✅ 兼容浏览器和 Node 环境
+#### 📋 TODO 全面重修
+- 纠正了 40+ 条已完成但标记为待办的任务
+- 按实际完成状态重分阶段（M1/M2 已完成归档）
+- 新增「快速连接」「拖拽上传」「插件市场」「AI 操作菜单」等明确待办
 
 ### 项目状态
-- 构建 ✅ 1614 模块 / 3.43s / 0 错误
-- 整体进度: 完成 **42/88 任务 (47.7%)**
+- 构建 ✅ 1665 modules / 11.44s / 0 错误
+- PWA ✅ SW + Workbox 已注入
+- 整体进度: **36/57 核心任务 (63%)** + 插件框架完全就绪
 
-### 待开始
-- M2: 命令面板（Ctrl+P 模糊搜索）
-- M2: 加密存储装饰器
-- M2: SFTP 文件操作功能串联（新建/删除/重命名调用后端）
-- M3: 智能文件管理器
+### 下一步优先（我的推荐）
+1. 🟦 **快速连接** — 不保存凭据的临时 SSH 连接，日常运维场景最常用
+2. 🟦 **拖拽上传** — 系统文件拖入 SFTP 浏览器自动上传
+3. 🟦 **AI 操作菜单** — 选中代码弹出 AI 菜单
