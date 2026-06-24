@@ -17,6 +17,7 @@ import TerminalView from './Terminal'
 import { SplitContainer } from './Terminal'
 import SftpSidebar from './SftpSidebar'
 import AiSidebar from './AiSidebar'
+import ResizablePanel from '../../components/ResizablePanel'
 import type { SshSession } from '../../types/ssh'
 import { useAiStore } from '../../stores/ai-store'
 
@@ -391,24 +392,30 @@ export default function SshPlaceholder() {
         />
       )}
 
-      {/* 左侧连接列表 */}
+      {/* 左侧连接列表（可拖拽调整宽度） */}
       <div
         className={`
-          absolute inset-y-0 left-0 z-40 w-64 shrink-0 border-r border-slate-700/50 bg-slate-950
+          absolute inset-y-0 left-0 z-40 shrink-0 border-r border-slate-700/50 bg-slate-950
           transition-transform duration-200 md:static md:z-auto md:translate-x-0
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
       >
-        <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">
-          <WsIndicator />
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="btn-icon text-slate-500 hover:text-slate-300 md:hidden"
-          >
-            <X size={14} />
-          </button>
-        </div>
-        <ConnectionList onConnect={handleDirectConnect} />
+        <ResizablePanel side="right" defaultSize={256} minSize={160} maxSize={500}>
+          <div className="flex h-full flex-col">
+            <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">
+              <WsIndicator />
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="btn-icon text-slate-500 hover:text-slate-300 md:hidden"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <ConnectionList onConnect={handleDirectConnect} />
+            </div>
+          </div>
+        </ResizablePanel>
       </div>
 
       {/* 中间终端区域 */}
@@ -522,19 +529,25 @@ export default function SshPlaceholder() {
                 </div>
               ) : null}
 
-              {/* SFTP 侧边栏 */}
+              {/* SFTP 侧边栏（可拖拽调整宽度） */}
               {sftpOpen && !aiOpen && activeSession && (
-                <div className="hidden md:block w-64 shrink-0 border-l border-slate-700/50 md:w-72">
-                  <SftpSidebar sessionId={activeSession.id} />
+                <div className="hidden md:block shrink-0 border-l border-slate-700/50">
+                  <ResizablePanel side="left" defaultSize={260} minSize={200} maxSize={500}>
+                    <SftpSidebar sessionId={activeSession.id} />
+                  </ResizablePanel>
                 </div>
               )}
 
-              {/* AI 侧边栏 */}
+              {/* AI 侧边栏（可拖拽调整宽度） */}
               {aiOpen && activeSession && (
-                <AiSidebar
-                  sessionId={activeSession.id}
-                  onClose={() => setAiOpen(false)}
-                />
+                <div className="shrink-0 border-l border-slate-700/50">
+                  <ResizablePanel side="left" defaultSize={340} minSize={280} maxSize={600}>
+                    <AiSidebar
+                      sessionId={activeSession.id}
+                      onClose={() => setAiOpen(false)}
+                    />
+                  </ResizablePanel>
+                </div>
               )}
             </div>
           </>

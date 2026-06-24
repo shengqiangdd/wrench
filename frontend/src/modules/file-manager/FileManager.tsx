@@ -28,6 +28,7 @@ import { useFileStore } from '../../stores/file-store'
 import { getWsClient } from '../../services/websocket'
 import SftpBrowser from '../ssh/SftpBrowser'
 import CodeMirrorEditor from '../../components/CodeMirrorEditor'
+import ResizablePanel from '../../components/ResizablePanel'
 
 // ─── 工具函数 ───
 
@@ -314,22 +315,25 @@ export default function FileManager() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* 左侧文件浏览器 */}
+      {/* 左侧文件浏览器（可拖拽调整宽度） */}
       {sidebarOpen && (
-        <div className="flex w-64 shrink-0 flex-col border-r border-slate-700/50 md:w-72">
-          <div className="flex items-center justify-between border-b border-slate-700/30 px-2 py-1.5">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-              文件
-            </span>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="btn-icon text-slate-500 hover:text-slate-300"
-              title="隐藏文件浏览器"
-            >
-              <PanelLeftClose size={14} />
-            </button>
-          </div>
-          <SftpBrowser
+        <div className="flex shrink-0 flex-col border-r border-slate-700/50">
+          <ResizablePanel side="right" defaultSize={260} minSize={200} maxSize={500}>
+            <div className="flex h-full flex-col">
+              <div className="flex items-center justify-between border-b border-slate-700/30 px-2 py-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  文件
+                </span>
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="btn-icon text-slate-500 hover:text-slate-300"
+                  title="隐藏文件浏览器"
+                >
+                  <PanelLeftClose size={14} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <SftpBrowser
             sessionId={fmState.sessionId}
             activeConnId={fmState.connId}
             connectionOptions={connections.map((c) => ({
@@ -338,9 +342,12 @@ export default function FileManager() {
               host: c.host,
             }))}
             onConnect={connectAndSftp}
-            connecting={connecting}
-            showConnector={true}
-          />
+              connecting={connecting}
+              showConnector={true}
+            />
+          </div>
+          </div>
+        </ResizablePanel>
         </div>
       )}
 
