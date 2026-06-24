@@ -18,6 +18,26 @@ export default {
           900: '#0c4a6e',
           950: '#082f49',
         },
+        // 语义色 — 跟随 CSS 变量，主题自适应
+        surface: {
+          DEFAULT: 'var(--bg-surface)',
+          elevated: 'var(--bg-elevated)',
+          card: 'var(--bg-card)',
+          hover: 'var(--bg-hover)',
+        },
+        text: {
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          muted: 'var(--text-muted)',
+          dim: 'var(--text-dim)',
+        },
+        border: {
+          DEFAULT: 'var(--border-color)',
+          strong: 'var(--border-color-strong)',
+        },
+      },
+      borderRadius: {
+        xl: '0.75rem',
       },
     },
   },

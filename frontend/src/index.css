@@ -2,9 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================
+   CSS 变量主题体系 — 深色（默认） + 浅色
+   ============================================ */
+:root {
+  /* 深色主题（默认） */
+  --bg-surface: #020617;        /* slate-950 */
+  --bg-elevated: #0f172a;       /* slate-900 */
+  --bg-card: #1e293b;           /* slate-800 */
+  --bg-hover: #334155;          /* slate-700 */
+  --text-primary: #f1f5f9;      /* slate-100 */
+  --text-secondary: #cbd5e1;    /* slate-300 */
+  --text-muted: #94a3b8;        /* slate-400 */
+  --text-dim: #64748b;          /* slate-500 */
+  --border-color: rgba(51, 65, 85, 0.5);  /* slate-700/50 */
+  --border-color-strong: #475569;          /* slate-600 */
+  --backdrop-alpha: 0.8;
+}
+
+html:not(.dark) {
+  /* 浅色主题 */
+  --bg-surface: #ffffff;
+  --bg-elevated: #f1f5f9;       /* slate-100 */
+  --bg-card: #ffffff;
+  --bg-hover: #e2e8f0;          /* slate-200 */
+  --text-primary: #0f172a;      /* slate-900 */
+  --text-secondary: #334155;    /* slate-700 */
+  --text-muted: #64748b;        /* slate-500 */
+  --text-dim: #94a3b8;          /* slate-400 */
+  --border-color: rgba(148, 163, 184, 0.4);  /* slate-400/40 */
+  --border-color-strong: #cbd5e1;             /* slate-300 */
+  --backdrop-alpha: 0.95;
+}
+
 @layer base {
   * {
     @apply border-slate-700/50;
+    border-color: var(--border-color);
   }
 
   html, body, #root {
@@ -12,16 +46,9 @@
     overflow: hidden;
   }
 
-  html:not(.dark) body {
-    @apply bg-white text-slate-800 antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-      'Noto Sans SC', sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
   body {
-    @apply bg-slate-950 text-slate-100 antialiased;
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
       'Noto Sans SC', sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -46,11 +73,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full bg-slate-600;
+    background-color: var(--text-dim);
+    border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-500;
+    background-color: var(--text-muted);
   }
 
   /* 移动端输入框修正 */
@@ -88,13 +116,75 @@
   }
 }
 
+/* ============================================
+   浅色主题覆盖层
+   将硬编码的深色类名映射为浅色变量
+   ============================================ */
+html:not(.dark) {
+  /* 背景覆盖 */
+  .bg-slate-950 { background-color: var(--bg-surface) !important; }
+  .bg-slate-900 { background-color: var(--bg-elevated) !important; }
+  .bg-slate-900\/80 { background-color: color-mix(in srgb, var(--bg-elevated) 80%, transparent) !important; }
+  .bg-slate-900\/95 { background-color: color-mix(in srgb, var(--bg-elevated) 95%, transparent) !important; }
+  .bg-slate-900\/50 { background-color: color-mix(in srgb, var(--bg-elevated) 50%, transparent) !important; }
+  .bg-slate-800 { background-color: var(--bg-card) !important; }
+  .bg-slate-800\/95 { background-color: color-mix(in srgb, var(--bg-card) 95%, transparent) !important; }
+  .bg-slate-800\/50 { background-color: color-mix(in srgb, var(--bg-card) 50%, transparent) !important; }
+  .bg-slate-800\/30 { background-color: color-mix(in srgb, var(--bg-card) 30%, transparent) !important; }
+
+  /* hover 背景 */
+  .hover\:bg-slate-800:hover { background-color: var(--bg-hover) !important; }
+  .hover\:bg-slate-800\/50:hover { background-color: color-mix(in srgb, var(--bg-hover) 50%, transparent) !important; }
+  .hover\:bg-slate-700:hover { background-color: var(--bg-hover) !important; }
+  .hover\:bg-slate-800\/30:hover { background-color: color-mix(in srgb, var(--bg-hover) 30%, transparent) !important; }
+
+  /* 文字颜色覆盖 */
+  .text-slate-100 { color: var(--text-primary) !important; }
+  .text-slate-200 { color: var(--text-secondary) !important; }
+  .text-slate-300 { color: var(--text-secondary) !important; }
+  .text-slate-400 { color: var(--text-muted) !important; }
+  .text-slate-500 { color: var(--text-dim) !important; }
+  .text-slate-600 { color: var(--text-dim) !important; }
+  .group:hover .group-hover\:text-slate-300 { color: var(--text-secondary) !important; }
+
+  /* 边框覆盖 */
+  .border-slate-700\/50 { border-color: var(--border-color) !important; }
+  .border-slate-700\/30 { border-color: var(--border-color) !important; }
+  .border-slate-700 { border-color: var(--border-color-strong) !important; }
+  .border-slate-700\/60 { border-color: var(--border-color) !important; }
+  .border-slate-600\/50 { border-color: var(--border-color) !important; }
+  .border-slate-600 { border-color: var(--border-color-strong) !important; }
+
+  /* placeholder */
+  .placeholder-slate-500::placeholder { color: var(--text-dim) !important; }
+
+  /* kbd 背景 */
+  kbd, .rounded.border.border-slate-700, .rounded.border.border-slate-600 {
+    background-color: var(--bg-card);
+  }
+
+  /* 阴影在浅色下更透明 */
+  .shadow-2xl.shadow-black\/50 {
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+  }
+
+  /* backdrop 语义微调 */
+  .backdrop-blur-sm {
+    background-color: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
+  }
+}
+
 @layer components {
   .panel {
-    @apply flex flex-col overflow-hidden rounded-lg border border-slate-700/50 bg-slate-900/80 backdrop-blur-sm;
+    background-color: color-mix(in srgb, var(--bg-elevated) 80%, transparent);
+    border-color: var(--border-color);
+    @apply flex flex-col overflow-hidden rounded-lg border backdrop-blur-sm;
   }
 
   .panel-header {
-    @apply flex items-center justify-between border-b border-slate-700/50 px-3 py-2 text-xs font-medium uppercase tracking-wider text-slate-400;
+    border-color: var(--border-color);
+    color: var(--text-muted);
+    @apply flex items-center justify-between border-b px-3 py-2 text-xs font-medium uppercase tracking-wider;
   }
 
   .panel-body {
@@ -110,7 +200,13 @@
   }
 
   .btn-ghost {
-    @apply btn text-slate-400 hover:bg-slate-800 hover:text-slate-200 active:bg-slate-700;
+    color: var(--text-muted);
+    @apply btn hover:bg-slate-800 hover:text-slate-200 active:bg-slate-700;
+  }
+
+  .btn-ghost:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-secondary);
   }
 
   .btn-icon {
@@ -118,16 +214,30 @@
   }
 
   .input {
-    @apply w-full max-w-full rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 outline-none transition-colors focus:border-smartbox-500 focus:ring-1 focus:ring-smartbox-500/30;
+    background-color: color-mix(in srgb, var(--bg-card) 50%, transparent);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+    @apply w-full max-w-full rounded-md border px-3 py-2 text-sm outline-none transition-colors focus:border-smartbox-500 focus:ring-1 focus:ring-smartbox-500/30;
     box-sizing: border-box;
   }
 
+  .input::placeholder {
+    color: var(--text-dim);
+  }
+
   .sidebar-item {
-    @apply flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200;
+    color: var(--text-muted);
+    @apply flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-slate-800 hover:text-slate-200;
+  }
+
+  .sidebar-item:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-secondary);
   }
 
   .sidebar-item.active {
-    @apply bg-slate-800 text-smartbox-400;
+    background-color: var(--bg-hover);
+    @apply text-smartbox-400;
   }
 
   .badge {

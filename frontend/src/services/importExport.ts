@@ -109,7 +109,7 @@ export function collectExportData(): ExportData['data'] {
     connections: sshStore?.connections || [],
     aiConfig: aiStore?.config || {
       apiKey: '',
-      model: 'google/gemma-4-27b-it:free',
+      model: 'deepseek/deepseek-v4-flash:free',
       baseUrl: 'https://openrouter.ai/api/v1',
       provider: 'openrouter',
       customBaseUrl: false,
