@@ -497,8 +497,10 @@ export default function SftpBrowser({
 
   // ─── 递归搜索 ───
 
-  const recursiveSearch = useCallback(async (dir: string, query: string): Promise<SftpEntry[]> => {
+  const recursiveSearch = useCallback(async (dir: string, query: string, depth: number = 0): Promise<SftpEntry[]> => {
     if (!sessionId) return []
+    // 限制最大递归深度为 5 层，防止遍历整个文件系统
+    if (depth > 5) return []
     const results: SftpEntry[] = []
     const q = query.toLowerCase()
     try {
@@ -516,7 +518,7 @@ export default function SftpBrowser({
           }
           if (item.type === 'directory') {
             const subDir = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`
-            const sub = await recursiveSearch(subDir, q)
+            const sub = await recursiveSearch(subDir, q, depth + 1)
             results.push(...sub)
           }
         }
@@ -816,7 +818,7 @@ export default function SftpBrowser({
     e.preventDefault(); e.stopPropagation()
   }, [])
 
-    const doUpload = useCallback(async (files: File[], targetDir: string) => {
+  const doUpload = useCallback(async (files: File[], targetDir: string) => {
     // 单文件且 >= 50MB -> 分块进度模式
     if (files.length === 1 && files[0].size >= CHUNK_THRESHOLD) {
       const file = files[0]
@@ -858,26 +860,46 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
     setAlertModal({ title, message: msg })
   }, [uploadFile, listDir, currentPath])
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  // 检查是否有同名文件，弹出确认
+  const confirmOverwrite = useCallback((files: File[], targetDir: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const existingNames = new Set(entries.map(e => e.name))
+      const conflicts = files.filter(f => existingNames.has(f.name))
+      if (conflicts.length === 0) { resolve(true); return }
+      const names = conflicts.map(f => f.name).slice(0, 5).join(', ')
+      const suffix = conflicts.length > 5 ? ` 等 ${conflicts.length} 个文件` : ''
+      setConfirmModal({
+        title: '文件已存在',
+        message: `目标目录中已存在同名文件：${names}${suffix}。是否覆盖？`,
+        confirmText: '覆盖',
+        onConfirm: () => resolve(true),
+        onCancel: () => resolve(false),
+      })
+    })
+  }, [entries, setConfirmModal])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation()
     setDragOver(false); dragCounterRef.current = 0
     const files = Array.from(e.dataTransfer.files)
     if (files.length === 0) return
     if (!sessionId) { setAlertModal({ title: '无法上传', message: '请先连接到 SSH 服务器' }); return }
-    doUpload(files, currentPath)
-  }, [sessionId, currentPath, doUpload])
+    const confirmed = await confirmOverwrite(files, currentPath)
+    if (confirmed) doUpload(files, currentPath)
+  }, [sessionId, currentPath, doUpload, confirmOverwrite])
 
-  const handleUploadToDir = useCallback((targetDir: string) => {
+  const handleUploadToDir = useCallback(async (targetDir: string) => {
     const input = document.createElement('input')
     input.type = 'file'; input.multiple = true
-    input.onchange = () => {
+    input.onchange = async () => {
       const files = input.files
       if (!files || files.length === 0) return
       if (!sessionId) { setAlertModal({ title: '无法上传', message: '请先连接到 SSH 服务器' }); return }
-      doUpload(Array.from(files), targetDir)
+      const confirmed = await confirmOverwrite(Array.from(files), targetDir)
+      if (confirmed) doUpload(Array.from(files), targetDir)
     }
     input.click()
-  }, [sessionId, doUpload])
+  }, [sessionId, doUpload, confirmOverwrite])
 
   const pathParts = currentPath.split('/').filter(Boolean)
   const { dirs, files } = useMemo(() => sortEntries(entries), [entries])

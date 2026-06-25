@@ -28,12 +28,13 @@ interface Props {
   onClose: () => void
 }
 
-// OpenRouter 流式 API 调用
+// OpenRouter 流式 API 调用（支持取消）
 async function* streamChat(
   messages: AiMessage[],
   apiKey: string,
   model: string,
   baseUrl: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`
 
@@ -51,6 +52,7 @@ async function* streamChat(
       stream: true,
       max_tokens: 4096,
     }),
+    signal,
   })
 
   if (!res.ok) {
@@ -89,6 +91,7 @@ async function* streamChat(
 
 export default function AiSidebar({ sessionId, onClose }: Props) {
   const aiConfig = useAiStore((s) => s.config)
+  const abortRef = useRef<AbortController | null>(null)
   const [messages, setMessages] = useState<AiMessage[]>([
     {
       role: 'system',
@@ -121,10 +124,25 @@ export default function AiSidebar({ sessionId, onClose }: Props) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingContent])
 
+  // 取消流式响应
+  const cancelStream = useCallback(() => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setStreaming(false)
+    // 如果生成了部分内容，保留已生成的内容
+    if (streamingContent.trim()) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: streamingContent }])
+      setStreamingContent('')
+    }
+  }, [streamingContent])
+
   // 发送消息
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || streaming) return
+
+    const abortController = new AbortController()
+    abortRef.current = abortController
 
     const userMsg: AiMessage = { role: 'user', content: text }
     const newMessages = [...messages, userMsg]
@@ -140,22 +158,31 @@ export default function AiSidebar({ sessionId, onClose }: Props) {
         aiConfig.apiKey,
         aiConfig.model,
         aiConfig.baseUrl,
+        abortController.signal,
       )
 
       for await (const chunk of stream) {
+        // 如果已取消，停止消费流
+        if (abortController.signal.aborted) break
         fullContent += chunk
         setStreamingContent(fullContent)
       }
 
-      setMessages((prev) => [...prev, { role: 'assistant', content: fullContent }])
-      setStreamingContent('')
+      // 如果未被取消，完整添加消息；如果已取消，上面的 break 已保留已生成内容
+      if (!abortController.signal.aborted) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: fullContent }])
+        setStreamingContent('')
+      }
     } catch (err: any) {
+      // 如果是用户取消的，不报错
+      if (err.name === 'AbortError') return
       const errMsg = err.message || '请求失败'
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: `**错误**: ${errMsg}\n\n请检查 API Key 和网络连接。` },
       ])
     } finally {
+      abortRef.current = null
       setStreaming(false)
     }
   }, [input, messages, streaming, aiConfig])
@@ -283,9 +310,18 @@ export default function AiSidebar({ sessionId, onClose }: Props) {
         {streamingContent && (
           <div className="flex justify-start">
             <div className="max-w-[90%] rounded-lg bg-slate-800/50 px-3 py-2 text-xs text-slate-300 border border-slate-700/30">
-              <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-500">
-                <Loader2 size={10} className="animate-spin" />
-                生成中...
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                  <Loader2 size={10} className="animate-spin" />
+                  生成中...
+                </div>
+                <button
+                  onClick={cancelStream}
+                  className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-red-400 hover:bg-red-500/10"
+                  title="停止生成"
+                >
+                  <X size={10} /> 停止
+                </button>
               </div>
               <div className="whitespace-pre-wrap break-words">
                 {renderMessageContent(streamingContent, extractCommands, copyCommand, executeCommand, copiedCmd)}
@@ -316,17 +352,23 @@ export default function AiSidebar({ sessionId, onClose }: Props) {
             className="input flex-1 resize-none text-xs py-2"
             style={{ minHeight: '36px', maxHeight: '120px' }}
           />
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || streaming || !sessionId}
-            className="btn-primary h-9 w-9 shrink-0 rounded-lg p-0 flex items-center justify-center disabled:opacity-40"
-          >
-            {streaming ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
+          {streaming ? (
+            <button
+              onClick={cancelStream}
+              className="btn-danger h-9 w-9 shrink-0 rounded-lg p-0 flex items-center justify-center"
+              title="停止生成"
+            >
+              <X size={14} />
+            </button>
+          ) : (
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim() || !sessionId}
+              className="btn-primary h-9 w-9 shrink-0 rounded-lg p-0 flex items-center justify-center disabled:opacity-40"
+            >
               <Send size={14} />
-            )}
-          </button>
+            </button>
+          )}
         </div>
         <p className="mt-1 text-[10px] text-slate-600">
           Enter 发送 · Shift+Enter 换行
