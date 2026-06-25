@@ -24,9 +24,9 @@ const cmLangsExtra = ['@codemirror/lang-cpp', '@codemirror/lang-go',
 
 export default defineConfig({
   build: {
-    minify: 'terser',
-    terserOptions: {
-      compress: { drop_console: true },
+    minify: 'esbuild',
+    esbuildOptions: {
+      drop: ['console'],
     },
     rollupOptions: {
       output: {
