@@ -1,36 +1,34 @@
-# ===== 构建阶段 =====
+# ============================================
+# 构建阶段：编译前端
+# ============================================
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# 安装前端依赖
-COPY frontend/package.json ./frontend/
-RUN cd frontend && npm install
+# 先只复制 lockfile 和 package.json → 利用 layer 缓存 npm ci
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+RUN cd frontend && npm ci
 
-# 构建前端
+# 复制源码并构建
 COPY frontend/ ./frontend/
 RUN cd frontend && npm run build
 
-# ===== 运行阶段 =====
+# ============================================
+# 运行阶段：极简生产镜像
+# ============================================
 FROM node:22-alpine
 
 WORKDIR /app
 
-# 安装后端依赖
-COPY bridge/package.json ./bridge/
-RUN cd bridge && npm install --production --registry=https://registry.npmmirror.com
+# 安装后端依赖（语义化版本 lock）
+COPY bridge/package.json bridge/package-lock.json ./bridge/
+RUN cd bridge && npm ci --production
 
-# 复制后端源码
+# 复制后端源码 + 前端构建产物 + 插件
 COPY bridge/ ./bridge/
-
-# 复制前端构建产物
 COPY --from=builder /app/frontend/dist/ ./frontend/dist/
-
-# 复制插件
 COPY plugins/ ./plugins/
 
-# 暴露端口
 EXPOSE 3001
 
-# 启动
 CMD ["node", "bridge/index.js"]
