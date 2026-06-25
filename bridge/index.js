@@ -168,6 +168,158 @@ app.post('/api/ssh/exec', (req, res) => {
   })
 })
 
+// ========== Docker API ==========
+
+/** 辅助：通过 SSH connectionId 执行 docker 命令并返回 JSON */
+function dockerExec(connectionId, dockerCmd, res) {
+  const conn = connections.get(connectionId)
+  if (!conn || !conn.ssh) {
+    return res.status(400).json({ error: 'SSH not connected' })
+  }
+
+  conn.ssh.exec(dockerCmd, { pty: false }, (err, stream) => {
+    if (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    let stdout = ''
+    let stderr = ''
+
+    stream.on('data', (chunk) => {
+      stdout += chunk.toString('utf-8')
+    })
+
+    stream.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf-8')
+    })
+
+    stream.on('close', (code) => {
+      if (code !== 0) {
+        return res.json({ success: false, error: stderr.trim() || `Exit code: ${code}`, exitCode: code })
+      }
+      res.json({ success: true, data: stdout, exitCode: code })
+    })
+
+    setTimeout(() => {
+      stream.close()
+    }, 30000)
+  })
+}
+
+/** dockerExec 的 Promise 版本（用于内部调用） */
+function dockerExecAsync(connectionId, dockerCmd) {
+  return new Promise((resolve, reject) => {
+    const conn = connections.get(connectionId)
+    if (!conn || !conn.ssh) {
+      return reject(new Error('SSH not connected'))
+    }
+
+    conn.ssh.exec(dockerCmd, { pty: false }, (err, stream) => {
+      if (err) return reject(err)
+
+      let stdout = ''
+      let stderr = ''
+
+      stream.on('data', (chunk) => { stdout += chunk.toString('utf-8') })
+      stream.stderr.on('data', (chunk) => { stderr += chunk.toString('utf-8') })
+
+      stream.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(stderr.trim() || `Exit code: ${code}`))
+        } else {
+          resolve(stdout)
+        }
+      })
+    })
+  })
+}
+
+// 列出容器
+app.post('/api/docker/ps', (req, res) => {
+  const { connectionId, all } = req.body
+  if (!connectionId) return res.status(400).json({ error: 'Missing connectionId' })
+  const flag = all !== false ? '-a' : ''
+  dockerExec(connectionId, `docker ps ${flag} --format '{{json .}}' 2>/dev/null`, res)
+})
+
+// 列出镜像
+app.post('/api/docker/images', (req, res) => {
+  const { connectionId } = req.body
+  if (!connectionId) return res.status(400).json({ error: 'Missing connectionId' })
+  dockerExec(connectionId, "docker images --format '{{json .}}' 2>/dev/null", res)
+})
+
+// 容器统计（CPU/内存）
+app.post('/api/docker/stats', (req, res) => {
+  const { connectionId } = req.body
+  if (!connectionId) return res.status(400).json({ error: 'Missing connectionId' })
+  dockerExec(connectionId, "docker stats --no-stream --format '{{json .}}' 2>/dev/null", res)
+})
+
+// 检查容器/镜像详情
+app.post('/api/docker/inspect', (req, res) => {
+  const { connectionId, id } = req.body
+  if (!connectionId || !id) return res.status(400).json({ error: 'Missing connectionId or id' })
+  dockerExec(connectionId, `docker inspect ${escapeShellArg(id)} 2>/dev/null`, res)
+})
+
+// 获取容器日志
+app.post('/api/docker/logs', (req, res) => {
+  const { connectionId, id, tail } = req.body
+  if (!connectionId || !id) return res.status(400).json({ error: 'Missing connectionId or id' })
+  const n = tail || 200
+  dockerExec(connectionId, `docker logs --tail ${n} --timestamps ${escapeShellArg(id)} 2>&1`, res)
+})
+
+// 启动容器
+app.post('/api/docker/start', (req, res) => {
+  const { connectionId, id } = req.body
+  if (!connectionId || !id) return res.status(400).json({ error: 'Missing connectionId or id' })
+  dockerExec(connectionId, `docker start ${escapeShellArg(id)} 2>&1`, res)
+})
+
+// 停止容器
+app.post('/api/docker/stop', (req, res) => {
+  const { connectionId, id } = req.body
+  if (!connectionId || !id) return res.status(400).json({ error: 'Missing connectionId or id' })
+  dockerExec(connectionId, `docker stop ${escapeShellArg(id)} 2>&1`, res)
+})
+
+// 重启容器
+app.post('/api/docker/restart', (req, res) => {
+  const { connectionId, id } = req.body
+  if (!connectionId || !id) return res.status(400).json({ error: 'Missing connectionId or id' })
+  dockerExec(connectionId, `docker restart ${escapeShellArg(id)} 2>&1`, res)
+})
+
+// 删除容器
+app.post('/api/docker/rm', (req, res) => {
+  const { connectionId, id, force } = req.body
+  if (!connectionId || !id) return res.status(400).json({ error: 'Missing connectionId or id' })
+  const f = force ? '-f' : ''
+  dockerExec(connectionId, `docker rm ${f} ${escapeShellArg(id)} 2>&1`, res)
+})
+
+// 删除镜像
+app.post('/api/docker/rmi', (req, res) => {
+  const { connectionId, id, force } = req.body
+  if (!connectionId || !id) return res.status(400).json({ error: 'Missing connectionId or id' })
+  const f = force ? '-f' : ''
+  dockerExec(connectionId, `docker rmi ${f} ${escapeShellArg(id)} 2>&1`, res)
+})
+
+// 获取 docker-compose 项目列表
+app.post('/api/docker/compose', (req, res) => {
+  const { connectionId, filePath } = req.body
+  if (!connectionId) return res.status(400).json({ error: 'Missing connectionId' })
+  if (filePath) {
+    dockerExec(connectionId, `docker compose -f ${escapeShellArg(filePath)} ps --format '{{json .}}' 2>/dev/null`, res)
+  } else {
+    // 自动发现 compose 文件
+    dockerExec(connectionId, 'find / -maxdepth 4 -name "docker-compose*.yml" -o -name "docker-compose*.yaml" -o -name "compose*.yml" -o -name "compose*.yaml" 2>/dev/null | head -20', res)
+  }
+})
+
 // ─── 插件市场 API ───
 
 // 默认插件市场源
@@ -184,7 +336,7 @@ app.get('/api/market/index', async (req, res) => {
     }
     const data = await response.json()
     res.json(data)
-  } catch (err: any) {
+  } catch (err) {
     res.status(502).json({ error: `Failed to fetch market index: ${err.message}` })
   }
 })
@@ -223,7 +375,7 @@ app.post('/api/plugins/install', async (req, res) => {
       if (!manifest.id || !manifest.name) {
         throw new Error('Invalid manifest: missing id or name')
       }
-    } catch (parseErr: any) {
+    } catch (parseErr) {
       fs.rmSync(targetDir, { recursive: true, force: true })
       return res.status(400).json({ error: `Invalid manifest format: ${parseErr.message}` })
     }
@@ -248,7 +400,7 @@ app.post('/api/plugins/install', async (req, res) => {
       pluginId,
       message: `Plugin "${pluginId}" installed successfully`,
     })
-  } catch (err: any) {
+  } catch (err) {
     // 清理残留目录
     try { fs.rmSync(targetDir, { recursive: true, force: true }) } catch {}
     res.status(500).json({ error: `Install failed: ${err.message}` })
@@ -278,7 +430,7 @@ app.post('/api/plugins/uninstall', (req, res) => {
       pluginId,
       message: `Plugin "${pluginId}" uninstalled`,
     })
-  } catch (err: any) {
+  } catch (err) {
     res.status(500).json({ error: `Uninstall failed: ${err.message}` })
   }
 })
@@ -1257,7 +1409,7 @@ if (fs.existsSync(frontendDist)) {
 const isDev = process.env.NODE_ENV !== 'production'
 
 if (isDev && fs.existsSync(pluginsDir)) {
-  let watchTimer: ReturnType<typeof setTimeout> | null = null
+  let watchTimer = null
 
   fs.watch(pluginsDir, { recursive: true }, (eventType, filename) => {
     // 防抖：500ms 内多次变更只通知一次

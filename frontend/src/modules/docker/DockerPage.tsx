@@ -1,0 +1,208 @@
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { Container, RefreshCw, Terminal, AlertCircle, Server } from 'lucide-react'
+import { useAppStore } from '../../stores/app-store'
+import type { DockerContainer, DockerImage } from './index'
+
+const DockerContainerList = lazy(() => import('./DockerContainerList'))
+const DockerImages = lazy(() => import('./DockerImages'))
+
+type Tab = 'containers' | 'images'
+
+export default function DockerPage() {
+  const [tab, setTab] = useState<Tab>('containers')
+  const [containers, setContainers] = useState<DockerContainer[]>([])
+  const [images, setImages] = useState<DockerImage[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const autoRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const activeNav = useAppStore((s) => s.activeNav)
+  const isVisible = activeNav === 'docker'
+
+  // 获取当前 SSH 连接 ID
+  const sessions = useAppStore((s) => s.sshSessions)
+  const currentConnId = sessions.length > 0 ? sessions[0] : null
+
+  const fetchContainers = useCallback(async () => {
+    if (!currentConnId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/docker/ps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId: currentConnId, all: true }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        const lines = json.data.trim().split('\n').filter(Boolean)
+        const list: DockerContainer[] = lines.map((line: string) => {
+          try { return JSON.parse(line) } catch { return null }
+        }).filter(Boolean)
+        setContainers(list)
+      } else {
+        setError(json.error || '获取容器列表失败')
+      }
+    } catch (err: any) {
+      setError(err.message || '请求失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [currentConnId])
+
+  const fetchImages = useCallback(async () => {
+    if (!currentConnId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/docker/images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId: currentConnId }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        const lines = json.data.trim().split('\n').filter(Boolean)
+        const list: DockerImage[] = lines.map((line: string) => {
+          try { return JSON.parse(line) } catch { return null }
+        }).filter(Boolean)
+        setImages(list)
+      } else {
+        setError(json.error || '获取镜像列表失败')
+      }
+    } catch (err: any) {
+      setError(err.message || '请求失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [currentConnId])
+
+  const refresh = useCallback(() => {
+    if (tab === 'containers') fetchContainers()
+    else fetchImages()
+  }, [tab, fetchContainers, fetchImages])
+
+  // 自动刷新
+  useEffect(() => {
+    if (autoRefresh && isVisible) {
+      autoRef.current = setInterval(refresh, 5000)
+    }
+    return () => {
+      if (autoRef.current) {
+        clearInterval(autoRef.current)
+        autoRef.current = null
+      }
+    }
+  }, [autoRefresh, isVisible, refresh])
+
+  // 切换 tab 时自动加载
+  useEffect(() => {
+    if (isVisible) refresh()
+  }, [tab, isVisible])
+
+  // 切回页面时刷新
+  useEffect(() => {
+    if (isVisible) refresh()
+  }, [isVisible])
+
+  if (!currentConnId) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 text-slate-500">
+        <Container size={48} className="text-slate-600" />
+        <div className="text-center">
+          <p className="text-sm font-medium text-slate-400">未连接到任何 SSH</p>
+          <p className="mt-1 text-xs">请先在 SSH 页面建立连接，再使用 Docker 管理</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* 头部 */}
+      <div className="flex shrink-0 items-center border-b border-slate-700/50 bg-slate-900/80 px-4 py-2">
+        <Container size={18} className="mr-2 text-smartbox-400" />
+        <h1 className="text-sm font-semibold text-slate-200">Docker 管理</h1>
+        <div className="ml-auto flex items-center gap-2">
+          {/* 自动刷新开关 */}
+          <label className="flex items-center gap-1.5 text-xs text-slate-400">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="h-3 w-3 rounded border-slate-600 bg-slate-700 text-smartbox-500"
+            />
+            自动刷新
+          </label>
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            刷新
+          </button>
+        </div>
+      </div>
+
+      {/* Tab 切换 */}
+      <div className="flex shrink-0 border-b border-slate-700/30 px-4">
+        <button
+          onClick={() => setTab('containers')}
+          className={`border-b-2 px-4 py-2 text-xs transition-colors ${
+            tab === 'containers'
+              ? 'border-smartbox-400 text-slate-200'
+              : 'border-transparent text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          容器 ({containers.length})
+        </button>
+        <button
+          onClick={() => setTab('images')}
+          className={`border-b-2 px-4 py-2 text-xs transition-colors ${
+            tab === 'images'
+              ? 'border-smartbox-400 text-slate-200'
+              : 'border-transparent text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          镜像 ({images.length})
+        </button>
+      </div>
+
+      {/* 错误信息 */}
+      {error && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-red-900/30 bg-red-950/20 px-4 py-2 text-xs text-red-400">
+          <AlertCircle size={14} />
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto text-red-500 hover:text-red-300">✕</button>
+        </div>
+      )}
+
+      {/* 内容 */}
+      <div className="flex-1 overflow-auto">
+        <Suspense fallback={
+          <div className="flex h-full items-center justify-center">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
+          </div>
+        }>
+          {tab === 'containers' && (
+            <DockerContainerList
+              connectionId={currentConnId}
+              containers={containers}
+              loading={loading}
+              onRefresh={fetchContainers}
+            />
+          )}
+          {tab === 'images' && (
+            <DockerImages
+              connectionId={currentConnId}
+              images={images}
+              loading={loading}
+              onRefresh={fetchImages}
+            />
+          )}
+        </Suspense>
+      </div>
+    </div>
+  )
+}

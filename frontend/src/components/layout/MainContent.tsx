@@ -2,14 +2,16 @@ import { lazy, Suspense } from 'react'
 import { useAppStore } from '../../stores/app-store'
 
 const SshPlaceholder = lazy(() => import('../../modules/ssh/SshPlaceholder'))
+const DockerPage = lazy(() => import('../../modules/docker/DockerPage'))
 const FileManager = lazy(() => import('../../modules/file-manager/FileManager'))
 const PluginsPage = lazy(() => import('../../modules/plugins/PluginsPage'))
 const SettingsPanel = lazy(() => import('../../modules/settings/SettingsPanel'))
 
-const NAVS = ['ssh', 'files', 'plugins', 'settings'] as const
+const NAVS = ['ssh', 'docker', 'files', 'plugins', 'settings'] as const
 
 const PAGES: Record<string, React.ReactNode> = {
   ssh: <SshPlaceholder />,
+  docker: <DockerPage />,
   files: <FileManager />,
   plugins: <PluginsPage />,
   settings: <SettingsPanel />,
