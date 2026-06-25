@@ -1,0 +1,38 @@
+{
+  "id": "yaml-formatter",
+  "name": "YAML 格式化",
+  "version": "1.0.0",
+  "description": "格式化、压缩和验证 YAML 数据",
+  "author": "SmartBox",
+  "icon": "file-code",
+  "commands": [
+    {
+      "id": "yaml-format",
+      "label": "格式化 YAML",
+      "description": "美化当前编辑器中的 YAML 内容",
+      "icon": "file-code",
+      "keywords": ["yaml", "yml", "format", "格式化", "美化"]
+    },
+    {
+      "id": "yaml-validate",
+      "label": "验证 YAML",
+      "description": "检查当前 YAML 是否有语法错误",
+      "icon": "check-circle",
+      "keywords": ["yaml", "yml", "validate", "验证", "检查"]
+    },
+    {
+      "id": "yaml-to-json",
+      "label": "YAML → JSON",
+      "description": "将 YAML 转换为 JSON",
+      "icon": "arrow-right-left",
+      "keywords": ["yaml", "yml", "json", "convert", "转换"]
+    }
+  ],
+  "panels": [
+    {
+      "id": "yaml-formatter-panel",
+      "title": "YAML 工具",
+      "icon": "file-code"
+    }
+  ]
+}
