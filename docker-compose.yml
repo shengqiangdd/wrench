@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: docker.sq6.top/ghcr.io/shengqiangdd/smartbox:latest
+    image: ghcr.io/shengqiangdd/smartbox:latest
     container_name: smartbox
     ports:
       - "3001:3001"   # 后端 API + WebSocket

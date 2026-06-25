@@ -5,8 +5,9 @@ import type { DockerContainer, DockerImage } from './index'
 
 const DockerContainerList = lazy(() => import('./DockerContainerList'))
 const DockerImages = lazy(() => import('./DockerImages'))
+const DockerCompose = lazy(() => import('./DockerCompose'))
 
-type Tab = 'containers' | 'images'
+type Tab = 'containers' | 'images' | 'compose'
 
 export default function DockerPage() {
   const [tab, setTab] = useState<Tab>('containers')
@@ -167,6 +168,16 @@ export default function DockerPage() {
         >
           镜像 ({images.length})
         </button>
+        <button
+          onClick={() => setTab('compose')}
+          className={`border-b-2 px-4 py-2 text-xs transition-colors ${
+            tab === 'compose'
+              ? 'border-smartbox-400 text-slate-200'
+              : 'border-transparent text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          Compose
+        </button>
       </div>
 
       {/* 错误信息 */}
@@ -200,6 +211,9 @@ export default function DockerPage() {
               loading={loading}
               onRefresh={fetchImages}
             />
+          )}
+          {tab === 'compose' && (
+            <DockerCompose connectionId={currentConnId} />
           )}
         </Suspense>
       </div>

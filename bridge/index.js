@@ -348,6 +348,60 @@ app.post('/api/docker/compose', (req, res) => {
   }
 })
 
+// Docker Compose 操作
+app.post('/api/docker/compose/action', (req, res) => {
+  const { connectionId, filePath, action, service, args } = req.body
+  if (!connectionId || !filePath || !action) {
+    return res.status(400).json({ error: 'Missing connectionId, filePath or action' })
+  }
+
+  const allowed = ['up', 'down', 'restart', 'stop', 'start', 'ps', 'logs', 'pull', 'build']
+  if (!allowed.includes(action)) {
+    return res.status(400).json({ error: `不支持的操作: ${action}` })
+  }
+
+  let cmd = `docker compose -f ${escapeShellArg(filePath)} ${action}`
+
+  if (service) {
+    cmd += ` ${escapeShellArg(service)}`
+  }
+  if (args) {
+    cmd += ` ${args}`
+  }
+  if (action === 'up') {
+    cmd += ' -d'
+  }
+  if (action === 'logs') {
+    cmd += ' --tail 100 --timestamps'
+  }
+  cmd += ' 2>&1'
+
+  // 对于持续输出的操作设置较长时间
+  const timeout = action === 'up' || action === 'logs' ? 30000 : 15000
+  const conn = connections.get(connectionId)
+  if (!conn || !conn.ssh) {
+    return res.status(400).json({ error: 'SSH 未连接' })
+  }
+
+  conn.ssh.exec(cmd, { pty: false }, (err, stream) => {
+    if (err) return res.status(500).json({ error: err.message })
+
+    let stdout = ''
+    let stderr = ''
+    const timer = setTimeout(() => { stream.close() }, timeout)
+
+    stream.on('data', (chunk) => { stdout += chunk.toString('utf-8') })
+    stream.stderr.on('data', (chunk) => { stderr += chunk.toString('utf-8') })
+    stream.on('close', (code) => {
+      clearTimeout(timer)
+      if (code !== 0 && !stdout.trim()) {
+        return res.json({ success: false, data: stdout, error: stderr.trim() || `Exit code: ${code}`, exitCode: code })
+      }
+      res.json({ success: true, data: stdout, error: stderr || undefined, exitCode: code })
+    })
+  })
+})
+
 // ========== 日志聚合 API ==========
 
 /** 辅助：通过 SSH 执行日志相关命令 */
