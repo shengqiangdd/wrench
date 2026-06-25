@@ -1,10 +1,12 @@
 import { useState, useCallback } from 'react'
-import { Zap, PanelLeftOpen, PanelLeftClose, Terminal } from 'lucide-react'
+import { Zap, Terminal, Download, Upload, PanelLeftOpen, PanelLeftClose } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useCommands } from './useCommands'
 import CommandsList from './CommandsList'
 import CommandOutput from './CommandOutput'
 import CommandFormModal from './CommandFormModal'
+import VariableModal from './VariableModal'
+import { COMMAND_GROUPS } from './index'
 import type { QuickCommand } from './index'
 
 export default function CommandsPage() {
@@ -12,6 +14,7 @@ export default function CommandsPage() {
   const connectionId = sessions.length > 0 ? sessions[0] : null
 
   const {
+    customCommands,
     commandsByGroup,
     results,
     executingId,
@@ -21,29 +24,55 @@ export default function CommandsPage() {
     executeCommand,
     clearResults,
     removeResult,
+    setCustomCommands,
   } = useCommands()
 
   const [outputPanelOpen, setOutputPanelOpen] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editCmd, setEditCmd] = useState<QuickCommand | null>(null)
+  const [variableModal, setVariableModal] = useState<{
+    cmd: QuickCommand
+    onResolved: (cmd: string) => void
+  } | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
 
-  /** 执行命令 */
+  /** 执行命令（如果有变量则弹窗） */
   const handleExecute = useCallback(
     async (cmd: QuickCommand) => {
       if (!connectionId) return
-      await executeCommand(cmd, connectionId)
+      if (cmd.variables && cmd.variables.length > 0) {
+        setVariableModal({
+          cmd,
+          onResolved: async (resolvedCommand) => {
+            setVariableModal(null)
+            // 复制一份变量已填充的命令
+            const resolvedCmd = { ...cmd, command: resolvedCommand, variables: undefined }
+            await executeCommand(resolvedCmd, connectionId)
+          },
+        })
+      } else {
+        await executeCommand(cmd, connectionId)
+      }
     },
     [connectionId, executeCommand],
   )
 
-  /** 复制命令到剪贴板 */
-  const handleCopyToClipboard = useCallback(async (cmd: string) => {
-    try {
-      await navigator.clipboard.writeText(cmd)
-    } catch {}
+  /** 复制命令到剪贴板（有变量则弹窗） */
+  const handleCopyToClipboard = useCallback((cmdStr: string) => {
+    navigator.clipboard.writeText(cmdStr).catch(() => {})
   }, [])
 
-  /** 新建命令弹窗 */
+  /** 发送命令到终端 */
+  const handleSendToTerminal = useCallback((cmdStr: string) => {
+    window.dispatchEvent(new CustomEvent('smartbox:send-to-terminal', { detail: { command: cmdStr } }))
+  }, [])
+
+  /** 发送到批量执行面板 */
+  const handleSendToBatch = useCallback((cmdStr: string) => {
+    window.dispatchEvent(new CustomEvent('smartbox:send-to-batch', { detail: { command: cmdStr } }))
+  }, [])
+
+  /** 新建命令 */
   const handleOpenAdd = useCallback(() => {
     setEditCmd(null)
     setShowForm(true)
@@ -69,10 +98,56 @@ export default function CommandsPage() {
     [editCmd, addCommand, updateCommand],
   )
 
-  /** 发送命令文字到终端（通过全局事件） */
-  const handleSendToTerminal = useCallback((cmd: string) => {
-    window.dispatchEvent(new CustomEvent('smartbox:send-to-terminal', { detail: { command: cmd } }))
-  }, [])
+  /** 导出命令 */
+  const handleExport = useCallback(() => {
+    const data = JSON.stringify({ version: 1, commands: customCommands }, null, 2)
+    const blob = new Blob([data], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `smartbox-commands-${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [customCommands])
+
+  /** 导入命令 */
+  const handleImport = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const data = JSON.parse(text)
+        if (!data.commands || !Array.isArray(data.commands)) {
+          throw new Error('格式无效：缺少 commands 字段')
+        }
+        const imported = data.commands.map((c: any) => ({
+          ...c,
+          id: `imported-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          isBuiltin: false,
+        }))
+        imported.forEach((cmd: QuickCommand) => addCommand(cmd))
+        setImportError(null)
+      } catch (err: any) {
+        setImportError(`导入失败: ${err.message}`)
+        setTimeout(() => setImportError(null), 5000)
+      }
+    }
+    input.click()
+  }, [addCommand])
+
+  /** 执行带变量已填充的命令 */
+  const handleVariableExecute = useCallback(
+    async (cmd: QuickCommand, resolvedCommand: string) => {
+      if (!connectionId) return
+      const resolvedCmd = { ...cmd, command: resolvedCommand, variables: undefined }
+      await executeCommand(resolvedCmd, connectionId)
+    },
+    [connectionId, executeCommand],
+  )
 
   // 未连接
   if (!connectionId) {
@@ -92,12 +167,28 @@ export default function CommandsPage() {
       {/* 头部 */}
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-700/50 bg-slate-900/80 px-4 py-2">
         <Zap size={18} className="text-amber-400" />
-        <h1 className="text-sm font-semibold text-slate-200">常用命令</h1>
+        <h1 className="text-sm font-semibold text-slate-200">脚本模板库</h1>
         <span className="ml-2 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">
           {sessions.length > 1 ? `${sessions.length} 个连接可用` : '1 个连接'}
         </span>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={handleImport}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+            title="导入命令"
+          >
+            <Download size={14} />
+            导入
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+            title="导出命令"
+          >
+            <Upload size={14} />
+            导出
+          </button>
           <button
             onClick={() => setOutputPanelOpen(!outputPanelOpen)}
             className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
@@ -108,6 +199,14 @@ export default function CommandsPage() {
           </button>
         </div>
       </div>
+
+      {/* 导入错误提示 */}
+      {importError && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-red-900/30 bg-red-950/20 px-4 py-2 text-xs text-red-400">
+          <span>{importError}</span>
+          <button onClick={() => setImportError(null)} className="ml-auto text-red-500 hover:text-red-300">✕</button>
+        </div>
+      )}
 
       {/* 主体：双栏布局 */}
       <div className="flex flex-1 overflow-hidden">
@@ -123,6 +222,7 @@ export default function CommandsPage() {
             onEdit={handleEdit}
             onRemove={removeCommand}
             onSendToTerminal={handleSendToTerminal}
+            onSendToBatch={handleSendToBatch}
           />
         </div>
 
@@ -145,6 +245,15 @@ export default function CommandsPage() {
           editCmd={editCmd}
           onSave={handleSave}
           onClose={() => { setShowForm(false); setEditCmd(null) }}
+        />
+      )}
+
+      {/* 变量替换弹窗 */}
+      {variableModal && (
+        <VariableModal
+          cmd={variableModal.cmd}
+          onConfirm={variableModal.onResolved}
+          onCancel={() => setVariableModal(null)}
         />
       )}
     </div>

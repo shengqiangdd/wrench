@@ -109,5 +109,6 @@ export function useCommands() {
     executeCommand,
     clearResults,
     removeResult,
+    setCustomCommands,
   }
 }

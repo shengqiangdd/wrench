@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { X, Play, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import type { SshConnection } from '../../types/ssh'
@@ -28,6 +28,17 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
 
   // 过滤掉快速连接和搜索
   const filteredConnections = connections.filter((c) => !c.id.startsWith('quick_'))
+
+  // 接收从脚本模板库发送的命令
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      if (e.detail?.command) {
+        setCommand(e.detail.command)
+      }
+    }
+    window.addEventListener('smartbox:send-to-batch', handler as EventListener)
+    return () => window.removeEventListener('smartbox:send-to-batch', handler as EventListener)
+  }, [])
 
   const selectAll = () => {
     if (selectedIds.size === filteredConnections.length) {

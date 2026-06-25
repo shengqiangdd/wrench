@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Play, Clipboard, Loader2, Plus, MoreHorizontal, Pencil, Trash2, Search } from 'lucide-react'
+import { Play, Clipboard, Loader2, Plus, MoreHorizontal, Pencil, Trash2, Search, Layers } from 'lucide-react'
 import type { QuickCommand, CommandGroup } from './index'
 import { COMMAND_GROUPS } from './index'
 
@@ -13,6 +13,7 @@ interface CommandsListProps {
   onEdit: (cmd: QuickCommand) => void
   onRemove: (id: string) => void
   onSendToTerminal: (cmd: string) => void
+  onSendToBatch?: (cmd: string) => void
 }
 
 export default function CommandsList({
@@ -25,6 +26,7 @@ export default function CommandsList({
   onEdit,
   onRemove,
   onSendToTerminal,
+  onSendToBatch,
 }: CommandsListProps) {
   const [search, setSearch] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
@@ -149,6 +151,15 @@ export default function CommandsList({
                           >
                             <span className="text-[10px] font-bold">T</span>
                           </button>
+                          {onSendToBatch && (
+                            <button
+                              onClick={() => onSendToBatch?.(cmd.command)}
+                              className="rounded p-1 text-slate-500 transition-colors hover:bg-amber-600/20 hover:text-amber-400"
+                              title="发送到批量执行"
+                            >
+                              <Layers size={14} />
+                            </button>
+                          )}
 
                           {!cmd.isBuiltin && (
                             <div className="relative">
