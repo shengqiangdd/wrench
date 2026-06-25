@@ -20,15 +20,16 @@ updates:
       prefix: "chore"
       prefix-development: "chore"
       include: "scope"
-    # 安全更新自动合并
-    allow:
-      - dependency-type: "direct"
+    # 大版本升级 — 手动处理
     ignore:
-      - dependency-name: "@types/react"
-        versions: [">=19.0.0"]
-      - dependency-name: "@types/react-dom"
-        versions: [">=19.0.0"]
-    # 针对 React 18 保留，大版本升级手动处理
+      - dependency-name: "tailwindcss"
+        versions: [">=5.0.0"]
+      - dependency-name: "vite"
+        versions: [">=9.0.0"]
+      - dependency-name: "react"
+        versions: [">=20.0.0"]
+      - dependency-name: "react-dom"
+        versions: [">=20.0.0"]
 
   # 后端依赖（npm）
   - package-ecosystem: "npm"
