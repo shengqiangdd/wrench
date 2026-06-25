@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
-import { Container, RefreshCw, Terminal, AlertCircle, Server } from 'lucide-react'
+import { Container, RefreshCw, Activity, AlertCircle } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import type { DockerContainer, DockerImage } from './index'
 
 const DockerContainerList = lazy(() => import('./DockerContainerList'))
 const DockerImages = lazy(() => import('./DockerImages'))
 const DockerCompose = lazy(() => import('./DockerCompose'))
+const DockerMonitor = lazy(() => import('./DockerMonitor'))
 
-type Tab = 'containers' | 'images' | 'compose'
+type Tab = 'containers' | 'images' | 'compose' | 'monitor'
 
 export default function DockerPage() {
   const [tab, setTab] = useState<Tab>('containers')
@@ -80,7 +81,8 @@ export default function DockerPage() {
 
   const refresh = useCallback(() => {
     if (tab === 'containers') fetchContainers()
-    else fetchImages()
+    else if (tab === 'images') fetchImages()
+    // monitor tab has its own polling
   }, [tab, fetchContainers, fetchImages])
 
   // 自动刷新
@@ -178,6 +180,17 @@ export default function DockerPage() {
         >
           Compose
         </button>
+        <button
+          onClick={() => setTab('monitor')}
+          className={`flex items-center gap-1 border-b-2 px-4 py-2 text-xs transition-colors ${
+            tab === 'monitor'
+              ? 'border-smartbox-400 text-slate-200'
+              : 'border-transparent text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Activity size={12} />
+          监控
+        </button>
       </div>
 
       {/* 错误信息 */}
@@ -214,6 +227,9 @@ export default function DockerPage() {
           )}
           {tab === 'compose' && (
             <DockerCompose connectionId={currentConnId} />
+          )}
+          {tab === 'monitor' && (
+            <DockerMonitor connectionId={currentConnId} containers={containers} />
           )}
         </Suspense>
       </div>
