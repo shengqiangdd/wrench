@@ -13,6 +13,7 @@
  * - { type: 'sftp', connectionId, operation, ... } // SFTP 操作
  */
 
+import http from 'node:http'
 import express from 'express'
 import expressWs from 'express-ws'
 import cors from 'cors'
@@ -56,7 +57,11 @@ const connections = new Map()
 // ─── Express 应用 ───
 
 const app = express()
-expressWs(app)
+const httpServer = http.createServer(app)
+expressWs(app, httpServer)
+
+// 安全加固：隐藏服务器信息
+app.disable('x-powered-by')
 
 // 中间件
 const allowedOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : []
@@ -2104,7 +2109,7 @@ if (isDev && fs.existsSync(pluginsDir)) {
 
 // ========== 启动服务器 ==========
 
-app.listen(PORT, '0.0.0.0', () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
  console.log(`[SmartBox Bridge] Server listening on 0.0.0.0:${PORT}`)
  console.log(` API: http://0.0.0.0:${PORT}/api/health`)
  console.log(` WS: ws://0.0.0.0:${PORT}/ws`)
