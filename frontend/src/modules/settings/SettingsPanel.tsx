@@ -202,7 +202,7 @@ export default function SettingsPanel() {
             })}
           </div>
           <p className="mt-2 text-[11px] text-slate-600">
-            当前为纯深色主题，切换浅色模式会调整主要背景色
+            {theme === 'dark' ? '当前为深色主题，切换浅色模式会调整主要背景色' : theme === 'light' ? '当前为浅色主题' : '当前跟随系统主题'}
           </p>
         </section>
 

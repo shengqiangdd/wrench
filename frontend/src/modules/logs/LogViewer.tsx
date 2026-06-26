@@ -1,5 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Download, Search, X, ArrowUpDown, Radio, Activity } from 'lucide-react'
+import { Download, Search, X, ArrowUpDown, Radio, Activity, AlertTriangle } from 'lucide-react'
+
+/** 将常见 SSH/系统错误转为友好提示 */
+function friendlyError(raw: string, path: string): { title: string; hint: string } | null {
+  const lower = raw.toLowerCase()
+  if (lower.includes('permission denied')) {
+    return {
+      title: '权限不足，无法读取日志文件',
+      hint: `文件 ${path} 需要 root 权限才能读取。请确认 SSH 用户具有 sudo 权限，或切换到有权限的日志源。`,
+    }
+  }
+  if (lower.includes('no such file')) {
+    return {
+      title: '日志文件不存在',
+      hint: `文件 ${path} 在目标服务器上不存在，请检查路径是否正确。`,
+    }
+  }
+  return null
+}
 
 interface LogViewerProps {
   connectionId: string
@@ -311,11 +329,20 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
       )}
 
       {/* 错误提示 */}
-      {error && (
-        <div className="shrink-0 border-b border-red-900/30 bg-red-950/20 px-3 py-2 text-xs text-red-400">
-          {error}
-        </div>
-      )}
+      {error && (() => {
+        const friendly = friendlyError(error, logPath)
+        return (
+          <div className="shrink-0 border-b border-red-900/30 bg-red-950/20 px-3 py-2 text-xs">
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertTriangle size={14} className="shrink-0" />
+              <span className="font-medium">{friendly ? friendly.title : error}</span>
+            </div>
+            {friendly && (
+              <p className="mt-1 pl-5 text-[11px] text-red-400/70">{friendly.hint}</p>
+            )}
+          </div>
+        )
+      })()}
 
       {/* 日志内容 */}
       <div ref={scrollRef} className="flex-1 overflow-auto bg-slate-950/80">

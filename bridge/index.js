@@ -522,7 +522,11 @@ app.post('/api/docker/compose/action', (req, res) => {
 // ========== 日志聚合 API ==========
 
 /** 辅助：通过 SSH 执行日志相关命令 */
-function logExec(connectionId, cmd, res) {
+/**
+ * 执行 SSH 日志命令，若遇到权限错误自动用 sudo 重试
+ * @param {boolean} _sudoRetry - 内部标记，是否已是 sudo 重试
+ */
+function logExec(connectionId, cmd, res, { _sudoRetry = false } = {}) {
  const conn = connections.get(connectionId)
  if (!conn || !conn.ssh) {
  return res.status(400).json({ error: 'SSH not connected' })
@@ -551,6 +555,11 @@ function logExec(connectionId, cmd, res) {
 
  stream.on('close', (code) => {
  clearTimeout(timeout)
+ // 权限不足且未重试过 → 自动加 sudo 重试
+ if (code !== 0 && !_sudoRetry && /permission denied/i.test(stderr)) {
+ const sudoCmd = cmd.replace(/^(\s*)/, '$1sudo ')
+ return logExec(connectionId, sudoCmd, res, { _sudoRetry: true })
+ }
  if (code !== 0 && !stdout.trim()) {
  return res.json({ success: false, error: stderr.trim() || `Exit code: ${code}`, exitCode: code })
  }
@@ -1759,50 +1768,59 @@ async function handleLogtailStart(ws, connectionId, requestId, payload) {
 
  const n = typeof lines === 'number' ? Math.min(Math.max(lines, 10), 5000) : 200
 
- conn.ssh.exec(`tail -n ${n} -f ${escapeShellArg(logPath)} 2>&1`, (err, stream) => {
- if (err) {
- return sendError(ws, connectionId, requestId, 'TAIL_FAILED', `无法跟踪日志: ${err.message}`)
- }
+  const startTail = (cmd, retried = false) => {
+    conn.ssh.exec(cmd, (err, stream) => {
+      if (err) {
+        return sendError(ws, connectionId, requestId, 'TAIL_FAILED', `无法跟踪日志: ${err.message}`)
+      }
 
- activeLogtails.set(tailKey, stream)
+      activeLogtails.set(tailKey, stream)
 
- // 确认启动
- sendJson(ws, {
- type: 'logtail_started',
- connectionId,
- requestId,
- logPath,
- })
+      // 确认启动
+      sendJson(ws, {
+        type: 'logtail_started',
+        connectionId,
+        requestId,
+        logPath,
+      })
 
- let buffer = ''
+      let buffer = ''
+      let permDenied = false
 
- stream.on('data', (data) => {
- buffer += data.toString()
- // 按行分割发送，避免单条消息过大
- const lines = buffer.split('\n')
- buffer = lines.pop() || '' // 保留不完整的最后一行
+      stream.on('data', (data) => {
+        buffer += data.toString()
+        // 按行分割发送，避免单条消息过大
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // 保留不完整的最后一行
 
- if (lines.length > 0 && ws.readyState === ws.OPEN) {
- ws.send(JSON.stringify({
- type: 'logtail_data',
- connectionId,
- logPath,
- lines,
- }))
- }
- })
+        if (lines.length > 0 && ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'logtail_data',
+            connectionId,
+            logPath,
+            lines,
+          }))
+        }
+      })
 
- stream.stderr.on('data', (data) => {
- if (ws.readyState === ws.OPEN) {
- ws.send(JSON.stringify({
- type: 'logtail_data',
- connectionId,
- logPath,
- lines: [data.toString()],
- isStderr: true,
- }))
- }
- })
+      stream.stderr.on('data', (data) => {
+        const msg = data.toString()
+        // 权限不足 → 自动用 sudo 重试
+        if (!retried && /permission denied/i.test(msg)) {
+          permDenied = true
+          try { stream.close() } catch (_) {}
+          return startTail(`sudo tail -n ${n} -f ${escapeShellArg(logPath)} 2>&1`, true)
+        }
+        if (ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'logtail_data',
+            connectionId,
+            logPath,
+            lines: [msg],
+            isStderr: true,
+          }))
+        }
+      })
 
  stream.on('close', () => {
  activeLogtails.delete(tailKey)
@@ -2018,22 +2036,22 @@ if (isDev && fs.existsSync(pluginsDir)) {
  fs.watch(pluginsDir, { recursive: true }, (eventType, filename) => {
  // 防抖：500ms 内多次变更只通知一次
  if (watchTimer) clearTimeout(watchTimer)
-    watchTimer = setTimeout(() => {
-      // 通知所有已连接的 WebSocket 客户端
-      let clientCount = 0
-      try {
-        const wss = app.getWss()
-        if (wss) {
-          const msg = JSON.stringify({ type: 'plugins-changed' })
-          for (const client of wss.clients) {
-            if (client.readyState === 1) { // WebSocket.OPEN
-              client.send(msg)
-              clientCount++
-            }
-          }
-        }
-      } catch (_) { /* ignore */ }
-      console.log(`[Bridge] Plugins changed, notified ${clientCount} clients`)
+ watchTimer = setTimeout(() => {
+ // 通知所有已连接的 WebSocket 客户端
+ let clientCount = 0
+ try {
+ const wss = app.getWss()
+ if (wss) {
+ const msg = JSON.stringify({ type: 'plugins-changed' })
+ for (const client of wss.clients) {
+ if (client.readyState === 1) { // WebSocket.OPEN
+ client.send(msg)
+ clientCount++
+ }
+ }
+ }
+ } catch (_) { /* ignore */ }
+ console.log(`[Bridge] Plugins changed, notified ${clientCount} clients`)
  }, 500)
  })
 
