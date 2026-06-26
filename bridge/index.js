@@ -120,24 +120,27 @@ const MAX_ALERTS = 500
 
 app.get('/api/alerts', (req, res) => {
   const { level, host, limit = 50 } = req.query
+  const safeLimit = Math.min(Number(limit) || 50, MAX_ALERTS)
   let result = [...alertsStore]
   if (level) result = result.filter(a => a.level === level)
   if (host) result = result.filter(a => a.host === host)
-  res.json({ total: result.length, alerts: result.slice(0, Number(limit)) })
+  res.json({ total: result.length, alerts: result.slice(0, safeLimit) })
 })
 
 app.post('/api/alerts', (req, res) => {
   const alert = req.body
   if (!alert || !alert.message) return res.status(400).json({ error: 'message required' })
+  // 限制字段长度，防止恶意注入撑爆内存
+  const clamp = (s, max) => typeof s === 'string' ? s.slice(0, max) : s
   const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     timestamp: new Date().toISOString(),
-    level: alert.level || 'warning',
-    host: alert.host || 'unknown',
-    metric: alert.metric || 'custom',
-    message: alert.message,
-    value: alert.value ?? null,
-    threshold: alert.threshold ?? null
+    level: alert.level === 'critical' ? 'critical' : 'warning',
+    host: clamp(alert.host, 128) || 'unknown',
+    metric: clamp(alert.metric, 32) || 'custom',
+    message: clamp(alert.message, 500),
+    value: typeof alert.value === 'number' ? alert.value : null,
+    threshold: typeof alert.threshold === 'number' ? alert.threshold : null
   }
   alertsStore.unshift(entry)
   if (alertsStore.length > MAX_ALERTS) alertsStore.length = MAX_ALERTS

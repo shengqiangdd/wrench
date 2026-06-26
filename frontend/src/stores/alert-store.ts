@@ -12,10 +12,23 @@ import { persist } from 'zustand/middleware'
 
 const BRIDGE_URL = import.meta.env.VITE_BRIDGE_URL || ''
 
+// 复用单例 AudioContext，避免频繁创建导致资源耗尽
+let sharedAudioCtx: AudioContext | null = null
+function getAudioCtx(): AudioContext | null {
+  try {
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioContext()
+    }
+    if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume()
+    return sharedAudioCtx
+  } catch { return null }
+}
+
 function playAlertSound(severity: AlertSeverity, enabled: boolean) {
   if (!enabled) return
   try {
-    const ctx = new AudioContext()
+    const ctx = getAudioCtx()
+    if (!ctx) return
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.connect(gain)
@@ -23,9 +36,10 @@ function playAlertSound(severity: AlertSeverity, enabled: boolean) {
     osc.frequency.value = severity === 'critical' ? 880 : 520
     osc.type = severity === 'critical' ? 'square' : 'sine'
     gain.gain.value = 0.15
+    const duration = severity === 'critical' ? 0.6 : 0.3
     osc.start()
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (severity === 'critical' ? 0.6 : 0.3))
-    osc.stop(ctx.currentTime + (severity === 'critical' ? 0.6 : 0.3))
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+    osc.stop(ctx.currentTime + duration)
   } catch { /* AudioContext 不可用时静默失败 */ }
 }
 
@@ -149,7 +163,14 @@ export const useAlertStore = create<AlertState>()(
 
       updateRule: (id, data) => {
         set((s) => ({
-          rules: s.rules.map((r) => (r.id === id ? { ...r, ...data } : r)),
+          rules: s.rules.map((r) => {
+            if (r.id !== id) return r
+            const updated = { ...r, ...data }
+            // 校验范围：阈值 1-100，连续次数 1-20
+            if (updated.threshold !== undefined) updated.threshold = Math.min(100, Math.max(1, updated.threshold))
+            if (updated.consecutive !== undefined) updated.consecutive = Math.min(20, Math.max(1, updated.consecutive))
+            return updated
+          }),
         }))
       },
 
@@ -244,6 +265,15 @@ export const useAlertStore = create<AlertState>()(
         enabled: state.enabled,
         soundEnabled: state.soundEnabled,
       }),
+      merge: (persisted, current) => {
+        const p = persisted as Partial<AlertState>
+        return {
+          ...current,
+          ...p,
+          // 兼容旧数据：soundEnabled 缺失时默认 true
+          soundEnabled: p.soundEnabled ?? true,
+        }
+      },
     },
   ),
 )
