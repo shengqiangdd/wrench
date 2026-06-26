@@ -248,7 +248,7 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
                 <button
                   onClick={runBatch}
                   disabled={!command.trim() || selectedIds.size === 0 || running}
-                  className="btn-primary flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50"
+                  className="btn btn-primary flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50"
                 >
                   {running ? (
                     <Loader2 size={14} className="animate-spin" />

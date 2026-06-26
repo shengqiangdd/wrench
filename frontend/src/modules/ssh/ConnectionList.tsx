@@ -114,44 +114,42 @@ export default function ConnectionList({ onConnect }: Props) {
   return (
     <div className="flex h-full flex-col p-4">
       {/* 工具栏 */}
-      <div className="mb-2 flex items-center gap-2">
-        <div className="relative flex-1">
+      <div className="mb-2 flex items-center gap-1.5">
+        <div className="relative min-w-0 flex-1">
           <input
-            className="input w-full pl-8 text-xs"
-            placeholder="搜索连接..."
+            className="input w-full pl-7 pr-2 py-1.5 text-xs"
+            placeholder="搜索..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
           <Search
-            size={14}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500"
+            size={13}
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500"
           />
         </div>
         <button
           onClick={() => setShowFileBatch(true)}
-          className="btn-ghost shrink-0"
+          className="btn btn-ghost shrink-0 px-2"
           title="批量文件分发"
         >
           <Upload size={14} />
-          分发
         </button>
         <button
           onClick={() => setShowBatch(true)}
-          className="btn-ghost shrink-0"
+          className="btn btn-ghost shrink-0 px-2"
           title="批量执行命令"
         >
           <Play size={14} />
-          批量
         </button>
         <button
           onClick={() => {
             setEditId(null)
             setShowForm(true)
           }}
-          className="btn-primary shrink-0"
+          className="btn btn-primary shrink-0 px-2"
+          title="新建连接"
         >
           <Plus size={14} />
-          新建
         </button>
       </div>
 

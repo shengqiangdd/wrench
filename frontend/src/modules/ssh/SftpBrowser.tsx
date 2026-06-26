@@ -323,7 +323,7 @@ function FilePreviewModal({
             {editMode && (
               <button
                 onClick={() => setEditMode(false)}
-                className="btn-ghost text-xs text-slate-400 hover:text-slate-300"
+                className="btn btn-ghost text-xs text-slate-400 hover:text-slate-300"
               >
                 取消编辑
               </button>
@@ -1283,7 +1283,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
               className="input min-w-[200px]"
             />
             <div className="mt-2 flex justify-end gap-2">
-              <button onClick={() => setRenaming(null)} className="btn-ghost text-xs">取消</button>
+              <button onClick={() => setRenaming(null)} className="btn btn-ghost text-xs">取消</button>
               <button
                 onClick={() => {
                   const entry = entries.find(en => en.path === renaming)

@@ -565,7 +565,7 @@ export default function SshPlaceholder() {
  </p>
  <button
  onClick={() => setSidebarOpen(true)}
- className="btn-primary mt-4 md:hidden"
+ className="btn btn-primary mt-4 md:hidden"
  >
  <PlugZap size={14} />
  查看连接列表
@@ -577,7 +577,7 @@ export default function SshPlaceholder() {
  key={conn.id}
  onClick={() => handleDirectConnect(conn.id)}
  disabled={connecting}
- className="btn-ghost mx-auto block w-64 text-left"
+ className="btn btn-ghost mx-auto block w-64 text-left"
  >
  <div className="flex items-center gap-2">
  <span className="text-sm">{conn.name}</span>

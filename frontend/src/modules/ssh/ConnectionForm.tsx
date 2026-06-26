@@ -299,10 +299,10 @@ export default function ConnectionForm({ onClose, editId }: Props) {
               测试连接
             </button>
             <div className="flex gap-2">
-              <button type="button" onClick={onClose} className="btn-ghost">
+              <button type="button" onClick={onClose} className="btn btn-ghost">
                 取消
               </button>
-              <button type="submit" className="btn-primary">
+              <button type="submit" className="btn btn-primary">
                 {existing ? '保存修改' : '添加连接'}
               </button>
             </div>

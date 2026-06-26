@@ -354,10 +354,10 @@ export default function SettingsPanel() {
                   placeholder="输入模型名称"
                   autoFocus
                 />
-                <button onClick={handleSetCustomModel} className="btn-primary text-xs whitespace-nowrap">
+                <button onClick={handleSetCustomModel} className="btn btn-primary text-xs whitespace-nowrap">
                   <Check size={14} /> 确认
                 </button>
-                <button onClick={() => setShowCustomInput(false)} className="btn-ghost text-xs">
+                <button onClick={() => setShowCustomInput(false)} className="btn btn-ghost text-xs">
                   取消
                 </button>
               </div>
@@ -501,7 +501,7 @@ export default function SettingsPanel() {
                 </div>
                 <button
                   onClick={() => setShowExportConfirm(true)}
-                  className="btn-ghost flex items-center gap-1.5 text-xs"
+                  className="btn btn-ghost flex items-center gap-1.5 text-xs"
                 >
                   <Download size={14} />
                   导出
@@ -521,7 +521,7 @@ export default function SettingsPanel() {
                 <button
                   onClick={handleImportClick}
                   disabled={isImporting}
-                  className="btn-ghost flex items-center gap-1.5 text-xs"
+                  className="btn btn-ghost flex items-center gap-1.5 text-xs"
                 >
                   <Upload size={14} />
                   {isImporting ? '导入中...' : '导入'}

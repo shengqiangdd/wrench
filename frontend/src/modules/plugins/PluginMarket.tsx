@@ -314,7 +314,7 @@ export default function PluginMarket() {
                     {/* 展开详情 */}
                     <button
                       onClick={() => setExpandedId(isExpanded ? null : plugin.id)}
-                      className="btn-ghost rounded-lg p-1.5 text-slate-600 hover:text-slate-400"
+                      className="btn btn-ghost rounded-lg p-1.5 text-slate-600 hover:text-slate-400"
                     >
                       <ChevronDown
                         size={14}
@@ -327,7 +327,7 @@ export default function PluginMarket() {
                       <button
                         onClick={() => handleUninstall(plugin.id)}
                         disabled={installState?.status === 'installing'}
-                        className="btn-ghost rounded-lg p-1.5 text-red-500/60 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+                        className="btn btn-ghost rounded-lg p-1.5 text-red-500/60 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
                         title="卸载"
                       >
                         <Trash2 size={14} />
