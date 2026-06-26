@@ -6,6 +6,12 @@ node_modules/
 dist/
 build/
 out/
+frontend/public/assets/
+frontend/public/index.html
+frontend/public/manifest.webmanifest
+frontend/public/registerSW.js
+frontend/public/sw.js
+frontend/public/workbox-*.js
 
 # 环境变量
 .env
