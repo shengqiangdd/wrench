@@ -615,81 +615,122 @@ app.post('/api/logs/grep', (req, res) => {
 // 默认插件市场源
 const MARKET_INDEX_URL = process.env.MARKET_INDEX_URL || 'https://raw.githubusercontent.com/shengqiangdd/smartbox-plugins/main/index.json'
 
-// 获取市场插件列表
+// 本地市场 fallback：从本地已安装插件生成市场数据
+function getLocalMarketIndex() {
+  const localPlugins = []
+  if (fs.existsSync(pluginsDir)) {
+    const entries = fs.readdirSync(pluginsDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const manifestPath = path.join(pluginsDir, entry.name, 'manifest.json')
+      if (!fs.existsSync(manifestPath)) continue
+      try {
+        const m = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
+        localPlugins.push({
+          id: m.id || entry.name,
+          name: m.name || entry.name,
+          version: m.version || '1.0.0',
+          description: m.description || '',
+          author: m.author || 'SmartBox',
+          icon: m.icon || 'puzzle',
+          tags: m.tags || [],
+          manifestUrl: `local://${entry.name}/manifest.json`,
+          pluginUrl: `local://${entry.name}/plugin.js`,
+          updatedAt: '2026-06-26',
+          downloads: 0,
+        })
+      } catch { /* skip broken manifests */ }
+    }
+  }
+  return { plugins: localPlugins, updatedAt: new Date().toISOString().slice(0, 10), message: 'SmartBox 插件市场 - 内置插件集' }
+}
+
+// 获取市场插件列表（远程优先，失败 fallback 到本地）
 app.get('/api/market/index', async (req, res) => {
  try {
  const response = await fetch(MARKET_INDEX_URL, {
- signal: AbortSignal.timeout(15000),
+ signal: AbortSignal.timeout(8000),
  })
  if (!response.ok) {
- return res.status(502).json({ error: `Market fetch failed: HTTP ${response.status}` })
+   console.log('[market] Remote fetch failed, using local fallback')
+   return res.json(getLocalMarketIndex())
  }
  const data = await response.json()
  res.json(data)
  } catch (err) {
- res.status(502).json({ error: `Failed to fetch market index: ${err.message}` })
+   console.log(`[market] Remote fetch error: ${err.message}, using local fallback`)
+   res.json(getLocalMarketIndex())
  }
 })
 
-// 安装插件（从市场下载 manifest + plugin.js 到 plugins/ 目录）
+// 辅助：从 URL 读取内容（支持 local:// 协议读本地文件）
+async function fetchContent(url, timeout = 15000) {
+  if (url.startsWith('local://')) {
+    const relPath = url.replace('local://', '')
+    const localPath = path.join(pluginsDir, relPath)
+    if (!fs.existsSync(localPath)) throw new Error(`Local file not found: ${relPath}`)
+    return fs.readFileSync(localPath, 'utf-8')
+  }
+  const resp = await fetch(url, { signal: AbortSignal.timeout(timeout) })
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`)
+  return resp.text()
+}
+
+// 安装插件（从市场下载 manifest + plugin.js 到 plugins/ 目录，支持 local:// 协议）
 app.post('/api/plugins/install', async (req, res) => {
- const { pluginId, manifestUrl, pluginUrl } = req.body
- if (!pluginId || !manifestUrl || !pluginUrl) {
- return res.status(400).json({ error: 'Missing pluginId, manifestUrl, or pluginUrl' })
- }
+  const { pluginId, manifestUrl, pluginUrl } = req.body
+  if (!pluginId || !manifestUrl || !pluginUrl) {
+    return res.status(400).json({ error: 'Missing pluginId, manifestUrl, or pluginUrl' })
+  }
 
- const targetDir = path.join(pluginsDir, pluginId)
+  const targetDir = path.join(pluginsDir, pluginId)
 
- // 安全校验：不允许路径穿越
- if (!targetDir.startsWith(pluginsDir)) {
- return res.status(400).json({ error: 'Invalid plugin ID' })
- }
+  // 安全校验：不允许路径穿越
+  if (!targetDir.startsWith(pluginsDir)) {
+    return res.status(400).json({ error: 'Invalid plugin ID' })
+  }
 
- // 检查是否已安装
- if (fs.existsSync(targetDir)) {
- return res.status(409).json({ error: `Plugin "${pluginId}" is already installed` })
- }
+  // 检查是否已安装
+  if (fs.existsSync(targetDir)) {
+    return res.status(409).json({ error: `Plugin "${pluginId}" is already installed` })
+  }
 
- try {
- // 创建目录
- fs.mkdirSync(targetDir, { recursive: true })
+  try {
+    // 创建目录
+    fs.mkdirSync(targetDir, { recursive: true })
 
- // 下载 manifest.json
- const manResp = await fetch(manifestUrl, { signal: AbortSignal.timeout(15000) })
- if (!manResp.ok) throw new Error(`Failed to download manifest: HTTP ${manResp.status}`)
- const manifestText = await manResp.text()
+    // 获取 manifest.json
+    const manifestText = await fetchContent(manifestUrl)
 
- // 验证 manifest 格式
- try {
- const manifest = JSON.parse(manifestText)
- if (!manifest.id || !manifest.name) {
- throw new Error('Invalid manifest: missing id or name')
- }
- } catch (parseErr) {
- fs.rmSync(targetDir, { recursive: true, force: true })
- return res.status(400).json({ error: `Invalid manifest format: ${parseErr.message}` })
- }
+    // 验证 manifest 格式
+    try {
+      const manifest = JSON.parse(manifestText)
+      if (!manifest.id || !manifest.name) {
+        throw new Error('Invalid manifest: missing id or name')
+      }
+    } catch (parseErr) {
+      fs.rmSync(targetDir, { recursive: true, force: true })
+      return res.status(400).json({ error: `Invalid manifest format: ${parseErr.message}` })
+    }
 
- fs.writeFileSync(path.join(targetDir, 'manifest.json'), manifestText, 'utf-8')
+    fs.writeFileSync(path.join(targetDir, 'manifest.json'), manifestText, 'utf-8')
 
- // 下载 plugin.js
- const jsResp = await fetch(pluginUrl, { signal: AbortSignal.timeout(30000) })
- if (!jsResp.ok) throw new Error(`Failed to download plugin JS: HTTP ${jsResp.status}`)
- const jsText = await jsResp.text()
+    // 获取 plugin.js
+    const jsText = await fetchContent(pluginUrl, 30000)
 
- // 安全检查：简单验证 JS 代码不为空
- if (!jsText.trim()) {
- fs.rmSync(targetDir, { recursive: true, force: true })
- return res.status(400).json({ error: 'Plugin JS is empty' })
- }
+    // 安全检查：简单验证 JS 代码不为空
+    if (!jsText.trim()) {
+      fs.rmSync(targetDir, { recursive: true, force: true })
+      return res.status(400).json({ error: 'Plugin JS is empty' })
+    }
 
- fs.writeFileSync(path.join(targetDir, 'plugin.js'), jsText, 'utf-8')
+    fs.writeFileSync(path.join(targetDir, 'plugin.js'), jsText, 'utf-8')
 
- res.json({
- success: true,
- pluginId,
- message: `Plugin "${pluginId}" installed successfully`,
- })
+    res.json({
+      success: true,
+      pluginId,
+      message: `Plugin "${pluginId}" installed successfully`,
+    })
  } catch (err) {
  // 清理残留目录
  try { fs.rmSync(targetDir, { recursive: true, force: true }) } catch {}
