@@ -22,7 +22,7 @@ WORKDIR /app
 
 # 安装后端依赖（语义化版本 lock）
 COPY bridge/package.json bridge/package-lock.json ./bridge/
-RUN cd bridge && npm ci --production
+RUN cd bridge && npm ci --omit=dev
 
 # 复制后端源码 + 前端构建产物 + 插件
 COPY bridge/ ./bridge/
