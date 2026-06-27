@@ -1,4 +1,4 @@
-import { Terminal, FileCode2, Puzzle, Settings, Server, Container, ScrollText, Zap, Activity } from 'lucide-react'
+import { Terminal, FileCode2, Puzzle, Settings, Server, Container, ScrollText, Zap, Activity, PanelRight, PanelLeftClose } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 
 const navItems = [
@@ -16,11 +16,19 @@ export default function Sidebar() {
   const activeNav = useAppStore((s) => s.activeNav)
   const setActiveNav = useAppStore((s) => s.setActiveNav)
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const sshSessions = useAppStore((s) => s.sshSessions)
 
   if (sidebarCollapsed) {
     return (
       <nav className="flex w-14 flex-col items-center gap-1 border-r border-slate-700/50 bg-slate-900/50 py-3">
+        <button
+          onClick={toggleSidebar}
+          className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+          title="展开侧边栏"
+        >
+          <PanelRight size={16} />
+        </button>
         {navItems.map((item) => {
           const Icon = item.icon
           return (
@@ -46,7 +54,14 @@ export default function Sidebar() {
     <nav className="flex w-56 flex-col gap-0.5 border-r border-slate-700/50 bg-slate-900/50 p-3">
       <div className="mb-4 flex items-center gap-2 px-2">
         <Server size={20} className="text-smartbox-400" />
-        <span className="text-sm font-semibold text-slate-200">智盒 SmartBox</span>
+        <span className="text-sm font-semibold text-slate-200 flex-1">智盒 SmartBox</span>
+        <button
+          onClick={toggleSidebar}
+          className="flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+          title="收起侧边栏"
+        >
+          <PanelLeftClose size={14} />
+        </button>
       </div>
 
       {navItems.map((item) => {
