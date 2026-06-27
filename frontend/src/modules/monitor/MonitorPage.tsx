@@ -338,15 +338,25 @@ export default function MonitorPage() {
   const [healthError, setHealthError] = useState(false)
   const alertHistory = useAlertStore((s) => s.history)
 
-  // 扫描已连接的主机
+  // 扫描主机（已保存连接 + 活跃 session）
   const scanHosts = useCallback(() => {
-    // 显示已保存的 SSH 连接作为监控主机（而非生成 mock 数据）
-    const list = connections.map((conn) => ({ id: conn.id, name: conn.name }))
+    const list: { id: string; name: string }[] = []
+    // 已保存的连接
+    for (const conn of connections) {
+      list.push({ id: conn.id, name: conn.name })
+    }
+    // 活跃 session（快速连接不保存到 connections）
+    for (const sess of sessions) {
+      const name = sess.connectionName || sess.host || sess.id.slice(0, 8)
+      if (!list.some((h) => h.id === sess.id)) {
+        list.push({ id: sess.id, name })
+      }
+    }
     setHosts(list)
     if (list.length > 0 && selected.length === 0) {
       setSelected(list.map((h) => h.id))
     }
-  }, [connections, selected.length])
+  }, [connections, sessions, selected.length])
 
   // 采集单台主机数据
   const collectHostStats = useCallback(async (hostId: string): Promise<HostStats | null> => {
