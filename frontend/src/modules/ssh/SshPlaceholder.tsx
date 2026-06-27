@@ -55,11 +55,11 @@ export default function SshPlaceholder() {
  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
  const diff = e.changedTouches[0].clientX - touchStartX.current
  if (Math.abs(diff) < 50) return // 滑动距离不够
- if (diff > 0 && touchStartX.current < 100) {
+ if (diff > 0 && touchStartX.current < 60) {
  // 从屏幕左侧右滑 → 打开侧边栏
  setSidebarOpen(true)
  } else if (diff < 0 && sidebarOpen) {
- // 右滑关闭
+ // 左滑关闭
  setSidebarOpen(false)
  }
  }, [sidebarOpen, setSidebarOpen])
@@ -406,7 +406,7 @@ export default function SshPlaceholder() {
  )
 
  return (
-    <div className="relative flex h-full" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+ <div className="relative flex h-full touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
  {/* 移动端侧边栏遮罩 */}
  {sidebarOpen && (
  <div
@@ -415,14 +415,16 @@ export default function SshPlaceholder() {
  />
  )}
 
- {/* 左侧连接列表（可拖拽调整宽度） */}
- <div
- className={`
- absolute inset-y-0 left-0 z-40 shrink-0 border-r border-slate-700/50 bg-slate-950
- transition-transform duration-200 md:static md:z-auto md:translate-x-0
- ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
- `}
- >
+  {/* 左侧连接列表（可拖拽调整宽度） */}
+  <div
+    className={`
+      absolute inset-y-0 left-0 z-40 shrink-0 border-r border-slate-700/50 bg-slate-950
+      transition-transform duration-200 md:static md:z-auto md:translate-x-0
+      ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+    `}
+    style={{ width: sidebarOpen ? undefined : 0 }}
+  >
+    <div className="h-full overflow-hidden" style={{ width: sidebarOpen ? undefined : 0 }}>
  <ResizablePanel side="right" defaultSize={256} minSize={160} maxSize={500}>
  <div className="flex h-full flex-col">
  <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">
@@ -440,6 +442,7 @@ export default function SshPlaceholder() {
  </div>
  </ResizablePanel>
  </div>
+  </div>
 
  {/* 中间终端区域 */}
  <div className="flex flex-1 flex-col overflow-hidden">

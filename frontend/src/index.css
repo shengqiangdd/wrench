@@ -111,6 +111,10 @@ html:not(.dark) {
     appearance: none;
   }
 
+  /* 隐藏底部导航滚动条 */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
   /* 移动端触屏优化 */
   input, textarea, select, button, a, [role="button"] {
     -webkit-touch-callout: none;

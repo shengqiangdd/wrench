@@ -322,9 +322,9 @@ function mockHistory(): HistoryPoint[] {
 export default function MonitorPage() {
   const sessions = useSshStore((s) => s.sessions)
   const connections = useSshStore((s) => s.connections)
-  // 无活跃 session 但有已保存连接时，使用已保存连接作为监控目标
+  // 无活跃 session 时全部使用 mock 数据展示（已保存连接也作为主机列表）
   const hasLiveSessions = sessions.length > 0
-  const isMock = sessions.length === 0 && connections.length === 0
+  const isMock = sessions.length === 0
   const [hosts, setHosts] = useState<{ id: string; name: string }[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [stats, setStats] = useState<Record<string, HostStats>>({})
