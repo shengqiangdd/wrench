@@ -10,6 +10,7 @@ import {
   MessageSquare,
   ExternalLink,
   Check,
+  CheckCircle2,
   ChevronDown,
   Server,
   Pencil,
