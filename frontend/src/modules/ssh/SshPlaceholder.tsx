@@ -406,11 +406,12 @@ export default function SshPlaceholder() {
  )
 
  return (
-    <div className="relative flex h-full touch-pan-y overflow-hidden" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div className="relative flex flex-1 touch-pan-y overflow-hidden" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
   {/* 移动端侧边栏遮罩 */}
   {sidebarOpen && (
   <div
   className="fixed inset-0 z-30 bg-black/50 md:hidden"
+  style={{ bottom: '48px' }}
   onClick={() => setSidebarOpen(false)}
   />
   )}
@@ -422,7 +423,7 @@ export default function SshPlaceholder() {
       transition-transform duration-200 md:relative md:z-auto md:translate-x-0
       ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
     `}
-    style={{ width: sidebarOpen ? 256 : 0, overflow: 'hidden' }}
+    style={{ pointerEvents: sidebarOpen ? 'auto' : 'none' }}
   >
   <div className="h-full" style={{ width: 256 }}>
   <ResizablePanel side="right" defaultSize={256} minSize={160} maxSize={500}>
@@ -445,7 +446,7 @@ export default function SshPlaceholder() {
  </div>
 
  {/* 中间终端区域 */}
- <div className="flex flex-1 flex-col overflow-hidden">
+ <div className="flex flex-1 flex-col overflow-hidden min-h-0">
  {allSessions.length > 0 ? (
  <>
  {/* 标签栏 */}

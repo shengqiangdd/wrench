@@ -96,7 +96,7 @@ export const useAppStore = create<AppState>()(
       setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
 
       // SSH 页面持久化状态
-      sshSidebarOpen: true,
+      sshSidebarOpen: false,
       setSshSidebarOpen: (open) => set({ sshSidebarOpen: open }),
       sshSftpOpen: true,
       setSshSftpOpen: (open) => set({ sshSftpOpen: open }),
