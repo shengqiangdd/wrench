@@ -316,7 +316,7 @@ export default function FileManager() {
     )
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full flex-col md:flex-row md:overflow-hidden">
       {/* 左侧文件浏览器（可拖拽调整宽度） */}
       {sidebarOpen && (
         <div className="flex shrink-0 flex-col border-r border-slate-700/50">
@@ -334,7 +334,7 @@ export default function FileManager() {
                   <PanelLeftClose size={14} />
                 </button>
               </div>
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-y-auto">
                 <SftpBrowser
             sessionId={fmState.sessionId}
             activeConnId={fmState.connId}

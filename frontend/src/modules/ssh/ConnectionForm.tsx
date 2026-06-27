@@ -166,8 +166,8 @@ export default function ConnectionForm({ onClose, editId }: Props) {
 
         {/* 表单 */}
         <form onSubmit={handleSubmit} className="space-y-3 p-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="col-span-2 md:col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
               <label className="mb-1 block text-xs text-slate-500">名称 *</label>
               <input
                 className="input"
@@ -178,7 +178,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
               />
             </div>
 
-            <div className="col-span-2 md:col-span-2">
+            <div className="sm:col-span-2">
               <label className="mb-1 block text-xs text-slate-500">主机 *</label>
               <input
                 className="input"
@@ -210,7 +210,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
               />
             </div>
 
-            <div className="col-span-2 md:col-span-2">
+            <div className="sm:col-span-2">
               <label className="mb-1 block text-xs text-slate-500">认证方式</label>
               <div className="flex gap-2">
                 {(['password', 'key'] as AuthType[]).map((type) => (
@@ -231,7 +231,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
             </div>
 
             {authType === 'password' ? (
-              <div className="col-span-2 md:col-span-2">
+              <div className="sm:col-span-2">
                 <label className="mb-1 block text-xs text-slate-500">密码</label>
                 <div className="relative">
                   <input
@@ -253,7 +253,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
                 </div>
               </div>
             ) : (
-              <div className="col-span-2 md:col-span-2">
+              <div className="sm:col-span-2">
                 <label className="mb-1 block text-xs text-slate-500">私钥内容</label>
                 <textarea
                   className="input min-h-[100px] font-mono text-xs"
@@ -265,7 +265,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
               </div>
             )}
 
-            <div className="col-span-2 md:col-span-2">
+            <div className="sm:col-span-2">
               <label className="mb-1 block text-xs text-slate-500">
                 sudo 密码
                 <span className="text-slate-600 ml-1">（默认与 SSH 密码相同，用于 sudo -S 提权）</span>
@@ -290,7 +290,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
               </div>
             </div>
 
-            <div className="col-span-2 md:col-span-2">
+            <div className="sm:col-span-2">
               <label className="mb-1 block text-xs text-slate-500">分组（可选）</label>
               <input
                 className="input"
