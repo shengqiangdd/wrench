@@ -215,47 +215,47 @@ app.get('/api/plugins/:id/plugin.js', (req, res) => {
 
 // 执行 SSH 命令（通过 connectionId）
 app.post('/api/ssh/exec', (req, res) => {
-  // 限制：只允许通过连接 ID 访问自己的连接
-  const { connectionId, command } = req.body
-  if (!connectionId || !command) {
-    return res.status(400).json({ error: 'Missing connectionId or command' })
-  }
+ // 限制：只允许通过连接 ID 访问自己的连接
+ const { connectionId, command } = req.body
+ if (!connectionId || !command) {
+ return res.status(400).json({ error: 'Missing connectionId or command' })
+ }
 
-  const conn = connections.get(connectionId)
-  if (!conn || !conn.ssh) {
-    return res.status(400).json({ error: 'SSH not connected' })
-  }
+ const conn = connections.get(connectionId)
+ if (!conn || !conn.ssh) {
+ return res.status(400).json({ error: 'SSH not connected' })
+ }
 
-  // 支持 sudo 提权：若连接配置了 sudoPassword，自动包装命令
-  const effectiveCmd = conn.sudoPassword
-    ? `echo '${conn.sudoPassword.replace(/'/g, "'\\''")}' | sudo -S ${command}`
-    : command
+ // 支持 sudo 提权：若连接配置了 sudoPassword，自动包装命令
+ const effectiveCmd = conn.sudoPassword
+ ? `echo '${conn.sudoPassword.replace(/'/g, "'\\''")}' | sudo -S ${command}`
+ : command
 
-  conn.ssh.exec(effectiveCmd, { pty: !!conn.sudoPassword }, (err, stream) => {
-    if (err) {
-      return res.status(500).json({ error: err.message })
-    }
+ conn.ssh.exec(effectiveCmd, { pty: !!conn.sudoPassword }, (err, stream) => {
+ if (err) {
+ return res.status(500).json({ error: err.message })
+ }
 
-    let stdout = ''
-    let stderr = ''
+ let stdout = ''
+ let stderr = ''
 
-    stream.on('data', (chunk) => {
-      stdout += chunk.toString('utf-8')
-    })
+ stream.on('data', (chunk) => {
+ stdout += chunk.toString('utf-8')
+ })
 
-    stream.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf-8')
-    })
+ stream.stderr.on('data', (chunk) => {
+ stderr += chunk.toString('utf-8')
+ })
 
-    stream.on('close', (code) => {
-      res.json({ stdout, stderr, exitCode: code })
-    })
+ stream.on('close', (code) => {
+ res.json({ stdout, stderr, exitCode: code })
+ })
 
-    // 超时兜底
-    setTimeout(() => {
-      stream.close()
-    }, 30000)
-  })
+ // 超时兜底
+ setTimeout(() => {
+ stream.close()
+ }, 30000)
+ })
 })
 
 // ========== Docker API ==========
@@ -964,6 +964,7 @@ async function handleConnect(ws, connectionId, requestId, config) {
  ssh,
  sftp: null,
  connectionId,
+ host, port, username, // 调试和审计用
  shellStream: null,
  shells: new Map(),
  password: password || null, // 用于 sudo -S
@@ -1242,27 +1243,27 @@ function isPermissionError(err) {
  * 关键：用 pty 模式执行 sudo，避免某些系统 requiretty 导致失败
  */
 function sudoExec(conn, command, callback) {
-  // 某些系统 sudo 需要 tty 才能运行，所以用 pty 模式
-  conn.ssh.exec(command, { pty: true }, (err, stream) => {
-    if (err) return callback(err)
-    let stdout = ''
-    let stderr = ''
-    stream.on('data', (chunk) => { stdout += chunk.toString('utf-8') })
-    stream.stderr.on('data', (chunk) => { stderr += chunk.toString('utf-8') })
-    stream.on('close', (exitCode) => {
-      if (exitCode !== 0) {
-        callback(new Error(stderr.trim() || `命令退出码: ${exitCode}`))
-      } else {
-        callback(null, stdout)
-      }
-    })
-    // 写入 sudo 密码到 stdin（sudo -S 模式从 stdin 读取密码）
-    if (conn.sudoPassword) {
-      stream.write(conn.sudoPassword + '\n')
-    }
-    // 结束 stdin 避免 sudo 挂起等待输入
-    stream.end()
-  })
+ // 某些系统 sudo 需要 tty 才能运行，所以用 pty 模式
+ conn.ssh.exec(command, { pty: true }, (err, stream) => {
+ if (err) return callback(err)
+ let stdout = ''
+ let stderr = ''
+ stream.on('data', (chunk) => { stdout += chunk.toString('utf-8') })
+ stream.stderr.on('data', (chunk) => { stderr += chunk.toString('utf-8') })
+ stream.on('close', (exitCode) => {
+ if (exitCode !== 0) {
+ callback(new Error(stderr.trim() || `命令退出码: ${exitCode}`))
+ } else {
+ callback(null, stdout)
+ }
+ })
+ // 写入 sudo 密码到 stdin（sudo -S 模式从 stdin 读取密码）
+ if (conn.sudoPassword) {
+ stream.write(conn.sudoPassword + '\n')
+ }
+ // 结束 stdin 避免 sudo 挂起等待输入
+ stream.end()
+ })
 }
 
 /**

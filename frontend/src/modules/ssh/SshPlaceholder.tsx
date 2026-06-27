@@ -89,6 +89,7 @@ export default function SshPlaceholder() {
  username: conn.username,
  password: decryptedConn.password,
  privateKey: decryptedConn.privateKey,
+ sudoPassword: decryptedConn.sudoPassword || decryptedConn.password,
  })
 
  const session: SshSession = {
@@ -547,7 +548,7 @@ export default function SshPlaceholder() {
  <ResizablePanel side="left" defaultSize={340} minSize={280} maxSize={600}>
             <AiSidebar
             sessionId={activeSession.id}
-            connectionId={activeSession.connectionId}
+            connectionId={activeSession.id}
             onClose={() => setAiOpen(false)}
           />
  </ResizablePanel>
