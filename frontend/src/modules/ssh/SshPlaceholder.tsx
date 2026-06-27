@@ -406,24 +406,25 @@ export default function SshPlaceholder() {
  )
 
  return (
- <div className="relative flex h-full touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
- {/* 移动端侧边栏遮罩 */}
- {sidebarOpen && (
- <div
- className="fixed inset-0 z-30 bg-black/50 md:hidden"
- onClick={() => setSidebarOpen(false)}
- />
- )}
+    <div className="relative flex h-full touch-pan-y overflow-hidden" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+  {/* 移动端侧边栏遮罩 */}
+  {sidebarOpen && (
+  <div
+  className="fixed inset-0 z-30 bg-black/50 md:hidden"
+  onClick={() => setSidebarOpen(false)}
+  />
+  )}
 
   {/* 左侧连接列表（可拖拽调整宽度） */}
   <div
     className={`
-      absolute inset-y-0 left-0 z-40 shrink-0 border-r border-slate-700/50 bg-slate-950
-      transition-transform duration-200 md:static md:z-auto md:translate-x-0
-      ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      fixed inset-y-0 left-0 z-40 shrink-0 border-r border-slate-700/50 bg-slate-950
+      transition-transform duration-200 md:relative md:z-auto md:translate-x-0
+      ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
     `}
+    style={{ width: sidebarOpen ? 256 : 0, overflow: 'hidden' }}
   >
-  <div className="h-full">
+  <div className="h-full" style={{ width: 256 }}>
   <ResizablePanel side="right" defaultSize={256} minSize={160} maxSize={500}>
  <div className="flex h-full flex-col">
  <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">

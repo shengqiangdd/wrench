@@ -129,14 +129,14 @@ export default function ConnectionList({ onConnect }: Props) {
         </div>
         <button
           onClick={() => setShowFileBatch(true)}
-          className="btn btn-ghost shrink-0 px-2"
+          className="btn btn-ghost shrink-0 px-2 hidden sm:inline-flex"
           title="批量文件分发"
         >
           <Upload size={14} />
         </button>
         <button
           onClick={() => setShowBatch(true)}
-          className="btn btn-ghost shrink-0 px-2"
+          className="btn btn-ghost shrink-0 px-2 hidden sm:inline-flex"
           title="批量执行命令"
         >
           <Play size={14} />

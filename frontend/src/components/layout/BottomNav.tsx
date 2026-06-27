@@ -1,7 +1,6 @@
 import { Terminal, FileCode2, Puzzle, Settings, Activity, Zap, Container, ScrollText } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useSshStore } from '../../stores/ssh-store'
-import { useAppStore as useAppStore2 } from '../../stores/app-store'
 
 const navItems = [
   { id: 'ssh', label: 'SSH', icon: Terminal },
@@ -18,18 +17,20 @@ export default function BottomNav() {
   const activeNav = useAppStore((s) => s.activeNav)
   const setActiveNav = useAppStore((s) => s.setActiveNav)
   const sshSessions = useAppStore((s) => s.sshSessions)
-  const sessions = useSshStore((s) => s.sessions)
 
-  // SSH 活动会话中隐藏底部导航（终端需要全屏）
-  const hasActiveTerminal = sessions.length > 0 && activeNav === 'ssh'
+  // 仅在 SSH 页面有已连接 session 且正在查看终端时才隐藏导航
+  const isSshPage = activeNav === 'ssh'
+  const hasActiveSession = sshSessions.length > 0
   const sshSftpOpen = useAppStore((s) => s.sshSftpOpen)
-  const hideNav = hasActiveTerminal || sshSftpOpen
-
-  if (hideNav) return null
+  const hideNav = isSshPage && hasActiveSession && !sshSftpOpen
 
   return (
-    <nav className="flex items-center justify-evenly border-t border-slate-700/50 bg-slate-900 px-1 pb-safe pt-0.5 md:hidden no-scrollbar sm:h-12 sm:flex-row sm:gap-0">
-      {navItems.map((item) => {
+    <nav
+      className={`flex items-center justify-evenly border-t border-slate-700/50 bg-slate-900 px-1 md:hidden no-scrollbar transition-all duration-200 ${
+        hideNav ? 'h-0 overflow-hidden border-t-0 py-0' : 'h-auto pb-safe pt-0.5 sm:h-12'
+      }`}
+    >
+      {!hideNav && navItems.map((item) => {
         const Icon = item.icon
         return (
           <button
