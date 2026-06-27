@@ -214,7 +214,7 @@ export default function ConnectionList({ onConnect }: Props) {
               className="btn-primary flex w-full items-center justify-center gap-1.5 py-1.5 text-xs disabled:opacity-50"
             >
               <Zap size={14} />
-              快速连接 {quickUser.trim()}@{quickHost.trim() || '...'}
+              快速连接 {quickUser.trim() && quickHost.trim() ? `${quickUser.trim()}@${quickHost.trim()}` : ''}
             </button>
           </div>
         )}
@@ -284,8 +284,8 @@ export default function ConnectionList({ onConnect }: Props) {
                         </div>
                       </div>
 
-                      {/* 操作按钮 */}
-                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* 操作按钮：移动端始终显示，桌面端 hover 显示 */}
+                      <div className="flex gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleConnect(conn.id)}
                           className="btn-icon text-emerald-500 hover:bg-emerald-500/10"

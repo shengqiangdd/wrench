@@ -447,7 +447,7 @@ export default function SshPlaceholder() {
  }`}
  >
  <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
- <span className="truncate max-w-[80px]">{sess.connectionName}</span>
+          <span className="truncate max-w-[120px] md:max-w-[80px]">{sess.connectionName}</span>
  <button
  onClick={(e) => {
  e.stopPropagation()
@@ -546,11 +546,11 @@ export default function SshPlaceholder() {
  {aiOpen && activeSession && (
  <div className="shrink-0 border-l border-slate-700/50">
  <ResizablePanel side="left" defaultSize={340} minSize={280} maxSize={600}>
-            <AiSidebar
-            sessionId={activeSession.id}
-            connectionId={activeSession.id}
-            onClose={() => setAiOpen(false)}
-          />
+ <AiSidebar
+ sessionId={activeSession.id}
+ connectionId={activeSession.id}
+ onClose={() => setAiOpen(false)}
+ />
  </ResizablePanel>
  </div>
  )}
