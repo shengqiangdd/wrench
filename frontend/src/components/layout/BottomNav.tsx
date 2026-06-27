@@ -25,7 +25,7 @@ export default function BottomNav() {
   if (isSshPage && hasActiveSession && !sshSftpOpen) return null
 
   return (
-    <nav className="flex items-center justify-evenly border-t border-slate-700/50 bg-slate-900 md:hidden" style={{ minHeight: '48px' }}>
+    <nav className="flex items-center justify-evenly border-t border-slate-700/50 bg-slate-900 lg:hidden" style={{ minHeight: '48px' }}>
       {navItems.map((item) => {
         const Icon = item.icon
         return (

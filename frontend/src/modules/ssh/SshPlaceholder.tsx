@@ -410,7 +410,7 @@ export default function SshPlaceholder() {
   {/* 移动端侧边栏遮罩 */}
   {sidebarOpen && (
   <div
-  className="fixed inset-0 z-30 bg-black/50 md:hidden"
+  className="fixed inset-0 z-30 bg-black/50 lg:hidden"
   style={{ bottom: '48px' }}
   onClick={() => setSidebarOpen(false)}
   />
@@ -420,7 +420,7 @@ export default function SshPlaceholder() {
   <div
     className={`
       fixed inset-y-0 left-0 z-40 shrink-0 border-r border-slate-700/50 bg-slate-950
-      transition-transform duration-200 md:relative md:z-auto md:translate-x-0
+      transition-transform duration-200 lg:relative lg:z-auto lg:translate-x-0
       ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
     `}
     style={{ pointerEvents: sidebarOpen ? 'auto' : 'none' }}

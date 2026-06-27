@@ -37,7 +37,7 @@ export default function Layout() {
 
       <div className="flex flex-1 overflow-hidden min-h-0">
         {/* 桌面端侧边栏 */}
-        <div className="hidden md:flex">
+        <div className="hidden lg:flex">
           <Sidebar />
         </div>
 
