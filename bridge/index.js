@@ -2118,7 +2118,11 @@ if (fs.existsSync(frontendDist)) {
  }
  const filePath = path.join(frontendDist, 'index.html')
  if (fs.existsSync(filePath)) {
- res.sendFile(filePath)
+ // 注入 Service Worker 注销脚本，避免旧 SW 缓存污染
+ let html = fs.readFileSync(filePath, 'utf-8')
+ const swScript = '<script>if("serviceWorker"in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(s){s.unregister()})})}</script>'
+ html = html.replace('</head>', swScript + '</head>')
+ res.type('html').send(html)
  } else {
  res.status(404).json({ error: 'Not Found' })
  }
