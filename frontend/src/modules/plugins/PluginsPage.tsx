@@ -133,10 +133,36 @@ export default function PluginsPage() {
     loadPlugins()
   }
 
-  const handleSandboxReady = useCallback((pluginId: string, _handle: PluginSandboxHandle) => {
+  const handleSandboxReady = useCallback((pluginId: string, handle: PluginSandboxHandle) => {
     sandboxReadyRef.current = { ...sandboxReadyRef.current, [pluginId]: true }
     setRenderTick((t) => t + 1)
-  }, [])
+    // 注册到 sandbox manager，使 pluginSandboxManager.executeCommand() 可工作
+    const plugin = catalog.find((p) => p.id === pluginId)
+    if (plugin) {
+      pluginSandboxManager.register(pluginId, {
+        id: plugin.id,
+        name: plugin.name,
+        version: plugin.version,
+        description: plugin.description,
+        author: plugin.author,
+        icon: plugin.icon,
+        entry: plugin.entry,
+        commands: (plugin.commands || []).map((c: any) => ({
+          id: c.id,
+          name: c.label || c.id,
+          label: c.label,
+          description: c.description,
+          icon: c.icon,
+        })),
+        panels: (plugin.panels || []).map((p: any) => ({
+          id: p.id,
+          name: p.title || p.id,
+          icon: p.icon,
+          position: 'main' as const,
+        })),
+      }, handle)
+    }
+  }, [catalog])
 
   const sandboxCodes = sandboxCodesRef.current
   const sandboxReady = sandboxReadyRef.current

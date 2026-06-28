@@ -12,7 +12,7 @@ interface CommandsListProps {
   onAdd: () => void
   onEdit: (cmd: QuickCommand) => void
   onRemove: (id: string) => void
-  onSendToTerminal: (cmd: string) => void
+  onSendToTerminal?: (cmd: string) => void
   onSendToBatch?: (cmd: string) => void
 }
 
@@ -145,7 +145,7 @@ export default function CommandsList({
                             <Clipboard size={14} />
                           </button>
                           <button
-                            onClick={() => onSendToTerminal(cmd.command)}
+                            onClick={() => onSendToTerminal?.(cmd.command)}
                             className="rounded p-1 text-slate-500 transition-colors hover:bg-violet-600/20 hover:text-violet-400"
                             title="发送到终端"
                           >

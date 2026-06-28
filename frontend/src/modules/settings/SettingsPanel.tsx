@@ -530,7 +530,10 @@ export default function SettingsPanel() {
               <input
                 type="checkbox"
                 checked={aiConfig.enabled}
-                onChange={(e) => setAiConfig({ enabled: e.target.checked })}
+                onChange={(e) => {
+                  setAiConfig({ enabled: e.target.checked })
+                  console.log('[AI] set enabled:', e.target.checked, 'new state:', useAiStore.getState().config)
+                }}
                 className="h-4 w-4 rounded border-slate-600 bg-slate-700 text-smartbox-500 focus:ring-smartbox-500 cursor-pointer"
               />
               <div>

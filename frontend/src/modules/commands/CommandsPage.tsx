@@ -154,18 +154,8 @@ export default function CommandsPage() {
     [connectionId, executeCommand],
   )
 
-  // 未连接
-  if (!connectionId) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 text-slate-500">
-        <Zap size={48} className="text-slate-600" />
-        <div className="text-center">
-          <p className="text-sm font-medium text-slate-400">未连接到任何 SSH</p>
-          <p className="mt-1 text-xs">请先在 SSH 页面建立连接，再使用常用命令</p>
-        </div>
-      </div>
-    )
-  }
+  // 未连接 — 不拦截显示，命令列表可浏览但执行按钮禁用
+  const hasConnection = !!connectionId
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -234,8 +224,8 @@ export default function CommandsPage() {
             onAdd={handleOpenAdd}
             onEdit={handleEdit}
             onRemove={removeCommand}
-            onSendToTerminal={handleSendToTerminal}
-            onSendToBatch={handleSendToBatch}
+            onSendToTerminal={hasConnection ? handleSendToTerminal : undefined}
+            onSendToBatch={hasConnection ? handleSendToBatch : undefined}
           />
         </div>
 

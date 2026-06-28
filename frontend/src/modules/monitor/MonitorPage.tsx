@@ -621,7 +621,7 @@ export default function MonitorPage() {
 
       {/* ─── 健康概览卡片 ─── */}
       {health && !healthError && (
-        <div className="flex shrink-0 items-center gap-4 border-b border-slate-700/30 px-4 py-2 overflow-x-auto">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-700/30 px-3 py-2 md:gap-4 md:px-4 md:overflow-x-auto">
           {/* Bridge 运行时间 */}
           <div className="flex items-center gap-1.5 shrink-0">
             <Activity size={12} className="text-green-400" />
