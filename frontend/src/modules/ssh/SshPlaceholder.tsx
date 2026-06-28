@@ -426,9 +426,9 @@ export default function SshPlaceholder() {
       transition-transform duration-200 lg:relative lg:z-auto lg:translate-x-0
       ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
     `}
-    style={{ pointerEvents: sidebarOpen ? 'auto' : 'none' }}
+    style={{ pointerEvents: sidebarOpen ? 'auto' : 'none', bottom: '48px' }}
   >
-  <div className="h-full" style={{ width: 256 }}>
+    <div className="h-full" style={{ width: 256 }}>
   <ResizablePanel side="right" defaultSize={256} minSize={160} maxSize={500}>
  <div className="flex h-full flex-col">
  <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">

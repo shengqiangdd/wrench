@@ -146,7 +146,7 @@ export default function ConnectionList({ onConnect }: Props) {
             setEditId(null)
             setShowForm(true)
           }}
-          className="btn btn-primary shrink-0 px-2"
+          className="btn btn-primary shrink-0 px-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
           title="新建连接"
         >
           <Plus size={14} />
