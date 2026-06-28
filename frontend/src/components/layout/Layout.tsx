@@ -26,7 +26,7 @@ export default function Layout() {
   )
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-950 dark:bg-slate-950">
+    <div className="flex h-dvh flex-col overflow-hidden bg-slate-950 dark:bg-slate-950">
       {/* 离线提示条 */}
       {!isOnline && (
         <div className="flex shrink-0 items-center justify-center gap-2 bg-amber-600/20 px-3 py-1 text-xs text-amber-400">
