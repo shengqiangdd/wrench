@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense, useMemo } from 'react'
 import { Container, RefreshCw, Activity, AlertCircle } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useSshStore } from '../../stores/ssh-store'
@@ -24,7 +24,30 @@ export default function DockerPage() {
 
   // 获取当前 SSH 连接 ID
   const sessions = useSshStore((s) => s.sessions)
-  const currentConnId = sessions.length > 0 ? sessions[0].id : null
+  const connections = useSshStore((s) => s.connections)
+  const setActiveNav = useAppStore((s) => s.setActiveNav)
+
+  // 所有可用连接：活跃 session + 已保存的连接
+  const availableHosts = useMemo(() => {
+    const seen = new Set<string>()
+    const list: { id: string; name: string; connected: boolean }[] = []
+    for (const sess of sessions) {
+      const name = sess.connectionName || sess.host || sess.id.slice(0, 8)
+      if (!seen.has(sess.id)) { list.push({ id: sess.id, name, connected: true }); seen.add(sess.id) }
+    }
+    for (const conn of connections) {
+      if (!seen.has(conn.id) && !seen.has(conn.host || '')) {
+        list.push({ id: conn.id, name: conn.name, connected: false })
+        seen.add(conn.id)
+      }
+    }
+    return list
+  }, [sessions, connections])
+
+  const [selectedHost, setSelectedHost] = useState<string | null>(null)
+  const currentConnId = selectedHost && availableHosts.some(h => h.id === selectedHost && h.connected)
+    ? selectedHost
+    : (sessions.length > 0 ? sessions[0].id : null)
 
   const fetchContainers = useCallback(async () => {
     if (!currentConnId) return
@@ -115,8 +138,39 @@ export default function DockerPage() {
         <Container size={48} className="text-slate-600" />
         <div className="text-center">
           <p className="text-sm font-medium text-slate-400">未连接到任何 SSH</p>
-          <p className="mt-1 text-xs">请先在 SSH 页面建立连接，再使用 Docker 管理</p>
+          <p className="mt-1 text-xs text-slate-600">选择一个已保存的连接，或前往 SSH 页面连接</p>
         </div>
+        {availableHosts.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {availableHosts.map((host) => (
+              <button
+                key={host.id}
+                onClick={() => {
+                  if (host.connected) {
+                    setSelectedHost(host.id)
+                  } else {
+                    setActiveNav('ssh')
+                  }
+                }}
+                className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-xs transition-colors ${
+                  host.connected
+                    ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/40'
+                    : 'border-slate-700/50 bg-slate-800/50 text-slate-400 hover:bg-slate-700/50'
+                }`}
+              >
+                <span className={`h-2 w-2 rounded-full ${host.connected ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+                {host.name}
+                {host.connected ? ' (已连接)' : ' → 连接'}
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => setActiveNav('ssh')}
+          className="mt-2 rounded-md bg-smartbox-600 px-4 py-2 text-xs text-white transition-colors hover:bg-smartbox-500"
+        >
+          前往 SSH 页面
+        </button>
       </div>
     )
   }
