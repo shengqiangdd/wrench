@@ -69,7 +69,6 @@ export default function PluginSandbox({
 
   const pendingRef = useRef<Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>>(new Map())
   const handleRef = useRef<PluginSandboxHandle | null>(null)
-  const blobUrlRef = useRef<string | null>(null)
   const handlersRegisteredRef = useRef(false)
 
   // ── 生成沙箱 HTML（只在 manifest.id 或 pluginCode 变化时重新生成） ──
@@ -252,6 +251,7 @@ export default function PluginSandbox({
 <html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">${styleBlock}</head><body><div id="plugin-root"></div><script>${script}<\/script></body></html>`
   }, [manifest.id, manifest.name, pluginCode])
 
+  // ── 使用 srcdoc 而不是 blob URL（避免 Safari 的 blob: 限制）
   // ── 创建 iframe 并注入 HTML（只在内容变化时重建） ──
   useEffect(() => {
     const iframe = iframeRef.current
@@ -261,24 +261,12 @@ export default function PluginSandbox({
     setLoadError(null)
     setReady(false)
 
-    // 清理之前的 blob URL
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current)
-      blobUrlRef.current = null
-    }
-
     try {
       const html = generateSandboxHTML()
-      const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
-      const blobUrl = URL.createObjectURL(blob)
-      blobUrlRef.current = blobUrl
-      iframe.src = blobUrl
+      iframe.srcdoc = html
 
       return () => {
-        if (blobUrlRef.current) {
-          URL.revokeObjectURL(blobUrlRef.current)
-          blobUrlRef.current = null
-        }
+        // srcdoc 不需要清理
       }
     } catch (err: any) {
       const msg = err.message || 'Failed to create sandbox'
