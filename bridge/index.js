@@ -1202,7 +1202,23 @@ function openShell(connState, shellId) {
 function openSftp(connState, connectionId) {
  const { ssh, ws } = connState
 
+ // ⚠️ 有些 SSH 服务器的 SFTP 子系统永不响应导致 ssh.sftp() 回调挂起，
+ //    因此设 5 秒超时保护，超时后 handleSftp 会自动降级到 sudo ls -la。
+ let sftpDone = false
+ const sftpTimer = setTimeout(() => {
+   if (!sftpDone) {
+     sftpDone = true
+     console.warn(`[SSH] SFTP init timeout (${connectionId}), will use sudo fallback`)
+     if (ws.readyState === ws.OPEN) {
+       sendJson(ws, { type: 'sftp-ready', connectionId, timedOut: true })
+     }
+   }
+ }, 5000)
+
  ssh.sftp((err, sftp) => {
+ if (sftpDone) return
+ clearTimeout(sftpTimer)
+ sftpDone = true
  if (err) {
  console.error(`[SSH] SFTP init failed (${connectionId}):`, err.message)
  return

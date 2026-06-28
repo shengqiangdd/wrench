@@ -170,7 +170,7 @@ export default function CommandsPage() {
         <div className="ml-auto flex items-center gap-1">
           <button
             onClick={handleImport}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+            className="flex min-h-[44px] items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
             title="导入命令"
           >
             <Download size={14} />
@@ -178,7 +178,7 @@ export default function CommandsPage() {
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+            className="flex min-h-[44px] items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
             title="导出命令"
           >
             <Upload size={14} />
@@ -186,7 +186,7 @@ export default function CommandsPage() {
           </button>
           <button
             onClick={() => setShowGroupManage(true)}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+            className="flex min-h-[44px] items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
             title="管理分组"
           >
             <Tags size={14} />
@@ -194,7 +194,7 @@ export default function CommandsPage() {
           </button>
           <button
             onClick={() => setOutputPanelOpen(!outputPanelOpen)}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+            className="flex min-h-[44px] items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
             title={outputPanelOpen ? '收起执行结果' : '展开执行结果'}
           >
             <Terminal size={14} />

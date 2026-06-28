@@ -66,12 +66,12 @@ export default function CommandsList({
             placeholder="搜索命令..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-md border border-slate-700/50 bg-slate-800/50 py-1.5 pl-8 pr-3 text-xs text-slate-300 placeholder-slate-500 outline-none transition-colors focus:border-smartbox-500/50"
+            className="w-full min-h-[44px] rounded-md border border-slate-700/50 bg-slate-800/50 py-1.5 pl-8 pr-3 text-xs text-slate-300 placeholder-slate-500 outline-none transition-colors focus:border-smartbox-500/50"
           />
         </div>
         <button
           onClick={onAdd}
-          className="flex items-center gap-1 rounded-md bg-smartbox-600/20 px-2.5 py-1.5 text-xs text-smartbox-400 transition-colors hover:bg-smartbox-600/30"
+          className="flex min-h-[44px] items-center gap-1 rounded-md bg-smartbox-600/20 px-2.5 py-1.5 text-xs text-smartbox-400 transition-colors hover:bg-smartbox-600/30"
           title="新建自定义命令"
         >
           <Plus size={14} />
@@ -97,7 +97,7 @@ export default function CommandsList({
               {/* 分组标题 */}
               <button
                 onClick={() => toggleGroup(group.id)}
-                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs text-slate-500 transition-colors hover:bg-slate-800/50"
+                className="flex w-full items-center gap-1.5 rounded-md px-2 min-h-[44px] text-xs text-slate-500 transition-colors hover:bg-slate-800/50"
               >
                 <span className="text-xs">{expandedGroups[group.id] ? '▾' : '▸'}</span>
                 <span>{group.icon || '📁'}</span>
@@ -132,21 +132,21 @@ export default function CommandsList({
                           <button
                             onClick={() => onExecute(cmd)}
                             disabled={executingId === cmd.id || !connectionId}
-                            className="rounded p-1 text-slate-500 transition-colors hover:bg-emerald-600/20 hover:text-emerald-400 disabled:opacity-30"
+                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-emerald-600/20 hover:text-emerald-400 disabled:opacity-30 flex items-center justify-center"
                             title={connectionId ? '执行命令' : '请先连接 SSH'}
                           >
                             {executingId === cmd.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                           </button>
                           <button
                             onClick={() => onCopyToClipboard(cmd.command)}
-                            className="rounded p-1 text-slate-500 transition-colors hover:bg-sky-600/20 hover:text-sky-400"
+                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-sky-600/20 hover:text-sky-400 flex items-center justify-center"
                             title="复制命令"
                           >
                             <Clipboard size={14} />
                           </button>
                           <button
                             onClick={() => onSendToTerminal?.(cmd.command)}
-                            className="rounded p-1 text-slate-500 transition-colors hover:bg-violet-600/20 hover:text-violet-400"
+                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-violet-600/20 hover:text-violet-400 flex items-center justify-center"
                             title="发送到终端"
                           >
                             <span className="text-[10px] font-bold">T</span>
@@ -154,7 +154,7 @@ export default function CommandsList({
                           {onSendToBatch && (
                             <button
                               onClick={() => onSendToBatch?.(cmd.command)}
-                              className="rounded p-1 text-slate-500 transition-colors hover:bg-amber-600/20 hover:text-amber-400"
+                              className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-amber-600/20 hover:text-amber-400 flex items-center justify-center"
                               title="发送到批量执行"
                             >
                               <Layers size={14} />
@@ -165,7 +165,7 @@ export default function CommandsList({
                             <div className="relative">
                               <button
                                 onClick={() => setMenuOpen(menuOpen === cmd.id ? null : cmd.id)}
-                                className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300"
+                                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 flex items-center justify-center"
                               >
                                 <MoreHorizontal size={14} />
                               </button>

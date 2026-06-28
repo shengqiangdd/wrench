@@ -85,7 +85,10 @@ export default function SshPlaceholder() {
  const connectingRefs = useRef<Set<string>>(new Set())
 
  const handleConnect = useCallback(async (connectionId: string, targetSessionId?: string) => {
- const conn = connections.find((c) => c.id === connectionId)
+ // 使用 useSshStore.getState() 而非闭包中的 connections，
+ // 因为快速连接流程中 store.addConnection() 后 React 可能未重渲染，
+ // 导致 connections.find() 找不到新添加的连接
+ const conn = useSshStore.getState().connections.find((c) => c.id === connectionId)
  if (!conn) return null
 
  const sessionId = targetSessionId || `sess_${connectionId}_${Date.now()}`
@@ -165,7 +168,7 @@ export default function SshPlaceholder() {
 
  const openInSplit = useCallback(async (connectionId: string) => {
  // 如果传的是连接配置 id，需要先建立连接
- const conn = connections.find((c) => c.id === connectionId)
+ const conn = useSshStore.getState().connections.find((c) => c.id === connectionId)
  if (conn) {
  const sessionId = await handleConnect(connectionId)
  if (!sessionId) return
@@ -381,7 +384,7 @@ export default function SshPlaceholder() {
  const WsIndicator = () => (
  <button
  onClick={() => wsClientRef.current?.connect()}
- className="flex items-center gap-1.5"
+ className="flex items-center gap-1.5 px-2 py-1.5 min-h-[36px]"
  title={wsStatus === 'disconnected' ? '点击重连' : ''}
  >
  <span
@@ -600,10 +603,10 @@ export default function SshPlaceholder() {
  </p>
  <button
  onClick={() => setSidebarOpen(true)}
- className="btn btn-primary mt-4 md:hidden"
+ className="btn btn-primary mt-4 md:hidden min-h-[44px] px-4"
  >
- <PlugZap size={14} />
- 查看连接列表
+ <PlugZap size={16} />
+ <span>查看连接列表</span>
  </button>
  {connections.length > 0 && (
  <div className="mt-4 space-y-1 hidden md:block">

@@ -272,6 +272,11 @@ html:not(.dark) {
 @utility btn-icon {
   border-radius: 0.5rem;
   padding: 0.375rem;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @utility input-field {
@@ -534,4 +539,19 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
 .markdown-preview label.cm-task.cm-task-checked {
   color: var(--text-dim);
   text-decoration: line-through;
+}
+
+/* ============================================
+   移动端触摸目标保底：所有小图标按钮至少 44×44
+   ============================================ */
+@media (pointer: coarse) {
+  button.rounded.p-1,
+  a.rounded.p-1,
+  [role="button"].rounded.p-1 {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }

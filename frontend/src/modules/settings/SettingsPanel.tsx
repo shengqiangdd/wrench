@@ -229,7 +229,7 @@ export default function SettingsPanel() {
                 <button
                   key={opt.value}
                   onClick={() => setTheme(opt.value)}
-                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  className={`flex flex-1 min-h-[44px] items-center justify-center gap-2 rounded-lg border px-3 text-sm transition-colors ${
                     theme === opt.value
                       ? 'border-smartbox-500 bg-smartbox-500/10 text-smartbox-400'
                       : 'border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'
@@ -345,9 +345,9 @@ export default function SettingsPanel() {
                       '#'}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ml-1 inline-flex items-center gap-0.5 text-smartbox-400 hover:text-smartbox-300"
+                className="ml-1 inline-flex min-h-[44px] items-center gap-0.5 px-2 text-smartbox-400 hover:text-smartbox-300"
               >
-                获取 <ExternalLink size={10} />
+                获取 <ExternalLink size={12} />
               </a>
             </label>
             <div className="relative">
@@ -356,7 +356,7 @@ export default function SettingsPanel() {
                 type={showApiKey ? 'text' : 'password'}
                 value={aiConfig.apiKey}
                 onChange={(e) => setAiConfig({ apiKey: e.target.value })}
-                className="input pr-20"
+                className="input min-h-[44px] pr-20"
                 placeholder={currentProvider.id === 'openrouter' ? 'sk-or-v1-...' :
                             currentProvider.id === 'openai' ? 'sk-...' :
                             currentProvider.id === 'anthropic' ? 'sk-ant-...' : '输入 API Key'}
@@ -365,7 +365,7 @@ export default function SettingsPanel() {
               </form>
               <button
                 onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-300"
+                className="min-w-[44px] min-h-[44px] absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-300 flex items-center justify-center"
               >
                 {showApiKey ? '隐藏' : '显示'}
               </button>
@@ -386,7 +386,7 @@ export default function SettingsPanel() {
                 <button
                   onClick={fetchFreeModels}
                   disabled={isFetchingModels}
-                  className="ml-auto flex items-center gap-1 text-[10px] text-slate-500 hover:text-smartbox-400 transition-colors disabled:opacity-50"
+                  className="ml-auto flex min-h-[44px] items-center gap-1 px-2 text-xs text-slate-500 hover:text-smartbox-400 transition-colors disabled:opacity-50"
                   title={formattedFetchTime ? `上次更新: ${formattedFetchTime}` : '从 OpenRouter 获取最新免费模型'}
                 >
                   <RefreshCw size={11} className={isFetchingModels ? 'animate-spin' : ''} />
@@ -534,7 +534,7 @@ export default function SettingsPanel() {
                   setAiConfig({ enabled: e.target.checked })
                   console.log('[AI] set enabled:', e.target.checked, 'new state:', useAiStore.getState().config)
                 }}
-                className="h-4 w-4 rounded border-slate-600 bg-slate-700 text-smartbox-500 focus:ring-smartbox-500 cursor-pointer"
+                className="h-5 w-5 rounded border-slate-600 bg-slate-700 text-smartbox-500 focus:ring-smartbox-500 cursor-pointer"
               />
               <div>
                 <span className="text-xs text-slate-400">启用 AI Agent 功能</span>
@@ -581,7 +581,7 @@ export default function SettingsPanel() {
                 </div>
                 <button
                   onClick={() => setShowExportConfirm(true)}
-                  className="btn btn-ghost flex items-center gap-1.5 text-xs"
+                  className="btn btn-ghost flex min-h-[44px] items-center gap-1.5 text-xs"
                 >
                   <Download size={14} />
                   导出
@@ -601,7 +601,7 @@ export default function SettingsPanel() {
                 <button
                   onClick={handleImportClick}
                   disabled={isImporting}
-                  className="btn btn-ghost flex items-center gap-1.5 text-xs"
+                  className="btn btn-ghost flex min-h-[44px] items-center gap-1.5 text-xs"
                 >
                   <Upload size={14} />
                   {isImporting ? '导入中...' : '导入'}

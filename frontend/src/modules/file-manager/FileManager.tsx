@@ -107,6 +107,25 @@ async function ensureSftpSession(
   try {
     // 🔐 解密存储的密码/私钥后再发送
     const decryptedConn = await decryptConnection(conn)
+
+    // ⚠️ 必须先注册 sftp-ready 监听再发 connect，
+    //    因为后端 SSH ready 后会立即 openSftp，sftp-ready 可能
+    //    在 connect request 兑现之前/同时到达，导致事件丢失。
+    let sftpUnsub: (() => void) | null = null
+    const sftpReadyPromise = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        sftpUnsub?.()
+        resolve(false)
+      }, 8000)
+      sftpUnsub = wsClient.on('sftp-ready', (data: any) => {
+        if (data.connectionId === sessionId) {
+          clearTimeout(timer)
+          sftpUnsub?.()
+          resolve(true)
+        }
+      })
+    })
+
     await wsClient.request({
       type: 'connect',
       connectionId: sessionId,
@@ -126,9 +145,9 @@ async function ensureSftpSession(
       terminalRows: 24,
     })
 
-    // 等待 sftp-ready 事件（后端 openSftp 是异步的）
+    // 等待 sftp-ready 事件（可能在 connect 响应之前/同时/之后到达）
     onStatus('等待 SFTP 就绪...')
-    const ready = await waitForSftpReady(wsClient, sessionId)
+    const ready = await sftpReadyPromise
     if (!ready) {
       console.warn('[FileManager] SFTP ready timeout, will retry on first request')
     }
@@ -267,7 +286,8 @@ export default function FileManager() {
   // 连接并打开 SFTP
   const connectAndSftp = useCallback(
     async (connId: string) => {
-      const conn = connections.find((c) => c.id === connId)
+      // 使用 getState() 避免闭包快照未更新的竞态问题
+      const conn = useSshStore.getState().connections.find((c) => c.id === connId)
       if (!conn || connectingRef.current) return
 
       connectingRef.current = true
