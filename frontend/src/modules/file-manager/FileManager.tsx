@@ -315,6 +315,47 @@ export default function FileManager() {
       (s) => s.id === fmState.sessionId && s.status === 'connected',
     )
 
+  // 无连接时显示可选连接列表
+  if (!isConnected && !connecting) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 text-slate-500 p-4">
+        <FileCode2 size={48} className="text-slate-600" />
+        <div className="text-center">
+          <p className="text-sm font-medium text-slate-400">未连接到任何 SSH</p>
+          <p className="mt-1 text-xs text-slate-600">选择一个已保存的连接来浏览文件</p>
+        </div>
+        {connections.length > 0 && (
+          <div className="flex flex-wrap justify-center gap-2">
+            {connections.map((conn) => {
+              const isActive = sessions.some((s) => s.connectionId === conn.id && s.status === 'connected')
+              return (
+                <button
+                  key={conn.id}
+                  onClick={() => connectAndSftp(conn.id)}
+                  className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-xs transition-colors ${
+                    isActive
+                      ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-400'
+                      : 'border-slate-700/50 bg-slate-800/50 text-slate-400 hover:bg-slate-700/50'
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+                  {conn.name}
+                  {isActive ? ' (已连接)' : ''}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        <button
+          onClick={() => useAppStore.getState().setActiveNav('ssh')}
+          className="mt-2 rounded-md bg-smartbox-600 px-4 py-2 text-xs text-white transition-colors hover:bg-smartbox-500"
+        >
+          前往 SSH 页面
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full md:overflow-hidden">
       {/* 左侧文件浏览器 */}
