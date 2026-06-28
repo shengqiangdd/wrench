@@ -57,7 +57,7 @@ export default function VariableModal({ cmd, onConfirm, onCancel }: VariableModa
             <h3 className="text-sm font-semibold text-slate-200">模板变量</h3>
             <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">{cmd.name}</span>
           </div>
-          <button onClick={onCancel} className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300">
+          <button onClick={onCancel} className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300">
             <X size={14} />
           </button>
         </div>

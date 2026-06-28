@@ -266,14 +266,14 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                       <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => openModal('push', img)}
-                          className="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200"
+                          className="min-w-[44px] min-h-[44px] rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200"
                           title="推送镜像"
                         >
                           <Upload size={13} />
                         </button>
                         <button
                           onClick={() => openModal('tag', img)}
-                          className="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200"
+                          className="min-w-[44px] min-h-[44px] rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200"
                           title="打标签"
                         >
                           <TagIcon size={13} />
@@ -281,7 +281,7 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                         <button
                           onClick={() => doRmi(img.ID, true)}
                           disabled={isLoading}
-                          className="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
+                          className="min-w-[44px] min-h-[44px] rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
                           title="删除镜像"
                         >
                           <Trash2 size={13} />
@@ -314,7 +314,7 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
               </div>
               <button
                 onClick={() => setSelectedImage(null)}
-                className="rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
+                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
               >
                 <X size={14} />
               </button>
@@ -408,7 +408,7 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
               </h3>
               <button
                 onClick={() => setModal(null)}
-                className="ml-auto rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
+                className="ml-auto min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
               >
                 <X size={14} />
               </button>

@@ -51,7 +51,7 @@ export default function GroupManageModal({ allGroups, customGroups, onSaveGroup,
         {/* 标题 */}
         <div className="flex items-center justify-between border-b border-slate-700/30 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-200">管理分组</h2>
-          <button onClick={onClose} className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300">
+          <button onClick={onClose} className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300">
             <X size={16} />
           </button>
         </div>
@@ -80,7 +80,7 @@ export default function GroupManageModal({ allGroups, customGroups, onSaveGroup,
                   />
                   <button
                     onClick={handleSave}
-                    className="rounded p-1 text-emerald-400 transition-colors hover:bg-emerald-900/20"
+                    className="min-w-[44px] min-h-[44px] rounded p-1 text-emerald-400 transition-colors hover:bg-emerald-900/20"
                   >
                     <Check size={14} />
                   </button>
@@ -94,13 +94,13 @@ export default function GroupManageModal({ allGroups, customGroups, onSaveGroup,
                     <div className="flex gap-0.5">
                       <button
                         onClick={() => handleEdit(g)}
-                        className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300"
+                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300"
                       >
                         <Pencil size={12} />
                       </button>
                       <button
                         onClick={() => onRemoveGroup(g.id)}
-                        className="rounded p-1 text-slate-500 transition-colors hover:bg-red-900/20 hover:text-red-400"
+                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-red-900/20 hover:text-red-400"
                       >
                         <Trash2 size={12} />
                       </button>
@@ -142,7 +142,7 @@ export default function GroupManageModal({ allGroups, customGroups, onSaveGroup,
               </button>
               <button
                 onClick={() => setShowNewForm(false)}
-                className="rounded p-1 text-slate-500 transition-colors hover:text-slate-300"
+                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:text-slate-300"
               >
                 <X size={14} />
               </button>

@@ -109,7 +109,7 @@ function RuleRow({
       {/* 删除 */}
       <button
         onClick={onDelete}
-        className="ml-auto shrink-0 rounded p-1 text-slate-600 transition-colors hover:bg-red-900/20 hover:text-red-400"
+        className="ml-auto shrink-0 min-w-[44px] min-h-[44px] rounded p-1 text-slate-600 transition-colors hover:bg-red-900/20 hover:text-red-400"
         title="删除规则"
       >
         <Trash2 size={12} />
@@ -219,7 +219,7 @@ function AddRuleForm({ onClose }: { onClose: () => void }) {
           </button>
           <button
             onClick={onClose}
-            className="rounded p-1 text-slate-500 transition-colors hover:text-slate-300"
+            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:text-slate-300"
           >
             <X size={14} />
           </button>

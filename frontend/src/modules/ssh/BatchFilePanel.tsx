@@ -347,7 +347,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
       <div className="flex shrink-0 items-center border-b border-slate-700/50 px-4 py-2">
         <Upload size={16} className="mr-2 text-smartbox-400" />
         <h2 className="text-sm font-semibold text-slate-200">批量文件分发</h2>
-        <button onClick={onClose} className="ml-auto rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300">
+        <button onClick={onClose} className="ml-auto min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300">
           <X size={14} />
         </button>
       </div>

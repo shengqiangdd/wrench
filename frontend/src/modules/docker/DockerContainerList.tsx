@@ -136,7 +136,7 @@ export default function DockerContainerList({ connectionId, containers, loading,
                       <button
                         onClick={() => doAction(c.Names || shortId, 'stop')}
                         disabled={isLoading}
-                        className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-amber-400 disabled:opacity-40"
+                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-amber-400 disabled:opacity-40"
                         title="停止"
                       >
                         <Square size={14} />
@@ -145,7 +145,7 @@ export default function DockerContainerList({ connectionId, containers, loading,
                       <button
                         onClick={() => doAction(c.Names || shortId, 'start')}
                         disabled={isLoading}
-                        className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-emerald-400 disabled:opacity-40"
+                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-emerald-400 disabled:opacity-40"
                         title="启动"
                       >
                         <Play size={14} />
@@ -154,14 +154,14 @@ export default function DockerContainerList({ connectionId, containers, loading,
                     <button
                       onClick={() => doAction(c.Names || shortId, 'restart')}
                       disabled={isLoading}
-                      className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-blue-400 disabled:opacity-40"
+                      className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-blue-400 disabled:opacity-40"
                       title="重启"
                     >
                       <RotateCcw size={14} />
                     </button>
                     <button
                       onClick={() => { setLogTarget(c.Names || shortId) }}
-                      className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
+                      className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
                       title="查看日志"
                     >
                       <FileText size={14} />
@@ -169,7 +169,7 @@ export default function DockerContainerList({ connectionId, containers, loading,
                     <button
                       onClick={() => doAction(c.Names || shortId, 'rm')}
                       disabled={isLoading}
-                      className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
+                      className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
                       title="删除"
                     >
                       <Trash2 size={14} />

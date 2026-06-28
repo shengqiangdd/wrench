@@ -251,7 +251,7 @@ export default function DockerCompose({ connectionId }: Props) {
                     <button
                       onClick={() => doAction(project.path, 'up')}
                       disabled={!!actionLoading}
-                      className="rounded p-1 text-emerald-400 transition-colors hover:bg-emerald-500/10 disabled:opacity-30"
+                      className="min-w-[44px] min-h-[44px] rounded p-1 text-emerald-400 transition-colors hover:bg-emerald-500/10 disabled:opacity-30"
                       title="docker compose up -d"
                     >
                       {actionLoading === `up:${project.path}:` ? (
@@ -263,7 +263,7 @@ export default function DockerCompose({ connectionId }: Props) {
                     <button
                       onClick={() => doAction(project.path, 'restart')}
                       disabled={!!actionLoading}
-                      className="rounded p-1 text-amber-400 transition-colors hover:bg-amber-500/10 disabled:opacity-30"
+                      className="min-w-[44px] min-h-[44px] rounded p-1 text-amber-400 transition-colors hover:bg-amber-500/10 disabled:opacity-30"
                       title="docker compose restart"
                     >
                       {actionLoading === `restart:${project.path}:` ? (
@@ -275,7 +275,7 @@ export default function DockerCompose({ connectionId }: Props) {
                     <button
                       onClick={() => doAction(project.path, 'stop')}
                       disabled={!!actionLoading}
-                      className="rounded p-1 text-orange-400 transition-colors hover:bg-orange-500/10 disabled:opacity-30"
+                      className="min-w-[44px] min-h-[44px] rounded p-1 text-orange-400 transition-colors hover:bg-orange-500/10 disabled:opacity-30"
                       title="docker compose stop"
                     >
                       {actionLoading === `stop:${project.path}:` ? (
@@ -287,7 +287,7 @@ export default function DockerCompose({ connectionId }: Props) {
                     <button
                       onClick={() => doAction(project.path, 'down')}
                       disabled={!!actionLoading}
-                      className="rounded p-1 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-30"
+                      className="min-w-[44px] min-h-[44px] rounded p-1 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-30"
                       title="docker compose down"
                     >
                       {actionLoading === `down:${project.path}:` ? (
@@ -341,7 +341,7 @@ export default function DockerCompose({ connectionId }: Props) {
                             <button
                               onClick={() => doAction(project.path, 'restart', svc.name)}
                               disabled={!!actionLoading}
-                              className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 disabled:opacity-30"
+                              className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 disabled:opacity-30"
                               title={`重启 ${svc.name}`}
                             >
                               {actionLoading === `restart:${project.path}:${svc.name}` ? (
@@ -353,7 +353,7 @@ export default function DockerCompose({ connectionId }: Props) {
                             <button
                               onClick={() => doAction(project.path, 'logs', svc.name)}
                               disabled={!!actionLoading}
-                              className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 disabled:opacity-30"
+                              className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 disabled:opacity-30"
                               title={`查看 ${svc.name} 日志`}
                             >
                               <FileText size={12} />
@@ -361,7 +361,7 @@ export default function DockerCompose({ connectionId }: Props) {
                             <button
                               onClick={() => doAction(project.path, 'stop', svc.name)}
                               disabled={!!actionLoading}
-                              className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-orange-400 disabled:opacity-30"
+                              className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-orange-400 disabled:opacity-30"
                               title={`停止 ${svc.name}`}
                             >
                               <StopCircle size={12} />
