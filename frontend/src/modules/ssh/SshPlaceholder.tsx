@@ -437,7 +437,7 @@ export default function SshPlaceholder() {
  <X size={14} />
  </button>
  </div>
- <div className="flex-1 overflow-hidden">
+ <div className="flex-1 overflow-y-auto">
  <ConnectionList onConnect={handleDirectConnect} />
  </div>
  </div>
@@ -575,7 +575,7 @@ export default function SshPlaceholder() {
  <X size={14} />
  </button>
  </div>
- <div className="flex-1 overflow-hidden">
+ <div className="flex-1 overflow-y-auto">
  <ResizablePanel side="left" defaultSize={340} minSize={280} maxSize={600}>
  <AiSidebar
  sessionId={activeSession.id}

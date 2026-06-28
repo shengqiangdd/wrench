@@ -35,11 +35,11 @@ export default function MainContent() {
   const activeNav = useAppStore((s) => s.activeNav)
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden min-h-0 pointer-events-none">
+    <main className="flex flex-1 flex-col overflow-hidden min-h-0">
       {NAVS.map((nav) => (
         <div
           key={nav}
-          className="flex h-full w-full flex-1 flex-col overflow-hidden pointer-events-auto"
+          className="flex h-full w-full flex-1 flex-col overflow-hidden"
           style={{ display: nav === activeNav ? 'flex' : 'none' }}
         >
           <Suspense fallback={<Loading />}>
