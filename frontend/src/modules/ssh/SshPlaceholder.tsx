@@ -438,7 +438,7 @@ export default function SshPlaceholder() {
             <X size={14} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto mobile-scroll">
           <ConnectionList onConnect={handleDirectConnect} />
         </div>
       </div>
