@@ -179,6 +179,12 @@ app.get('/api/ai/fetch-free-models', async (_req, res) => {
  }
 })
 
+// ── 获取 AI 配置（从环境变量读取 API Key） ──
+app.get('/api/ai/config', (_req, res) => {
+ const apiKey = process.env.OPENROUTER_API_KEY || ''
+ res.json({ apiKey })
+})
+
 // 获取插件列表
 app.get('/api/plugins', (req, res) => {
  try {

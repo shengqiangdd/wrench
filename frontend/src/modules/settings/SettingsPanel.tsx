@@ -72,6 +72,18 @@ export default function SettingsPanel() {
   // ── Provider 切换 ──
   const currentProvider = AI_PROVIDERS.find((p) => p.id === aiConfig.provider) || AI_PROVIDERS[0]
 
+  // ── 从后端环境变量获取 API Key（如果前端未填写） ──
+  useEffect(() => {
+    if (!aiConfig.apiKey && aiConfig.provider === 'openrouter') {
+      fetch('/api/ai/config')
+        .then(r => r.json())
+        .then(data => {
+          if (data.apiKey) setAiConfig({ apiKey: data.apiKey })
+        })
+        .catch(() => {})
+    }
+  }, [aiConfig.provider, aiConfig.apiKey])
+
   // ── 从 API 获取的免费模型列表（在 allModels / selectedModelLabel 之前声明） ──
   const allModels = currentProvider.id === 'openrouter' && fetchedModels.length > 0
     ? [
