@@ -46,9 +46,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # 缓存只用于加速 npm install 阶段，不缓存 COPY frontend 之后的层
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # 完全禁用缓存，确保每次提交都完整重建，避免旧 dist 被缓存
+          cache-from: ""
+          cache-to: ""
           # 关键：构建时注入当前 commit SHA 确保前端构建层永远不命中缓存
           build-args: |
             BUILD_HASH=${{ github.sha }}
