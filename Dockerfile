@@ -3,11 +3,17 @@
 # ============================================
 FROM node:22-alpine AS builder
 
+ARG BUILD_HASH
+RUN test -n "$BUILD_HASH" || echo "WARNING: BUILD_HASH not set, cache may not bust properly"
+
 WORKDIR /app
 
 # 先只复制 lockfile 和 package.json → 利用 layer 缓存 npm ci
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 RUN cd frontend && npm ci
+
+# 注入构建哈希 → 使后续所有层在每次提交时强制重建，避免缓存命中旧 dist
+RUN echo "$BUILD_HASH" > /tmp/build-hash.txt
 
 # 复制源码并构建
 COPY frontend/ ./frontend/
