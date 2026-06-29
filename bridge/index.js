@@ -512,7 +512,7 @@ app.post('/api/docker/compose', (req, res) => {
  dockerExec(connectionId, `docker compose -f ${escapeShellArg(filePath)} ps --format '{{json .}}' 2>/dev/null`, res)
  } else {
  // 自动发现 compose 文件
-  dockerExec(connectionId, 'find /home /opt /srv /app /root /mnt -maxdepth 5 -name "docker-compose*.yml" -o -name "docker-compose*.yaml" -o -name "compose*.yml" -o -name "compose*.yaml" 2>/dev/null | head -30', res)
+ dockerExec(connectionId, 'find /home /opt /srv /app /mnt -maxdepth 5 -name "docker-compose*.yml" -o -name "docker-compose*.yaml" -o -name "compose*.yml" -o -name "compose*.yaml" 2>/dev/null | head -30', res)
  }
 })
 
