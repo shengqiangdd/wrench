@@ -414,41 +414,38 @@ export default function SshPlaceholder() {
   {sidebarOpen && (
   <div
   className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-  style={{ bottom: '48px' }}
   onClick={() => setSidebarOpen(false)}
   />
   )}
 
-  {/* 左侧连接列表（可拖拽调整宽度） */}
+  {/* 左侧连接列表（移动端全屏侧边栏，桌面端常驻） */}
   <div
     className={`
-      fixed inset-y-0 left-0 z-40 shrink-0 border-r border-slate-700/50 bg-slate-950
-      transition-transform duration-200 lg:relative lg:z-auto lg:translate-x-0
+      fixed inset-y-0 left-0 z-40 w-[85vw] max-w-[300px] border-r border-slate-700/50 bg-slate-950
+      transition-transform duration-200 ease-out lg:relative lg:z-auto lg:translate-x-0 lg:w-auto
       ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
     `}
-    style={{ pointerEvents: sidebarOpen ? 'auto' : 'none', bottom: '48px' }}
+    style={{ pointerEvents: sidebarOpen ? 'auto' : 'none' }}
   >
-    <div className="h-full" style={{ width: 256 }}>
-  <ResizablePanel side="right" defaultSize={256} minSize={160} maxSize={500}>
- <div className="flex h-full flex-col">
- <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">
- <WsIndicator />
- <button
- onClick={() => setSidebarOpen(false)}
- className="btn-icon text-slate-500 hover:text-slate-300 md:hidden"
- >
- <X size={14} />
- </button>
- </div>
- <div className="flex-1 overflow-y-auto">
- <ConnectionList onConnect={handleDirectConnect} />
- </div>
- </div>
- </ResizablePanel>
- </div>
- </div>
+    <ResizablePanel side="right" defaultSize={300} minSize={200} maxSize={400}>
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">
+          <WsIndicator />
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="btn-icon text-slate-500 hover:text-slate-300 md:hidden"
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <ConnectionList onConnect={handleDirectConnect} />
+        </div>
+      </div>
+    </ResizablePanel>
+  </div>
 
- {/* 中间终端区域 */}
+  {/* 中间终端区域 */}
  <div className="flex flex-1 flex-col overflow-hidden min-h-0">
  {allSessions.length > 0 ? (
  <>
