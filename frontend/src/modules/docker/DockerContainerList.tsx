@@ -174,7 +174,6 @@ export default function DockerContainerList({ connectionId, containers, loading,
                       <Trash2 size={14} />
                     </button>
                   </div>
-                  )}
 
                   {/* 加载状态 */}
                   {isLoading && (
