@@ -1,21 +1,27 @@
 import { useState, useCallback } from 'react'
-import { ScrollText, PanelLeftOpen, PanelLeftClose, X } from 'lucide-react'
+import { ScrollText, PanelLeftOpen, PanelLeftClose, X, ChevronDown } from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import LogViewer from './LogViewer'
 import SourceConfig from './SourceConfig'
 
 export default function LogsPage() {
-  // 直接读取 ssh-store 的活跃会话（唯一的 session 来源）
   const sessions = useSshStore((s) => s.sessions)
 
-  // 取第一个活跃 session 的 ID 作为当前连接
-  const currentConnId = sessions.length > 0 ? sessions[0].id : null
+  // 主机选择状态
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+  const currentConnId = selectedSessionId || (sessions.length > 0 ? sessions[0].id : null)
 
+  // 当 sessions 变化时自动选中第一个
   const [currentPath, setCurrentPath] = useState<string | null>(null)
   const [sourcePanelOpen, setSourcePanelOpen] = useState(true)
 
   const handleSelectPath = useCallback((path: string) => {
     setCurrentPath(path)
+  }, [])
+
+  const handleSessionChange = useCallback((sessionId: string) => {
+    setSelectedSessionId(sessionId)
+    setCurrentPath(null) // 切换主机时清空路径
   }, [])
 
   // 未连接
@@ -37,6 +43,25 @@ export default function LogsPage() {
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-700/50 bg-slate-900/80 px-4 py-2">
         <ScrollText size={18} className="text-sky-400" />
         <h1 className="text-sm font-semibold text-slate-200">日志聚合</h1>
+
+        {/* 主机选择下拉菜单 - 多连接时显示 */}
+        {sessions.length > 1 && (
+          <div className="relative">
+            <select
+              value={currentConnId || ''}
+              onChange={(e) => handleSessionChange(e.target.value)}
+              className="ml-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id} className="bg-slate-800">
+                  {s.connectionName || s.host}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500" />
+          </div>
+        )}
+
         <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">
           {sessions.length > 1 ? `${sessions.length} 个连接可用` : '1 个连接'}
         </span>
