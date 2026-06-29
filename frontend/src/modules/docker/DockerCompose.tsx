@@ -48,8 +48,7 @@ export default function DockerCompose({ connectionId }: Props) {
   const discoverProjects = useCallback(async () => {
     // 如果有手动路径，加载它
     if (manualPath.trim()) {
-      await handleManualLoad()
-      return
+      return handleManualLoad()
     }
     setLoading(true)
     try {
@@ -83,7 +82,7 @@ export default function DockerCompose({ connectionId }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [connectionId, manualPath, handleManualLoad])
+  }, [connectionId, manualPath])
 
   // 手动加载 compose 项目
   const handleManualLoad = useCallback(async () => {
