@@ -409,7 +409,7 @@ export default function SshPlaceholder() {
  )
 
  return (
-    <div className="relative flex flex-1 touch-pan-y overflow-hidden" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div className="relative flex h-[calc(100vh-48px)] flex-col overflow-hidden lg:h-auto lg:flex-1">
   {/* 移动端侧边栏遮罩 */}
   {sidebarOpen && (
   <div
@@ -421,32 +421,30 @@ export default function SshPlaceholder() {
   {/* 左侧连接列表（移动端全屏侧边栏，桌面端常驻） */}
   <div
     className={`
-      fixed inset-y-0 left-0 z-40 w-[85vw] max-w-[300px] border-r border-slate-700/50 bg-slate-950
-      transition-transform duration-200 ease-out lg:relative lg:z-auto lg:translate-x-0 lg:w-auto
+      fixed inset-y-0 left-0 z-40 w-[85vw] max-w-[300px] border-r border-slate-700/50 bg-slate-950 lg:relative lg:z-auto lg:translate-x-0 lg:w-auto lg:flex-none
+      transition-transform duration-200 ease-out
       ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
     `}
     style={{ pointerEvents: sidebarOpen ? 'auto' : 'none' }}
   >
-    <ResizablePanel side="right" defaultSize={300} minSize={200} maxSize={400}>
-      <div className="flex h-full flex-col">
-        <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">
-          <WsIndicator />
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="btn-icon text-slate-500 hover:text-slate-300 md:hidden"
-          >
-            <X size={14} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto mobile-scroll">
-          <ConnectionList onConnect={handleDirectConnect} />
-        </div>
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">
+        <WsIndicator />
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="btn-icon text-slate-500 hover:text-slate-300 md:hidden"
+        >
+          <X size={14} />
+        </button>
       </div>
-    </ResizablePanel>
+      <div className="flex-1 overflow-y-auto mobile-scroll">
+        <ConnectionList onConnect={handleDirectConnect} />
+      </div>
+    </div>
   </div>
 
   {/* 中间终端区域 */}
- <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+ <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
  {allSessions.length > 0 ? (
  <>
  {/* 标签栏 */}
@@ -530,35 +528,35 @@ export default function SshPlaceholder() {
  </div>
  </div>
 
- {/* 终端 + 侧栏区域 */}
- <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+ {/* 中间终端区域 */}
+ <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
  {splits.length > 0 ? (
  <SplitContainer
- splits={splits}
- onSplit={handleSplit}
- onRemove={handleRemoveSplit}
- onConnectionChange={handleSplitConnectionChange}
- connections={connectionOptions}
- onToggleSync={handleToggleSync}
- onMerge={handleMerge}
- syncGroups={syncGroups}
- activeSplitId={activeSplitId}
- onSetActiveSplit={setActiveSplitId}
- onTerminalData={handleTerminalData}
- />
+  splits={splits}
+  onSplit={handleSplit}
+  onRemove={handleRemoveSplit}
+  onConnectionChange={handleSplitConnectionChange}
+  connections={connectionOptions}
+  onToggleSync={handleToggleSync}
+  onMerge={handleMerge}
+  syncGroups={syncGroups}
+  activeSplitId={activeSplitId}
+  onSetActiveSplit={setActiveSplitId}
+  onTerminalData={handleTerminalData}
+  />
  ) : activeSession ? (
- <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+ <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
  <TerminalView
- connectionId={activeSession.id}
- sessionId={activeSession.id}
- className="flex-1"
- />
+  connectionId={activeSession.id}
+  sessionId={activeSession.id}
+  className="flex-1"
+  />
  </div>
  ) : null}
 
- {/* SFTP 侧边栏（可拖拽调整宽度） */}
+ {/* SFTP 侧边栏（桌面端侧栏） */}
  {sftpOpen && !aiOpen && activeSession && (
- <div className="shrink-0 border-l border-slate-700/50 hidden md:block">
+ <div className="hidden shrink-0 border-l border-slate-700/50 md:block">
  <ResizablePanel side="left" defaultSize={260} minSize={200} maxSize={500}>
  <SftpSidebar sessionId={activeSession.id} />
  </ResizablePanel>
@@ -575,13 +573,13 @@ export default function SshPlaceholder() {
  <X size={14} />
  </button>
  </div>
- <div className="flex-1 overflow-y-auto">
+ <div className="flex min-h-0 flex-1 flex-col overflow-y-auto mobile-scroll">
  <ResizablePanel side="left" defaultSize={340} minSize={280} maxSize={600}>
  <AiSidebar
- sessionId={activeSession.id}
- connectionId={activeSession.id}
- onClose={() => setAiOpen(false)}
- />
+  sessionId={activeSession.id}
+  connectionId={activeSession.id}
+  onClose={() => setAiOpen(false)}
+  />
  </ResizablePanel>
  </div>
  </div>
@@ -590,7 +588,7 @@ export default function SshPlaceholder() {
  </div>
  </>
  ) : (
- <div className="flex flex-1 items-center justify-center">
+ <div className="flex min-h-0 flex-1 items-center justify-center">
  <div className="text-center px-4 max-w-full">
  <Server size={48} className="mx-auto mb-3 text-slate-600" />
  <p className="text-sm text-slate-500">
