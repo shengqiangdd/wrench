@@ -17,7 +17,6 @@ import TerminalView from './Terminal'
 import { SplitContainer } from './Terminal'
 import SftpSidebar from './SftpSidebar'
 import AiSidebar from './AiSidebar'
-import ResizablePanel from '../../components/ResizablePanel'
 import type { SshSession } from '../../types/ssh'
 import { useAiStore } from '../../stores/ai-store'
 
@@ -557,9 +556,7 @@ export default function SshPlaceholder() {
  {/* SFTP 侧边栏（桌面端侧栏） */}
  {sftpOpen && !aiOpen && activeSession && (
  <div className="hidden shrink-0 border-l border-slate-700/50 md:block">
- <ResizablePanel side="left" defaultSize={260} minSize={200} maxSize={500}>
  <SftpSidebar sessionId={activeSession.id} />
- </ResizablePanel>
  </div>
  )}
 
@@ -574,13 +571,11 @@ export default function SshPlaceholder() {
  </button>
  </div>
  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto mobile-scroll">
- <ResizablePanel side="left" defaultSize={340} minSize={280} maxSize={600}>
  <AiSidebar
   sessionId={activeSession.id}
   connectionId={activeSession.id}
   onClose={() => setAiOpen(false)}
   />
- </ResizablePanel>
  </div>
  </div>
  </div>
