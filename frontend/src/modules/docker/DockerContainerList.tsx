@@ -151,28 +151,22 @@ export default function DockerContainerList({ connectionId, containers, loading,
                       </button>
                     )}
                     <button
-                      onClick={() => doAction(c.Names || shortId, 'restart')}
-                      disabled={isLoading}
-                      className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-blue-400 disabled:opacity-40"
-                      title="重启"
-                    >
-                      <RotateCcw size={14} />
-                    </button>
-                    <button
                       onClick={() => { setLogTarget(c.Names || shortId) }}
                       className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
                       title="查看日志"
                     >
                       <FileText size={14} />
                     </button>
-                    <button
-                      onClick={() => doAction(c.Names || shortId, 'rm')}
-                      disabled={isLoading}
-                      className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
-                      title="删除"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {c.State === 'exited' && (
+                      <button
+                        onClick={() => doAction(c.Names || shortId, 'rm')}
+                        disabled={isLoading}
+                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
+                        title="删除"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
 
                   {/* 加载状态 */}

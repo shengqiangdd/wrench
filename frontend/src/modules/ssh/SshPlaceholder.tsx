@@ -485,21 +485,8 @@ export default function SshPlaceholder() {
  <WsIndicator />
  </div>
 
+ {/* 工具栏按钮组 */}
  <div className="flex items-center shrink-0">
- {splits.length === 0 && allSessions.length > 0 && (
- <>
- <button
- onClick={() => openInSplit(activeSession?.connectionId || connections[0]?.id || '')}
- className="flex items-center gap-1 px-3 py-2 text-xs text-slate-500 hover:text-slate-300"
- title="分屏打开"
- >
- <Columns2 size={14} />
- <span className="hidden md:inline">分屏</span>
- </button>
- <div className="mx-1 h-4 w-px bg-slate-700/50" />
- </>
- )}
-
  <button
  onClick={() => setSftpOpen(!sftpOpen)}
  className="flex items-center gap-1 px-3 py-2 text-xs text-slate-500 hover:text-slate-300"
@@ -553,7 +540,7 @@ export default function SshPlaceholder() {
  </div>
  ) : null}
 
- {/* SFTP 侧边栏（桌面端侧栏） */}
+ {/* SFTP 侧边栏（桌面端侧栏，移动端隐藏） */}
  {sftpOpen && !aiOpen && activeSession && (
  <div className="hidden shrink-0 border-l border-slate-700/50 md:block">
  <SftpSidebar sessionId={activeSession.id} />

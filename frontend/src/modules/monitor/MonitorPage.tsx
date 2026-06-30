@@ -48,7 +48,9 @@ function parseCpuUsage(stdout: string): number {
       // 从 top -bn1 或 mpstat 解析
       if (parts.length >= 12) {
         const idle = parseFloat(parts[10] || parts[7] || '0')
-        return Math.round((100 - idle) * 10) / 10
+        if (!isNaN(idle) && idle >= 0 && idle <= 100) {
+          return Math.round((100 - idle) * 10) / 10
+        }
       }
     }
     // sar -u 1 1 格式
@@ -56,7 +58,9 @@ function parseCpuUsage(stdout: string): number {
       const p = line.trim().split(/\s+/)
       if (p.length >= 8) {
         const idle = parseFloat(p[p.length - 1])
-        return Math.round((100 - idle) * 10) / 10
+        if (!isNaN(idle) && idle >= 0 && idle <= 100) {
+          return Math.round((100 - idle) * 10) / 10
+        }
       }
     }
   }
@@ -112,7 +116,7 @@ function parseNetRxTx(stdout: string): { rx: number; tx: number } {
     const parts = line.trim().split(/\s+/)
     if (parts.length >= 10 && parts[0] !== 'Inter-|' && parts[0] !== 'face') {
       const name = parts[0]
-      if (name === 'lo') continue
+      if (name === 'lo' || name.startsWith('eth0') || name.startsWith('docker') || name.startsWith('br-') || name.startsWith('veth') || name.startsWith('virbr') || name.startsWith('cni')) continue
       rxTotal += parseInt(parts[1]) || 0
       txTotal += parseInt(parts[9]) || 0
       ifaceCount++
@@ -338,25 +342,25 @@ export default function MonitorPage() {
   const [healthError, setHealthError] = useState(false)
   const alertHistory = useAlertStore((s) => s.history)
 
-  // 扫描主机（已保存的连接 + 活跃 session）
+  // 扫描主机（已保存的连接 + 活跃 session）— 去重：按 host 优先，session 优先于 connection
   const scanHosts = useCallback(() => {
     const seen = new Set<string>()
     const list: { id: string; name: string }[] = []
     // 活跃 session 优先
     for (const sess of sessions) {
+      if (sess.status !== 'connected') continue
+      const hostKey = sess.host || sess.connectionId
+      if (seen.has(hostKey)) continue
       const name = sess.connectionName || sess.host || sess.id.slice(0, 8)
-      if (!seen.has(sess.id)) {
-        list.push({ id: sess.id, name })
-        seen.add(sess.id)
-        seen.add(sess.host || '')
-      }
+      list.push({ id: sess.id, name })
+      seen.add(hostKey)
     }
     // 已保存但未连接的连接
     for (const conn of connections) {
-      if (!seen.has(conn.id) && !seen.has(conn.host || '')) {
-        list.push({ id: conn.id, name: conn.name })
-        seen.add(conn.id)
-      }
+      const hostKey = conn.host || conn.name
+      if (seen.has(hostKey)) continue
+      list.push({ id: conn.id, name: conn.name })
+      seen.add(hostKey)
     }
     setHosts(list)
     if (list.length > 0 && selected.length === 0) {
@@ -366,8 +370,11 @@ export default function MonitorPage() {
 
   // 采集单台主机数据
   const collectHostStats = useCallback(async (hostId: string): Promise<HostStats | null> => {
-    const sess = sessions.find((s) => s.id === hostId)
-    if (!sess) return null
+    // 先查活跃 session
+    const sess = sessions.find((s) => s.id === hostId && s.status === 'connected')
+    // 如果没有活跃 session，查已保存的连接
+    const conn = connections.find((c) => c.id === hostId)
+    if (!sess && !conn) return null
 
     try {
       // 并发执行多个命令
@@ -442,8 +449,8 @@ export default function MonitorPage() {
       if (ioRaw.writeBps > 10e9) ioRaw.writeBps = 0
 
       return {
-        host: sess.host,
-        name: sess.connectionName || sess.host || hostId.slice(0, 8),
+        host: sess?.host || conn?.host || hostId,
+        name: sess?.connectionName || conn?.name || hostId.slice(0, 8),
         cpu,
         memory,
         disk,
