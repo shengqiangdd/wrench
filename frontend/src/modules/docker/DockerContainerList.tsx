@@ -1,6 +1,6 @@
 import { useState, useCallback, lazy, Suspense } from 'react'
 import {
-  Play, Square, RotateCcw, Trash2, FileText, Search,
+  Play, Square, RotateCcw, Trash2, FileText, Search, Eye,
 } from 'lucide-react'
 import type { DockerContainer, ContainerStatus } from './index'
 import { STATUS_DOTS } from './index'
@@ -156,6 +156,13 @@ export default function DockerContainerList({ connectionId, containers, loading,
                       title="查看日志"
                     >
                       <FileText size={14} />
+                    </button>
+                    <button
+                      onClick={() => { setDetailTarget(c.Names || shortId) }}
+                      className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
+                      title="查看详情"
+                    >
+                      <Eye size={14} />
                     </button>
                     {c.State === 'exited' && (
                       <button
