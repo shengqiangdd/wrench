@@ -2220,6 +2220,14 @@ function sendJson(ws, data) {
 // ========== 静态文件服务 ==========
 
 if (fs.existsSync(frontendDist)) {
+ // 强制禁止所有静态资源缓存，确保每次拉取新镜像后浏览器加载最新代码
+ app.use((req, res, next) => {
+   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+   res.setHeader('Pragma', 'no-cache')
+   res.setHeader('Expires', '0')
+   res.setHeader('Surrogate-Control', 'no-store')
+   next()
+ })
  app.use(express.static(frontendDist))
 
  // SPA 支持：所有非 API 路由返回 index.html
@@ -2233,6 +2241,10 @@ if (fs.existsSync(frontendDist)) {
  let html = fs.readFileSync(filePath, 'utf-8')
  const swScript = '<script>if("serviceWorker"in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(s){s.unregister()})})}</script>'
  html = html.replace('</head>', swScript + '</head>')
+ // 强制 index.html 不缓存，确保浏览器始终加载最新页面
+ res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+ res.setHeader('Pragma', 'no-cache')
+ res.setHeader('Expires', '0')
  res.type('html').send(html)
  } else {
  res.status(404).json({ error: 'Not Found' })
