@@ -49,6 +49,30 @@ export const AI_PROVIDERS: AiProvider[] = [
     ],
   },
   {
+    id: 'agnes',
+    name: 'Agnes (Sapiens AI)',
+    baseUrl: 'https://api.agnes.dev/v1',
+    description: 'Agnes AI 系列模型，专注代码智能',
+    defaultModel: 'agnes-2.0-flash',
+    models: [
+      { value: 'agnes-2.0-flash', label: 'Agnes 2.0 Flash', free: true },
+      { value: 'agnes-2.0-pro', label: 'Agnes 2.0 Pro' },
+      { value: 'agnes-1.5', label: 'Agnes 1.5' },
+    ],
+  },
+  {
+    id: 'opencode',
+    name: 'OpenCode',
+    baseUrl: 'https://api.opencode.ai/v1',
+    description: 'OpenCode 开源模型平台',
+    defaultModel: 'opencode-m1',
+    models: [
+      { value: 'opencode-m1', label: 'OpenCode M1', free: true },
+      { value: 'opencode-m2', label: 'OpenCode M2' },
+      { value: 'opencode-code-v1', label: 'OpenCode Code V1' },
+    ],
+  },
+  {
     id: 'openai',
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
