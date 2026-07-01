@@ -570,6 +570,8 @@ app.post('/api/docker/compose/action', (req, res) => {
  })
 })
 
+// Docker 终端 WebSocket 处理（已在 handleMessage 中注册）
+
 // ========== 日志聚合 API ==========
 
 /** 辅助：通过 SSH 执行日志相关命令 */
@@ -841,6 +843,85 @@ app.get('/api/plugins/:id/manifest.json', (req, res) => {
  } else {
  res.status(404).json({ error: 'Manifest not found' })
  }
+})
+
+// ========== AI 配置 API ==========
+
+// 获取 AI 配置（返回后端环境变量中的 API Key）
+app.get('/api/ai/config', (req, res) => {
+ const apiKey = process.env.OPENROUTER_API_KEY || null
+ res.json({ apiKey })
+})
+
+// 获取指定服务商的最新免费模型列表
+app.get('/api/ai/fetch-free-models', async (req, res) => {
+ const apiKey = process.env.OPENROUTER_API_KEY
+ if (!apiKey) {
+ return res.status(503).json({ error: 'OpenRouter API Key 未配置' })
+ }
+ try {
+ const resp = await fetch('https://openrouter.ai/api/v1/models', {
+ headers: { Authorization: `Bearer ${apiKey}` },
+ })
+ if (!resp.ok) {
+ const errBody = await resp.text()
+ return res.status(resp.status).json({ error: `OpenRouter API 错误: ${resp.status} ${errBody}` })
+ }
+ const data = await resp.json()
+ const models = data.data || []
+ const freeModels = models
+ .filter((m) => m.pricing && m.pricing.request && m.pricing.request <= 0)
+ .map((m) => ({
+ value: m.id,
+ label: m.name || m.id,
+ free: true,
+ description: m.description || '',
+ }))
+ .sort((a, b) => a.label.localeCompare(b.label))
+ res.json({ models: freeModels })
+ } catch (err) {
+ res.json({ models: [], error: err.message })
+ }
+})
+
+// 获取指定服务商的所有可用模型列表
+app.get('/api/ai/fetch-all-models', async (req, res) => {
+ const { provider } = req.query
+ const apiKey = process.env.OPENROUTER_API_KEY
+
+ if (provider === 'openrouter' || !provider) {
+ if (!apiKey) {
+ return res.status(503).json({ error: 'OpenRouter API Key 未配置' })
+ }
+ try {
+ const resp = await fetch('https://openrouter.ai/api/v1/models', {
+ headers: { Authorization: `Bearer ${apiKey}` },
+ })
+ if (!resp.ok) {
+ const errBody = await resp.text()
+ return res.status(resp.status).json({ error: `OpenRouter API 错误: ${resp.status} ${errBody}` })
+ }
+ const data = await resp.json()
+ const models = data.data || []
+ const allModels = models
+ .map((m) => ({
+ value: m.id,
+ label: m.name || m.id,
+ free: m.pricing && m.pricing.request && m.pricing.request <= 0,
+ description: m.description || '',
+ }))
+ .sort((a, b) => {
+ if (a.free !== b.free) return b.free - a.free
+ return a.label.localeCompare(b.label)
+ })
+ return res.json({ models: allModels })
+ } catch (err) {
+ return res.json({ models: [], error: err.message })
+ }
+ }
+
+ // 默认 fallback：返回空列表
+ res.json({ models: [] })
 })
 
 // ========== WebSocket 路由 ==========

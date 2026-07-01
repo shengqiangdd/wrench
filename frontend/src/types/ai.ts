@@ -64,12 +64,17 @@ export const AI_PROVIDERS: AiProvider[] = [
     id: 'opencode',
     name: 'OpenCode',
     baseUrl: 'https://api.opencode.ai/v1',
-    description: 'OpenCode 开源模型平台',
+    description: 'OpenCode 开源模型平台，提供多种免费模型',
     defaultModel: 'opencode-m1',
     models: [
       { value: 'opencode-m1', label: 'OpenCode M1', free: true },
       { value: 'opencode-m2', label: 'OpenCode M2' },
       { value: 'opencode-code-v1', label: 'OpenCode Code V1' },
+      { value: 'deepseek/deepseek-v4-free', label: 'DeepSeek V4 (免费)', free: true },
+      { value: 'deepseek/deepseek-v3-free', label: 'DeepSeek V3 (免费)', free: true },
+      { value: 'deepseek/deepseek-r1-free', label: 'DeepSeek R1 (免费)', free: true },
+      { value: 'mimo/mimo-v1-free', label: 'Mimo V1 (免费)', free: true },
+      { value: 'mimo/mimo-v2-free', label: 'Mimo V2 (免费)', free: true },
     ],
   },
   {

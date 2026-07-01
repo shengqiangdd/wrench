@@ -20,6 +20,7 @@ import {
   Unlock,
   AlertTriangle,
   RefreshCw,
+  Loader2,
 } from 'lucide-react'
 import { useAppStore, refreshAppStore } from '../../stores/app-store'
 import { useAiStore, refreshAiStore } from '../../stores/ai-store'
@@ -88,10 +89,7 @@ export default function SettingsPanel() {
 
   // ── 从 API 获取的免费模型列表（在 allModels / selectedModelLabel 之前声明） ──
   const allModels = currentProvider.id === 'openrouter' && fetchedModels.length > 0
-    ? [
-        ...fetchedModels,
-        ...currentProvider.models.filter((m) => !m.free), // 保留付费模型
-      ]
+    ? fetchedModels
     : currentProvider.models
 
   const formattedFetchTime = fetchedModelsAt
@@ -141,22 +139,30 @@ export default function SettingsPanel() {
     }
   }, [customModel, setAiConfig])
 
-  // ── 获取最新免费模型 ──
-  const fetchFreeModels = useCallback(async () => {
+  // ── 获取最新模型（所有服务商） ──
+  const fetchModels = useCallback(async (providerId?: string) => {
     setIsFetchingModels(true)
     try {
-      const resp = await fetch('/api/ai/fetch-free-models')
+      const params = providerId ? `?provider=${encodeURIComponent(providerId)}` : ''
+      const resp = await fetch(`/api/ai/fetch-all-models${params}`)
       if (!resp.ok) throw new Error('API 请求失败: ' + resp.status)
       const data = await resp.json()
       if (data.models && Array.isArray(data.models)) {
         setFetchedModels(data.models)
       }
     } catch (err: any) {
-      console.error('获取免费模型失败:', err)
+      console.error('获取模型失败:', err)
     } finally {
       setIsFetchingModels(false)
     }
   }, [setFetchedModels, setIsFetchingModels])
+
+  // 当前 provider 切换时自动拉取模型
+  useEffect(() => {
+    if (currentProvider.id === 'openrouter') {
+      fetchModels('openrouter')
+    }
+  }, [currentProvider.id, fetchModels])
 
   // ─── 导入导出处理函数 ───
 
@@ -396,17 +402,19 @@ export default function SettingsPanel() {
                   {allModels.filter((m) => m.free).length} 个免费模型
                 </span>
               )}
-              {currentProvider.id === 'openrouter' && (
-                <button
-                  onClick={fetchFreeModels}
-                  disabled={isFetchingModels}
-                  className="ml-auto flex min-h-[44px] items-center gap-1 px-2 text-xs text-slate-500 hover:text-smartbox-400 transition-colors disabled:opacity-50"
-                  title={formattedFetchTime ? `上次更新: ${formattedFetchTime}` : '从 OpenRouter 获取最新免费模型'}
-                >
-                  <RefreshCw size={11} className={isFetchingModels ? 'animate-spin' : ''} />
-                  {isFetchingModels ? '获取中…' : '刷新免费模型'}
-                </button>
-              )}
+              <button
+                onClick={() => fetchModels(currentProvider.id)}
+                disabled={isFetchingModels}
+                className="ml-auto flex min-h-[44px] items-center gap-1 px-2 text-xs text-slate-500 hover:text-smartbox-400 transition-colors disabled:opacity-50"
+                title={formattedFetchTime ? `上次更新: ${formattedFetchTime}` : '从 API 获取最新模型'}
+              >
+                {isFetchingModels ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={11} />
+                )}
+                {isFetchingModels ? '获取中…' : '刷新模型'}
+              </button>
             </label>
 
             {showCustomInput ? (
@@ -449,11 +457,11 @@ export default function SettingsPanel() {
                         </button>
                       ) : (
                         <>
-                          {/* 动态获取的免费模型（仅 OpenRouter） */}
-                          {currentProvider.id === 'openrouter' && fetchedModels.length > 0 && (
+                          {/* 动态获取的模型（所有服务商） */}
+                          {fetchedModels.length > 0 && (
                             <>
-                              <div className="border-b border-slate-700/50 px-3 py-1.5 text-[10px] uppercase tracking-wider text-emerald-400/70">
-                                🆓 API 获取（{fetchedModels.length} 个）
+                              <div className="border-b border-slate-700/50 px-3 py-1.5 text-[10px] uppercase tracking-wider text-blue-400/70">
+                                🔄 API 获取（{fetchedModels.length} 个）
                               </div>
                               {fetchedModels.map((model) => (
                                 <button
@@ -467,29 +475,8 @@ export default function SettingsPanel() {
                                   {model.description && (
                                     <span className="text-[10px] text-slate-500 truncate max-w-[180px]">{model.description}</span>
                                   )}
-                                  {aiConfig.model === model.value && <Check size={12} className="shrink-0" />}
-                                </button>
-                              ))}
-                            </>
-                          )}
-
-                          {/* 内置免费模型组（仅当无 API 动态获取时显示，避免重复） */}
-                          {fetchedModels.length === 0 && allModels.filter((m) => m.free).length > 0 && (
-                            <>
-                              <div className="border-b border-slate-700/50 px-3 py-1.5 text-[10px] uppercase tracking-wider text-emerald-400/70">
-                                🆓 免费模型
-                              </div>
-                              {allModels.filter((m) => m.free).map((model) => (
-                                <button
-                                  key={model.value}
-                                  onClick={() => handleSelectModel(model.value)}
-                                  className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-700 ${
-                                    aiConfig.model === model.value ? 'bg-slate-700/50 text-smartbox-400' : 'text-slate-300'
-                                  }`}
-                                >
-                                  <span className="flex-1">{model.label}</span>
-                                  {model.description && (
-                                    <span className="text-[10px] text-slate-500">{model.description}</span>
+                                  {model.free && (
+                                    <span className="text-[9px] rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-400">免费</span>
                                   )}
                                   {aiConfig.model === model.value && <Check size={12} className="shrink-0" />}
                                 </button>
@@ -497,28 +484,55 @@ export default function SettingsPanel() {
                             </>
                           )}
 
-                          {/* 付费/其他模型 */}
-
-                          {allModels.filter((m) => !m.free).length > 0 && (
+                          {/* 内置模型（当无 API 动态获取时显示） */}
+                          {fetchedModels.length === 0 && (
                             <>
-                              <div className="border-b border-t border-slate-700/50 px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500">
-                                💰 其他模型
-                              </div>
-                              {allModels.filter((m) => !m.free).map((model) => (
-                                <button
-                                  key={model.value}
-                                  onClick={() => handleSelectModel(model.value)}
-                                  className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-700 ${
-                                    aiConfig.model === model.value ? 'bg-slate-700/50 text-smartbox-400' : 'text-slate-300'
-                                  }`}
-                                >
-                                  <span className="flex-1">{model.label}</span>
-                                  {model.description && (
-                                    <span className="text-[10px] text-slate-500">{model.description}</span>
-                                  )}
-                                  {aiConfig.model === model.value && <Check size={12} className="shrink-0" />}
-                                </button>
-                              ))}
+                              {allModels.filter((m) => m.free).length > 0 && (
+                                <>
+                                  <div className="border-b border-slate-700/50 px-3 py-1.5 text-[10px] uppercase tracking-wider text-emerald-400/70">
+                                    🆓 免费模型
+                                  </div>
+                                  {allModels.filter((m) => m.free).map((model) => (
+                                    <button
+                                      key={model.value}
+                                      onClick={() => handleSelectModel(model.value)}
+                                      className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-700 ${
+                                        aiConfig.model === model.value ? 'bg-slate-700/50 text-smartbox-400' : 'text-slate-300'
+                                      }`}
+                                    >
+                                      <span className="flex-1">{model.label}</span>
+                                      {model.description && (
+                                        <span className="text-[10px] text-slate-500">{model.description}</span>
+                                      )}
+                                      {aiConfig.model === model.value && <Check size={12} className="shrink-0" />}
+                                    </button>
+                                  ))}
+                                </>
+                              )}
+
+                              {/* 付费/其他模型 */}
+                              {allModels.filter((m) => !m.free).length > 0 && (
+                                <>
+                                  <div className="border-b border-t border-slate-700/50 px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500">
+                                    💰 其他模型
+                                  </div>
+                                  {allModels.filter((m) => !m.free).map((model) => (
+                                    <button
+                                      key={model.value}
+                                      onClick={() => handleSelectModel(model.value)}
+                                      className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-700 ${
+                                        aiConfig.model === model.value ? 'bg-slate-700/50 text-smartbox-400' : 'text-slate-300'
+                                      }`}
+                                    >
+                                      <span className="flex-1">{model.label}</span>
+                                      {model.description && (
+                                        <span className="text-[10px] text-slate-500">{model.description}</span>
+                                      )}
+                                      {aiConfig.model === model.value && <Check size={12} className="shrink-0" />}
+                                    </button>
+                                  ))}
+                                </>
+                              )}
                             </>
                           )}
 
