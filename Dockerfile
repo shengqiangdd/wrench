@@ -21,7 +21,7 @@ RUN cd frontend && npm run build
 # ============================================
 # Stage 2: Build Rust backend
 # ============================================
-FROM rust:1.82-slim-bookworm AS rust-builder
+FROM rust:1.96-slim-bookworm AS rust-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev && \
