@@ -9,7 +9,7 @@ export default function LogsPage() {
 
   // 主机选择状态
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-  const currentConnId = selectedSessionId || (sessions.length > 0 ? sessions[0].id : null)
+  const currentConnId = selectedSessionId || (sessions.length > 0 ? sessions[0]!.id : null)
 
   // 当 sessions 变化时自动选中第一个
   const [currentPath, setCurrentPath] = useState<string | null>(null)

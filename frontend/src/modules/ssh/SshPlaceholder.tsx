@@ -49,11 +49,15 @@ export default function SshPlaceholder() {
  const touchStartX = useRef(0)
 
  const handleTouchStart = useCallback((e: React.TouchEvent) => {
- touchStartX.current = e.touches[0].clientX
+   const touch = e.touches[0]
+   if (!touch) return
+   touchStartX.current = touch.clientX
  }, [])
 
  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
- const diff = e.changedTouches[0].clientX - touchStartX.current
+   const touch = e.changedTouches[0]
+   if (!touch) return
+   const diff = touch.clientX - touchStartX.current
  if (Math.abs(diff) < 50) return // 滑动距离不够
  if (diff > 0 && touchStartX.current < 60) {
  // 从屏幕左侧右滑 → 打开侧边栏
@@ -200,7 +204,7 @@ export default function SshPlaceholder() {
  setSplits((prev) => {
  const idx = prev.findIndex((s) => s.id === id)
  if (idx === -1) return prev
- connId = prev[idx].connectionId
+ connId = prev[idx]!.connectionId
  const newSplit: SplitDef = {
  id: splitId,
  connectionId: connId,
@@ -299,7 +303,7 @@ export default function SshPlaceholder() {
  for (const split of splits) {
  if (split.syncGroup) {
  if (!newGroups[split.syncGroup]) newGroups[split.syncGroup] = []
- newGroups[split.syncGroup].push(split.id)
+ newGroups[split.syncGroup]!.push(split.id)
  }
  }
  // 只保留有效组
@@ -319,7 +323,7 @@ export default function SshPlaceholder() {
  const targetIdx = prev.findIndex((s) => s.id === targetId)
  if (sourceIdx === -1 || targetIdx === -1) return prev
 
- const source = prev[sourceIdx]
+ const source = prev[sourceIdx]!
  const newDirection = position === 'left' || position === 'right' ? 'vertical' : 'horizontal'
 
  // 移除 source
@@ -330,10 +334,17 @@ export default function SshPlaceholder() {
 
  const result = [...withoutSource]
  // 根据 position 插入 source
+ const insertSplit: SplitDef = {
+ id: source.id,
+ connectionId: source.connectionId,
+ sessionId: source.sessionId,
+ direction: newDirection,
+ syncGroup: source.syncGroup,
+ }
  if (position === 'left' || position === 'top') {
- result.splice(newTargetIdx, 0, { ...source, direction: newDirection })
+ result.splice(newTargetIdx, 0, insertSplit)
  } else {
- result.splice(newTargetIdx + 1, 0, { ...source, direction: newDirection })
+ result.splice(newTargetIdx + 1, 0, insertSplit)
  }
  return result
  })
@@ -515,7 +526,7 @@ export default function SshPlaceholder() {
  <button
  onClick={() => {
  if (!activeSession && connections.length > 0) {
- selectConnection(connections[0].id)
+ selectConnection(connections[0]!.id)
  }
  }}
  className="flex items-center gap-1 px-3 py-2 text-xs text-slate-500 hover:text-slate-300"

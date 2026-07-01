@@ -60,6 +60,7 @@ function MiniChart({
   }).join(' ')
 
   const latest = data[data.length - 1]
+  if (!latest) return null
   const val = unit === '%' ? latest.cpu.toFixed(1) : latest.mem.toFixed(0)
   const displayVal = unit === '%' ? `${val}%` : `${val}MB`
 
@@ -214,7 +215,7 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
     s = s.trim()
     const match = s.match(/^([\d.]+)\s*([KMGTPE]i?B?|B)?$/i)
     if (!match) return 0
-    const num = parseFloat(match[1])
+    const num = parseFloat(match[1]!)
     const unit = (match[2] || 'B').toUpperCase()
     const units: Record<string, number> = {
       'B': 1, 'KB': 1024, 'KIB': 1024, 'K': 1024,

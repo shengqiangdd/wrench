@@ -444,11 +444,11 @@ function buildSplitTree(splits: SplitDef[]): SplitDef[] {
  if (splits.length <= 1) return splits
 
  // 找到第一个方向不同的分界点
- const firstDir = splits[0].direction
+ const firstDir = splits[0]!.direction
  // 从右往左找，这样最内层的方向优先
  let splitIdx = -1
  for (let i = splits.length - 1; i >= 1; i--) {
- if (splits[i].direction !== firstDir) {
+ if (splits[i]!.direction !== firstDir) {
  // 方向变化点：这个 split 用它的 direction（内层），前面用 firstDir（外层）
  splitIdx = i
  break
@@ -490,10 +490,11 @@ export function SplitContainer({
 
  // 单个分屏或同方向平铺
  if (splits.length === 1) {
+ const single = splits[0]!
  return (
  <SplitPane
- key={splits[0].id}
- split={splits[0]}
+ key={single.id}
+ split={single}
  onSplit={onSplit}
  onRemove={onRemove}
  onConnectionChange={onConnectionChange}
@@ -509,11 +510,11 @@ export function SplitContainer({
  }
 
  // 构建树形布局：找到方向变化点
- const firstDir = splits[0].direction
+ const firstDir = splits[0]!.direction
  // 从右往左找第一个方向不同的分界点
  let splitIdx = splits.length
  for (let i = splits.length - 1; i >= 1; i--) {
- if (splits[i].direction !== firstDir) {
+ if (splits[i]!.direction !== firstDir) {
  splitIdx = i
  break
  }
@@ -524,7 +525,7 @@ export function SplitContainer({
  return (
  <div
  className={`flex flex-1 overflow-hidden ${
- splits[0].direction === 'vertical' ? 'flex-col' : 'flex-row'
+ splits[0]!.direction === 'vertical' ? 'flex-col' : 'flex-row'
  }`}
  style={{ minHeight: 0 }}
  >
@@ -533,7 +534,7 @@ export function SplitContainer({
  {i > 0 && (
  <div
  className={`shrink-0 bg-slate-700/50 ${
- splits[0].direction === 'vertical' ? 'h-px' : 'w-px'
+ splits[0]!.direction === 'vertical' ? 'h-px' : 'w-px'
  }`}
  />
  )}

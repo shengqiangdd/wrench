@@ -45,7 +45,9 @@ function sniffShebang(firstLine: string): string | null {
 
   // 处理 /usr/bin/env <interpreter> 格式
   if (afterShebang.startsWith('/usr/bin/env ')) {
-    const interpreter = afterShebang.slice('/usr/bin/env '.length).trim().split(/\s+/)[0]
+    const parts = afterShebang.slice('/usr/bin/env '.length).trim().split(/\s+/)
+    const interpreter = parts[0]
+    if (!interpreter) return null
     for (const [key, val] of Object.entries(SHEBANG_MAP)) {
       if (key.startsWith('/usr/bin/env ') && key.endsWith(interpreter)) {
         return val
@@ -184,7 +186,7 @@ export function sniffLanguage(filename: string, content?: string): SniffResult {
 
   // 3. 如果有内容，做 shebang 嗅探
   if (content && content.length > 0) {
-    const firstLine = content.split('\n')[0]
+    const firstLine = content.split('\n')[0]!!
     const shebangLang = sniffShebang(firstLine)
     if (shebangLang) {
       return { language: shebangLang, method: 'shebang' }
@@ -212,7 +214,7 @@ export function sniffFileType(content: string): string | null {
   if (!content) return null
 
   // Shebang
-  const firstLine = content.split('\n')[0].trim()
+  const firstLine = content.split('\n')[0]!.trim()
   if (firstLine.startsWith('#!')) {
     const interpreter = firstLine.slice(2).trim()
     return `${interpreter} script`

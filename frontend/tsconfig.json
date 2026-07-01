@@ -15,8 +15,7 @@
     /* 严格模式（增量启用）*/
     "strict": true,
     "noImplicitReturns": true,
-    /* noUncheckedIndexedAccess 待后续修复 ~100 处后启用 */
-    "noUncheckedIndexedAccess": false,
+    "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,

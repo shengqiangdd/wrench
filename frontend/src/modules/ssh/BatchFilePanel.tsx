@@ -84,7 +84,8 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
   const toggleTarget = (idx: number) => {
     setTargets((prev) => {
       const next = [...prev]
-      next[idx] = { ...next[idx], status: next[idx].status === 'pending' ? 'pending' : next[idx].status }
+      const entry = next[idx]!
+      next[idx] = { ...entry, status: entry.status === 'pending' ? 'pending' : entry.status }
       return next
     })
   }
@@ -92,7 +93,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
   const setTargetPath = (idx: number, path: string) => {
     setTargets((prev) => {
       const next = [...prev]
-      next[idx] = { ...next[idx], path }
+      const entry = next[idx]!; next[idx] = { ...entry, path }
       return next
     })
   }
@@ -121,16 +122,16 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
     // 读取文件内容为 base64
     const reader = new FileReader()
     reader.onload = async () => {
-      const content = (reader.result as string).split(',')[1] // base64 data
+      const content = (reader.result as string).split(',')[1] || '' // base64 data
 
       // 对所有目标执行上传
       for (let i = 0; i < targets.length; i++) {
-        const target = targets[i]
+        const target: TransferTarget = targets[i]!
         if (target.status !== 'pending') continue
 
         setTargets((prev) => {
           const next = [...prev]
-          next[i] = { ...next[i], status: 'connecting', progress: 0 }
+          const entry = next[i]!; next[i] = { ...entry, status: 'connecting', progress: 0 }
           return next
         })
 
@@ -145,7 +146,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
 
           setTargets((prev) => {
             const next = [...prev]
-            next[i] = { ...next[i], status: 'transferring', progress: 10 }
+            const entry = next[i]!; next[i] = { ...entry, status: 'transferring', progress: 10 }
             return next
           })
 
@@ -153,7 +154,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
           // 对于大文件用分块上传，小文件直接 writeFile
           if (file.size > 5 * 1024 * 1024) {
             // 大文件：分块上传
-            await chunkedUpload(wsClient, target.connId, content, fullPath, file.size, i)
+            await chunkedUpload(wsClient, target.connId as string, content, fullPath, file.size, i)
           } else {
             // 小文件：直接 writeFile
             const result = await wsClient.request({
@@ -170,14 +171,14 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
 
             setTargets((prev) => {
               const next = [...prev]
-              next[i] = { ...next[i], progress: 100, size: file.size }
+              const entry = next[i]!; next[i] = { ...entry, progress: 100, size: file.size }
               return next
             })
           }
 
           setTargets((prev) => {
             const next = [...prev]
-            next[i] = { ...next[i], status: 'success', progress: 100 }
+            const entry = next[i]!; next[i] = { ...entry, status: 'success', progress: 100 }
             return next
           })
           addLog(`✅ [${target.name}] 上传完成 (${(file.size / 1024).toFixed(1)} KB)`)
@@ -185,7 +186,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
         } catch (err: any) {
           setTargets((prev) => {
             const next = [...prev]
-            next[i] = { ...next[i], status: 'error', error: err.message }
+            const entry = next[i]!; next[i] = { ...entry, status: 'error', error: err.message }
             return next
           })
           addLog(`❌ [${target.name}] 上传失败: ${err.message}`)
@@ -247,8 +248,9 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
           const progress = Math.round(((c + 1) / totalChunks) * 90) + 10
           setTargets((prev) => {
             const next = [...prev]
+            const entry = next[targetIdx]!
             next[targetIdx] = {
-              ...next[targetIdx],
+              ...entry,
               progress,
               size: Math.round((c + 1) / totalChunks * totalSize),
             }
@@ -283,12 +285,12 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
     setRunning(true)
 
     for (let i = 0; i < targets.length; i++) {
-      const target = targets[i]
+      const target = targets[i]!
       if (target.status !== 'pending') continue
 
       setTargets((prev) => {
         const next = [...prev]
-        next[i] = { ...next[i], status: 'connecting', progress: 0 }
+        const entry = next[i]!; next[i] = { ...entry, status: 'connecting', progress: 0 }
         return next
       })
 
@@ -307,15 +309,16 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
         if (json.exitCode === 0) {
           setTargets((prev) => {
             const next = [...prev]
-            next[i] = { ...next[i], status: 'success', progress: 100, speed: `${duration}ms` }
+            const entry = next[i]!; next[i] = { ...entry, status: 'success', progress: 100, speed: `${duration}ms` }
             return next
           })
           addLog(`✅ [${target.name}] 完成 (${duration}ms)`)
         } else {
           setTargets((prev) => {
             const next = [...prev]
+            const entry = next[i]!
             next[i] = {
-              ...next[i],
+              ...entry,
               status: 'error',
               error: json.stderr?.slice(0, 200) || `退出码: ${json.exitCode}`,
             }
@@ -326,7 +329,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
       } catch (err: any) {
         setTargets((prev) => {
           const next = [...prev]
-          next[i] = { ...next[i], status: 'error', error: err.message }
+          const entry = next[i]!; next[i] = { ...entry, status: 'error', error: err.message }
           return next
         })
         addLog(`❌ [${target.name}] 请求失败: ${err.message}`)

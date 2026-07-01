@@ -73,7 +73,7 @@ export default function SettingsPanel() {
   ]
 
   // ── Provider 切换 ──
-  const currentProvider = AI_PROVIDERS.find((p) => p.id === aiConfig.provider) || AI_PROVIDERS[0]
+  const currentProvider = AI_PROVIDERS.find((p) => p.id === aiConfig.provider) || AI_PROVIDERS[0]!
 
   // ── 从后端环境变量获取 API Key（如果前端未填写） ──
   useEffect(() => {

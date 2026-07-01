@@ -109,7 +109,9 @@ export default function ResizablePanel({
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
       isDragging.current = true
-      startPos.current = isHorizontal ? e.touches[0].clientX : e.touches[0].clientY
+      const touch = e.touches[0]
+      if (!touch) return
+      startPos.current = isHorizontal ? touch.clientX : touch.clientY
       startSize.current = actualSize
     },
     [actualSize, isHorizontal],
@@ -118,7 +120,9 @@ export default function ResizablePanel({
   const handleTouchMove = useCallback(
     (e: TouchEvent) => {
       if (!isDragging.current) return
-      const delta = (isHorizontal ? e.touches[0].clientX : e.touches[0].clientY) - startPos.current
+      const touch = e.touches[0]
+      if (!touch) return
+      const delta = (isHorizontal ? touch.clientX : touch.clientY) - startPos.current
       const newSize = isBefore
         ? startSize.current + delta
         : startSize.current - delta

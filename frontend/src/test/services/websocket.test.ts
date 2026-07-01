@@ -63,7 +63,7 @@ describe('WsClient', () => {
     client.send({ type: 'ping' })
     const ws = (client as any).ws as MockWebSocket
     expect(ws.sentMessages).toHaveLength(1)
-    expect(JSON.parse(ws.sentMessages[0])).toEqual({ type: 'ping' })
+    expect(JSON.parse(ws.sentMessages[0]!)).toEqual({ type: 'ping' })
   })
 
   it('handles request-response pattern', async () => {
@@ -74,7 +74,7 @@ describe('WsClient', () => {
     
     const ws = (client as any).ws as MockWebSocket
     // Find the requestId from sent message
-    const sentMsg = JSON.parse(ws.sentMessages[0])
+    const sentMsg = JSON.parse(ws.sentMessages[0]!)
     expect(sentMsg.type).toBe('get_info')
     expect(sentMsg.requestId).toBeDefined()
 

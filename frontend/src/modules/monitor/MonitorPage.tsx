@@ -57,7 +57,7 @@ function parseCpuUsage(stdout: string): number {
     if (line.includes('all')) {
       const p = line.trim().split(/\s+/)
       if (p.length >= 8) {
-        const idle = parseFloat(p[p.length - 1])
+        const idle = parseFloat(p[p.length - 1]!)
         if (!isNaN(idle) && idle >= 0 && idle <= 100) {
           return Math.round((100 - idle) * 10) / 10
         }
@@ -72,10 +72,10 @@ function parseMemory(stdout: string): { total: number; used: number; pct: number
   let total = 0, available = 0
   for (const line of lines) {
     if (line.startsWith('MemTotal:')) {
-      total = parseInt(line.split(/\s+/)[1]) || 0
+      total = parseInt(line.split(/\s+/)[1]!) || 0
     }
     if (line.startsWith('MemAvailable:')) {
-      available = parseInt(line.split(/\s+/)[1]) || 0
+      available = parseInt(line.split(/\s+/)[1]!) || 0
     }
   }
   if (total === 0) return { total: 0, used: 0, pct: 0 }
@@ -89,8 +89,8 @@ function parseDisk(stdout: string): { total: number; used: number; pct: number }
   for (const line of lines) {
     const parts = line.trim().split(/\s+/)
     if (parts.length >= 6 && parts[5] === '/') {
-      const total = parseInt(parts[1]) || 0
-      const used = parseInt(parts[2]) || 0
+      const total = parseInt(parts[1]!) || 0
+      const used = parseInt(parts[2]!) || 0
       if (total === 0) continue
       return { total, used, pct: Math.round((used / total) * 100) }
     }
@@ -100,12 +100,12 @@ function parseDisk(stdout: string): { total: number; used: number; pct: number }
 
 function parseUptime(stdout: string): string {
   const m = stdout.match(/up\s+(.+?)(?:,\s+\d+ users|\s*$)/)
-  return m ? m[1].trim() : stdout.trim().slice(0, 40)
+  return m ? m[1]!.trim() : stdout.trim().slice(0, 40)
 }
 
 function parseLoadAvg(stdout: string): string {
   const m = stdout.match(/load average:\s+(.+)/)
-  return m ? m[1].trim() : ''
+  return m ? m[1]!.trim() : ''
 }
 
 function parseNetRxTx(stdout: string): { rx: number; tx: number } {
@@ -115,10 +115,10 @@ function parseNetRxTx(stdout: string): { rx: number; tx: number } {
   for (const line of lines) {
     const parts = line.trim().split(/\s+/)
     if (parts.length >= 10 && parts[0] !== 'Inter-|' && parts[0] !== 'face') {
-      const name = parts[0]
+      const name = parts[0]!
       if (name === 'lo' || name.startsWith('eth0') || name.startsWith('docker') || name.startsWith('br-') || name.startsWith('veth') || name.startsWith('virbr') || name.startsWith('cni')) continue
-      rxTotal += parseInt(parts[1]) || 0
-      txTotal += parseInt(parts[9]) || 0
+      rxTotal += parseInt(parts[1]!) || 0
+      txTotal += parseInt(parts[9]!) || 0
       ifaceCount++
     }
   }
@@ -133,10 +133,10 @@ function parseTopProcs(stdout: string): Array<{ pid: number; user: string; cpu: 
     const parts = line.trim().split(/\s+/)
     if (parts.length >= 11 && parts[0] !== 'USER') {
       procs.push({
-        user: parts[0],
-        pid: parseInt(parts[1]) || 0,
-        cpu: parseFloat(parts[2]) || 0,
-        mem: parseFloat(parts[3]) || 0,
+        user: parts[0]!,
+        pid: parseInt(parts[1]!) || 0,
+        cpu: parseFloat(parts[2]!) || 0,
+        mem: parseFloat(parts[3]!) || 0,
         command: parts.slice(10).join(' ').slice(0, 50),
       })
     }
@@ -153,11 +153,11 @@ function parseDiskIo(stdout: string): { readBps: number; writeBps: number } {
     const parts = line.trim().split(/\s+/)
     // 格式: major minor name reads_completed reads_merged sectors_read ... writes_completed writes_merged sectors_written
     if (parts.length >= 14) {
-      const devName = parts[2]
+      const devName = parts[2]!
       // 只统计主磁盘（sdX / vdX / nvmeXnY），跳过分区
       if (/^(sd|vd|nvme\d+n\d+|xvd)[a-z]?$/.test(devName) || /^nvme\d+n\d+$/.test(devName)) {
-        readSectors += parseInt(parts[5]) || 0
-        writeSectors += parseInt(parts[9]) || 0
+        readSectors += parseInt(parts[5]!) || 0
+        writeSectors += parseInt(parts[9]!) || 0
       }
     }
   }
@@ -366,7 +366,7 @@ export default function MonitorPage() {
     const ipSeen = new Set<string>()
     const dedupedList: { id: string; name: string }[] = []
     for (const h of list) {
-      const ipKey = h.name.split(':')[0].split('@').pop() || h.name
+      const ipKey = h.name.split(':')[0]!.split('@').pop() || h.name
       if (!ipSeen.has(ipKey)) {
         ipSeen.add(ipKey)
         dedupedList.push(h)
@@ -374,7 +374,7 @@ export default function MonitorPage() {
     }
     setHosts(dedupedList)
     if (dedupedList.length > 0 && selected.length === 0) {
-      setSelected([dedupedList[0].id])
+      setSelected([dedupedList[0]!.id])
     }
   }, [connections, sessions, selected.length])
 
@@ -499,15 +499,16 @@ export default function MonitorPage() {
     for (let i = 0; i < selected.length; i++) {
       const s = results[i]
       if (s) {
-        newStats[selected[i]] = s
+        const hostId = selected[i]!
+        newStats[hostId] = s
 
         // 更新历史
         setHistory((prev) => {
-          const h = prev[selected[i]] || []
+          const h = prev[hostId] || []
           h.push({ time: now, cpu: s.cpu, mem: s.memory.pct, disk: s.disk.pct })
           // 保留最近 60 个点
           const trimmed = h.slice(-60)
-          return { ...prev, [selected[i]]: trimmed }
+          return { ...prev, [hostId]: trimmed }
         })
       }
     }

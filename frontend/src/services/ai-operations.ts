@@ -153,11 +153,11 @@ export async function aiCodeAction(
 function parseActionResult(content: string, originalCode: string): AiCodeActionResult {
   // 尝试提取 code 块中的代码
   const codeMatch = content.match(/```code\n([\s\S]*?)```/)
-  const modified = codeMatch ? codeMatch[1].trim() : originalCode
+  const modified = codeMatch ? codeMatch[1]!.trim() : originalCode
 
   // 提取 explanation / diff / issues
   const explMatch = content.match(/```(?:explanation|diff|issues|summary)\n([\s\S]*?)```/)
-  const explanation = explMatch ? explMatch[1].trim() : content.replace(/```[\s\S]*?```/g, '').trim()
+  const explanation = explMatch ? explMatch[1]!.trim() : content.replace(/```[\s\S]*?```/g, '').trim()
 
   return { original: originalCode, modified, explanation }
 }

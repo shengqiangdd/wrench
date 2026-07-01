@@ -12,7 +12,7 @@ import type { QuickCommand } from './index'
 
 export default function CommandsPage() {
   const sessions = useSshStore((s) => s.sessions)
-  const connectionId = sessions.length > 0 ? sessions[0].id : null
+  const connectionId = sessions.length > 0 ? sessions[0]!.id : null
 
   const {
     customCommands,

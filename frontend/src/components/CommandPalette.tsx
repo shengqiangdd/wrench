@@ -209,8 +209,12 @@ export default function CommandPalette() {
 
   // 按分类分组
   const grouped = filtered.reduce<Record<string, CommandItem[]>>((acc, cmd) => {
-    if (!acc[cmd.category]) acc[cmd.category] = []
-    acc[cmd.category].push(cmd)
+    const group = acc[cmd.category]
+    if (group) {
+      group.push(cmd)
+    } else {
+      acc[cmd.category] = [cmd]
+    }
     return acc
   }, {})
 

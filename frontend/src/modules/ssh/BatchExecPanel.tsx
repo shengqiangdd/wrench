@@ -80,7 +80,8 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
       // 更新状态为 running
       setResults((prev) => {
         const copy = [...prev]
-        copy[idx] = { ...copy[idx], status: 'running' }
+        const entry = copy[idx]!
+        copy[idx] = { ...entry, status: 'running' }
         return copy
       })
 
@@ -96,8 +97,9 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
         if (json.error) {
           setResults((prev) => {
             const copy = [...prev]
+            const entry = copy[idx]!
             copy[idx] = {
-              ...copy[idx],
+              ...entry,
               status: 'error',
               error: json.error,
               stdout: json.stdout || '',
@@ -110,8 +112,9 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
         } else {
           setResults((prev) => {
             const copy = [...prev]
+            const entry = copy[idx]!
             copy[idx] = {
-              ...copy[idx],
+              ...entry,
               status: json.exitCode === 0 ? 'success' : 'error',
               stdout: json.stdout || '',
               stderr: json.stderr || '',
@@ -126,8 +129,9 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
         const duration = Date.now() - start
         setResults((prev) => {
           const copy = [...prev]
+          const entry = copy[idx]!
           copy[idx] = {
-            ...copy[idx],
+            ...entry,
             status: 'error',
             error: err.message || '请求失败',
             stdout: '',

@@ -252,7 +252,7 @@ export default function AiSidebar({ sessionId, connectionId, onClose }: Props) {
   // 清除对话
   const clearChat = () => {
     if (messages.length <= 1) return
-    setMessages([messages[0]]) // 保留 system prompt
+    setMessages([messages[0]!]) // 保留 system prompt
   }
 
   // 如果 AI 未启用

@@ -45,7 +45,8 @@ export const useFileStore = create<FileState>()((set, get) => ({
       const tabs = s.openTabs.filter((t) => t.id !== tabId)
       let activeTabId = s.activeTabId
       if (activeTabId === tabId) {
-        activeTabId = tabs.length > 0 ? tabs[tabs.length - 1].id : null
+        const lastTab = tabs[tabs.length - 1]
+        activeTabId = lastTab ? lastTab.id : null
       }
       return { openTabs: tabs, activeTabId }
     }),

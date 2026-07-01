@@ -866,9 +866,12 @@ export default function SftpBrowser({
   }, [])
 
   const doUpload = useCallback(async (files: File[], targetDir: string) => {
+    const firstFile = files[0]
+    if (!firstFile) return
+
     // 单文件且 >= 50MB -> 分块进度模式
-    if (files.length === 1 && files[0].size >= CHUNK_THRESHOLD) {
-      const file = files[0]
+    if (files.length === 1 && firstFile.size >= CHUNK_THRESHOLD) {
+      const file = firstFile
       setUploadProgress({ current: 0, total: 100, name: file.name, pct: 0 })
       try {
         await uploadFile(file, targetDir, (pct: number) => {
@@ -886,10 +889,10 @@ export default function SftpBrowser({
     }
 
     // 普通进度：文件列表
-    setUploadProgress({ current: 0, total: files.length, name: files[0].name })
+    setUploadProgress({ current: 0, total: files.length, name: firstFile.name })
     let successCount = 0; let errorCount = 0; const errors: string[] = []
     for (let i = 0; i < files.length; i++) {
-      const file = files[i]
+      const file = files[i]!
       setUploadProgress({ current: i + 1, total: files.length, name: file.name })
       try {
         await uploadFile(file, targetDir); successCount++

@@ -124,7 +124,7 @@ export async function createMasterPassword(
 function arrayToBase64(array: Uint8Array): string {
   let binary = ''
   for (let i = 0; i < array.length; i++) {
-    binary += String.fromCharCode(array[i])
+    binary += String.fromCharCode(array[i]!)
   }
   if (typeof btoa !== 'undefined') {
     return btoa(binary)

@@ -60,12 +60,14 @@ function renderMarkdown(md: string): string {
   // 恢复代码块
   html = html.replace(/%%CODEBLOCK_(\d+)%%/g, (_, idx) => {
     const code = codeBlocks[parseInt(idx)]
+    if (!code) return ''
+
     const lines = code.split('\n')
     // 尝试从第一行提取语言
     let lang = ''
     let codeContent = code
-    if (lines.length > 1 && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(lines[0].trim())) {
-      lang = lines[0].trim()
+    if (lines.length > 1 && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(lines[0]!.trim())) {
+      lang = lines[0]!.trim()
       codeContent = lines.slice(1).join('\n')
     }
     const escaped = escapeHtml(codeContent.replace(/\n$/, ''))
@@ -123,7 +125,7 @@ function renderMarkdown(md: string): string {
   let inBlockquote = false
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
+    const line = lines[i]!
     const trimmed = line.trim()
 
     // 空行 — 关闭上下文
