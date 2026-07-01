@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Terminal as XTerm } from 'xterm'
-import { FitAddon } from 'xterm-addon-fit'
-import { SearchAddon } from 'xterm-addon-search'
-import 'xterm/css/xterm.css'
+import { Terminal as XTerm } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
+import '@xterm/xterm/css/xterm.css'
 import { getWsClient, getWsClientSync } from '../../services/websocket'
 import { Search, X, ChevronUp, ChevronDown, Terminal, Keyboard } from 'lucide-react'
 

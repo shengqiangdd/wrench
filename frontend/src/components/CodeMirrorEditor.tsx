@@ -2,8 +2,7 @@
  * CodeMirrorEditor.tsx
  *
  * 基于 CodeMirror 6 的代码编辑器组件。
- * 显示当前活跃标签页的文件内容，支持 8+ 种语言语法高亮。
- * 使用 IndexedDB 自动保存，Ctrl+S / 双击保存到远程。
+ * 语言包按需动态加载，仅加载当前文件需要的语言扩展。
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react'
@@ -11,52 +10,104 @@ import { EditorView, keymap, placeholder } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching, foldGutter } from '@codemirror/language'
-import { javascript } from '@codemirror/lang-javascript'
-import { python } from '@codemirror/lang-python'
-import { json } from '@codemirror/lang-json'
-import { markdown } from '@codemirror/lang-markdown'
-import { html } from '@codemirror/lang-html'
-import { css } from '@codemirror/lang-css'
-import { xml } from '@codemirror/lang-xml'
-import { sql } from '@codemirror/lang-sql'
-import { yaml } from '@codemirror/lang-yaml'
-import { rust } from '@codemirror/lang-rust'
-import { go } from '@codemirror/lang-go'
-import { java } from '@codemirror/lang-java'
-import { cpp } from '@codemirror/lang-cpp'
-import { php } from '@codemirror/lang-php'
-import { less } from '@codemirror/lang-less'
-import { vue } from '@codemirror/lang-vue'
-import { liquid } from '@codemirror/lang-liquid'
-import { Eye, EyeOff } from 'lucide-react'
-import MarkdownPreview from './MarkdownPreview'
-import { wast } from '@codemirror/lang-wast'
-import { autocompletion, completionKeymap } from '@codemirror/autocomplete'
+import { autocompletion, completionKeymap, closeBrackets } from '@codemirror/autocomplete'
 import { searchKeymap } from '@codemirror/search'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { closeBrackets } from '@codemirror/autocomplete'
+import { Eye, EyeOff, Loader2, Save, Sparkles, X, Check, Copy } from 'lucide-react'
+import MarkdownPreview from './MarkdownPreview'
 import { useFileStore } from '../stores/file-store'
 import { useAiStore } from '../stores/ai-store'
 import { getWsClientSync } from '../services/websocket'
-import { Loader2, Save, Sparkles, X, Check, Copy } from 'lucide-react'
 import { pluginSandboxManager } from '../services/pluginSandboxManager'
-import { aiCodeAction, computeDiffLines, ACTION_LABELS, ACTION_ICONS } from '../services/ai-operations'
+import { aiCodeAction, ACTION_LABELS, ACTION_ICONS } from '../services/ai-operations'
 import type { AiCodeAction, AiCodeActionResult } from '../services/ai-operations'
+
+// ── 语言包动态加载器 ──
+// 使用懒加载映射，避免在首屏加载所有 CodeMirror 语言包
+const languageLoaders: Record<string, () => Promise<any>> = {
+  javascript: () => import('@codemirror/lang-javascript'),
+  typescript: () => import('@codemirror/lang-javascript'),
+  jsx: () => import('@codemirror/lang-javascript'),
+  tsx: () => import('@codemirror/lang-javascript'),
+  python: () => import('@codemirror/lang-python'),
+  json: () => import('@codemirror/lang-json'),
+  jsonc: () => import('@codemirror/lang-json'),
+  markdown: () => import('@codemirror/lang-markdown'),
+  mdx: () => import('@codemirror/lang-markdown'),
+  html: () => import('@codemirror/lang-html'),
+  css: () => import('@codemirror/lang-css'),
+  scss: () => import('@codemirror/lang-css'),
+  less: () => import('@codemirror/lang-less'),
+  vue: () => import('@codemirror/lang-vue'),
+  xml: () => import('@codemirror/lang-xml'),
+  sql: () => import('@codemirror/lang-sql'),
+  yaml: () => import('@codemirror/lang-yaml'),
+  yml: () => import('@codemirror/lang-yaml'),
+  rust: () => import('@codemirror/lang-rust'),
+  go: () => import('@codemirror/lang-go'),
+  java: () => import('@codemirror/lang-java'),
+  c: () => import('@codemirror/lang-cpp'),
+  cpp: () => import('@codemirror/lang-cpp'),
+  php: () => import('@codemirror/lang-php'),
+  liquid: () => import('@codemirror/lang-liquid'),
+  wast: () => import('@codemirror/lang-wast'),
+}
+
+/** 动态加载语言扩展 */
+async function loadLanguageExtension(lang: string) {
+  const loader = languageLoaders[lang] || languageLoaders['javascript']
+  const mod = await loader()
+  // 每个语言包导出对应的语言函数，名称与包名相关
+  // javascript -> javascript(), python -> python(), json -> json(), 等
+  if (lang === 'typescript' || lang === 'tsx' || lang === 'jsx') {
+    return mod.javascript({
+      typescript: lang === 'typescript' || lang === 'tsx',
+      jsx: lang === 'jsx' || lang === 'tsx',
+    })
+  }
+  if (lang === 'scss' || lang === 'less') {
+    // CSS 扩展：less() 或 css()
+    const cssMod = await import('@codemirror/lang-css')
+    return cssMod.css()
+  }
+  if (lang === 'c' || lang === 'cpp') {
+    return mod.cpp()
+  }
+  if (lang === 'jsonc' || lang === 'json5') {
+    return mod.json()
+  }
+  if (lang === 'mdx') {
+    return mod.markdown()
+  }
+  if (lang === 'yml') {
+    return mod.yaml()
+  }
+  // 默认调用包中同名的导出函数
+  const exportName = lang === 'c' || lang === 'cpp' ? 'cpp' : lang
+  if (typeof mod[exportName] === 'function') {
+    return mod[exportName]()
+  }
+  if (typeof mod.default === 'function') {
+    return mod.default()
+  }
+  return []
+}
 
 export default function CodeMirrorEditor() {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [langLoading, setLangLoading] = useState(false)
   const fileStore = useFileStore()
   const aiConfig = useAiStore((s) => s.config)
   const activeTab = fileStore.openTabs.find(t => t.id === fileStore.activeTabId)
   const wsClient = getWsClientSync()
   const [aiMenuOpen, setAiMenuOpen] = useState(false)
-  const [aiMenuPos, setAiMenuPos] = useState({ x: 0, y: 0 })
   const [aiProcessing, setAiProcessing] = useState<AiCodeAction | null>(null)
   const [aiResult, setAiResult] = useState<AiCodeActionResult | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [aiActionName, setAiActionName] = useState<AiCodeAction | null>(null)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [markdownPreview, setMarkdownPreview] = useState(false)
   const isMarkdown = activeTab?.language === 'markdown' || activeTab?.name.endsWith('.md') || activeTab?.name.endsWith('.mdx')
@@ -92,8 +143,6 @@ export default function CodeMirrorEditor() {
   }, [activeTab, fileStore, wsClient])
 
   // ─── AI 代码操作 ───
-
-  /** 获取编辑器选中文本 */
   const getSelectedText = useCallback((): string => {
     const view = viewRef.current
     if (!view) return ''
@@ -102,7 +151,6 @@ export default function CodeMirrorEditor() {
     return view.state.sliceDoc(sel.from, sel.to - sel.from)
   }, [])
 
-  /** 替换选中文本 */
   const replaceSelectedText = useCallback((newText: string) => {
     const view = viewRef.current
     if (!view) return
@@ -113,15 +161,12 @@ export default function CodeMirrorEditor() {
     })
   }, [])
 
-  /** 打开 AI 操作菜单 */
   const openAiMenu = useCallback(() => {
     const selected = getSelectedText()
     if (!selected.trim()) return
-    // 在按钮附近弹出菜单
     setAiMenuOpen(true)
   }, [getSelectedText])
 
-  /** 执行 AI 操作 */
   const handleAiAction = useCallback(async (action: AiCodeAction) => {
     if (!aiConfig.enabled || !aiConfig.apiKey) return
     const view = viewRef.current
@@ -131,6 +176,7 @@ export default function CodeMirrorEditor() {
 
     setAiMenuOpen(false)
     setAiProcessing(action)
+    setAiActionName(action)
     setAiError(null)
     setAiResult(null)
     setAiModalOpen(true)
@@ -152,7 +198,6 @@ export default function CodeMirrorEditor() {
     }
   }, [aiConfig, getSelectedText, activeTab?.language])
 
-  /** 应用 AI 结果 */
   const applyAiResult = useCallback(() => {
     if (!aiResult) return
     replaceSelectedText(aiResult.modified)
@@ -160,102 +205,87 @@ export default function CodeMirrorEditor() {
     setAiResult(null)
   }, [aiResult, replaceSelectedText])
 
-  /** 复制 AI 结果 */
   const copyAiResult = useCallback(() => {
     if (!aiResult) return
     navigator.clipboard.writeText(aiResult.modified)
   }, [aiResult])
 
-  // 构建 language extension
-  const getLanguageExt = useCallback((lang: string) => {
-    switch (lang) {
-      case 'javascript': case 'typescript': case 'jsx': case 'tsx':
-        return javascript({ typescript: lang === 'typescript' || lang === 'tsx', jsx: lang === 'jsx' || lang === 'tsx' })
-      case 'python': return python()
-      case 'json': case 'jsonc': case 'json5': return json()
-      case 'markdown': case 'mdx': return markdown()
-      case 'html': case 'xhtml': return html()
-      case 'css': case 'scss': return css()
-      case 'less': return less()
-      case 'vue': return vue()
-      case 'xml': case 'svg': case 'xsd': case 'xsl': return xml()
-      case 'sql': case 'pgsql': case 'mysql': case 'sqlite': return sql()
-      case 'yaml': case 'yml': return yaml()
-      case 'rust': return rust()
-      case 'go': return go()
-      case 'java': return java()
-      case 'c': case 'cpp': case 'cxx': case 'cc': case 'hpp': case 'hxx': return cpp()
-      case 'php': return php()
-      case 'liquid': return liquid()
-      case 'wast': case 'wat': return wast()
-      default: return []
-    }
-  }, [])
-
-  // 初始化编辑器
+  // 初始化编辑器（语言包动态加载）
   useEffect(() => {
     if (!containerRef.current || !activeTab) return
 
-    // 如果已存在 editor view，先销毁
-    if (viewRef.current) {
-      viewRef.current.destroy()
-      viewRef.current = null
+    let cancelled = false
+    setLangLoading(true)
+
+    // 延迟加载语言扩展，避免阻塞首次渲染
+    const initEditor = async () => {
+      const langExt = await loadLanguageExtension(activeTab.language)
+      if (cancelled || !containerRef.current) return
+
+      // 如果已存在 editor view，先销毁
+      if (viewRef.current) {
+        viewRef.current.destroy()
+        viewRef.current = null
+      }
+
+      const updateListener = EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          const content = update.state.doc.toString()
+          fileStore.updateFileContent(activeTab.id, content)
+          // 同步到插件沙箱
+          pluginSandboxManager.syncEditorContent(content, activeTab.language)
+        }
+      })
+
+      const state = EditorState.create({
+        doc: activeTab.content || '',
+        extensions: [
+          keymap.of([
+            ...defaultKeymap,
+            ...historyKeymap,
+            ...completionKeymap,
+            ...searchKeymap,
+            { key: 'Mod-s', run: () => { saveFile(); return true } },
+          ]),
+          history(),
+          indentOnInput(),
+          bracketMatching(),
+          closeBrackets(),
+          foldGutter(),
+          autocompletion(),
+          syntaxHighlighting(defaultHighlightStyle),
+          oneDark,
+          langExt,
+          placeholder('在此编辑文件...'),
+          updateListener,
+          EditorView.theme({
+            '&': { backgroundColor: 'transparent', height: '100%' },
+            '.cm-scroller': { fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '13px' },
+            '.cm-gutters': { backgroundColor: 'transparent', borderRight: '1px solid rgba(51,65,85,0.3)' },
+            '&.cm-editor.cm-focused': { outline: 'none' },
+            '.cm-activeLineGutter': { backgroundColor: 'rgba(56,189,248,0.1)' },
+          }),
+          EditorView.lineWrapping,
+        ],
+      })
+
+      const view = new EditorView({
+        state,
+        parent: containerRef.current,
+      })
+
+      viewRef.current = view
+      setLangLoading(false)
     }
 
-    const langExt = getLanguageExt(activeTab.language)
-
-    const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
-        const content = update.state.doc.toString()
-        fileStore.updateFileContent(activeTab.id, content)
-        // 同步到插件沙箱
-        pluginSandboxManager.syncEditorContent(content, activeTab.language)
-      }
-    })
-
-    const state = EditorState.create({
-      doc: activeTab.content || '',
-      extensions: [
-        keymap.of([
-          ...defaultKeymap,
-          ...historyKeymap,
-          ...completionKeymap,
-          ...searchKeymap,
-          // Ctrl/Cmd + S 保存
-          { key: 'Mod-s', run: () => { saveFile(); return true } },
-        ]),
-        history(),
-        indentOnInput(),
-        bracketMatching(),
-        closeBrackets(),
-        foldGutter(),
-        autocompletion(),
-        syntaxHighlighting(defaultHighlightStyle),
-        oneDark,
-        langExt,
-        placeholder('在此编辑文件...'),
-        updateListener,
-        EditorView.theme({
-          '&': { backgroundColor: 'transparent', height: '100%' },
-          '.cm-scroller': { fontFamily: "'JetBrains Mono', 'Fira Code', monospace", fontSize: '13px' },
-          '.cm-gutters': { backgroundColor: 'transparent', borderRight: '1px solid rgba(51,65,85,0.3)' },
-          '&.cm-editor.cm-focused': { outline: 'none' },
-          '.cm-activeLineGutter': { backgroundColor: 'rgba(56,189,248,0.1)' },
-        }),
-        EditorView.lineWrapping,
-      ],
-    })
-
-    const view = new EditorView({
-      state,
-      parent: containerRef.current,
-    })
-
-    viewRef.current = view
+    initEditor()
 
     return () => {
-      view.destroy()
-      viewRef.current = null
+      cancelled = true
+      if (viewRef.current) {
+        viewRef.current.destroy()
+        viewRef.current = null
+      }
     }
   }, [activeTab?.id]) // 只在标签切换时重建
 
@@ -296,11 +326,11 @@ export default function CodeMirrorEditor() {
 
       {/* 编辑器工具栏 */}
       <div className="flex items-center justify-between border-b border-slate-700/30 px-2 py-1">
-        <span className="text-[10px] text-slate-600">
+        <span className="flex items-center gap-1 text-[10px] text-slate-600">
+          {langLoading && <Loader2 size={10} className="animate-spin" />}
           {activeTab.language}
         </span>
         <div className="flex items-center gap-1">
-          {/* AI 操作按钮 */}
           {aiConfig.enabled && aiConfig.apiKey && (
             <div className="relative">
               <button
@@ -311,14 +341,9 @@ export default function CodeMirrorEditor() {
               >
                 <Sparkles size={14} />
               </button>
-
-              {/* AI 操作菜单 */}
               {aiMenuOpen && (
                 <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setAiMenuOpen(false)}
-                  />
+                  <div className="fixed inset-0 z-40" onClick={() => setAiMenuOpen(false)} />
                   <div className="absolute right-0 top-full z-50 mt-1 w-36 rounded-lg border border-slate-700 bg-slate-800 py-1 shadow-xl">
                     {(Object.keys(ACTION_LABELS) as AiCodeAction[]).map((action) => (
                       <button
@@ -335,7 +360,6 @@ export default function CodeMirrorEditor() {
               )}
             </div>
           )}
-          {/* Markdown 预览切换 */}
           {isMarkdown && (
             <button
               onClick={() => setMarkdownPreview(v => !v)}
@@ -366,10 +390,7 @@ export default function CodeMirrorEditor() {
         </div>
       ) : markdownPreview && isMarkdown ? (
         <div className="flex-1 overflow-auto" style={{ minHeight: 0 }}>
-          <MarkdownPreview
-            content={activeTab?.content || ''}
-            className="h-full"
-          />
+          <MarkdownPreview content={activeTab?.content || ''} className="h-full" />
         </div>
       ) : (
         <div
@@ -383,7 +404,6 @@ export default function CodeMirrorEditor() {
       {aiModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="mx-4 max-h-[80vh] w-full max-w-2xl overflow-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
-            {/* 头部 */}
             <div className="flex items-center justify-between border-b border-slate-700/50 px-4 py-3">
               <span className="flex items-center gap-2 text-sm font-medium text-slate-200">
                 {aiProcessing ? (
@@ -394,7 +414,7 @@ export default function CodeMirrorEditor() {
                 ) : (
                   <>
                     <Sparkles size={16} className="text-smartbox-400" />
-                    {aiResult && ACTION_LABELS[aiProcessing!]}
+                    {aiResult && aiActionName && ACTION_LABELS[aiActionName]}
                   </>
                 )}
               </span>
@@ -405,28 +425,18 @@ export default function CodeMirrorEditor() {
                 <X size={16} />
               </button>
             </div>
-
-            {/* 内容 */}
             <div className="p-4">
-              {/* 加载中 */}
               {aiProcessing && !aiResult && !aiError && (
                 <div className="flex flex-col items-center py-8">
                   <Loader2 size={32} className="animate-spin text-smartbox-400" />
                   <p className="mt-3 text-sm text-slate-500">正在调用 AI API...</p>
                 </div>
               )}
-
-              {/* 错误 */}
               {aiError && (
-                <div className="rounded-lg bg-red-500/10 p-4 text-sm text-red-400">
-                  {aiError}
-                </div>
+                <div className="rounded-lg bg-red-500/10 p-4 text-sm text-red-400">{aiError}</div>
               )}
-
-              {/* AI 结果 */}
               {aiResult && (
                 <div className="space-y-4">
-                  {/* 说明 */}
                   {aiResult.explanation && (
                     <div>
                       <h4 className="mb-1 text-xs font-medium text-slate-500">说明</h4>
@@ -435,15 +445,11 @@ export default function CodeMirrorEditor() {
                       </div>
                     </div>
                   )}
-
-                  {/* 差异统计 */}
                   <div className="flex items-center gap-3 text-xs">
                     <span className="text-slate-600">
                       代码行数: {aiResult.original.split('\n').length} → {aiResult.modified.split('\n').length}
                     </span>
                   </div>
-
-                  {/* 代码对比预览 */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <h4 className="mb-1 text-xs font-medium text-slate-600">原始代码</h4>
@@ -461,23 +467,19 @@ export default function CodeMirrorEditor() {
                 </div>
               )}
             </div>
-
-            {/* 底部按钮 */}
             {aiResult && (
               <div className="flex items-center justify-end gap-2 border-t border-slate-700/50 px-4 py-3">
                 <button
                   onClick={copyAiResult}
                   className="btn-secondary flex items-center gap-1 px-3 py-1.5 text-xs"
                 >
-                  <Copy size={12} />
-                  复制结果
+                  <Copy size={12} />复制结果
                 </button>
                 <button
                   onClick={applyAiResult}
                   className="btn-primary flex items-center gap-1 px-3 py-1.5 text-xs"
                 >
-                  <Check size={12} />
-                  应用
+                  <Check size={12} />应用
                 </button>
               </div>
             )}

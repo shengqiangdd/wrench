@@ -47,11 +47,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          // 将大库拆为独立 chunk，提高缓存复用率
-          if (isExternal(id, 'xterm')) return 'vendor-xterm'
-          if (isExternal(id, '@xterm/xterm')) return 'vendor-xterm'
-          if (isExternal(id, 'xterm-addon-fit')) return 'vendor-xterm'
-          if (isExternal(id, '@xterm/addon-fit')) return 'vendor-xterm'
+          // xterm.js 终端（新旧包名都归入同一 vendor）
+          if (isExternal(id, 'xterm') || isExternal(id, '@xterm')) return 'vendor-xterm'
           // CodeMirror: 核心基础包单独打包
           for (const pkg of cmCore) {
             if (isExternal(id, pkg)) return 'vendor-cm-core'
