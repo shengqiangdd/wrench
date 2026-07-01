@@ -190,7 +190,6 @@ export default function SettingsPanel() {
         // 导入成功后通知各 store 重新从 localStorage 读取
         setTimeout(() => {
           window.dispatchEvent(new CustomEvent('smartbox-config-imported'))
-          window.location.reload()
         }, 500)
       })
       .catch((err: any) => {
@@ -559,8 +558,7 @@ export default function SettingsPanel() {
                 type="checkbox"
                 checked={aiConfig.enabled}
                 onChange={(e) => {
-                  useAiStore.getState().setConfig({ enabled: e.target.checked })
-                  console.log('[AI] set enabled:', e.target.checked, 'new state:', useAiStore.getState().config)
+                  setAiConfig({ enabled: e.target.checked })
                 }}
                 className="h-5 w-5 rounded border-slate-600 bg-slate-700 text-smartbox-500 focus:ring-smartbox-500 cursor-pointer"
               />

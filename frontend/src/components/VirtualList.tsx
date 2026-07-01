@@ -95,12 +95,15 @@ export default function VirtualList<T>({
         className={`overflow-y-auto ${className}`}
         onKeyDown={handleKeyDown}
         tabIndex={-1}
+        style={{ minHeight: 0 }}
       >
-        {items.map((item, i) => (
-          <div key={getKey?.(item) ?? i} style={{ minHeight: itemHeight }}>
-            {renderItem(item, i)}
-          </div>
-        ))}
+        <div style={{ height: totalHeight, position: 'relative' }}>
+          {items.map((item, i) => (
+            <div key={getKey?.(item) ?? i} style={{ position: 'absolute', top: i * itemHeight, left: 0, right: 0, height: itemHeight }}>
+              {renderItem(item, i)}
+            </div>
+          ))}
+        </div>
       </div>
     )
   }

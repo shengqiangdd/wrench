@@ -33,9 +33,6 @@ export default function PluginsPage() {
   const disablePlugin = usePluginStore((s) => s.disablePlugin)
 
   const loadPlugins = useCallback(async () => {
-    if (loadedRef.current) return
-    loadedRef.current = true
-
     setLoading(true)
     setError(null)
     try {
@@ -99,7 +96,7 @@ export default function PluginsPage() {
     }
   }, [])
 
-  // 只加载一次
+  // 加载插件
   useEffect(() => {
     loadPlugins()
 
@@ -108,7 +105,7 @@ export default function PluginsPage() {
       handleReload()
     })
     return unsub
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loadPlugins])
 
   const isPluginEnabled = (pluginId: string) => {
     return storePlugins.some((p) => p.manifest.id === pluginId && p.enabled)

@@ -342,7 +342,7 @@ export default function MonitorPage() {
   const [healthError, setHealthError] = useState(false)
   const alertHistory = useAlertStore((s) => s.history)
 
-  // 扫描主机（已保存的连接 + 活跃 session）— 去重：按 host 优先，session 优先于 connection
+  // 扫描主机（已保存的连接 + 活跃 session）— 去重：按 host/IP 优先，session 优先于 connection
   const scanHosts = useCallback(() => {
     const seen = new Set<string>()
     const list: { id: string; name: string }[] = []
@@ -362,9 +362,19 @@ export default function MonitorPage() {
       list.push({ id: conn.id, name: conn.name })
       seen.add(hostKey)
     }
-    setHosts(list)
-    if (list.length > 0 && selected.length === 0) {
-      setSelected([list[0].id])
+    // 同时按 IP/host 去重，避免同一主机出现在 sessions 和 connections 中
+    const ipSeen = new Set<string>()
+    const dedupedList: { id: string; name: string }[] = []
+    for (const h of list) {
+      const ipKey = h.name.split(':')[0].split('@').pop() || h.name
+      if (!ipSeen.has(ipKey)) {
+        ipSeen.add(ipKey)
+        dedupedList.push(h)
+      }
+    }
+    setHosts(dedupedList)
+    if (dedupedList.length > 0 && selected.length === 0) {
+      setSelected([dedupedList[0].id])
     }
   }, [connections, sessions, selected.length])
 

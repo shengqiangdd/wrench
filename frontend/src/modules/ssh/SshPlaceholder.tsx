@@ -8,6 +8,7 @@ import {
  X,
  PlugZap,
  Brain,
+ Terminal,
 } from 'lucide-react'
 import { useSshStore, decryptConnection } from '../../stores/ssh-store'
 import { useAppStore, type SplitDef } from '../../stores/app-store'
@@ -511,6 +512,18 @@ export default function SshPlaceholder() {
  <span className="hidden md:inline">{aiOpen ? 'AI' : 'AI'}</span>
  </button>
  )}
+ <button
+ onClick={() => {
+ if (!activeSession && connections.length > 0) {
+ selectConnection(connections[0].id)
+ }
+ }}
+ className="flex items-center gap-1 px-3 py-2 text-xs text-slate-500 hover:text-slate-300"
+ title="打开终端"
+ >
+ <Terminal size={14} />
+ <span className="hidden md:inline">终端</span>
+ </button>
  </div>
  </div>
 

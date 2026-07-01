@@ -135,6 +135,8 @@ export const refreshPluginStore = () => {
     const state = parsed.state || parsed
     usePluginStore.setState({
       plugins: state.plugins || usePluginStore.getState().plugins,
+      commands: state.commands || usePluginStore.getState().commands,
+      panels: state.panels || usePluginStore.getState().panels,
     })
   } catch { /* ignore */ }
 }

@@ -57,6 +57,11 @@ export default function DockerContainerList({ connectionId, containers, loading,
     }
   }, [connectionId, onRefresh])
 
+  // 判断是否为 SmartBox 自身容器
+  const isSelfContainer = (names: string) => {
+    return names.includes('smartbox') || names.includes('bridge')
+  }
+
   const getStatus = (state: string): ContainerStatus => {
     switch (state) {
       case 'running': return 'running'
@@ -131,24 +136,38 @@ export default function DockerContainerList({ connectionId, containers, loading,
 
                   {/* 操作按钮 */}
                   <div className="flex shrink-0 items-center gap-1 opacity-100" onClick={(e) => e.stopPropagation()}>
-                    {isRunning ? (
-                      <button
-                        onClick={() => doAction(c.Names || shortId, 'stop')}
-                        disabled={isLoading}
-                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-amber-400 disabled:opacity-40"
-                        title="停止"
-                      >
-                        <Square size={14} />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => doAction(c.Names || shortId, 'start')}
-                        disabled={isLoading}
-                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-emerald-400 disabled:opacity-40"
-                        title="启动"
-                      >
-                        <Play size={14} />
-                      </button>
+                    {!isSelfContainer(c.Names) && (
+                      <>
+                        {isRunning ? (
+                          <button
+                            onClick={() => doAction(c.Names || shortId, 'stop')}
+                            disabled={isLoading}
+                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-amber-400 disabled:opacity-40"
+                            title="停止"
+                          >
+                            <Square size={14} />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => doAction(c.Names || shortId, 'start')}
+                            disabled={isLoading}
+                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-emerald-400 disabled:opacity-40"
+                            title="启动"
+                          >
+                            <Play size={14} />
+                          </button>
+                        )}
+                        {c.State === 'exited' && (
+                          <button
+                            onClick={() => doAction(c.Names || shortId, 'rm')}
+                            disabled={isLoading}
+                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
+                            title="删除"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </>
                     )}
                     <button
                       onClick={() => { setLogTarget(c.Names || shortId) }}
@@ -164,16 +183,6 @@ export default function DockerContainerList({ connectionId, containers, loading,
                     >
                       <Eye size={14} />
                     </button>
-                    {c.State === 'exited' && (
-                      <button
-                        onClick={() => doAction(c.Names || shortId, 'rm')}
-                        disabled={isLoading}
-                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
-                        title="删除"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
                   </div>
 
                   {/* 加载状态 */}
