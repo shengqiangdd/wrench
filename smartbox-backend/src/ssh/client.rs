@@ -1,34 +1,42 @@
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-/// Represents an SSH connection managed by the system.
-#[derive(Clone)]
+use crate::ssh::SshSession;
+
+/// Represents an SSH connection including its active session.
 pub struct SshConnection {
     pub connection_id: String,
     pub host: String,
     pub port: u16,
     pub username: String,
-    connected: std::sync::Arc<AtomicBool>,
-    // In a full implementation, this would hold a russh session handle
+    pub auth_method: String,
+    pub session: Option<Arc<SshSession>>,
 }
 
 impl SshConnection {
-    pub fn new(connection_id: String, host: String, port: u16, username: String) -> Self {
+    pub fn new(
+        connection_id: String,
+        host: String,
+        port: u16,
+        username: String,
+        auth_method: String,
+    ) -> Self {
         Self {
             connection_id,
             host,
             port,
             username,
-            connected: std::sync::Arc::new(AtomicBool::new(false)),
+            auth_method,
+            session: None,
         }
     }
 
     pub fn is_connected(&self) -> bool {
-        self.connected.load(Ordering::Relaxed)
+        self.session.is_some()
     }
 
-    pub fn set_connected(&self, connected: bool) {
-        self.connected.store(connected, Ordering::Relaxed);
+    pub fn set_session(&mut self, session: Arc<SshSession>) {
+        self.session = Some(session);
     }
 }
 

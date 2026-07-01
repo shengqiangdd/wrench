@@ -92,6 +92,8 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/metrics", get(api::monitor::get_metrics))
         .route("/scripts", get(api::scripts::list_scripts))
         .route("/ssh/exec", axum::routing::post(api::ssh::exec_command))
+        .route("/ssh/connect", axum::routing::post(api::ssh::connect_ssh))
+        .route("/ssh/disconnect", axum::routing::post(api::ssh::disconnect_ssh))
         .route("/docker/containers", get(api::docker::list_containers))
         .route("/docker/containers/{id}/start", axum::routing::post(api::docker::start_container))
         .route("/docker/containers/{id}/stop", axum::routing::post(api::docker::stop_container))
