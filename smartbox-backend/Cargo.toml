@@ -1,0 +1,58 @@
+[package]
+name = "smartbox-backend"
+version = "0.1.0"
+edition = "2021"
+description = "SmartBox Backend - Rust rewrite of the Node.js bridge"
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["ws", "json", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "request-id", "fs"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# IDs
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Config
+dotenvy = "0.15"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Crypto
+aes-gcm = "0.10"
+subtle = "2.6"
+base64 = "0.22"
+rand = "0.8"
+
+# SSH client
+russh = "0.50.0-beta.7"
+russh-keys = "0.50.0-beta.7"
+
+# Docker
+bollard = "0.18"
+
+# Validation
+regex = "1.11"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Helpers
+bytes = "1.0"
+futures-util = "0.3"
+dashmap = "6.1"
+parking_lot = "0.12"

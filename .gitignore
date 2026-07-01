@@ -14,6 +14,9 @@ frontend/public/registerSW.js
 frontend/public/sw.js
 frontend/public/workbox-*.js
 
+# Rust build artifacts
+smartbox-backend/target/
+
 # 环境变量
 .env
 .env.local

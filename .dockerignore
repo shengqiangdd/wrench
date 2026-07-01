@@ -29,3 +29,6 @@ Thumbs.db
 
 # Git history
 .git/
+
+# Rust build artifacts — Docker builds from scratch
+smartbox-backend/target/
