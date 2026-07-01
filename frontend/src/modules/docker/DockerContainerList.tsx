@@ -130,7 +130,7 @@ export default function DockerContainerList({ connectionId, containers, loading,
                   </div>
 
                   {/* 操作按钮 */}
-                  <div className="flex shrink-0 items-center gap-1 md:opacity-0 md:group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex shrink-0 items-center gap-1 opacity-100" onClick={(e) => e.stopPropagation()}>
                     {isRunning ? (
                       <button
                         onClick={() => doAction(c.Names || shortId, 'stop')}
