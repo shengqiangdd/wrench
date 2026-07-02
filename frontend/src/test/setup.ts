@@ -40,6 +40,5 @@ if (typeof ResizeObserver === 'undefined') {
     unobserve(_target: Element) {}
     disconnect() {}
   }
-  // @ts-ignore
   globalThis.ResizeObserver = MockResizeObserver
 }

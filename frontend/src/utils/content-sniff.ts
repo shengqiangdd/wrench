@@ -186,7 +186,7 @@ export function sniffLanguage(filename: string, content?: string): SniffResult {
 
   // 3. 如果有内容，做 shebang 嗅探
   if (content && content.length > 0) {
-    const firstLine = content.split('\n')[0]!!
+    const firstLine = content.split('\n')[0]!
     const shebangLang = sniffShebang(firstLine)
     if (shebangLang) {
       return { language: shebangLang, method: 'shebang' }

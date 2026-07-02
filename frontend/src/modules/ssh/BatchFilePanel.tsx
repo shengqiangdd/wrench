@@ -201,7 +201,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
   }, [selectedFile, targets])
 
   // 分块上传
-  const chunkedUpload = (
+  const chunkedUpload = async (
     wsClient: WsClient,
     connId: string,
     content: string,
@@ -209,19 +209,17 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
     totalSize: number,
     targetIdx: number,
   ): Promise<void> => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // 启动分块会话
-        const startResult = await wsClient.request({
-          type: 'sftp',
-          connectionId: connId,
-          operation: 'chunk_start',
-          path,
-        })
+      // 启动分块会话
+      const startResult = await wsClient.request({
+        type: 'sftp',
+        connectionId: connId,
+        operation: 'chunk_start',
+        path,
+      })
 
-        if (!startResult.success) {
-          return reject(new Error(String(startResult.error || '分块上传启动失败')))
-        }
+      if (!startResult.success) {
+        throw new Error(String(startResult.error || '分块上传启动失败'))
+      }
 
         const chunkId = startResult.chunkId
         const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB
@@ -242,7 +240,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
           })
 
           if (!appendResult.success) {
-            return reject(new Error(String(appendResult.error || '分块写入失败')))
+            throw new Error(String(appendResult.error || '分块写入失败'))
           }
 
           const progress = Math.round(((c + 1) / totalChunks) * 90) + 10
@@ -268,14 +266,8 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
         })
 
         if (!finishResult.success) {
-          return reject(new Error(String(finishResult.error || '分块上传完成失败')))
+          throw new Error(String(finishResult.error || '分块上传完成失败'))
         }
-
-        resolve()
-      } catch (err) {
-        reject(err)
-      }
-    })
   }
 
   // 执行远程命令

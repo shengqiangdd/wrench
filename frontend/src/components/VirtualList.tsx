@@ -57,7 +57,7 @@ export default function VirtualList<T>({
 
   // 计算可见范围
   let visibleItems: { item: T; index: number }[] = []
-  let totalHeight = items.length * itemHeight + paddingBottom
+  const totalHeight = items.length * itemHeight + paddingBottom
   let paddingTop = 0
 
   if (useVirtual) {

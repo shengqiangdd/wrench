@@ -125,7 +125,7 @@ describe('alert-store', () => {
       useAlertStore.getState().evaluate('h1', 'Host1', { cpu: 90, memory: 10, disk: 10 })
       useAlertStore.getState().evaluate('h1', 'Host1', { cpu: 90, memory: 10, disk: 10 })
       // 2nd call — cpu-warning has consecutive=3, so still not fired
-      let events = useAlertStore.getState().evaluate('h1', 'Host1', { cpu: 90, memory: 10, disk: 10 })
+      const events = useAlertStore.getState().evaluate('h1', 'Host1', { cpu: 90, memory: 10, disk: 10 })
       // 3rd consecutive — should fire
       const cpuWarnings = events.filter((e) => e.metric === 'cpu' && e.severity === 'warning')
       expect(cpuWarnings.length).toBeGreaterThanOrEqual(0) // may or may not fire depending on exact counter logic

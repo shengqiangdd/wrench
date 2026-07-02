@@ -248,7 +248,7 @@ export default function PluginSandbox({
 })();
 `
     return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">${styleBlock}</head><body><div id="plugin-root"></div><script>${script}<\/script></body></html>`
+<html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">${styleBlock}</head><body><div id="plugin-root"></div><script>${script}</script></body></html>`
   }, [manifest.id, manifest.name, pluginCode])
 
   // ── 使用 srcdoc 而不是 blob URL（避免 Safari 的 blob: 限制）
