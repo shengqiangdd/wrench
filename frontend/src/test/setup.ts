@@ -1,5 +1,7 @@
 import '@testing-library/jest-dom'
 
+// ─── Global mocks for jsdom ───
+
 // Mock localStorage for Zustand persist middleware
 const store: Record<string, string> = {}
 Object.defineProperty(globalThis, 'localStorage', {
@@ -24,3 +26,20 @@ if (typeof URL.revokeObjectURL === 'undefined') {
   URL.revokeObjectURL = (_url: string) => { /* no-op in jsdom */ }
 }
 
+// Mock ResizeObserver for jsdom (used by VirtualList)
+if (typeof ResizeObserver === 'undefined') {
+  class MockResizeObserver {
+    private callback: ResizeObserverCallback
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback
+    }
+    observe(_target: Element) {
+      // Trigger callback immediately with default content rect
+      this.callback([], this)
+    }
+    unobserve(_target: Element) {}
+    disconnect() {}
+  }
+  // @ts-ignore
+  globalThis.ResizeObserver = MockResizeObserver
+}
