@@ -161,6 +161,32 @@ impl SshSession {
         Ok(())
     }
 
+    /// Execute a command and return the channel for streaming output (e.g., tail -f).
+    /// The caller is responsible for reading from the channel using channel.wait().
+    pub async fn stream_exec(
+        &self,
+        command: &str,
+        cols: u32,
+        rows: u32,
+    ) -> Result<
+        russh::Channel<client::Msg>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        let mut lock = self.handle.lock().await;
+        let handle = lock.as_mut().ok_or("SSH not connected")?;
+
+        let channel = handle.channel_open_session().await?;
+
+        // Request PTY for better compatibility
+        let _ = channel
+            .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
+            .await;
+
+        channel.exec(true, command).await?;
+
+        Ok(channel)
+    }
+
     /// Get a lock to access the underlying client handle (for advanced channel management).
     pub async fn get_handle(
         &self,

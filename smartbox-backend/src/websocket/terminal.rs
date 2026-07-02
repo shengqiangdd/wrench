@@ -55,6 +55,27 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                             // SFTP operation: handle via SSH SFTP subsystem
                             handle_sftp_operation(&mut socket, &state, &parsed).await;
                         }
+                        "logtail_start" => {
+                            // Log tail: runs SSH tail -f and streams output
+                            handle_logtail_start(&mut socket, &state, &parsed).await;
+                            info!("Logtail session ended, back to main loop");
+                        }
+                        "logtail_stop" => {
+                            // If we receive a stop in the main loop (e.g. disconnect),
+                            // cancel any active logtail for this connection
+                            let conn_id = parsed
+                                .get("connectionId")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let log_path = parsed
+                                .get("logPath")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let key = format!("{}:{}", conn_id, log_path);
+                            if let Some((_, sender)) = state.active_logtails.remove(&key) {
+                                let _ = sender.send(());
+                            }
+                        }
                         "disconnect" => {
                             let conn_id = parsed
                                 .get("connectionId")
@@ -636,4 +657,192 @@ async fn handle_sftp_stat(
             })
         }
     }
+}
+
+// ========== Log Tail (tail -f via SSH) ==========
+
+/// Handle logtail_start message.
+/// Spawns SSH exec `tail -f` and streams output to the WebSocket.
+async fn handle_logtail_start(
+    socket: &mut WebSocket,
+    state: &Arc<AppState>,
+    msg: &serde_json::Value,
+) {
+    let connection_id = msg
+        .get("connectionId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let log_path = msg
+        .get("logPath")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let request_id = msg
+        .get("requestId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    // Default 200, clamped to [10, 5000]
+    let n = msg
+        .get("lines")
+        .and_then(|v| v.as_u64())
+        .map(|v| v.max(10).min(5000))
+        .unwrap_or(200);
+
+    if connection_id.is_empty() || log_path.is_empty() {
+        let err = serde_json::json!({
+            "type": "error",
+            "requestId": request_id,
+            "message": "Missing connectionId or logPath"
+        });
+        let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+        return;
+    }
+
+    let key = format!("{}:{}", connection_id, log_path);
+
+    // Check if already tailing — if so, stop the old one first
+    if let Some((_, old_sender)) = state.active_logtails.remove(&key) {
+        let _ = old_sender.send(());
+    }
+
+    // Look up SSH session
+    let session = {
+        let entry = state.connections.get(&connection_id);
+        entry.and_then(|c| c.session.clone())
+    };
+
+    let session = match session {
+        Some(s) => s,
+        None => {
+            let err = serde_json::json!({
+                "type": "error",
+                "requestId": request_id,
+                "message": "SSH session not found or not connected"
+            });
+            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+            return;
+        }
+    };
+
+    // Build the tail command (using our stream_exec)
+    let escaped_path = log_path.replace('\'', "'\\''");
+    let cmd = format!("tail -n {} -f '{}' 2>&1", n, escaped_path);
+
+    // Open SSH exec channel for streaming
+    let mut channel = match session.stream_exec(&cmd, 132, 60).await {
+        Ok(ch) => ch,
+        Err(e) => {
+            let err = serde_json::json!({
+                "type": "error",
+                "requestId": request_id,
+                "message": format!("Failed to start tail: {}", e)
+            });
+            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+            return;
+        }
+    };
+
+    // Send started acknowledgment
+    let ack = serde_json::json!({
+        "type": "logtail_started",
+        "connectionId": connection_id,
+        "requestId": request_id,
+        "logPath": log_path,
+    });
+    if socket
+        .send(Message::Text(txt(ack.to_string())))
+        .await
+        .is_err()
+    {
+        return;
+    }
+
+    info!("Log tail started: {} for path {}", connection_id, log_path);
+
+    // ─── Log Tail I/O Loop ───
+    loop {
+        tokio::select! {
+            // Incoming from WebSocket (stop signal)
+            ws_msg = socket.recv() => {
+                match ws_msg {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                            let msg_type = parsed
+                                .get("type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if msg_type == "logtail_stop" {
+                                info!("Log tail stop requested: {}", key);
+                                break;
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => {
+                        break;
+                    }
+                    Some(Err(e)) => {
+                        warn!("Logtail WS error: {:?}", e);
+                        break;
+                    }
+                    _ => break,
+                }
+            }
+
+            // Outgoing from SSH channel (tail output)
+            ssh_msg = channel.wait() => {
+                match ssh_msg {
+                    Some(msg) => {
+                        match msg {
+                            russh::ChannelMsg::Data { ref data } => {
+                                if let Ok(text) = String::from_utf8(data.to_vec()) {
+                                    // Split by lines for frontend
+                                    let lines: Vec<&str> = text.lines().collect();
+                                    if !lines.is_empty() {
+                                        let ws_msg = serde_json::json!({
+                                            "type": "logtail_data",
+                                            "connectionId": connection_id,
+                                            "logPath": log_path,
+                                            "lines": lines,
+                                        });
+                                        if socket.send(Message::Text(txt(ws_msg.to_string()))).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            // Channel closed or EOF
+                            russh::ChannelMsg::Eof | russh::ChannelMsg::Close => {
+                                info!("Log tail channel closed: {}", key);
+                                let stop_msg = serde_json::json!({
+                                    "type": "logtail_stopped",
+                                    "connectionId": connection_id,
+                                    "logPath": log_path,
+                                });
+                                let _ = socket.send(Message::Text(txt(stop_msg.to_string()))).await;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    // No error case from channel.wait() - returns None on close
+                    None => {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Cleanup
+    state.active_logtails.remove(&key);
+    let stopped = serde_json::json!({
+        "type": "logtail_stopped",
+        "connectionId": connection_id,
+        "requestId": request_id,
+        "logPath": log_path,
+    });
+    let _ = socket.send(Message::Text(txt(stopped.to_string()))).await;
+    info!("Log tail ended: {}", key);
 }

@@ -28,6 +28,9 @@ pub struct AppState {
 
     /// Plugin marketplace cache
     pub marketplace_cache: RwLock<Option<Vec<crate::models::PluginManifest>>>,
+
+    /// Active log tail cancel tokens: "connectionId:logPath" -> oneshot Sender
+    pub active_logtails: DashMap<String, tokio::sync::oneshot::Sender<()>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -66,6 +69,7 @@ impl AppState {
             audit_logs: RwLock::new(Vec::with_capacity(1000)),
             ws_tokens: DashMap::new(),
             marketplace_cache: RwLock::new(None),
+            active_logtails: DashMap::new(),
             config,
         })
     }
