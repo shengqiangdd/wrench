@@ -29,9 +29,6 @@ pub async fn ws_handler(
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     info!("WebSocket connected");
 
-    // Track active terminal sessions: connection_id -> (SshSession, Channel)
-    // We manage the channel lifecycle per WebSocket connection
-
     // ─── Main message loop ───
     loop {
         match socket.recv().await {
@@ -50,15 +47,13 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                         "connect" => {
                             // Terminal connect: look up SSH session and open shell
                             handle_terminal_connect(&mut socket, &state, &parsed).await;
-                            // After connect, the terminal session starts
-                            // We need to enter the terminal I/O loop
-                            info!("Terminal session started, entering I/O loop");
-                            // Note: handle_terminal_connect now manages the full terminal lifecycle
-                            break;
+                            // handle_terminal_connect manages the full I/O loop, then returns
+                            // After it returns, the terminal session is done
+                            info!("Terminal session ended, back to main loop");
                         }
-                        "exec" => {
-                            // Simple command exec (non-interactive)
-                            handle_simple_exec(&mut socket, &state, &parsed).await;
+                        "sftp" => {
+                            // SFTP operation: handle via SSH SFTP subsystem
+                            handle_sftp_operation(&mut socket, &state, &parsed).await;
                         }
                         "disconnect" => {
                             let conn_id = parsed
@@ -66,7 +61,6 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("");
                             if !conn_id.is_empty() {
-                                // Remove from connections map if present
                                 let _ = state.connections.remove(conn_id);
                                 let ack = serde_json::json!({
                                     "type": "disconnected",
@@ -90,9 +84,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                 info!("WebSocket closed");
                 break;
             }
-            Some(Ok(Message::Binary(_))) => {
-                // Binary messages currently unsupported
-            }
+            Some(Ok(Message::Binary(_))) => {}
             Some(Err(e)) => {
                 warn!("WebSocket error: {:?}", e);
                 break;
@@ -104,8 +96,14 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     info!("WebSocket disconnected");
 }
 
+// ========== Terminal (interactive shell) ==========
+
 /// Handle "connect" message — open an interactive SSH shell and enter I/O loop.
-async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
+async fn handle_terminal_connect(
+    socket: &mut WebSocket,
+    state: &Arc<AppState>,
+    msg: &serde_json::Value,
+) {
     let connection_id = msg
         .get("connectionId")
         .and_then(|v| v.as_str())
@@ -153,7 +151,11 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
         "type": "connected",
         "connectionId": connection_id
     });
-    if socket.send(Message::Text(txt(ack.to_string()))).await.is_err() {
+    if socket
+        .send(Message::Text(txt(ack.to_string())))
+        .await
+        .is_err()
+    {
         return;
     }
 
@@ -174,7 +176,6 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
                             match msg_type {
                                 "exec" => {
                                     if let Some(data) = parsed.get("data").and_then(|v| v.as_str()) {
-                                        // Base64 decode user input for the terminal
                                         let decoded = base64::engine::general_purpose::STANDARD
                                             .decode(data)
                                             .unwrap_or_else(|_| data.as_bytes().to_vec());
@@ -196,7 +197,9 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
                                     let _ = socket.send(Message::Text(txt(pong.to_string()))).await;
                                 }
                                 _ => {
-                                    warn!("Unknown terminal message type: {}", msg_type);
+                                    if msg_type != "sftp" {
+                                        warn!("Unknown terminal message type: {}", msg_type);
+                                    }
                                 }
                             }
                         }
@@ -237,15 +240,12 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
                         info!("SSH shell exited with status: {}", exit_status);
                         break;
                     }
-                    _ => {
-                        // Ignore other channel messages
-                    }
+                    _ => {}
                 }
             }
         }
     }
 
-    // Send disconnected notification
     let disc = serde_json::json!({
         "type": "disconnected",
         "connectionId": connection_id
@@ -254,63 +254,39 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
     info!("Terminal session ended: {}", connection_id);
 }
 
-/// Handle simple "exec" — run a command and return the result.
-async fn handle_simple_exec(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
-    let connection_id = msg
-        .get("connectionId")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if connection_id.is_empty() {
-        let err = serde_json::json!({
-            "type": "error",
-            "message": "Missing connectionId"
-        });
-        let _ = socket.send(Message::Text(txt(err.to_string()))).await;
-        return;
-    }
+// ========== SFTP Operations ==========
 
-    let command = msg
-        .get("command")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+async fn handle_sftp_operation(
+    socket: &mut WebSocket,
+    state: &Arc<AppState>,
+    msg: &serde_json::Value,
+) {
+    let connection_id = match msg.get("connectionId").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => {
+            let err = serde_json::json!({"type":"error","message":"Missing connectionId"});
+            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+            return;
+        }
+    };
 
-    if command.is_empty() {
-        let err = serde_json::json!({
-            "type": "error",
-            "connectionId": connection_id,
-            "message": "Missing command"
-        });
-        let _ = socket.send(Message::Text(txt(err.to_string()))).await;
-        return;
-    }
+    let operation = match msg.get("operation").and_then(|v| v.as_str()) {
+        Some(op) => op,
+        None => {
+            let err = serde_json::json!({"type":"error","message":"Missing operation"});
+            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+            return;
+        }
+    };
 
-    // For simple exec, we also allow SSH sessions from the connection pool
+    // Get the SSH session
     let session = {
         let entry = state.connections.get(connection_id);
         entry.and_then(|c| c.session.clone())
     };
 
-    match session {
-        Some(s) => {
-            match s.exec(command).await {
-                Ok((stdout, _stderr, _exit_code)) => {
-                    let resp = serde_json::json!({
-                        "type": "data",
-                        "connectionId": connection_id,
-                        "data": base64::engine::general_purpose::STANDARD.encode(stdout.as_bytes())
-                    });
-                    let _ = socket.send(Message::Text(txt(resp.to_string()))).await;
-                }
-                Err(e) => {
-                    let err = serde_json::json!({
-                        "type": "error",
-                        "connectionId": connection_id,
-                        "message": format!("Command exec failed: {}", e)
-                    });
-                    let _ = socket.send(Message::Text(txt(err.to_string()))).await;
-                }
-            }
-        }
+    let session = match session {
+        Some(s) => s,
         None => {
             let err = serde_json::json!({
                 "type": "error",
@@ -318,6 +294,346 @@ async fn handle_simple_exec(socket: &mut WebSocket, state: &Arc<AppState>, msg: 
                 "message": "SSH session not found"
             });
             let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+            return;
+        }
+    };
+
+    // Open a temporary SFTP channel
+    let sftp_result = async {
+        let mut lock = session.get_handle().await;
+        let handle = lock.as_mut().ok_or("SSH not connected")?;
+
+        let channel = handle.channel_open_session().await?;
+        channel.request_subsystem(true, "sftp").await?;
+        let stream = channel.into_stream();
+        let sftp = russh_sftp::client::SftpSession::new(stream).await?;
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(sftp)
+    }.await;
+
+    let mut sftp = match sftp_result {
+        Ok(s) => s,
+        Err(e) => {
+            let err = serde_json::json!({
+                "type": "sftp-result",
+                "operation": operation,
+                "success": false,
+                "error": format!("SFTP open failed: {}", e)
+            });
+            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+            return;
+        }
+    };
+
+    // Dispatch to specific operation
+    let result = match operation {
+        "list" => handle_sftp_list(&mut sftp, msg).await,
+        "readfile" => handle_sftp_readfile(&mut sftp, msg).await,
+        "writefile" => handle_sftp_writefile(&mut sftp, msg).await,
+        "mkdir" => handle_sftp_mkdir(&mut sftp, msg).await,
+        "rmdir" => handle_sftp_rmdir(&mut sftp, msg).await,
+        "unlink" => handle_sftp_unlink(&mut sftp, msg).await,
+        "rename" => handle_sftp_rename(&mut sftp, msg).await,
+        "stat" => handle_sftp_stat(&mut sftp, msg).await,
+        other => {
+            serde_json::json!({
+                "type": "sftp-result",
+                "operation": other,
+                "success": false,
+                "error": format!("Unknown SFTP operation: {}", other)
+            })
+        }
+    };
+
+    let _ = socket.send(Message::Text(txt(result.to_string()))).await;
+}
+
+async fn handle_sftp_list(
+    sftp: &mut russh_sftp::client::SftpSession,
+    msg: &serde_json::Value,
+) -> serde_json::Value {
+    let path = msg.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+    match sftp.read_dir(path).await {
+        Ok(entries) => {
+            let files: Vec<serde_json::Value> = entries
+                .map(|e| {
+                    let metadata = e.metadata();
+                    serde_json::json!({
+                        "name": e.file_name(),
+                        "path": format!("{}/{}", path.trim_end_matches('/'), e.file_name()),
+                        "is_dir": metadata.is_dir(),
+                        "size": metadata.len(),
+                        "permissions": metadata.permissions().to_string(),
+                        "modified": metadata.modified()
+                            .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+                            .unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "type": "sftp-result",
+                "operation": "list",
+                "success": true,
+                "files": files
+            })
+        }
+        Err(e) => {
+            serde_json::json!({
+                "type": "sftp-result",
+                "operation": "list",
+                "success": false,
+                "error": format!("SFTP list failed: {}", e)
+            })
+        }
+    }
+}
+
+async fn handle_sftp_readfile(
+    sftp: &mut russh_sftp::client::SftpSession,
+    msg: &serde_json::Value,
+) -> serde_json::Value {
+    let path = match msg.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "readfile",
+                "success": false, "error": "Missing path"
+            });
+        }
+    };
+
+    let mut file = match sftp.open(path).await {
+        Ok(f) => f,
+        Err(e) => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "readfile",
+                "success": false, "error": format!("Open failed: {}", e)
+            });
+        }
+    };
+
+    use tokio::io::AsyncReadExt;
+    let mut buf = Vec::new();
+    match file.read_to_end(&mut buf).await {
+        Ok(_) => {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&buf);
+            serde_json::json!({
+                "type": "sftp-result",
+                "operation": "readfile",
+                "success": true,
+                "content": encoded,
+                "size": buf.len()
+            })
+        }
+        Err(e) => {
+            serde_json::json!({
+                "type": "sftp-result", "operation": "readfile",
+                "success": false, "error": format!("Read failed: {}", e)
+            })
+        }
+    }
+}
+
+async fn handle_sftp_writefile(
+    sftp: &mut russh_sftp::client::SftpSession,
+    msg: &serde_json::Value,
+) -> serde_json::Value {
+    let path = match msg.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "writefile",
+                "success": false, "error": "Missing path"
+            });
+        }
+    };
+
+    let content_b64 = match msg.get("content").and_then(|v| v.as_str()) {
+        Some(c) => c,
+        None => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "writefile",
+                "success": false, "error": "Missing content"
+            });
+        }
+    };
+
+    let data = match base64::engine::general_purpose::STANDARD.decode(content_b64) {
+        Ok(d) => d,
+        Err(_) => content_b64.as_bytes().to_vec(),
+    };
+
+    let mut file = match sftp
+        .open_with_flags(
+            path,
+            russh_sftp::protocol::OpenFlags::CREATE
+                | russh_sftp::protocol::OpenFlags::TRUNCATE
+                | russh_sftp::protocol::OpenFlags::WRITE,
+        )
+        .await
+    {
+        Ok(f) => f,
+        Err(e) => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "writefile",
+                "success": false, "error": format!("Open failed: {}", e)
+            });
+        }
+    };
+
+    use tokio::io::AsyncWriteExt;
+    match file.write_all(&data).await {
+        Ok(_) => {
+            serde_json::json!({
+                "type": "sftp-result",
+                "operation": "writefile",
+                "success": true,
+                "size": data.len()
+            })
+        }
+        Err(e) => {
+            serde_json::json!({
+                "type": "sftp-result", "operation": "writefile",
+                "success": false, "error": format!("Write failed: {}", e)
+            })
+        }
+    }
+}
+
+async fn handle_sftp_mkdir(
+    sftp: &mut russh_sftp::client::SftpSession,
+    msg: &serde_json::Value,
+) -> serde_json::Value {
+    let path = match msg.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "mkdir",
+                "success": false, "error": "Missing path"
+            });
+        }
+    };
+
+    match sftp.create_dir(path).await {
+        Ok(_) => serde_json::json!({ "type": "sftp-result", "operation": "mkdir", "success": true }),
+        Err(e) => serde_json::json!({
+            "type": "sftp-result", "operation": "mkdir",
+            "success": false, "error": format!("Mkdir failed: {}", e)
+        }),
+    }
+}
+
+async fn handle_sftp_rmdir(
+    sftp: &mut russh_sftp::client::SftpSession,
+    msg: &serde_json::Value,
+) -> serde_json::Value {
+    let path = match msg.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "rmdir",
+                "success": false, "error": "Missing path"
+            });
+        }
+    };
+
+    match sftp.remove_dir(path).await {
+        Ok(_) => serde_json::json!({ "type": "sftp-result", "operation": "rmdir", "success": true }),
+        Err(e) => serde_json::json!({
+            "type": "sftp-result", "operation": "rmdir",
+            "success": false, "error": format!("Rmdir failed: {}", e)
+        }),
+    }
+}
+
+async fn handle_sftp_unlink(
+    sftp: &mut russh_sftp::client::SftpSession,
+    msg: &serde_json::Value,
+) -> serde_json::Value {
+    let path = match msg.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "unlink",
+                "success": false, "error": "Missing path"
+            });
+        }
+    };
+
+    match sftp.remove_file(path).await {
+        Ok(_) => serde_json::json!({ "type": "sftp-result", "operation": "unlink", "success": true }),
+        Err(e) => serde_json::json!({
+            "type": "sftp-result", "operation": "unlink",
+            "success": false, "error": format!("Unlink failed: {}", e)
+        }),
+    }
+}
+
+async fn handle_sftp_rename(
+    sftp: &mut russh_sftp::client::SftpSession,
+    msg: &serde_json::Value,
+) -> serde_json::Value {
+    let path = match msg.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "rename",
+                "success": false, "error": "Missing path"
+            });
+        }
+    };
+
+    let target = match msg.get("target").and_then(|v| v.as_str()) {
+        Some(t) => t,
+        None => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "rename",
+                "success": false, "error": "Missing target"
+            });
+        }
+    };
+
+    match sftp.rename(path, target).await {
+        Ok(_) => serde_json::json!({ "type": "sftp-result", "operation": "rename", "success": true }),
+        Err(e) => serde_json::json!({
+            "type": "sftp-result", "operation": "rename",
+            "success": false, "error": format!("Rename failed: {}", e)
+        }),
+    }
+}
+
+async fn handle_sftp_stat(
+    sftp: &mut russh_sftp::client::SftpSession,
+    msg: &serde_json::Value,
+) -> serde_json::Value {
+    let path = match msg.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => {
+            return serde_json::json!({
+                "type": "sftp-result", "operation": "stat",
+                "success": false, "error": "Missing path"
+            });
+        }
+    };
+
+    match sftp.metadata(path).await {
+        Ok(meta) => {
+            serde_json::json!({
+                "type": "sftp-result",
+                "operation": "stat",
+                "success": true,
+                "size": meta.len(),
+                "is_dir": meta.is_dir(),
+                "permissions": meta.permissions().to_string(),
+                "modified": meta.modified()
+                    .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+                    .unwrap_or_default(),
+            })
+        }
+        Err(e) => {
+            serde_json::json!({
+                "type": "sftp-result", "operation": "stat",
+                "success": false, "error": format!("Stat failed: {}", e)
+            })
         }
     }
 }
