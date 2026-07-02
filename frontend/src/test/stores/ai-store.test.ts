@@ -111,7 +111,9 @@ describe('useAiStore', () => {
       id: 's1',
       title: 'Fix bug',
       description: 'Add null check',
-      content: 'if (x == null) return',
+      code: 'if (x == null) return',
+      language: 'typescript',
+      timestamp: Date.now(),
       applied: false,
     }
 

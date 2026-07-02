@@ -207,6 +207,6 @@ impl SshSession {
     /// Check if the session is still connected.
     pub async fn is_connected(&self) -> bool {
         let lock = self.handle.lock().await;
-        lock.as_ref().map_or(false, |h| !h.is_closed())
+        lock.as_ref().is_some_and(|h| !h.is_closed())
     }
 }

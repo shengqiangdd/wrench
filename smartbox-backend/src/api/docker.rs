@@ -337,17 +337,7 @@ pub async fn compose_action(
     let project_dir = std::path::Path::new(&req.path).parent().unwrap_or(std::path::Path::new("."));
     let project_dir_str = project_dir.to_string_lossy();
 
-    let action_cmd: &str = match req.action.as_str() {
-        "up" => "up",
-        "down" => "down",
-        "ps" => "ps",
-        "start" => "start",
-        "stop" => "stop",
-        "restart" => "restart",
-        "pull" => "pull",
-        "build" => "build",
-        other => other,
-    };
+    let action_cmd: &str = &req.action;
 
     let mut args: Vec<&str> = vec!["compose", "-f", &req.path, "-p", &project_dir_str, action_cmd];
     if let Some(service) = &req.service {

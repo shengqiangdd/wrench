@@ -35,7 +35,7 @@ pub async fn tail_log(
     let lines = body
         .get("lines")
         .and_then(|v| v.as_u64())
-        .map(|v| v.max(10).min(5000))
+        .map(|v| v.clamp(10, 5000))
         .unwrap_or(200);
 
     if connection_id.is_empty() || path.is_empty() {

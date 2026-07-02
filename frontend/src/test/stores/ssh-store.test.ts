@@ -9,17 +9,19 @@ const mockConnection: SshConnection = {
   port: 22,
   username: 'admin',
   authType: 'password',
-  authCredential: 'encrypted-pass',
+  password: 'encrypted-pass',
   group: 'production',
+  createdAt: Date.now(),
 }
 
 const mockSession: SshSession = {
   id: 'sess-1',
   connectionId: 'conn-1',
+  connectionName: 'Test Server',
   host: '192.168.1.1',
-  port: 22,
-  username: 'admin',
-  connectedAt: Date.now(),
+  status: 'connected',
+  terminalCols: 80,
+  terminalRows: 24,
 }
 
 const mockSftpEntry: SftpEntry = {
@@ -27,7 +29,10 @@ const mockSftpEntry: SftpEntry = {
   path: '/home/admin/file.txt',
   type: 'file',
   size: 1024,
-  modTime: '2026-06-01T00:00:00Z',
+  modifyTime: Date.now(),
+  permissions: '-rw-r--r--',
+  owner: 'admin',
+  group: 'admin',
 }
 
 function resetSshStore() {
@@ -128,9 +133,9 @@ describe('useSshStore', () => {
     })
 
     it('sets SFTP entries', () => {
-      useSshStore.getState().setCurrentSftpEntries([mockSftpEntry, { ...mockSftpEntry, name: 'dir1', type: 'dir' }])
+      useSshStore.getState().setCurrentSftpEntries([mockSftpEntry, { ...mockSftpEntry, name: 'dir1', type: 'directory' }])
       expect(useSshStore.getState().currentSftpEntries).toHaveLength(2)
-      expect(useSshStore.getState().currentSftpEntries[1]!.type).toBe('dir')
+      expect(useSshStore.getState().currentSftpEntries[1]!.type).toBe('directory')
     })
   })
 })
