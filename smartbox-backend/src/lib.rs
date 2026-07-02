@@ -118,14 +118,17 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .layer(TraceLayer::new_for_http());
 
     // ============ WebSocket routes ============
-    let ws_routes = Router::new()
+    // Sub-routes for specific WS handlers
+    let ws_sub_routes = Router::new()
         .route("/terminal", get(websocket::terminal::ws_handler))
         .route("/logs", get(websocket::logs::ws_handler))
         .route("/batch", get(websocket::batch::ws_handler))
         .route("/docker/stats", get(websocket::docker_stats::ws_handler));
 
+    // Main WS dispatcher + sub-routes under /ws/*
     let ws_routes = Router::new()
-        .nest("/ws", ws_routes)
+        .route("/ws", get(websocket::terminal::ws_handler))
+        .nest("/ws", ws_sub_routes)
         .layer(cors);
 
     // ============ Combine API + WS with state ============

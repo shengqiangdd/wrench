@@ -122,6 +122,52 @@ impl SshSession {
         Ok((stdout, String::new(), 0))
     }
 
+    /// Open an interactive shell with PTY allocation.
+    /// Returns a channel that can be used for bidirectional I/O.
+    /// Use `channel.wait()` to receive output events and `channel.data()` to write stdin.
+    #[allow(dead_code)]
+    pub async fn open_shell(
+        &self,
+        cols: u32,
+        rows: u32,
+    ) -> Result<
+        russh::Channel<client::Msg>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        let mut lock = self.handle.lock().await;
+        let handle = lock.as_mut().ok_or("SSH not connected")?;
+
+        let channel = handle.channel_open_session().await?;
+
+        channel
+            .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
+            .await?;
+
+        channel.request_shell(false).await?;
+
+        Ok(channel)
+    }
+
+    /// Resize the PTY for an active shell channel.
+    pub async fn resize_pty(
+        &self,
+        channel: &russh::Channel<client::Msg>,
+        cols: u32,
+        rows: u32,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        channel
+            .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
+            .await?;
+        Ok(())
+    }
+
+    /// Get a lock to access the underlying client handle (for advanced channel management).
+    pub async fn get_handle(
+        &self,
+    ) -> tokio::sync::MutexGuard<'_, Option<client::Handle<SshHandler>>> {
+        self.handle.lock().await
+    }
+
     /// Disconnect the SSH session.
     pub async fn disconnect(&self) {
         let mut lock = self.handle.lock().await;
