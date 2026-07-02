@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useActionState, useTransition } from 'react'
+import { useState, useCallback, useEffect, useActionState } from 'react'
 import { X, CheckCircle2, AlertCircle, Loader2, PlugZap, Eye, EyeOff } from 'lucide-react'
 import { useSshStore, decryptConnection } from '../../stores/ssh-store'
 import { getWsClientSync } from '../../services/websocket'
@@ -42,7 +42,50 @@ export default function ConnectionForm({ onClose, editId }: Props) {
   const [showSudoPassword, setShowSudoPassword] = useState(false)
   const [testStatus, setTestStatus] = useState<TestStatus>('idle')
   const [testMessage, setTestMessage] = useState('')
-  const [error, setError] = useState('')
+
+  // ── useActionState: 表单提交异步状态 ──
+  const [saveError, saveAction, isSaving] = useActionState(
+    async (_prev: string | null, _formData: FormData): Promise<string | null> => {
+      if (!name || !host || !username) {
+        return '请填写名称、主机和用户名'
+      }
+      const raw = getConnectionData()
+      // 检查重复连接：相同 host + port + username
+      if (!existing) {
+        const dup = connections.find(c =>
+          c.host === raw.host &&
+          c.port === raw.port &&
+          c.username === raw.username
+        )
+        if (dup) {
+          return '已存在完全相同的连接：' + (dup.name || dup.host)
+        }
+      }
+      // ⚠️ 加密密码和私钥后再存，加密失败则明文存储（回退）
+      const data = { ...raw }
+      try {
+        if (data.password) {
+          data.password = await encryptField(data.password) as string
+        }
+        if (data.sudoPassword) {
+          data.sudoPassword = await encryptField(data.sudoPassword) as string
+        }
+        if (data.privateKey) {
+          data.privateKey = await encryptField(data.privateKey) as string
+        }
+      } catch (err) {
+        console.warn('[ConnectionForm] 加密失败，使用明文存储:', err)
+      }
+      if (existing) {
+        updateConnection(existing.id, data as SshConnection)
+      } else {
+        addConnection(data as SshConnection)
+      }
+      onClose()
+      return null
+    },
+    null,
+  )
 
   // 同步：当密码变更时，若 sudo 密码未独立修改过，则同步更新
   useEffect(() => {
@@ -104,48 +147,6 @@ export default function ConnectionForm({ onClose, editId }: Props) {
     }
   }, [host, port, username, password, privateKey, sudoPassword, authType, wsClient])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name || !host || !username) {
-      setError('请填写名称、主机和用户名')
-      return
-    }
-    const raw = getConnectionData()
-    // 检查重复连接：相同 host + port + username
-    if (!existing) {
-      const dup = connections.find(c =>
-        c.host === raw.host &&
-        c.port === raw.port &&
-        c.username === raw.username
-      )
-      if (dup) {
-        setError('已存在完全相同的连接：' + (dup.name || dup.host))
-        return
-      }
-    }
-    // ⚠️ 加密密码和私钥后再存，加密失败则明文存储（回退）
-    const data = { ...raw }
-    try {
-      if (data.password) {
-        data.password = await encryptField(data.password) as string
-      }
-      if (data.sudoPassword) {
-        data.sudoPassword = await encryptField(data.sudoPassword) as string
-      }
-      if (data.privateKey) {
-        data.privateKey = await encryptField(data.privateKey) as string
-      }
-    } catch (err) {
-      console.warn('[ConnectionForm] 加密失败，使用明文存储:', err)
-    }
-    if (existing) {
-      updateConnection(existing.id, data as SshConnection)
-    } else {
-      addConnection(data as SshConnection)
-    }
-    onClose()
-  }
-
   // 检测输入是否完整、可测试
   const canTest = host && username && (
     authType === 'password' ? true : !!privateKey
@@ -165,7 +166,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
         </div>
 
         {/* 表单 */}
-        <form onSubmit={handleSubmit} className="space-y-3 p-4">
+        <form action={saveAction} className="space-y-3 p-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs text-slate-500">名称 *</label>
@@ -302,10 +303,10 @@ export default function ConnectionForm({ onClose, editId }: Props) {
           </div>
 
           {/* 重复连接提示 */}
-          {error && (
+          {saveError && (
             <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
               <AlertCircle size={14} />
-              <span>{error}</span>
+              <span>{saveError}</span>
             </div>
           )}
 
@@ -342,8 +343,15 @@ export default function ConnectionForm({ onClose, editId }: Props) {
               <button type="button" onClick={onClose} className="btn btn-ghost">
                 取消
               </button>
-              <button type="submit" className="btn btn-primary">
-                {existing ? '保存修改' : '添加连接'}
+              <button type="submit" disabled={isSaving} className="btn btn-primary">
+                {isSaving ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    保存中...
+                  </>
+                ) : (
+                  existing ? '保存修改' : '添加连接'
+                )}
               </button>
             </div>
           </div>

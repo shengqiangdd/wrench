@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useActionState, useRef } from 'react'
 import {
   Settings,
   Moon,
@@ -62,9 +62,35 @@ export default function SettingsPanel() {
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importingFile, setImportingFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
-  const [isImporting, setIsImporting] = useState(false)
   const [showExportConfirm, setShowExportConfirm] = useState(false)
   const [importSuccess, setImportSuccess] = useState(false)
+
+  // ── useActionState: 导入操作异步状态 ──
+  const [importState, importAction, isImporting] = useActionState(
+    async (_prev: string | null, _formData: FormData): Promise<string | null> => {
+      const file = pendingImportFileRef.current
+      const pwd = pendingImportPasswordRef.current
+      if (!file) return '未选择文件'
+      try {
+        await importEncryptedFile(file, pwd || '')
+        setShowImportDialog(false)
+        setImportingFile(null)
+        setImportPassword('')
+        setImportSuccess(true)
+        // 导入成功后通知各 store 重新从 localStorage 读取
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('smartbox-config-imported'))
+        }, 500)
+        return null
+      } catch (err: any) {
+        return err.message || '导入失败'
+      }
+    },
+    null,
+  )
+  // 暂存导入文件和密码，供 useActionState action 读取
+  const pendingImportFileRef = useRef<File | null>(null)
+  const pendingImportPasswordRef = useRef('')
 
   const themeOptions = [
     { value: 'dark' as const, label: '深色', icon: Moon },
@@ -169,34 +195,18 @@ export default function SettingsPanel() {
   const handleImportClick = useCallback(() => {
     setImportingFile(null)
     setImportError('')
-    setIsImporting(true)
+    // 触发文件选择
     importConfigFromFile().catch((err: any) => {
       setImportError(err.message || '导入失败')
-    }).finally(() => {
-      setIsImporting(false)
     })
   }, [])
 
   const handleConfirmImport = useCallback(() => {
     if (!importingFile) return
-    setIsImporting(true)
-    importEncryptedFile(importingFile, importPassword)
-      .then(() => {
-        setShowImportDialog(false)
-        setImportingFile(null)
-        setImportPassword('')
-        setImportError('')
-        setImportSuccess(true)
-        // 导入成功后通知各 store 重新从 localStorage 读取
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('smartbox-config-imported'))
-        }, 500)
-      })
-      .catch((err: any) => {
-        setImportError(err.message || '导入失败')
-      })
-      .finally(() => setIsImporting(false))
-  }, [importingFile, importPassword])
+    pendingImportFileRef.current = importingFile
+    pendingImportPasswordRef.current = importPassword
+    importAction(new FormData())
+  }, [importingFile, importPassword, importAction])
 
   const handleExportWithoutPassword = useCallback(() => {
     setShowExportConfirm(false)
@@ -730,7 +740,6 @@ export default function SettingsPanel() {
             onClick={() => {
               setShowImportDialog(false)
               setImportingFile(null)
-              setImportError('')
             }}
           />
           <div className="relative z-10 w-full max-w-sm rounded-lg border border-slate-700/50 bg-slate-900 p-5 shadow-2xl">
@@ -744,10 +753,7 @@ export default function SettingsPanel() {
             <input
               type="password"
               value={importPassword}
-              onChange={(e) => {
-                setImportPassword(e.target.value)
-                setImportError('')
-              }}
+              onChange={(e) => setImportPassword(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleConfirmImport()
               }}
@@ -755,15 +761,14 @@ export default function SettingsPanel() {
               placeholder="输入解密密码"
               autoFocus
             />
-            {importError && (
-              <p className="mt-2 text-xs text-red-400">{importError}</p>
+            {(importError || importState) && (
+              <p className="mt-2 text-xs text-red-400">{importError || importState}</p>
             )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => {
                   setShowImportDialog(false)
                   setImportingFile(null)
-                  setImportError('')
                   setImportPassword('')
                 }}
                 className="rounded-md border border-slate-600/50 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-300"
