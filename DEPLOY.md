@@ -15,13 +15,30 @@
 ### 快速启动
 
 ```bash
-docker-compose up -d
+# 首次使用请先设置 JWT_SECRET 环境变量
+export JWT_SECRET=$(openssl rand -hex 32)
+
+docker compose up -d
 # 访问 http://localhost:3001
 ```
 
+`docker-compose.yml` 已预配置：
+- 命名数据卷 `smartbox-data` 自动挂载到 `/data`，SQLite 数据库持久化不丢失
+- `JWT_SECRET` 从环境变量注入（必填，用于令牌签发和 Vault 加密）
+- 健康检查每 30s 探测 `/api/health`
+
 ### 数据持久化（SQLite）
 
-SmartBox 默认使用 SQLite 存储审计日志和告警数据。在 Docker 中运行时，建议挂载数据卷：
+SmartBox 使用 SQLite 存储审计日志、告警、凭据保险箱、通知渠道和 SSH 连接配置。
+使用 `docker-compose.yml` 中的命名数据卷 `smartbox-data`，重启或升级容器后数据不丢失。
+
+备份 SQLite 数据库：
+
+```bash
+docker run --rm -v smartbox_smartbox-data:/data -v $(pwd):/backup alpine cp /data/smartbox.db /backup/smartbox-$(date +%Y%m%d).db
+```
+
+手动运行（不依赖 docker-compose）：
 
 ```bash
 # 创建持久化目录
@@ -34,6 +51,7 @@ docker run -d \
   --restart unless-stopped \
   -v /data/smartbox:/data \
   -e DATABASE_URL=/data/smartbox.db \
+  -e JWT_SECRET=$(openssl rand -hex 32) \
   ghcr.io/shengqiangdd/smartbox:latest
 
 # 停止后数据保留在 /data/smartbox/smartbox.db

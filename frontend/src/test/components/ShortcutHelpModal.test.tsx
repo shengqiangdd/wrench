@@ -73,11 +73,7 @@ describe('ShortcutHelpModal', () => {
     const onClose = vi.fn()
     await render(<ShortcutHelpModal open onClose={onClose} />)
 
-    // jsdom KeyboardEvent.key may not be set via constructor;
-    // dispatch a custom event instead
-    const event = new Event('keydown', { bubbles: true })
-    Object.defineProperty(event, 'key', { value: 'Escape' })
-    window.dispatchEvent(event)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await new Promise(r => setTimeout(r, 20))
     expect(onClose).toHaveBeenCalled()
   })

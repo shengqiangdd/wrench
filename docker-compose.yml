@@ -10,12 +10,27 @@ services:
     container_name: smartbox
     ports:
       - "3001:3001"   # 后端 API + WebSocket
+    volumes:
+      # SQLite 持久化数据卷（审计日志、告警、Vault、通知渠道、SSH 连接配置）
+      - smartbox-data:/data
+      # 可选：挂载本地 SSH 密钥供容器内的 SSH 客户端使用
+      # - ~/.ssh:/home/smartbox/.ssh:ro
     restart: unless-stopped
     environment:
       - NODE_ENV=production
+      # SQLite 数据库路径（留空则使用内存数据库）
+      - DATABASE_URL=/data/smartbox.db
+      # JWT 密钥（必填，用于认证令牌签发和 Vault 加密密钥派生）
+      # 请替换为随机字符串： openssl rand -hex 32
+      - JWT_SECRET=${JWT_SECRET:-change-me-to-a-random-string}
+      # 可选：Vault 加密专用密钥（不设置则从 JWT_SECRET 派生）
+      # - VAULT_KEY=${VAULT_KEY:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+
+volumes:
+  smartbox-data:

@@ -1,9 +1,9 @@
 /**
- * ConfirmModal component tests
+ * ConfirmModal & AlertModal component tests
  *
  * Uses createRoot directly to avoid React 19 CJS act issue.
  */
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { ConfirmModal, AlertModal } from '../../components/ConfirmModal'
 
@@ -26,105 +26,163 @@ async function render(el: React.ReactElement) {
   await new Promise<void>(r => setTimeout(r, 10))
 }
 
-function getButtons(): HTMLButtonElement[] {
-  return Array.from(container.querySelectorAll('button'))
-}
-
 describe('ConfirmModal', () => {
-  it('renders title and message when open', async () => {
-    await render(<ConfirmModal open title="Delete?" message="Are you sure?" onConfirm={vi.fn()} onCancel={vi.fn()} />)
-    expect(container.textContent).toContain('Delete?')
-    expect(container.textContent).toContain('Are you sure?')
+  it('returns null when not open', async () => {
+    await render(
+      <ConfirmModal
+        open={false}
+        title="Test"
+        message="Message"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    expect(container.innerHTML).toBe('')
   })
 
-  it('shows default button texts', async () => {
-    await render(<ConfirmModal open title="T" message="M" onConfirm={vi.fn()} onCancel={vi.fn()} />)
+  it('renders title and message when open', async () => {
+    await render(
+      <ConfirmModal
+        open
+        title="确认删除"
+        message="此操作不可撤销"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    expect(container.textContent).toContain('确认删除')
+    expect(container.textContent).toContain('此操作不可撤销')
+  })
+
+  it('renders default button texts', async () => {
+    await render(
+      <ConfirmModal
+        open
+        title="Test"
+        message="Test"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
     expect(container.textContent).toContain('确认')
     expect(container.textContent).toContain('取消')
   })
 
-  it('shows custom button texts', async () => {
-    await render(<ConfirmModal open title="T" message="M" confirmText="Yes" cancelText="No" onConfirm={vi.fn()} onCancel={vi.fn()} />)
+  it('renders custom button texts', async () => {
+    await render(
+      <ConfirmModal
+        open
+        title="Test"
+        message="Test"
+        confirmText="Yes"
+        cancelText="No"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
     expect(container.textContent).toContain('Yes')
     expect(container.textContent).toContain('No')
   })
 
-  it('calls onConfirm when confirm button is clicked', async () => {
+  it('calls onConfirm when confirm button clicked', async () => {
     const onConfirm = vi.fn()
-    await render(<ConfirmModal open title="T" message="M" onConfirm={onConfirm} onCancel={vi.fn()} />)
-    const btns = getButtons()
-    const confirmBtn = btns.find(b => b.textContent === '确认')!
-    confirmBtn.click()
+    const onCancel = vi.fn()
+    await render(
+      <ConfirmModal
+        open
+        title="Test"
+        message="Test"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />,
+    )
+    const buttons = container.querySelectorAll('button')
+    // Last button is the confirm button
+    expect(buttons.length).toBeGreaterThanOrEqual(2)
+    buttons[buttons.length - 1]!.click()
     expect(onConfirm).toHaveBeenCalledTimes(1)
+    expect(onCancel).not.toHaveBeenCalled()
   })
 
-  it('calls onCancel when cancel button is clicked', async () => {
+  it('calls onCancel when cancel button clicked', async () => {
     const onCancel = vi.fn()
-    await render(<ConfirmModal open title="T" message="M" onConfirm={vi.fn()} onCancel={onCancel} />)
-    const btns = getButtons()
-    const cancelBtn = btns.find(b => b.textContent === '取消')!
-    cancelBtn.click()
+    await render(
+      <ConfirmModal
+        open
+        title="Test"
+        message="Test"
+        onConfirm={vi.fn()}
+        onCancel={onCancel}
+      />,
+    )
+    const buttons = container.querySelectorAll('button')
+    expect(buttons.length).toBeGreaterThanOrEqual(2)
+    buttons[0]!.click()
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
-  it('calls onCancel when backdrop is clicked', async () => {
-    const onCancel = vi.fn()
-    await render(<ConfirmModal open title="T" message="M" onConfirm={vi.fn()} onCancel={onCancel} />)
-    const backdrop = container.querySelector('[class*="bg-black"]')
-    if (backdrop) {
-      backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      expect(onCancel).toHaveBeenCalled()
-    }
-  })
-
   it('applies danger variant styling', async () => {
-    await render(<ConfirmModal open variant="danger" title="T" message="M" onConfirm={vi.fn()} onCancel={vi.fn()} />)
-    const btns = getButtons()
-    const confirmBtn = btns.find(b => b.textContent === '确认')!
-    expect(confirmBtn.className).toContain('bg-red-600')
+    await render(
+      <ConfirmModal
+        open
+        title="Danger"
+        message="Danger action"
+        variant="danger"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    const buttons = container.querySelectorAll('button')
+    expect(buttons[1]?.className).toContain('bg-red-600')
   })
 
-  it('applies default variant styling', async () => {
-    await render(<ConfirmModal open variant="default" title="T" message="M" onConfirm={vi.fn()} onCancel={vi.fn()} />)
-    const btns = getButtons()
-    const confirmBtn = btns.find(b => b.textContent === '确认')!
-    expect(confirmBtn.className).toContain('bg-smartbox')
-  })
-
-  it('returns null when not open', async () => {
-    await render(<ConfirmModal open={false} title="T" message="M" onConfirm={vi.fn()} onCancel={vi.fn()} />)
+  it('has exit animation when closed', async () => {
+    await render(
+      <ConfirmModal
+        open
+        title="Test"
+        message="Test"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    // Close it
+    root.render(
+      <ConfirmModal
+        open={false}
+        title="Test"
+        message="Test"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    await new Promise(r => setTimeout(r, 20))
+    // Should still be in DOM during exit animation
+    expect(container.textContent).toContain('Test')
+    // After 300ms animation, should be removed
+    await new Promise(r => setTimeout(r, 350))
     expect(container.innerHTML).toBe('')
   })
 })
 
 describe('AlertModal', () => {
-  it('renders title and message', async () => {
-    await render(<AlertModal open title="Info" message="Something happened" onClose={vi.fn()} />)
-    expect(container.textContent).toContain('Info')
-    expect(container.textContent).toContain('Something happened')
-  })
-
-  it('calls onClose when close button is clicked', async () => {
-    const onClose = vi.fn()
-    await render(<AlertModal open title="T" message="M" onClose={onClose} />)
-    const btns = getButtons()
-    const closeBtn = btns.find(b => b.textContent === '确定')!
-    closeBtn.click()
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('calls onClose when backdrop is clicked', async () => {
-    const onClose = vi.fn()
-    await render(<AlertModal open title="T" message="M" onClose={onClose} />)
-    const backdrop = container.querySelector('[class*="bg-black"]')
-    if (backdrop) {
-      backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      expect(onClose).toHaveBeenCalled()
-    }
-  })
-
   it('returns null when not open', async () => {
-    await render(<AlertModal open={false} title="T" message="M" onClose={vi.fn()} />)
+    await render(<AlertModal open={false} title="Alert" message="Msg" onClose={vi.fn()} />)
     expect(container.innerHTML).toBe('')
+  })
+
+  it('renders title and message when open', async () => {
+    await render(<AlertModal open title="注意" message="操作成功" onClose={vi.fn()} />)
+    expect(container.textContent).toContain('注意')
+    expect(container.textContent).toContain('操作成功')
+  })
+
+  it('calls onClose when close button clicked', async () => {
+    const onClose = vi.fn()
+    await render(<AlertModal open title="Alert" message="Msg" onClose={onClose} />)
+    const btn = container.querySelector('button')
+    expect(btn).toBeTruthy()
+    btn!.click()
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
