@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::config::AppConfig;
 use crate::db::Database;
 use crate::ssh::SshConnection;
+use crate::utils::jwt::JwtService;
 
 /// Shared application state accessible from all handlers.
 pub struct AppState {
@@ -98,7 +99,7 @@ impl AppState {
             active_logtails: DashMap::new(),
             db,
             jwt_service: RwLock::new(
-                crate::utils::jwt::JwtService::from_secret(&config.jwt_secret).ok(),
+                JwtService::from_secret(&config.jwt_secret).ok(),
             ),
             config,
         })
