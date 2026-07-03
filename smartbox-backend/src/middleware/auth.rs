@@ -149,6 +149,7 @@ mod tests {
             ws_tokens: dashmap::DashMap::new(),
             marketplace_cache: parking_lot::RwLock::new(None),
             active_logtails: dashmap::DashMap::new(),
+            jwt_service: parking_lot::RwLock::new(None),
         })
     }
 
