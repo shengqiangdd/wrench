@@ -54,14 +54,15 @@ describe('Sidebar (expanded)', () => {
     expect(text).toContain('插件')
     expect(text).toContain('凭据保险箱')
     expect(text).toContain('通知渠道')
+    expect(text).toContain('审计日志')
     expect(text).toContain('设置')
   })
 
-  it('renders 10 nav buttons in expanded mode', () => {
+  it('renders 11 nav buttons in expanded mode', () => {
     const { container } = render(<Sidebar />)
     // All sidebar-item buttons (not the collapse toggle)
     const navBtns = container.querySelectorAll('.sidebar-item')
-    expect(navBtns.length).toBe(10)
+    expect(navBtns.length).toBe(11)
   })
 
   it('highlights the active nav', () => {
@@ -138,7 +139,7 @@ describe('Sidebar (collapsed)', () => {
     expect(container.textContent).not.toContain('智盒 SmartBox')
     // Should have 10 icon buttons
     const buttons = container.querySelectorAll('nav button')
-    expect(buttons.length).toBe(11) // 10 nav + 1 expand toggle
+    expect(buttons.length).toBe(12) // 11 nav + 1 expand toggle
   })
 
   it('shows expand button with correct title', () => {

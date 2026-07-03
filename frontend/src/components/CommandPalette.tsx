@@ -119,6 +119,18 @@ export default function CommandPalette() {
         setOpen(false)
       },
     },
+    {
+      id: 'nav-audit',
+      label: '打开审计日志',
+      description: '查看操作审计记录',
+      keywords: ['audit', '审计', '日志', 'log', '操作记录', 'history', '历史'],
+      icon: 'History',
+      category: '导航',
+      action: () => {
+        setActiveNav('audit')
+        setOpen(false)
+      },
+    },
     // 主题命令
     {
       id: 'theme-dark',

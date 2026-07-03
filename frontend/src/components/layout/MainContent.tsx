@@ -11,6 +11,7 @@ const PluginsPage = lazy(() => import('../../modules/plugins/PluginsPage'))
 const SettingsPanel = lazy(() => import('../../modules/settings/SettingsPanel'))
 const VaultPage = lazy(() => import('../../modules/vault/VaultPage'))
 const NotificationsPage = lazy(() => import('../../modules/notifications/NotificationsPage'))
+const AuditLogPage = lazy(() => import('../../modules/audit/AuditLogPage'))
 
 const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<unknown>>> = {
   ssh: SshPlaceholder,
@@ -23,6 +24,7 @@ const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<unknow
   settings: SettingsPanel,
   vault: VaultPage,
   notifications: NotificationsPage,
+  audit: AuditLogPage,
 }
 
 /**
@@ -40,11 +42,12 @@ const PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
   settings: () => import('../../modules/settings/SettingsPanel'),
   vault: () => import('../../modules/vault/VaultPage'),
   notifications: () => import('../../modules/notifications/NotificationsPage'),
+  audit: () => import('../../modules/audit/AuditLogPage'),
 }
 
 /** Adjacent nav pages to preload after the active page finishes loading,
  *  so side-by-side navigation feels instant. */
-const NAV_ORDER = ['ssh', 'commands', 'docker', 'monitor', 'files', 'logs', 'plugins', 'vault', 'notifications', 'settings']
+const NAV_ORDER = ['ssh', 'commands', 'docker', 'monitor', 'files', 'logs', 'plugins', 'vault', 'notifications', 'audit', 'settings']
 
 function Loading() {
   return (

@@ -45,12 +45,13 @@ describe('BottomNav', () => {
     expect(text).toContain('日志')
     expect(text).toContain('插件')
     expect(text).toContain('设置')
+    expect(text).toContain('审计')
   })
 
-  it('renders 8 nav buttons', () => {
+  it('renders 9 nav buttons', () => {
     const { container } = render(<BottomNav />)
     const buttons = container.querySelectorAll('button')
-    expect(buttons.length).toBe(8)
+    expect(buttons.length).toBe(9)
   })
 
   it('highlights the active nav item', () => {
@@ -94,6 +95,7 @@ describe('BottomNav', () => {
       { label: '文件', id: 'files' },
       { label: '日志', id: 'logs' },
       { label: '插件', id: 'plugins' },
+      { label: '审计', id: 'audit' },
       { label: '设置', id: 'settings' },
     ]
 

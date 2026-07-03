@@ -1,4 +1,4 @@
-import { Terminal, FileCode2, Puzzle, Settings, Server, Container, ScrollText, Zap, Activity, PanelRight, PanelLeftClose, KeyRound, Bell } from 'lucide-react'
+import { Terminal, FileCode2, Puzzle, Settings, Server, Container, ScrollText, Zap, Activity, PanelRight, PanelLeftClose, KeyRound, Bell, History } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { id: 'plugins', label: '插件', icon: Puzzle },
   { id: 'vault', label: '凭据保险箱', icon: KeyRound },
   { id: 'notifications', label: '通知渠道', icon: Bell },
+  { id: 'audit', label: '审计日志', icon: History },
   { id: 'settings', label: '设置', icon: Settings },
 ] as const
 
