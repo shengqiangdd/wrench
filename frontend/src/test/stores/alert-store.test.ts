@@ -90,15 +90,13 @@ describe('alert-store', () => {
 
   describe('resetToDefaults', () => {
     it('restores default rules and clears history', () => {
-      useAlertStore
-        .getState()
-        .addRule({
-          metric: 'cpu',
-          threshold: 50,
-          severity: 'warning',
-          enabled: true,
-          consecutive: 1,
-        })
+      useAlertStore.getState().addRule({
+        metric: 'cpu',
+        threshold: 50,
+        severity: 'warning',
+        enabled: true,
+        consecutive: 1,
+      })
       useAlertStore.getState().clearHistory()
       useAlertStore.getState().resetToDefaults()
       const state = useAlertStore.getState()
