@@ -7,7 +7,6 @@ use serde::Serialize;
 use crate::config::AppConfig;
 use crate::db::Database;
 use crate::ssh::SshConnection;
-use crate::utils::jwt::JwtService;
 
 /// Shared application state accessible from all handlers.
 pub struct AppState {
@@ -99,7 +98,7 @@ impl AppState {
             active_logtails: DashMap::new(),
             db,
             jwt_service: RwLock::new(
-                JwtService::from_secret(&config.jwt_secret).ok(),
+                crate::utils::jwt::JwtService::from_secret(&config.jwt_secret).ok(),
             ),
             config,
         })
@@ -188,10 +187,10 @@ impl AppState {
                 // Dispatch notifications for critical & warning alerts
                 if level == "critical" || level == "warning" {
                     if let Ok(channels) = db.list_notification_channels().await {
-                        let alert_level = notify::AlertLevel::parse_level(&level);
+                        let alert_level = crate::notify::AlertLevel::parse_level(&level);
                         for ch in channels {
                             if !ch.enabled { continue; }
-                            let _ = notify::dispatch_alert(
+                            let _ = crate::notify::dispatch_alert(
                                 &ch,
                                 &alert_level,
                                 &metric,
