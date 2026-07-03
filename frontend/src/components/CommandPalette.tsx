@@ -16,6 +16,11 @@ export interface CommandItem {
 // 注册命令的系统
 const _registry: CommandItem[] = []
 
+// Expose for test cleanup (only in test environment)
+if (typeof globalThis !== 'undefined') {
+  ;(globalThis as any).__commandRegistry = _registry
+}
+
 export function registerCommand(cmd: CommandItem) {
   _registry.push(cmd)
 }

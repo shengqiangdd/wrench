@@ -43,6 +43,9 @@ afterEach(() => {
   } as any)
   usePluginStore.setState({ commands: [], executeCommand: () => {} } as any)
   document.body.innerHTML = ''
+  // Clear registered commands from test isolation
+  const reg = (globalThis as any).__commandRegistry
+  if (reg) reg.length = 0
 })
 
 function render(el: React.ReactNode) {
