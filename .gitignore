@@ -22,6 +22,14 @@ smartbox-backend/target/
 .env.local
 .env.*.local
 
+# SQLite database files (WAL mode creates -shm and -wal companions)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
 # 日志
 *.log
 npm-debug.log*
