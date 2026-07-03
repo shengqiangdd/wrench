@@ -8,6 +8,7 @@ use axum::{
 use std::sync::Arc;
 
 use crate::app_state::AppState;
+use crate::utils::jwt::{Claims, JwtService};
 
 /// Validate a token against the in-memory WS token store.
 ///
@@ -32,10 +33,30 @@ fn validate_token(state: &Arc<AppState>, token: &str) -> bool {
     }
 }
 
+/// Validate a JWT token using the app's JWT service.
+///
+/// Returns `true` if the token is valid and not expired.
+fn validate_jwt(state: &Arc<AppState>, token: &str) -> bool {
+    let service = state.jwt_service.read();
+    let service = match service.as_ref() {
+        Some(s) => s,
+        None => return false,
+    };
+
+    match service.verify(token) {
+        Ok(token_data) => {
+            let now = chrono::Utc::now().timestamp() as u64;
+            token_data.claims.exp > now
+        }
+        Err(_) => false,
+    }
+}
+
 /// Authentication middleware for REST API and WebSocket routes.
 ///
-/// For REST API: checks `Authorization: Bearer <token>` header.
-/// For WebSocket upgrades: checks `?token=<token>` query parameter.
+/// Supports two authentication methods:
+/// 1. Legacy one-time WS tokens (validated through `ws_tokens` store)
+/// 2. JWT tokens (validated through signature and expiration)
 ///
 /// Routes that don't need auth (/api/health, /api/ws-token, static files)
 /// should be mounted outside the protected router.
@@ -82,6 +103,7 @@ pub async fn auth_middleware(
 
     match token {
         Some(t) if validate_token(&state, &t) => next.run(req).await,
+        Some(t) if validate_jwt(&state, &t) => next.run(req).await,
         _ => {
             let body = serde_json::json!({
                 "error": "Unauthorized: invalid or expired token. Call POST /api/ws-token first."
@@ -95,6 +117,7 @@ pub async fn auth_middleware(
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {

@@ -4,29 +4,30 @@ use uuid::Uuid;
 
 use crate::app_state::{AppState, WsTokenInfo};
 use crate::response::ApiResponse;
+use crate::utils::jwt::{Claims, JwtService};
 
-/// Issue a one-time WebSocket token (POST /api/ws-token)
-pub async fn issue_ws_token(
+/// Issue a JWT token for API and WebSocket authentication.
+///
+/// This replaces the old one-time token endpoint and provides a token
+/// that is valid for 24 hours, reducing the need for frequent refreshes.
+pub async fn issue_jwt_token(
     State(state): State<Arc<AppState>>,
     Json(_body): Json<serde_json::Value>,
 ) -> ApiResponse<serde_json::Value> {
-    let token = Uuid::new_v4().to_string();
-    let expires_at = chrono::Utc::now() + chrono::Duration::minutes(5);
+    let jwt_service = JwtService::from_secret(&state.config.jwt_secret)
+        .map_err(|_| ApiResponse::error(500, "JWT configuration error"))?;
 
-    state.ws_tokens.insert(
-        token.clone(),
-        WsTokenInfo {
-            token: token.clone(),
-            ip: "client".into(),
-            expires_at,
-        },
-    );
+    // Create a claims object with client fingerprint
+    let claims = Claims::new("client".into(), "api+ws".into(), 86400);
+    let token = jwt_service.sign(&claims)
+        .map_err(|_| ApiResponse::error(500, "Failed to sign JWT"))?;
 
-    state.add_audit_log("ws_token_issued", serde_json::json!({}), "client");
+    state.add_audit_log("jwt_issued", serde_json::json!({"scope": "api+ws"}), "client");
 
     ApiResponse::success(serde_json::json!({
         "token": token,
-        "expiresIn": 300
+        "tokenType": "Bearer",
+        "expiresIn": 86400
     }))
 }
 

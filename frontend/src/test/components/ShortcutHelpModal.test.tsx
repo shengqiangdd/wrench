@@ -73,8 +73,15 @@ describe('ShortcutHelpModal', () => {
     const onClose = vi.fn()
     await render(<ShortcutHelpModal open onClose={onClose} />)
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    await new Promise(r => setTimeout(r, 20))
+    // Wait a bit longer for useEffect to register the keydown listener
+    await new Promise(r => setTimeout(r, 50))
+    
+    // Create a proper KeyboardEvent with key property
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    window.dispatchEvent(event)
+    
+    // Wait for the event handler to run
+    await new Promise(r => setTimeout(r, 50))
     expect(onClose).toHaveBeenCalled()
   })
 

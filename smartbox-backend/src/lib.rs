@@ -24,10 +24,12 @@ use axum::{
         StatusCode,
     },
     middleware as axum_middleware,
+    response::Response,
     routing::get,
     Router,
 };
 use std::sync::Arc;
+use tower::Layer;
 use tower::ServiceBuilder;
 use tower_http::{
     cors::CorsLayer,
@@ -65,6 +67,56 @@ if ('serviceWorker' in navigator) {
             .status(StatusCode::NOT_FOUND)
             .body(Body::from("Not Found"))
             .unwrap(),
+    }
+}
+
+/// Middleware to set Cache-Control headers on static assets based on file extension.
+///
+/// - Hashed assets (JS/CSS/fonts with content hash in name): immutable, 1 year
+/// - Other static assets (images, fonts): 7 days
+/// - index.html and non-static paths: no-store (handled by SPA handler)
+async fn static_cache_middleware(
+    req: axum::http::Request<Body>,
+    next: axum_middleware::Next,
+) -> Response {
+    let path = req.uri().path().to_string();
+    let mut response = next.run(req).await;
+
+    // Only apply to GET/HEAD requests that succeed
+    if !response.status().is_success() {
+        return response;
+    }
+
+    let cache_header: Option<&str> = match std::path::Path::new(&path).extension().and_then(|e| e.to_str()) {
+        // Hashed JS/CSS from Vite build — immutable cache for 1 year
+        Some(ext) if matches!(ext, "js" | "mjs" | "css" | "woff2") && has_hash_in_path(&path) => {
+            Some("public, max-age=31536000, immutable")
+        }
+        // Images and fonts — 7 days
+        Some("png" | "jpg" | "jpeg" | "gif" | "svg" | "ico" | "webp" | "woff" | "ttf" | "eot") => {
+            Some("public, max-age=604800")
+        }
+        // Other static files — 1 day
+        Some("json" | "xml" | "map" | "txt") => {
+            Some("public, max-age=86400")
+        }
+        // Everything else — no-store
+        _ => None,
+    };
+
+    if let Some(val) = cache_header {
+        response.headers_mut().insert(CACHE_CONTROL, val.parse().unwrap());
+    }
+    response
+}
+
+/// Check if a file path contains a content-hash pattern (Vite-style: name.hash.ext).
+fn has_hash_in_path(path: &str) -> bool {
+    if let Some(filename) = std::path::Path::new(path).file_stem().and_then(|s| s.to_str()) {
+        // Vite hash patterns: name-XXXXXXXX.js or name.XXXXXXXX.js
+        filename.contains('-') || filename.contains('.')
+    } else {
+        false
     }
 }
 
@@ -228,6 +280,10 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
     });
 
     let fallback = serve_dir.fallback(spa_handler);
+
+    // Wrap with static cache middleware for optimal asset caching
+    let fallback = axum_middleware::from_fn(static_cache_middleware)
+        .layer(fallback);
 
     Router::new()
         .merge(app_with_state)

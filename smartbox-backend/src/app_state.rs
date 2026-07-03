@@ -7,33 +7,19 @@ use serde::Serialize;
 use crate::config::AppConfig;
 use crate::db::Database;
 use crate::ssh::SshConnection;
+use crate::utils::jwt::JwtService;
 
 /// Shared application state accessible from all handlers.
 pub struct AppState {
     pub config: AppConfig,
-
-    /// Optional SQLite database handle (None = memory-only mode).
     pub db: Option<Database>,
-
-    /// SSH connections: connection_id -> SshConnection
     pub connections: DashMap<String, SshConnection>,
-
-    /// Docker clients cached by host: host -> bollard::Docker
     pub docker_clients: DashMap<String, bollard::Docker>,
-
-    /// Alerts store (in-memory, max 500)
     pub alerts: RwLock<Vec<AlertEntry>>,
-
-    /// Audit logs (in-memory ring buffer, max 1000)
     pub audit_logs: RwLock<Vec<AuditEntry>>,
-
-    /// WS token store for one-time tokens
     pub ws_tokens: DashMap<String, WsTokenInfo>,
-
-    /// Plugin marketplace cache
+    pub jwt_service: RwLock<Option<JwtService>>,
     pub marketplace_cache: RwLock<Option<Vec<crate::models::PluginManifest>>>,
-
-    /// Active log tail cancel tokens: "connectionId:logPath" -> oneshot Sender
     pub active_logtails: DashMap<String, tokio::sync::oneshot::Sender<()>>,
 }
 
@@ -113,6 +99,9 @@ impl AppState {
             active_logtails: DashMap::new(),
             config,
             db,
+            jwt_service: RwLock::new(
+                JwtService::from_secret(&config.jwt_secret).ok(),
+            ),
         })
     }
 

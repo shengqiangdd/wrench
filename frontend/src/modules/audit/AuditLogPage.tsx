@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, memo, useMemo } from 'react'
 import {
   History,
   RefreshCw,
@@ -77,10 +77,38 @@ function formatAction(action: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function ActionIcon({ action }: { action: string }) {
+// 🔥 Memoized action icon component
+const ActionIcon = memo(function ActionIcon({ action }: { action: string }) {
   const Icon = ACTION_ICONS[action]
   return Icon ? <Icon size={14} /> : <Activity size={14} />
-}
+})
+
+// 🔥 Memoized log row component
+const LogRow = memo(function LogRow({ entry }: { entry: AuditEntry }) {
+  const colorClass = ACTION_COLORS[entry.action] || 'text-slate-500'
+  const formattedDetail = useMemo(() => formatDetail(entry.action, entry.detail), [entry.action, entry.detail])
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-slate-800/20">
+      <div className={`mt-0.5 shrink-0 ${colorClass}`}>
+        <ActionIcon action={entry.action} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-slate-300">
+            {formatAction(entry.action)}
+          </span>
+          <span className="text-[10px] text-slate-600">
+            {entry.timestamp}
+          </span>
+        </div>
+        <div className="mt-0.5 text-[11px] text-slate-500 break-all whitespace-pre-wrap line-clamp-2">
+          {formattedDetail}
+        </div>
+      </div>
+    </div>
+  )
+})
 
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditEntry[]>([])
@@ -167,27 +195,7 @@ export default function AuditLogPage() {
         ) : (
           <div className="divide-y divide-slate-800/30">
             {filtered.map((entry, i) => (
-              <div
-                key={`${entry.timestamp}-${i}`}
-                className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-slate-800/20"
-              >
-                <div className={`mt-0.5 shrink-0 ${ACTION_COLORS[entry.action] || 'text-slate-500'}`}>
-                  <ActionIcon action={entry.action} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-slate-300">
-                      {formatAction(entry.action)}
-                    </span>
-                    <span className="text-[10px] text-slate-600">
-                      {entry.timestamp}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-slate-500 break-all whitespace-pre-wrap line-clamp-2">
-                    {formatDetail(entry.action, entry.detail)}
-                  </div>
-                </div>
-              </div>
+              <LogRow key={`${entry.timestamp}-${i}`} entry={entry} />
             ))}
           </div>
         )}

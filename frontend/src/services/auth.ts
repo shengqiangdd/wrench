@@ -1,30 +1,41 @@
 /**
- * SmartBox 认证服务
+ * SmartBox 认证服务 (JWT + 一次性令牌兼容)
  *
  * 管理与后端通信的访问令牌（WS 和 REST API）。
  *
  * 流程:
- *   1. 应用启动时调用 initAuth() → POST /api/ws-token 获取一次性令牌
- *   2. WebSocket 连接使用 ?token=<token> 进行认证
- *   3. REST API 通过 Authorization: Bearer <token> 头部认证
- *   4. 令牌一次有效，每次 WS 重连或关键 API 调用前刷新
+ *   1. 应用启动时调用 initAuth() → POST /api/ws-token 获取 JWT 令牌（24h 有效）
+ *   2. WebSocket 连接使用 ?token=<jwt> 进行认证
+ *   3. REST API 通过 Authorization: Bearer <jwt> 头部认证
+ *   4. JWT 在有效期内复用，仅在过期(401)或手动清除时刷新
+ *   5. 兼容旧版一次性令牌（后端中间件同时支持两种验证）
  */
 
-let _currentToken: string | null = null
-let _tokenPromise: Promise<string> | null = null
+// ── JWT 令牌缓存 ──
 
-/** 获取当前令牌（如果没有则自动获取） */
+let _jwtToken: string | null = null
+let _jwtExpiresAt = 0  // Unix epoch (ms), 0 表示未知
+let _jwtPromise: Promise<string> | null = null
+
+/** 提前刷新阈值：到期前 5 分钟刷新 */
+const JWT_REFRESH_AHEAD_MS = 5 * 60 * 1000
+
+/** 获取当前 JWT（如果有效则直接返回，否则自动刷新） */
 export async function getToken(): Promise<string> {
-  if (_currentToken) return _currentToken
+  // JWT 仍然有效 → 直接返回
+  if (_jwtToken && _jwtExpiresAt > Date.now() + JWT_REFRESH_AHEAD_MS) {
+    return _jwtToken
+  }
+  // JWT 过期或不存在 → 刷新
   return refreshToken()
 }
 
-/** 从后端请求新的一次性令牌 */
+/** 从后端请求新的 JWT 令牌 */
 export async function refreshToken(): Promise<string> {
   // 防止并发重复请求
-  if (_tokenPromise) return _tokenPromise
+  if (_jwtPromise) return _jwtPromise
 
-  _tokenPromise = (async () => {
+  _jwtPromise = (async () => {
     const protocol = window.location.protocol
     const host = window.location.host
     const resp = await fetch(`${protocol}//${host}/api/ws-token`, {
@@ -38,31 +49,38 @@ export async function refreshToken(): Promise<string> {
     }
 
     const data = await resp.json()
-    const token = (data as { token?: string }).token ?? data.data?.token
+    // 兼容两种响应格式：直接 token 或嵌套在 data 中
+    const tokenField = (data as { token?: string }).token ?? data.data?.token
+    const expiresIn: number = (data as { expiresIn?: number }).expiresIn ?? data.data?.expiresIn ?? 86400
 
-    if (!token) {
+    if (!tokenField) {
       throw new Error('Auth token endpoint returned no token')
     }
 
-    _currentToken = token
-    return token
+    _jwtToken = tokenField
+    // 记录过期时间（减去提前刷新阈值）
+    _jwtExpiresAt = Date.now() + expiresIn * 1000 - JWT_REFRESH_AHEAD_MS
+    return tokenField
   })()
 
   try {
-    return await _tokenPromise
+    return await _jwtPromise
   } finally {
-    _tokenPromise = null
+    _jwtPromise = null
   }
 }
 
 /** 清除缓存的令牌（连接断开或认证失败时调用） */
 export function clearToken() {
-  _currentToken = null
-  _tokenPromise = null
+  _jwtToken = null
+  _jwtExpiresAt = 0
+  _jwtPromise = null
 }
 
 /**
  * 包装 fetch 自动添加 Authorization 头部
+ *
+ * 遇到 401 时自动清除缓存并重试一次。
  */
 export async function authedFetch(
   url: string,
@@ -74,9 +92,12 @@ export async function authedFetch(
 
   const resp = await fetch(url, { ...options, headers })
 
-  // 401 Unauthorized → 令牌过期，清除缓存
+  // 401 Unauthorized → 令牌过期，清除缓存并重试一次
   if (resp.status === 401) {
     clearToken()
+    const newToken = await refreshToken()
+    headers.set('Authorization', `Bearer ${newToken}`)
+    return fetch(url, { ...options, headers })
   }
 
   return resp

@@ -89,6 +89,16 @@ pub async fn connect_ssh(
                     );
                     conn.set_session(Arc::new(session));
                     state.connections.insert(connection_id.clone(), conn);
+                    
+                    // 🔥 Pre-warm SFTP session for first-operation latency reduction
+                    let session_arc = {
+                        let entry = state.connections.get(&connection_id);
+                        entry.and_then(|c| c.session.clone()).unwrap()
+                    };
+                    tokio::spawn(async move {
+                        let _ = session_arc.get_sftp_session().await;
+                    });
+                    
                     state.add_audit_log("ssh_connect", serde_json::json!({
                         "connectionId": connection_id,
                         "host": host,
@@ -122,6 +132,16 @@ pub async fn connect_ssh(
                     );
                     conn.set_session(Arc::new(session));
                     state.connections.insert(connection_id.clone(), conn);
+                    
+                    // 🔥 Pre-warm SFTP session for first-operation latency reduction
+                    let session_arc = {
+                        let entry = state.connections.get(&connection_id);
+                        entry.and_then(|c| c.session.clone()).unwrap()
+                    };
+                    tokio::spawn(async move {
+                        let _ = session_arc.get_sftp_session().await;
+                    });
+                    
                     state.add_audit_log("ssh_connect", serde_json::json!({
                         "connectionId": connection_id,
                         "host": host,

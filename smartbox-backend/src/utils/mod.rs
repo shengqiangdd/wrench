@@ -1,4 +1,5 @@
 pub mod crypto;
+pub mod jwt;
 pub mod path;
 pub mod validator;
 

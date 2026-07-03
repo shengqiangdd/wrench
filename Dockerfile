@@ -32,9 +32,6 @@ WORKDIR /app
 # Copy Cargo manifests for dependency caching
 COPY smartbox-backend/Cargo.toml smartbox-backend/Cargo.lock* ./
 
-# Ensure Cargo.lock exists (for reproducible builds)
-RUN if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
-
 # Create dummy source files matching the actual module structure
 # so cargo can resolve all workspace members and cache dependencies
 RUN mkdir -p src && cat > src/main.rs << 'EOF'
@@ -53,6 +50,7 @@ pub mod middleware;
 pub mod utils;
 pub mod db;
 pub mod models;
+pub mod notify;
 EOF
 
 # Create all module stub files so dependency resolution works fully
@@ -62,9 +60,13 @@ RUN for mod in api/mod websocket/mod ssh/mod docker/mod middleware/mod utils/mod
     done
 RUN echo "pub mod hello;" > src/api/mod.rs
 RUN echo "" > src/api/hello.rs
+RUN echo "pub mod crypto;" > src/utils/mod.rs
+RUN echo "pub mod jwt;" > src/utils/jwt.rs
+RUN echo "pub mod path;" > src/utils/path.rs
+RUN echo "pub mod validator;" > src/utils/validator.rs
 
-# Build dependencies (this caches all crate downloads and compilations)
-RUN cargo build --release 2>&1 | tail -5 || echo "Dep build continues"
+# Ensure Cargo.lock exists (for reproducible builds)
+RUN if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
 
 # Copy the actual source code (overwrites dummies)
 COPY smartbox-backend/src/ ./src/

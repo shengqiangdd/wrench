@@ -1,4 +1,4 @@
-import { useState, useCallback, useOptimistic, lazy, Suspense, startTransition } from 'react'
+import { useState, useCallback, useOptimistic, lazy, Suspense, startTransition, memo, useMemo } from 'react'
 import {
   Play, Square, RotateCcw, Trash2, FileText, Search, Eye,
 } from 'lucide-react'
@@ -19,6 +19,110 @@ interface Props {
   loading: boolean
   onRefresh: () => void
 }
+
+// 🔥 Memoized container row component for performance optimization
+const ContainerRow = memo(function ContainerRow({
+  c,
+  actionLoading,
+  doAction,
+  onShowLogs,
+  onShowDetail,
+  isSelected,
+}: {
+  c: DockerContainer
+  actionLoading: string | null
+  doAction: (id: string, action: string) => void
+  onShowLogs: (id: string) => void
+  onShowDetail: (id: string) => void
+  isSelected: boolean
+}) {
+  const shortId = c.ID.length > 12 ? c.ID.slice(0, 12) : c.ID
+  const isRunning = c.State === 'running'
+  const isLoading = actionLoading === shortId || actionLoading === c.Names
+  const isSelfContainer = c.Names.includes('smartbox') || c.Names.includes('bridge')
+
+  return (
+    <div
+      className={`group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-800/40 cursor-pointer ${
+        isSelected ? 'bg-slate-800/60' : ''
+      }`}
+    >
+      {/* Status indicator */}
+      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOTS[c.State] || 'bg-slate-500'}`} />
+
+      {/* Name + Image */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium text-slate-200">{c.Names}</span>
+          <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">
+            {c.State}
+          </span>
+        </div>
+        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
+          <span className="truncate">{c.Image}</span>
+          <span>{c.RunningFor}</span>
+          {c.Ports && <span className="truncate text-slate-600">{c.Ports}</span>}
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex shrink-0 items-center gap-1 opacity-100" onClick={(e) => e.stopPropagation()}>
+        {!isSelfContainer && (
+          <>
+            {isRunning ? (
+              <button
+                onClick={() => doAction(c.Names || shortId, 'stop')}
+                disabled={isLoading}
+                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-amber-400 disabled:opacity-40"
+                title="停止"
+              >
+                <Square size={14} />
+              </button>
+            ) : (
+              <button
+                onClick={() => doAction(c.Names || shortId, 'start')}
+                disabled={isLoading}
+                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-emerald-400 disabled:opacity-40"
+                title="启动"
+              >
+                <Play size={14} />
+              </button>
+            )}
+            {c.State === 'exited' && (
+              <button
+                onClick={() => doAction(c.Names || shortId, 'rm')}
+                disabled={isLoading}
+                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
+                title="删除"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </>
+        )}
+        <button
+          onClick={() => onShowLogs(c.Names || shortId)}
+          className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
+          title="查看日志"
+        >
+          <FileText size={14} />
+        </button>
+        <button
+          onClick={() => onShowDetail(c.Names || shortId)}
+          className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
+          title="查看详情"
+        >
+          <Eye size={14} />
+        </button>
+      </div>
+
+      {/* Loading indicator */}
+      {isLoading && (
+        <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
+      )}
+    </div>
+  )
+})
 
 /** 乐观更新：对指定容器执行状态切换而不等待 API */
 function optimisticToggle(containers: DockerContainer[], id: string, action: string): DockerContainer[] {
@@ -41,13 +145,15 @@ export default function DockerContainerList({ connectionId, containers, loading,
     (state, { id, action }: { id: string; action: string }) => optimisticToggle(state, id, action),
   )
 
-  const filtered = filter
-    ? optimisticContainers.filter((c) =>
-        c.Names.toLowerCase().includes(filter.toLowerCase()) ||
-        c.Image.toLowerCase().includes(filter.toLowerCase()) ||
-        c.ID.startsWith(filter)
-      )
-    : optimisticContainers
+  // 🔥 Memoize filtered list to prevent unnecessary re-renders
+  const filtered = useMemo(() => {
+    if (!filter) return optimisticContainers
+    return optimisticContainers.filter((c) =>
+      c.Names.toLowerCase().includes(filter.toLowerCase()) ||
+      c.Image.toLowerCase().includes(filter.toLowerCase()) ||
+      c.ID.startsWith(filter)
+    )
+  }, [optimisticContainers, filter])
 
   const doAction = useCallback(async (id: string, action: string) => {
     // 立即乐观更新 UI
@@ -73,22 +179,6 @@ export default function DockerContainerList({ connectionId, containers, loading,
       setActionLoading(null)
     }
   }, [connectionId, onRefresh, addOptimistic])
-
-  // 判断是否为 SmartBox 自身容器
-  const isSelfContainer = (names: string) => {
-    return names.includes('smartbox') || names.includes('bridge')
-  }
-
-  const getStatus = (state: string): ContainerStatus => {
-    switch (state) {
-      case 'running': return 'running'
-      case 'exited': return 'exited'
-      case 'paused': return 'paused'
-      case 'restarting': return 'restarting'
-      case 'dead': return 'dead'
-      default: return 'exited'
-    }
-  }
 
   return (
     <div className="flex h-full flex-col">
@@ -119,94 +209,19 @@ export default function DockerContainerList({ connectionId, containers, loading,
         ) : (
           <div className="divide-y divide-slate-800/50">
             {filtered.map((c) => {
-              const status = getStatus(c.State)
               const shortId = c.ID.length > 12 ? c.ID.slice(0, 12) : c.ID
-              const isRunning = c.State === 'running'
-              const isLoading = actionLoading === shortId || actionLoading === c.Names
               const isSelected = selectedId === (c.Names || shortId)
 
               return (
-                <div
+                <ContainerRow
                   key={shortId}
-                  className={`group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-800/40 cursor-pointer ${
-                    isSelected ? 'bg-slate-800/60' : ''
-                  }`}
-                  onClick={() => setSelectedId(isSelected ? null : (c.Names || shortId))}
-                >
-                  {/* 状态指示器 */}
-                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOTS[c.State] || 'bg-slate-500'}`} />
-
-                  {/* 名称 + 镜像 */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-slate-200">{c.Names}</span>
-                      <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">
-                        {c.State}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
-                      <span className="truncate">{c.Image}</span>
-                      <span>{c.RunningFor}</span>
-                      {c.Ports && <span className="truncate text-slate-600">{c.Ports}</span>}
-                    </div>
-                  </div>
-
-                  {/* 操作按钮（略，与之前相同） */}
-                  <div className="flex shrink-0 items-center gap-1 opacity-100" onClick={(e) => e.stopPropagation()}>
-                    {!isSelfContainer(c.Names) && (
-                      <>
-                        {isRunning ? (
-                          <button
-                            onClick={() => doAction(c.Names || shortId, 'stop')}
-                            disabled={isLoading}
-                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-amber-400 disabled:opacity-40"
-                            title="停止"
-                          >
-                            <Square size={14} />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => doAction(c.Names || shortId, 'start')}
-                            disabled={isLoading}
-                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-emerald-400 disabled:opacity-40"
-                            title="启动"
-                          >
-                            <Play size={14} />
-                          </button>
-                        )}
-                        {c.State === 'exited' && (
-                          <button
-                            onClick={() => doAction(c.Names || shortId, 'rm')}
-                            disabled={isLoading}
-                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
-                            title="删除"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </>
-                    )}
-                    <button
-                      onClick={() => { setLogTarget(c.Names || shortId) }}
-                      className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
-                      title="查看日志"
-                    >
-                      <FileText size={14} />
-                    </button>
-                    <button
-                      onClick={() => { setDetailTarget(c.Names || shortId) }}
-                      className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
-                      title="查看详情"
-                    >
-                      <Eye size={14} />
-                    </button>
-                  </div>
-
-                  {/* 加载状态 */}
-                  {isLoading && (
-                    <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
-                  )}
-                </div>
+                  c={c}
+                  actionLoading={actionLoading}
+                  doAction={doAction}
+                  onShowLogs={setLogTarget}
+                  onShowDetail={setDetailTarget}
+                  isSelected={isSelected}
+                />
               )
             })}
           </div>
