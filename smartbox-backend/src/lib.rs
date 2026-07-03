@@ -153,6 +153,9 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/sftp/mkdir", axum::routing::post(api::sftp::sftp_mkdir))
         .route("/sftp/rename", axum::routing::post(api::sftp::sftp_rename))
         .route("/sftp/stat", axum::routing::post(api::sftp::sftp_stat))
+        // ─── Host Health Dashboard ───
+        .route("/hosts/health", get(api::host_health::get_all_health))
+        .route("/hosts/diagnose", axum::routing::post(api::host_health::diagnose_host))
         // ─── Vault routes ───
         .route("/vault/types", get(api::vault::get_vault_types))
         .route("/vault", get(api::vault::list_vault_entries))

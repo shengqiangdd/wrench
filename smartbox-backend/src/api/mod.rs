@@ -1,6 +1,7 @@
 pub mod health;
 pub mod auth;
 pub mod hosts;
+pub mod host_health;
 pub mod alerts;
 pub mod monitor;
 pub mod scripts;

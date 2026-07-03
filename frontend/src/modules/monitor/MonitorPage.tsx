@@ -1,9 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { Activity, Cpu, MemoryStick, HardDrive, Network, RefreshCw, Server, Loader2, ShieldAlert, ChevronDown, ChevronRight, Bell } from 'lucide-react'
+import { Activity, Cpu, MemoryStick, HardDrive, Network, RefreshCw, Server, Loader2, ShieldAlert, ChevronDown, ChevronRight, Bell, Globe, Brain } from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import { useAlertStore } from '../../stores/alert-store'
+import { authedFetch } from '../../services/auth'
 import AlertSettings from './AlertSettings'
 import AlertHistory from './AlertHistory'
+import HostHealthOverview from './HostHealthOverview'
 
 // ─── 类型定义 ───
 
@@ -636,6 +638,13 @@ export default function MonitorPage() {
           </button>
         </div>
       </div>
+
+      {/* ─── 多主机健康概览 ─── */}
+      <HostHealthOverview onSelectHost={(id) => {
+        if (!selected.includes(id)) {
+          setSelected([id])
+        }
+      }} />
 
       {/* ─── 健康概览卡片 ─── */}
       {health && !healthError && (
