@@ -18,7 +18,7 @@ pub async fn issue_jwt_token(
         .map_err(|e| ApiResponse::error(500, &format!("JWT configuration error: {}", e)))?;
 
     // Create a claims object with client fingerprint
-    let claims = Claims::new("client".into(), "api+ws".into(), 86400);
+    let claims = Claims::new("client".into(), "api+ws", 86400);
     let token = jwt_service.sign(&claims)
         .map_err(|e| ApiResponse::error(500, &format!("Failed to sign JWT: {}", e)))?;
 
