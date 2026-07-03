@@ -25,7 +25,7 @@ export function getCommands(): CommandItem[] {
 }
 
 // 简单的模糊匹配（支持拼音首字母和英文）
-function fuzzyMatch(text: string, query: string): boolean {
+export function fuzzyMatch(text: string, query: string): boolean {
   if (!query) return true
   const lower = text.toLowerCase()
   const q = query.toLowerCase().trim()
@@ -42,8 +42,9 @@ function fuzzyMatch(text: string, query: string): boolean {
   if (initials.includes(q)) return true
 
   // 单词首字母匹配（驼峰）
-  const camelInitials = lower
+  const camelInitials = text
     .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .toLowerCase()
     .split(' ')
     .map((w) => w[0])
     .filter(Boolean)

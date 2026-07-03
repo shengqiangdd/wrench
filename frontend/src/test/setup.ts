@@ -96,3 +96,17 @@ if (typeof ResizeObserver === 'undefined') {
   }
   globalThis.ResizeObserver = MockResizeObserver
 }
+
+// Mock IntersectionObserver for jsdom
+if (typeof IntersectionObserver === 'undefined') {
+  class MockIntersectionObserver {
+    constructor(_callback: IntersectionObserverCallback) {}
+    observe(_target: Element) {}
+    unobserve(_target: Element) {}
+    disconnect() {}
+  }
+  globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver
+}
+
+// Mock scrollIntoView for jsdom (used by CommandPalette)
+Element.prototype.scrollIntoView = function () {}
