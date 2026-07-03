@@ -113,7 +113,9 @@ export async function decryptField(value: string | undefined): Promise<string | 
  * 加密 SSH Connection 中的敏感字段
  * 返回新对象，不修改原对象
  */
-export async function encryptSshConnection(conn: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function encryptSshConnection(
+  conn: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   const result = { ...conn }
   if (result.password) {
     result.password = await encryptField(result.password as string)
@@ -128,7 +130,9 @@ export async function encryptSshConnection(conn: Record<string, unknown>): Promi
  * 解密 SSH Connection 中的敏感字段
  * 返回新对象，不修改原对象
  */
-export async function decryptSshConnection(conn: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function decryptSshConnection(
+  conn: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   const result = { ...conn }
   if (result.password) {
     result.password = await decryptField(result.password as string)

@@ -3,7 +3,11 @@ import { createRoot, type Root } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { useAppStore } from '../../stores/app-store'
 import { usePluginStore } from '../../stores/plugin-store'
-import CommandPalette, { fuzzyMatch, registerCommand, getCommands } from '../../components/CommandPalette'
+import CommandPalette, {
+  fuzzyMatch,
+  registerCommand,
+  getCommands,
+} from '../../components/CommandPalette'
 
 // ─── Mock stores ────────────────────────────────────────────────
 const mockSetOpen = vi.fn()
@@ -46,7 +50,14 @@ function render(el: React.ReactNode) {
   document.body.appendChild(container)
   const root = createRoot(container)
   flushSync(() => root.render(el))
-  return { container, root, unmount: () => { flushSync(() => root.unmount()); container.remove() } }
+  return {
+    container,
+    root,
+    unmount: () => {
+      flushSync(() => root.unmount())
+      container.remove()
+    },
+  }
 }
 
 describe('CommandPalette', () => {
@@ -90,13 +101,19 @@ describe('CommandPalette', () => {
       action: vi.fn(),
     })
     const cmds = getCommands()
-    expect(cmds.some(c => c.id === 'cmd-1')).toBe(true)
+    expect(cmds.some((c) => c.id === 'cmd-1')).toBe(true)
   })
 
   it('shows plugin commands when available', () => {
     usePluginStore.setState({
       commands: [
-        { id: 'say-hello', label: 'Say Hello', description: 'Greets the user', keywords: ['hello'], icon: 'MessageSquare' },
+        {
+          id: 'say-hello',
+          label: 'Say Hello',
+          description: 'Greets the user',
+          keywords: ['hello'],
+          icon: 'MessageSquare',
+        },
       ],
     } as any)
 

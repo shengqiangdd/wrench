@@ -60,8 +60,9 @@ export default function SystemMaintenance() {
     try {
       const res = await authedFetch('/api/system/db-download')
       const blob = await res.blob()
-      const filename = res.headers.get('content-disposition')
-        ?.match(/filename="?(.+?)"?$/)?.[1] || `smartbox-backup.db`
+      const filename =
+        res.headers.get('content-disposition')?.match(/filename="?(.+?)"?$/)?.[1] ||
+        `smartbox-backup.db`
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -79,7 +80,7 @@ export default function SystemMaintenance() {
 
   return (
     <section>
-      <h3 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-400">
+      <h3 className="mb-3 flex items-center gap-2 text-xs font-medium tracking-wider text-slate-400 uppercase">
         <Server size={14} />
         系统维护
       </h3>
@@ -92,36 +93,30 @@ export default function SystemMaintenance() {
               <Database size={16} className="text-smartbox-400" />
               <span className="text-xs font-medium text-slate-300">数据库状态</span>
             </div>
-            <button
-              onClick={loadDbInfo}
-              disabled={loading}
-              className="btn btn-ghost text-[11px]"
-            >
+            <button onClick={loadDbInfo} disabled={loading} className="btn btn-ghost text-[11px]">
               {loading ? <Loader2 size={12} className="animate-spin" /> : '刷新'}
             </button>
           </div>
 
-          {error && (
-            <p className="mt-2 text-[11px] text-red-400">{error}</p>
-          )}
+          {error && <p className="mt-2 text-[11px] text-red-400">{error}</p>}
 
           {dbInfo && (
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div className="rounded bg-slate-800/60 px-3 py-2">
                 <p className="text-[10px] text-slate-500">大小</p>
-                <p className="text-xs font-mono text-slate-300">{dbInfo.size_human}</p>
+                <p className="font-mono text-xs text-slate-300">{dbInfo.size_human}</p>
               </div>
               <div className="rounded bg-slate-800/60 px-3 py-2">
                 <p className="text-[10px] text-slate-500">表数量</p>
-                <p className="text-xs font-mono text-slate-300">{dbInfo.tables.length}</p>
+                <p className="font-mono text-xs text-slate-300">{dbInfo.tables.length}</p>
               </div>
               <div className="rounded bg-slate-800/60 px-3 py-2">
                 <p className="text-[10px] text-slate-500">总记录数</p>
-                <p className="text-xs font-mono text-slate-300">{totalRows.toLocaleString()}</p>
+                <p className="font-mono text-xs text-slate-300">{totalRows.toLocaleString()}</p>
               </div>
-              <div className="rounded bg-slate-800/60 px-3 py-2 col-span-1">
+              <div className="col-span-1 rounded bg-slate-800/60 px-3 py-2">
                 <p className="text-[10px] text-slate-500">存储路径</p>
-                <p className="text-[10px] font-mono text-slate-500 truncate" title={dbInfo.path}>
+                <p className="truncate font-mono text-[10px] text-slate-500" title={dbInfo.path}>
                   {dbInfo.path}
                 </p>
               </div>
@@ -132,14 +127,14 @@ export default function SystemMaintenance() {
         {/* 表详情 */}
         {dbInfo && dbInfo.tables.length > 0 && (
           <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-4 py-3">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <Table size={14} className="text-slate-500" />
               <span className="text-[11px] text-slate-500">数据表详情</span>
             </div>
             <div className="space-y-1">
               {dbInfo.tables.map((t) => (
                 <div key={t.name} className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-400 font-mono">{t.name}</span>
+                  <span className="font-mono text-slate-400">{t.name}</span>
                   <span className="text-slate-500">{t.row_count.toLocaleString()} 行</span>
                 </div>
               ))}
@@ -166,8 +161,11 @@ export default function SystemMaintenance() {
             </button>
           </div>
           <div className="mt-2 flex items-start gap-1.5 text-[10px] text-amber-500/70">
-            <AlertTriangle size={11} className="shrink-0 mt-0.5" />
-            <span>凭据保险箱中的数据使用 AES-256-GCM 加密存储，备份文件包含加密后的密文，解密需要服务端 VAULT_KEY 或 JWT_SECRET。</span>
+            <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+            <span>
+              凭据保险箱中的数据使用 AES-256-GCM 加密存储，备份文件包含加密后的密文，解密需要服务端
+              VAULT_KEY 或 JWT_SECRET。
+            </span>
           </div>
         </div>
       </div>

@@ -55,9 +55,7 @@ export const useFileStore = create<FileState>()((set, get) => ({
 
   updateFileContent: (tabId, content) =>
     set((s) => ({
-      openTabs: s.openTabs.map((t) =>
-        t.id === tabId ? { ...t, content, isDirty: true } : t,
-      ),
+      openTabs: s.openTabs.map((t) => (t.id === tabId ? { ...t, content, isDirty: true } : t)),
     })),
 
   markTabClean: (tabId) =>
@@ -67,8 +65,7 @@ export const useFileStore = create<FileState>()((set, get) => ({
       ),
     })),
 
-  setLocalFiles: (path, files) =>
-    set({ currentLocalPath: path, localFiles: files }),
+  setLocalFiles: (path, files) => set({ currentLocalPath: path, localFiles: files }),
 
   getActiveTab: () => {
     const state = get()

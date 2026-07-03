@@ -14,9 +14,7 @@ const mockManifest: PluginManifest = {
     { id: 'cmd-1', name: 'Command One', label: 'Cmd1', description: 'First command' },
     { id: 'cmd-2', name: 'Command Two', label: 'Cmd2', description: 'Second command' },
   ],
-  panels: [
-    { id: 'panel-1', name: 'Panel One', icon: '📋', position: 'sidebar' },
-  ],
+  panels: [{ id: 'panel-1', name: 'Panel One', icon: '📋', position: 'sidebar' }],
 }
 
 const mockManifest2: PluginManifest = {
@@ -26,9 +24,7 @@ const mockManifest2: PluginManifest = {
   description: 'Another test plugin',
   author: 'Tester',
   entry: '/plugins/test2/index.js',
-  commands: [
-    { id: 'cmd-3', name: 'Command Three', label: 'Cmd3' },
-  ],
+  commands: [{ id: 'cmd-3', name: 'Command Three', label: 'Cmd3' }],
 }
 
 const mockApi = {

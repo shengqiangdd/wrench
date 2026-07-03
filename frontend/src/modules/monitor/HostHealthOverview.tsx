@@ -6,7 +6,20 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Server, Cpu, MemoryStick, HardDrive, Activity, Brain, Loader2, ChevronDown, ChevronUp, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
+import {
+  Server,
+  Cpu,
+  MemoryStick,
+  HardDrive,
+  Activity,
+  Brain,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+} from 'lucide-react'
 import { authedFetch } from '../../services/auth'
 
 interface HostHealth {
@@ -50,7 +63,11 @@ function statusIcon(connected: boolean, memPct: number | null) {
   return <CheckCircle size={16} className="text-emerald-400" />
 }
 
-export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (hostId: string) => void }) {
+export default function HostHealthOverview({
+  onSelectHost,
+}: {
+  onSelectHost?: (hostId: string) => void
+}) {
   const [hosts, setHosts] = useState<HostHealth[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -96,7 +113,9 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
   }
 
   const critical = hosts.filter((h) => h.connected && (h.mem_percent ?? 0) > 90)
-  const warning = hosts.filter((h) => h.connected && (h.mem_percent ?? 0) > 70 && (h.mem_percent ?? 0) <= 90)
+  const warning = hosts.filter(
+    (h) => h.connected && (h.mem_percent ?? 0) > 70 && (h.mem_percent ?? 0) <= 90,
+  )
 
   return (
     <div className="border-b border-slate-700/30">
@@ -108,10 +127,12 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
         <Server size={14} />
         <span className="font-medium">主机健康概览</span>
         {loading ? (
-          <Loader2 size={12} className="animate-spin ml-1" />
+          <Loader2 size={12} className="ml-1 animate-spin" />
         ) : (
           <>
-            <span className="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[10px]">{hosts.length} 台</span>
+            <span className="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[10px]">
+              {hosts.length} 台
+            </span>
             {critical.length > 0 && (
               <span className="rounded bg-red-900/30 px-1.5 py-0.5 text-[10px] text-red-400">
                 {critical.length} 危急
@@ -124,7 +145,9 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
             )}
           </>
         )}
-        <div className="ml-auto">{collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}</div>
+        <div className="ml-auto">
+          {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+        </div>
       </button>
 
       {/* Content */}
@@ -133,7 +156,9 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
           {error && (
             <div className="rounded-lg bg-red-900/20 px-3 py-2 text-xs text-red-400">
               加载失败: {error}
-              <button onClick={loadHealth} className="ml-2 underline">重试</button>
+              <button onClick={loadHealth} className="ml-2 underline">
+                重试
+              </button>
             </div>
           )}
 
@@ -146,7 +171,9 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {hosts.map((h) => {
               const memColor = healthColor(h.mem_percent)
-              const cpuColor = healthColor(h.cpu_load != null && h.cpu_cores != null ? (h.cpu_load / h.cpu_cores) * 100 : null)
+              const cpuColor = healthColor(
+                h.cpu_load != null && h.cpu_cores != null ? (h.cpu_load / h.cpu_cores) * 100 : null,
+              )
               return (
                 <div
                   key={h.id}
@@ -158,14 +185,14 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
                 >
                   {/* Host header */}
                   <div className="mb-2 flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
                       {statusIcon(h.connected, h.mem_percent)}
                       <span className="truncate text-xs font-medium text-slate-200">{h.host}</span>
                     </div>
                     {h.connected && onSelectHost && (
                       <button
                         onClick={() => onSelectHost(h.id)}
-                        className="opacity-0 group-hover:opacity-100 rounded px-1.5 py-0.5 text-[10px] text-smartbox-400 hover:bg-smartbox-600/20"
+                        className="text-smartbox-400 hover:bg-smartbox-600/20 rounded px-1.5 py-0.5 text-[10px] opacity-0 group-hover:opacity-100"
                       >
                         详情
                       </button>
@@ -180,7 +207,7 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
                     <>
                       {/* CPU */}
                       <div className="mb-1.5 flex items-center gap-2">
-                        <Cpu size={12} className="text-slate-500 shrink-0" />
+                        <Cpu size={12} className="shrink-0 text-slate-500" />
                         <div className="flex-1">
                           <div className="flex items-center justify-between text-[10px]">
                             <span className="text-slate-500">负载</span>
@@ -191,9 +218,13 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
                           <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-700/60">
                             <div
                               className={`h-full rounded-full transition-all ${
-                                (h.cpu_load ?? 0) > (h.cpu_cores ?? 1) * 0.7 ? 'bg-amber-500' : 'bg-emerald-500'
+                                (h.cpu_load ?? 0) > (h.cpu_cores ?? 1) * 0.7
+                                  ? 'bg-amber-500'
+                                  : 'bg-emerald-500'
                               }`}
-                              style={{ width: `${Math.min(100, ((h.cpu_load ?? 0) / (h.cpu_cores ?? 1)) * 100)}%` }}
+                              style={{
+                                width: `${Math.min(100, ((h.cpu_load ?? 0) / (h.cpu_cores ?? 1)) * 100)}%`,
+                              }}
                             />
                           </div>
                         </div>
@@ -201,7 +232,7 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
 
                       {/* Memory */}
                       <div className="mb-1.5 flex items-center gap-2">
-                        <MemoryStick size={12} className="text-slate-500 shrink-0" />
+                        <MemoryStick size={12} className="shrink-0 text-slate-500" />
                         <div className="flex-1">
                           <div className="flex items-center justify-between text-[10px]">
                             <span className="text-slate-500">内存</span>
@@ -216,20 +247,25 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
                             />
                           </div>
                           <div className="text-[9px] text-slate-600">
-                            {h.mem_used_mb != null ? Math.round(h.mem_used_mb / 1024) : '?'}G / {h.mem_total_mb != null ? Math.round(h.mem_total_mb / 1024) : '?'}G
+                            {h.mem_used_mb != null ? Math.round(h.mem_used_mb / 1024) : '?'}G /{' '}
+                            {h.mem_total_mb != null ? Math.round(h.mem_total_mb / 1024) : '?'}G
                           </div>
                         </div>
                       </div>
 
                       {/* Disk */}
                       <div className="mb-1.5 flex items-center gap-2">
-                        <HardDrive size={12} className="text-slate-500 shrink-0" />
+                        <HardDrive size={12} className="shrink-0 text-slate-500" />
                         <div className="flex-1">
                           <div className="flex items-center justify-between text-[10px]">
                             <span className="text-slate-500">磁盘</span>
-                            <span className="font-mono text-slate-400">{h.disk_percent || '?'}</span>
+                            <span className="font-mono text-slate-400">
+                              {h.disk_percent || '?'}
+                            </span>
                           </div>
-                          <div className="text-[9px] text-slate-600">/{' '}{h.disk_used || '?'} / {h.disk_total || '?'}</div>
+                          <div className="text-[9px] text-slate-600">
+                            / {h.disk_used || '?'} / {h.disk_total || '?'}
+                          </div>
                         </div>
                       </div>
 
@@ -243,7 +279,7 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
                       <button
                         onClick={() => runDiagnosis(h.id)}
                         disabled={diagnosing === h.id}
-                        className="mt-2 flex w-full items-center justify-center gap-1 rounded bg-slate-800/50 py-1 text-[10px] text-slate-500 hover:bg-slate-700/50 hover:text-slate-300 transition-colors disabled:opacity-50"
+                        className="mt-2 flex w-full items-center justify-center gap-1 rounded bg-slate-800/50 py-1 text-[10px] text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 disabled:opacity-50"
                       >
                         {diagnosing === h.id ? (
                           <Loader2 size={10} className="animate-spin" />
@@ -254,7 +290,7 @@ export default function HostHealthOverview({ onSelectHost }: { onSelectHost?: (h
                       </button>
 
                       {diagnosis[h.id] && (
-                        <div className="mt-2 rounded bg-slate-900/50 p-2 text-[10px] leading-relaxed text-slate-400 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                        <div className="mt-2 max-h-24 overflow-y-auto rounded bg-slate-900/50 p-2 text-[10px] leading-relaxed whitespace-pre-wrap text-slate-400">
                           {diagnosis[h.id]}
                         </div>
                       )}

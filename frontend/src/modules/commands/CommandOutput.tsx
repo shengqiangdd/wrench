@@ -10,7 +10,13 @@ interface CommandOutputProps {
   onPanelClose?: () => void
 }
 
-export default function CommandOutput({ results, onClose, onClear, onSendToTerminal, onPanelClose }: CommandOutputProps) {
+export default function CommandOutput({
+  results,
+  onClose,
+  onClear,
+  onSendToTerminal,
+  onPanelClose,
+}: CommandOutputProps) {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
 
   const handleCopy = async (text: string, idx: number) => {
@@ -65,7 +71,9 @@ export default function CommandOutput({ results, onClose, onClear, onSendToTermi
                   result.exitCode === 0 ? 'bg-emerald-500' : 'bg-red-500'
                 }`}
               />
-              <code className="truncate text-[11px] font-medium text-slate-300 font-mono">{result.command}</code>
+              <code className="truncate font-mono text-[11px] font-medium text-slate-300">
+                {result.command}
+              </code>
               <span className="shrink-0 text-[9px] text-slate-600">
                 exit: {result.exitCode ?? '?'}
               </span>
@@ -74,7 +82,11 @@ export default function CommandOutput({ results, onClose, onClear, onSendToTermi
                 className="ml-auto shrink-0 rounded p-0.5 text-slate-600 transition-colors hover:bg-slate-700/50 hover:text-slate-300"
                 title="复制输出"
               >
-                {copiedIdx === idx ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                {copiedIdx === idx ? (
+                  <Check size={11} className="text-emerald-400" />
+                ) : (
+                  <Copy size={11} />
+                )}
               </button>
               <button
                 onClick={() => onSendToTerminal(result.command)}
@@ -94,12 +106,8 @@ export default function CommandOutput({ results, onClose, onClear, onSendToTermi
 
             {/* 输出内容 */}
             <pre className="max-h-64 overflow-auto rounded bg-slate-900/80 p-2 font-mono text-[10px] leading-relaxed text-slate-400">
-              {result.stdout && (
-                <span className="text-slate-400">{result.stdout}</span>
-              )}
-              {result.stderr && (
-                <span className="text-red-400">{result.stderr}</span>
-              )}
+              {result.stdout && <span className="text-slate-400">{result.stdout}</span>}
+              {result.stderr && <span className="text-red-400">{result.stderr}</span>}
               {!result.stdout && !result.stderr && (
                 <span className="text-slate-600">（无输出）</span>
               )}

@@ -144,10 +144,13 @@ describe('pluginManager', () => {
     it('unregisters plugin from store and sandbox', () => {
       // First manually register a plugin
       const { registerPlugin } = usePluginStore.getState()
-      registerPlugin(mockPluginCatalog.plugins[0]! as any, {
-        addCommand: vi.fn(),
-        addPanel: vi.fn(),
-      } as any)
+      registerPlugin(
+        mockPluginCatalog.plugins[0]! as any,
+        {
+          addCommand: vi.fn(),
+          addPanel: vi.fn(),
+        } as any,
+      )
 
       expect(usePluginStore.getState().plugins.length).toBe(1)
 

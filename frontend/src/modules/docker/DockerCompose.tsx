@@ -73,7 +73,8 @@ export default function DockerCompose({ connectionId }: Props) {
         const parts = p.replace(/\/+$/, '').split('/')
         const fileName = parts[parts.length - 1] || 'docker-compose.yml'
         const dir = parts.slice(0, -1).join('/') || '/'
-        const projectName = dir.split('/').filter(Boolean).pop() || fileName.replace(/\.(yml|yaml)$/, '')
+        const projectName =
+          dir.split('/').filter(Boolean).pop() || fileName.replace(/\.(yml|yaml)$/, '')
         return { path: p, name: projectName, services: [] }
       })
       setProjects(parsed)
@@ -102,7 +103,8 @@ export default function DockerCompose({ connectionId }: Props) {
       }
       const path = manualPath.trim()
       const parts = path.replace(/\/+$/, '').split('/')
-      const projectName = parts.slice(0, -1).filter(Boolean).pop() || path.replace(/\.(yml|yaml)$/, '')
+      const projectName =
+        parts.slice(0, -1).filter(Boolean).pop() || path.replace(/\.(yml|yaml)$/, '')
       setProjects([{ path, name: projectName, services: [] }])
     } catch (err: any) {
       notify(err.message || '请求失败', 'error')
@@ -112,52 +114,51 @@ export default function DockerCompose({ connectionId }: Props) {
   }, [connectionId, manualPath])
 
   // 展开项目时获取 services 状态
-  const fetchServices = useCallback(async (path: string) => {
-    setActionLoading(`ps:${path}`)
-    try {
-      const res = await fetch('/api/docker/compose/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionId, filePath: path, action: 'ps' }),
-      })
-      const json = await res.json()
-      if (json.success) {
-        const lines = json.data.trim().split('\n').filter(Boolean)
-        const services: ComposeService[] = lines.map((line: string) => {
-          try {
-            const parsed = JSON.parse(line)
-            return {
-              name: parsed.Name || parsed.Service || '-',
-              status: parsed.Status || parsed.State || '-',
-              image: parsed.Image || '-',
-              ports: parsed.Ports || '',
-              state: parsed.State || '',
-            }
-          } catch {
-            // plain text format fallback
-            const parts = line.split(/\s{2,}/)
-            return {
-              name: parts[0] || '-',
-              status: parts[1] || '-',
-              image: parts[2] || '-',
-              ports: parts[3] || '',
-            }
-          }
+  const fetchServices = useCallback(
+    async (path: string) => {
+      setActionLoading(`ps:${path}`)
+      try {
+        const res = await fetch('/api/docker/compose/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connectionId, filePath: path, action: 'ps' }),
         })
-        setProjects((prev) =>
-          prev.map((p) => (p.path === path ? { ...p, services } : p)),
-        )
-      } else {
-        setProjects((prev) =>
-          prev.map((p) => (p.path === path ? { ...p, services: [] } : p)),
-        )
+        const json = await res.json()
+        if (json.success) {
+          const lines = json.data.trim().split('\n').filter(Boolean)
+          const services: ComposeService[] = lines.map((line: string) => {
+            try {
+              const parsed = JSON.parse(line)
+              return {
+                name: parsed.Name || parsed.Service || '-',
+                status: parsed.Status || parsed.State || '-',
+                image: parsed.Image || '-',
+                ports: parsed.Ports || '',
+                state: parsed.State || '',
+              }
+            } catch {
+              // plain text format fallback
+              const parts = line.split(/\s{2,}/)
+              return {
+                name: parts[0] || '-',
+                status: parts[1] || '-',
+                image: parts[2] || '-',
+                ports: parts[3] || '',
+              }
+            }
+          })
+          setProjects((prev) => prev.map((p) => (p.path === path ? { ...p, services } : p)))
+        } else {
+          setProjects((prev) => prev.map((p) => (p.path === path ? { ...p, services: [] } : p)))
+        }
+      } catch {
+        // ignore
+      } finally {
+        setActionLoading(null)
       }
-    } catch {
-      // ignore
-    } finally {
-      setActionLoading(null)
-    }
-  }, [connectionId])
+    },
+    [connectionId],
+  )
 
   const toggleExpand = (path: string) => {
     if (expandedPath === path) {
@@ -224,7 +225,7 @@ export default function DockerCompose({ connectionId }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <Search size={14} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-500" />
         </div>
         <button
           onClick={discoverProjects}
@@ -246,7 +247,10 @@ export default function DockerCompose({ connectionId }: Props) {
             onChange={(e) => setManualPath(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleManualLoad()}
           />
-          <FileText size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <FileText
+            size={14}
+            className="absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-500"
+          />
         </div>
         <button
           onClick={handleManualLoad}
@@ -292,7 +296,7 @@ export default function DockerCompose({ connectionId }: Props) {
                 ) : (
                   <ChevronRight size={16} className="shrink-0 text-slate-500" />
                 )}
-                <Layers size={16} className="shrink-0 text-smartbox-400" />
+                <Layers size={16} className="text-smartbox-400 shrink-0" />
                 <div className="min-w-0 flex-1 text-left">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-slate-200">{project.name}</span>
@@ -302,17 +306,20 @@ export default function DockerCompose({ connectionId }: Props) {
                       </span>
                     )}
                   </div>
-                  <div className="mt-0.5 truncate text-[11px] text-slate-500 font-mono">
+                  <div className="mt-0.5 truncate font-mono text-[11px] text-slate-500">
                     {project.path}
                   </div>
                 </div>
                 {/* 快捷操作按钮 */}
                 {expandedPath === project.path && (
-                  <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="flex shrink-0 items-center gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <button
                       onClick={() => doAction(project.path, 'up')}
                       disabled={!!actionLoading}
-                      className="min-w-[44px] min-h-[44px] rounded p-1 text-emerald-400 transition-colors hover:bg-emerald-500/10 disabled:opacity-30"
+                      className="min-h-[44px] min-w-[44px] rounded p-1 text-emerald-400 transition-colors hover:bg-emerald-500/10 disabled:opacity-30"
                       title="docker compose up -d"
                     >
                       {actionLoading === `up:${project.path}:` ? (
@@ -324,7 +331,7 @@ export default function DockerCompose({ connectionId }: Props) {
                     <button
                       onClick={() => doAction(project.path, 'restart')}
                       disabled={!!actionLoading}
-                      className="min-w-[44px] min-h-[44px] rounded p-1 text-amber-400 transition-colors hover:bg-amber-500/10 disabled:opacity-30"
+                      className="min-h-[44px] min-w-[44px] rounded p-1 text-amber-400 transition-colors hover:bg-amber-500/10 disabled:opacity-30"
                       title="docker compose restart"
                     >
                       {actionLoading === `restart:${project.path}:` ? (
@@ -336,7 +343,7 @@ export default function DockerCompose({ connectionId }: Props) {
                     <button
                       onClick={() => doAction(project.path, 'stop')}
                       disabled={!!actionLoading}
-                      className="min-w-[44px] min-h-[44px] rounded p-1 text-orange-400 transition-colors hover:bg-orange-500/10 disabled:opacity-30"
+                      className="min-h-[44px] min-w-[44px] rounded p-1 text-orange-400 transition-colors hover:bg-orange-500/10 disabled:opacity-30"
                       title="docker compose stop"
                     >
                       {actionLoading === `stop:${project.path}:` ? (
@@ -348,7 +355,7 @@ export default function DockerCompose({ connectionId }: Props) {
                     <button
                       onClick={() => doAction(project.path, 'down')}
                       disabled={!!actionLoading}
-                      className="min-w-[44px] min-h-[44px] rounded p-1 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-30"
+                      className="min-h-[44px] min-w-[44px] rounded p-1 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-30"
                       title="docker compose down"
                     >
                       {actionLoading === `down:${project.path}:` ? (
@@ -386,9 +393,11 @@ export default function DockerCompose({ connectionId }: Props) {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-medium text-slate-200">{svc.name}</span>
-                              <span className={`text-[10px] ${
-                                svc.state === 'running' ? 'text-emerald-400' : 'text-slate-500'
-                              }`}>
+                              <span
+                                className={`text-[10px] ${
+                                  svc.state === 'running' ? 'text-emerald-400' : 'text-slate-500'
+                                }`}
+                              >
                                 {svc.status || svc.state || '-'}
                               </span>
                             </div>
@@ -402,7 +411,7 @@ export default function DockerCompose({ connectionId }: Props) {
                             <button
                               onClick={() => doAction(project.path, 'restart', svc.name)}
                               disabled={!!actionLoading}
-                              className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 disabled:opacity-30"
+                              className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 disabled:opacity-30"
                               title={`重启 ${svc.name}`}
                             >
                               {actionLoading === `restart:${project.path}:${svc.name}` ? (
@@ -414,7 +423,7 @@ export default function DockerCompose({ connectionId }: Props) {
                             <button
                               onClick={() => doAction(project.path, 'logs', svc.name)}
                               disabled={!!actionLoading}
-                              className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 disabled:opacity-30"
+                              className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 disabled:opacity-30"
                               title={`查看 ${svc.name} 日志`}
                             >
                               <FileText size={12} />
@@ -422,7 +431,7 @@ export default function DockerCompose({ connectionId }: Props) {
                             <button
                               onClick={() => doAction(project.path, 'stop', svc.name)}
                               disabled={!!actionLoading}
-                              className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-orange-400 disabled:opacity-30"
+                              className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-orange-400 disabled:opacity-30"
                               title={`停止 ${svc.name}`}
                             >
                               <StopCircle size={12} />
@@ -436,19 +445,26 @@ export default function DockerCompose({ connectionId }: Props) {
                   {logData && logData.key.startsWith(`logs:${project.path}:`) && (
                     <div className="border-t border-slate-800/40 bg-slate-950/60">
                       <div className="flex items-center justify-between px-4 py-1.5">
-                        <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                        <span className="text-[10px] font-medium tracking-wider text-slate-500 uppercase">
                           日志 — {logData.key.split(':')[2] || '全部'}
                         </span>
                         <button
                           onClick={() => setLogData(null)}
                           className="rounded p-0.5 text-slate-600 hover:text-slate-400"
                         >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
                             <path d="M18 6 6 18M6 6l12 12" />
                           </svg>
                         </button>
                       </div>
-                      <pre className="max-h-64 overflow-auto px-4 pb-3 font-mono text-[11px] leading-relaxed text-slate-400 whitespace-pre-wrap break-all">
+                      <pre className="max-h-64 overflow-auto px-4 pb-3 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap text-slate-400">
                         {logData.content}
                       </pre>
                     </div>

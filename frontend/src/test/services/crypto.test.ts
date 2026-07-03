@@ -41,8 +41,10 @@ describe('crypto service', () => {
   it('fails decryption with wrong password', async () => {
     // Make decrypt throw for wrong password
     vi.mocked(crypto.subtle.decrypt).mockRejectedValueOnce(new Error('decrypt failed'))
-    
-    await expect(decrypt('AAAAAAAAAAAAAAAAAAAAAAECAwQFBgcICQoLDA0ODw==', 'wrong-pass')).rejects.toThrow('解密失败')
+
+    await expect(
+      decrypt('AAAAAAAAAAAAAAAAAAAAAAECAwQFBgcICQoLDA0ODw==', 'wrong-pass'),
+    ).rejects.toThrow('解密失败')
   })
 
   it('verifies password correctly', async () => {

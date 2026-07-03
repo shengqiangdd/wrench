@@ -47,7 +47,19 @@ const PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
 
 /** Adjacent nav pages to preload after the active page finishes loading,
  *  so side-by-side navigation feels instant. */
-const NAV_ORDER = ['ssh', 'commands', 'docker', 'monitor', 'files', 'logs', 'plugins', 'vault', 'notifications', 'audit', 'settings']
+const NAV_ORDER = [
+  'ssh',
+  'commands',
+  'docker',
+  'monitor',
+  'files',
+  'logs',
+  'plugins',
+  'vault',
+  'notifications',
+  'audit',
+  'settings',
+]
 
 function Loading() {
   return (
@@ -80,9 +92,13 @@ export default function MainContent() {
       if (!loader) continue
       // Schedule preload at idle time (requestIdleCallback or setTimeout fallback)
       if (typeof requestIdleCallback === 'function') {
-        requestIdleCallback(() => { loader().catch(() => {}) })
+        requestIdleCallback(() => {
+          loader().catch(() => {})
+        })
       } else {
-        setTimeout(() => { loader().catch(() => {}) }, 200)
+        setTimeout(() => {
+          loader().catch(() => {})
+        }, 200)
       }
     }
   }, [activeNav])
@@ -90,10 +106,8 @@ export default function MainContent() {
   const PageComponent = PAGES[activeNav]
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden min-h-0">
-      <Suspense fallback={<Loading />}>
-        {PageComponent ? <PageComponent /> : null}
-      </Suspense>
+    <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <Suspense fallback={<Loading />}>{PageComponent ? <PageComponent /> : null}</Suspense>
     </main>
   )
 }

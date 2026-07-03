@@ -1,5 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Download, Trash2, Loader2, AlertCircle, CheckCircle2, Globe, ExternalLink, Search, ChevronDown, X, Puzzle } from 'lucide-react'
+import {
+  Download,
+  Trash2,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  Globe,
+  ExternalLink,
+  Search,
+  ChevronDown,
+  X,
+  Puzzle,
+} from 'lucide-react'
 import { usePluginStore } from '../../stores/plugin-store'
 
 // ─── 类型定义 ───
@@ -40,10 +52,17 @@ interface InstallState {
 
 function getDifficultyColor(tag?: string): string {
   switch (tag?.toLowerCase()) {
-    case 'easy': case '入门': return 'text-emerald-400 bg-emerald-500/10'
-    case 'medium': case '中级': return 'text-amber-400 bg-amber-500/10'
-    case 'hard': case '高级': return 'text-red-400 bg-red-500/10'
-    default: return 'text-slate-500 bg-slate-800'
+    case 'easy':
+    case '入门':
+      return 'text-emerald-400 bg-emerald-500/10'
+    case 'medium':
+    case '中级':
+      return 'text-amber-400 bg-amber-500/10'
+    case 'hard':
+    case '高级':
+      return 'text-red-400 bg-red-500/10'
+    default:
+      return 'text-slate-500 bg-slate-800'
   }
 }
 
@@ -196,9 +215,12 @@ export default function PluginMarket() {
 
       {/* 搜索栏 */}
       <div className="relative mb-3">
-        <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
+        <Search
+          size={14}
+          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-600"
+        />
         <input
-          className="w-full rounded-lg border border-slate-700/50 bg-slate-800/50 py-2 pl-9 pr-3 text-xs text-slate-300 placeholder-slate-600 outline-none transition-colors focus:border-sky-500/50 focus:bg-slate-800"
+          className="w-full rounded-lg border border-slate-700/50 bg-slate-800/50 py-2 pr-3 pl-9 text-xs text-slate-300 placeholder-slate-600 transition-colors outline-none focus:border-sky-500/50 focus:bg-slate-800"
           placeholder="搜索插件名称、标签、作者..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -206,7 +228,7 @@ export default function PluginMarket() {
         {search && (
           <button
             onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400"
+            className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-600 hover:text-slate-400"
           >
             <X size={14} />
           </button>
@@ -288,7 +310,9 @@ export default function PluginMarket() {
                         </span>
                       )}
                     </div>
-                    <p className="mt-0.5 text-xs text-slate-500 line-clamp-2">{plugin.description}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">
+                      {plugin.description}
+                    </p>
 
                     {/* 标签行 */}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -302,9 +326,7 @@ export default function PluginMarket() {
                         </span>
                       ))}
                       {plugin.downloads !== undefined && (
-                        <span className="text-[10px] text-slate-600">
-                          ↓ {plugin.downloads}
-                        </span>
+                        <span className="text-[10px] text-slate-600">↓ {plugin.downloads}</span>
                       )}
                     </div>
                   </div>
@@ -359,11 +381,11 @@ export default function PluginMarket() {
                 {isExpanded && plugin.manifestUrl && (
                   <div className="border-t border-slate-700/30 px-3 py-2">
                     <div className="flex items-center gap-3 text-[11px] text-slate-600">
-                      <span>ID: <code className="text-slate-500">{plugin.id}</code></span>
+                      <span>
+                        ID: <code className="text-slate-500">{plugin.id}</code>
+                      </span>
                       {plugin.updatedAt && (
-                        <span>
-                          更新: {new Date(plugin.updatedAt).toLocaleDateString('zh-CN')}
-                        </span>
+                        <span>更新: {new Date(plugin.updatedAt).toLocaleDateString('zh-CN')}</span>
                       )}
                       <a
                         href={plugin.manifestUrl.replace('/manifest.json', '')}

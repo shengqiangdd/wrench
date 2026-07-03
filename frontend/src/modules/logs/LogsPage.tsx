@@ -50,7 +50,7 @@ export default function LogsPage() {
             <select
               value={currentConnId || ''}
               onChange={(e) => handleSessionChange(e.target.value)}
-              className="ml-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              className="ml-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 focus:ring-1 focus:ring-sky-500 focus:outline-none"
             >
               {sessions.map((s) => (
                 <option key={s.id} value={s.id} className="bg-slate-800">
@@ -58,7 +58,10 @@ export default function LogsPage() {
                 </option>
               ))}
             </select>
-            <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500" />
+            <ChevronDown
+              size={12}
+              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-slate-500"
+            />
           </div>
         )}
 
@@ -85,7 +88,10 @@ export default function LogsPage() {
           <div className="fixed inset-y-0 left-0 z-40 w-72 border-r border-slate-700/30 bg-slate-950 md:static md:z-auto md:bg-slate-900/40">
             <div className="flex items-center justify-between border-b border-slate-700/30 px-3 py-1.5 md:hidden">
               <span className="text-xs font-medium text-slate-400">日志源</span>
-              <button onClick={() => setSourcePanelOpen(false)} className="btn-icon text-slate-500 hover:text-slate-300">
+              <button
+                onClick={() => setSourcePanelOpen(false)}
+                className="btn-icon text-slate-500 hover:text-slate-300"
+              >
                 <X size={14} />
               </button>
             </div>

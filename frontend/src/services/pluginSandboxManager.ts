@@ -24,7 +24,10 @@ export interface SandboxInstance {
 }
 
 type SandboxListener = {
-  onCommandRegistered?: (pluginId: string, command: { id: string; label?: string; description?: string }) => void
+  onCommandRegistered?: (
+    pluginId: string,
+    command: { id: string; label?: string; description?: string },
+  ) => void
   onPanelRegistered?: (pluginId: string, panel: { id: string; name?: string }) => void
   onNotification?: (pluginId: string, message: string, type: 'info' | 'success' | 'error') => void
   onError?: (pluginId: string, error: string) => void
@@ -100,7 +103,10 @@ class PluginSandboxManager {
   /**
    * 添加命令到沙箱记录
    */
-  addCommand(pluginId: string, command: { id: string; label?: string; description?: string }): void {
+  addCommand(
+    pluginId: string,
+    command: { id: string; label?: string; description?: string },
+  ): void {
     const instance = this.sandboxes.get(pluginId)
     if (instance) {
       if (!instance.commands.some((c) => c.id === command.id)) {

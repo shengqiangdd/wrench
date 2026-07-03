@@ -176,15 +176,11 @@ export async function deleteSetting(key: string): Promise<void> {
 
 // ─── 连接配置快捷操作 ───
 
-export async function saveConnection(
-  conn: StoreSchema['connections']['value'],
-): Promise<void> {
+export async function saveConnection(conn: StoreSchema['connections']['value']): Promise<void> {
   return put('connections', conn)
 }
 
-export async function listConnections(): Promise<
-  Array<StoreSchema['connections']['value']>
-> {
+export async function listConnections(): Promise<Array<StoreSchema['connections']['value']>> {
   return getAll('connections')
 }
 

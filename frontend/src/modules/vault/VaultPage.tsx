@@ -6,7 +6,20 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { KeyRound, Plus, Trash2, Eye, EyeOff, Copy, Check, Terminal, Key, Lock, FileText, Search } from 'lucide-react'
+import {
+  KeyRound,
+  Plus,
+  Trash2,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
+  Terminal,
+  Key,
+  Lock,
+  FileText,
+  Search,
+} from 'lucide-react'
 import { authedFetch } from '../../services/auth'
 
 interface VaultEntry {
@@ -50,7 +63,9 @@ export default function VaultPage() {
     }
   }, [])
 
-  useEffect(() => { loadEntries() }, [loadEntries])
+  useEffect(() => {
+    loadEntries()
+  }, [loadEntries])
 
   const deleteEntry = async (id: string) => {
     if (!confirm('确定删除此凭据？此操作不可撤销。')) return
@@ -67,21 +82,28 @@ export default function VaultPage() {
       await navigator.clipboard.writeText(value)
       setCopied(id)
       setTimeout(() => setCopied(null), 2000)
-    } catch { /* fallback */ }
+    } catch {
+      /* fallback */
+    }
   }
 
   const toggleShow = (id: string) => {
     setShowValues((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
 
   const filtered = entries.filter((e) => {
     if (kindFilter !== 'all' && e.kind !== kindFilter) return false
-    if (search && !e.name.toLowerCase().includes(search.toLowerCase()) &&
-        !e.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))) return false
+    if (
+      search &&
+      !e.name.toLowerCase().includes(search.toLowerCase()) &&
+      !e.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))
+    )
+      return false
     return true
   })
 
@@ -100,7 +122,7 @@ export default function VaultPage() {
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 rounded-lg bg-smartbox-600 px-4 py-2 text-sm font-medium text-white hover:bg-smartbox-500"
+          className="bg-smartbox-600 hover:bg-smartbox-500 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"
         >
           <Plus size={16} />
           新增凭据
@@ -109,13 +131,13 @@ export default function VaultPage() {
 
       {/* Search & Filter */}
       <div className="flex items-center gap-3 border-b border-slate-700/50 px-6 py-3">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+        <div className="relative max-w-md flex-1">
+          <Search size={16} className="absolute top-1/2 left-3 -translate-y-1/2 text-slate-500" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索凭据..."
-            className="w-full rounded-lg border border-slate-700 bg-slate-800/50 py-2 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+            className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800/50 py-2 pr-3 pl-9 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
           />
         </div>
         <div className="flex gap-1">
@@ -145,14 +167,22 @@ export default function VaultPage() {
           <div className="flex flex-col items-center gap-2 py-20 text-slate-500">
             <KeyRound size={40} className="text-red-400" />
             <p className="text-sm">加载失败：{error}</p>
-            <button onClick={loadEntries} className="mt-2 text-sm text-smartbox-400 hover:underline">重试</button>
+            <button
+              onClick={loadEntries}
+              className="text-smartbox-400 mt-2 text-sm hover:underline"
+            >
+              重试
+            </button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-20 text-slate-500">
             <KeyRound size={40} />
             <p className="text-sm">{search ? '无匹配凭据' : '还没有存储任何凭据'}</p>
             {!search && (
-              <button onClick={() => setShowAddModal(true)} className="mt-2 text-sm text-smartbox-400 hover:underline">
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="text-smartbox-400 mt-2 text-sm hover:underline"
+              >
                 添加第一个凭据
               </button>
             )}
@@ -163,7 +193,10 @@ export default function VaultPage() {
               const meta = kindMeta(entry.kind)
               const Icon = meta.icon
               return (
-                <div key={entry.id} className="group rounded-xl border border-slate-700/50 bg-slate-800/30 p-4 hover:border-slate-600/50">
+                <div
+                  key={entry.id}
+                  className="group rounded-xl border border-slate-700/50 bg-slate-800/30 p-4 hover:border-slate-600/50"
+                >
                   <div className="mb-3 flex items-start justify-between">
                     <div className="flex items-center gap-2">
                       <Icon size={18} className={meta.color} />
@@ -174,7 +207,7 @@ export default function VaultPage() {
                     </div>
                     <button
                       onClick={() => deleteEntry(entry.id)}
-                      className="opacity-0 group-hover:opacity-100 rounded p-1 text-slate-500 hover:bg-red-900/30 hover:text-red-400 transition-all"
+                      className="rounded p-1 text-slate-500 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-900/30 hover:text-red-400"
                       title="删除"
                     >
                       <Trash2 size={14} />
@@ -182,7 +215,7 @@ export default function VaultPage() {
                   </div>
 
                   <div className="mb-3 flex items-center gap-2">
-                    <code className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded bg-slate-900/50 px-2 py-1 font-mono text-xs text-slate-400">
+                    <code className="flex-1 overflow-hidden rounded bg-slate-900/50 px-2 py-1 font-mono text-xs text-ellipsis whitespace-nowrap text-slate-400">
                       {showValues.has(entry.id) ? entry.value : '••••••••••••••••'}
                     </code>
                     <button
@@ -197,14 +230,21 @@ export default function VaultPage() {
                       className="rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
                       title="复制"
                     >
-                      {copied === entry.id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                      {copied === entry.id ? (
+                        <Check size={14} className="text-emerald-400" />
+                      ) : (
+                        <Copy size={14} />
+                      )}
                     </button>
                   </div>
 
                   {entry.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {entry.tags.map((tag) => (
-                        <span key={tag} className="rounded bg-slate-700/30 px-1.5 py-0.5 text-xs text-slate-500">
+                        <span
+                          key={tag}
+                          className="rounded bg-slate-700/30 px-1.5 py-0.5 text-xs text-slate-500"
+                        >
                           {tag}
                         </span>
                       ))}
@@ -231,7 +271,13 @@ export default function VaultPage() {
   )
 }
 
-function AddEntryModal({ onClose, onCreated }: { onClose: () => void; onCreated: (entry: VaultEntry) => void }) {
+function AddEntryModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void
+  onCreated: (entry: VaultEntry) => void
+}) {
   const [name, setName] = useState('')
   const [kind, setKind] = useState('password')
   const [value, setValue] = useState('')
@@ -248,7 +294,10 @@ function AddEntryModal({ onClose, onCreated }: { onClose: () => void; onCreated:
     setSaving(true)
     setError(null)
     try {
-      const tags = tagsStr.split(',').map((t) => t.trim()).filter(Boolean)
+      const tags = tagsStr
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
       const res = await authedFetch('/api/vault', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -275,8 +324,14 @@ function AddEntryModal({ onClose, onCreated }: { onClose: () => void; onCreated:
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="mb-4 text-lg font-semibold text-slate-200">新增凭据</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -284,7 +339,7 @@ function AddEntryModal({ onClose, onCreated }: { onClose: () => void; onCreated:
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+              className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
               placeholder="例如：生产服务器 SSH Key"
               autoFocus
             />
@@ -294,7 +349,7 @@ function AddEntryModal({ onClose, onCreated }: { onClose: () => void; onCreated:
             <select
               value={kind}
               onChange={(e) => setKind(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 focus:border-smartbox-500 focus:outline-none"
+              className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 focus:outline-none"
             >
               <option value="ssh_key">SSH Key</option>
               <option value="api_key">API Key</option>
@@ -307,30 +362,38 @@ function AddEntryModal({ onClose, onCreated }: { onClose: () => void; onCreated:
             <textarea
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              className="h-24 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-mono text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+              className="focus:border-smartbox-500 h-24 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
               placeholder="粘贴 SSH 私钥、API Key 或密码..."
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">标签（逗号分隔，可选）</label>
+            <label className="mb-1 block text-xs font-medium text-slate-400">
+              标签（逗号分隔，可选）
+            </label>
             <input
               value={tagsStr}
               onChange={(e) => setTagsStr(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+              className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
               placeholder="production, web, devops"
             />
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:bg-slate-800">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:bg-slate-800"
+            >
               取消
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 rounded-lg bg-smartbox-600 px-4 py-2 text-sm font-medium text-white hover:bg-smartbox-500 disabled:opacity-50"
+              className="bg-smartbox-600 hover:bg-smartbox-500 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              {saving && <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+              {saving && (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              )}
               保存
             </button>
           </div>

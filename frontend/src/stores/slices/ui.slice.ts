@@ -11,7 +11,9 @@ export interface UISlice {
   rightPanelOpen: boolean
   rightPanelContent: { title: string; component: React.ReactNode | null } | null
   toggleRightPanel: () => void
-  setRightPanelContent: (content: { title: string; component: React.ReactNode | null } | null) => void
+  setRightPanelContent: (
+    content: { title: string; component: React.ReactNode | null } | null,
+  ) => void
 
   commandPaletteOpen: boolean
   setCommandPaletteOpen: (open: boolean) => void

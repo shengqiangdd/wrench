@@ -24,7 +24,7 @@ afterEach(() => {
 
 async function render(el: React.ReactElement) {
   root.render(el)
-  await new Promise<void>(r => setTimeout(r, 10))
+  await new Promise<void>((r) => setTimeout(r, 10))
 }
 
 describe('MarkdownPreview', () => {

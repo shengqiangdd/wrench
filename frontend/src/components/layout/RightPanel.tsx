@@ -12,7 +12,7 @@ export default function RightPanel() {
   return (
     <aside className="flex w-80 flex-col border-l border-slate-700/50 bg-slate-900/80 md:w-96">
       <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+        <span className="text-xs font-medium tracking-wider text-slate-400 uppercase">
           {rightPanelContent?.title || '面板'}
         </span>
         <button

@@ -21,7 +21,9 @@ function getAudioCtx(): AudioContext | null {
     }
     if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume()
     return sharedAudioCtx
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 function playAlertSound(severity: AlertSeverity, enabled: boolean) {
@@ -40,7 +42,9 @@ function playAlertSound(severity: AlertSeverity, enabled: boolean) {
     osc.start()
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
     osc.stop(ctx.currentTime + duration)
-  } catch { /* AudioContext 不可用时静默失败 */ }
+  } catch {
+    /* AudioContext 不可用时静默失败 */
+  }
 }
 
 function syncAlertToBackend(event: AlertEvent) {
@@ -53,9 +57,11 @@ function syncAlertToBackend(event: AlertEvent) {
       metric: event.metric,
       message: `${METRIC_LABELS[event.metric]} 使用率 ${event.value}% 超过阈值 ${event.threshold}%`,
       value: event.value,
-      threshold: event.threshold
-    })
-  }).catch(() => { /* 静默失败，不影响前端 */ })
+      threshold: event.threshold,
+    }),
+  }).catch(() => {
+    /* 静默失败，不影响前端 */
+  })
 }
 
 // ─── 类型定义 ───
@@ -109,19 +115,65 @@ interface AlertState {
   deleteRule: (id: string) => void
   resetToDefaults: () => void
   /** 评估一条主机数据，返回触发的告警列表 */
-  evaluate: (hostId: string, hostName: string, metrics: { cpu: number; memory: number; disk: number }) => AlertEvent[]
+  evaluate: (
+    hostId: string,
+    hostName: string,
+    metrics: { cpu: number; memory: number; disk: number },
+  ) => AlertEvent[]
   clearHistory: () => void
 }
 
 // ─── 默认规则 ───
 
 const DEFAULT_RULES: AlertRule[] = [
-  { id: 'cpu-warning',    metric: 'cpu',    threshold: 80, severity: 'warning',  enabled: true, consecutive: 3 },
-  { id: 'cpu-critical',   metric: 'cpu',    threshold: 95, severity: 'critical', enabled: true, consecutive: 2 },
-  { id: 'mem-warning',    metric: 'memory', threshold: 85, severity: 'warning',  enabled: true, consecutive: 3 },
-  { id: 'mem-critical',   metric: 'memory', threshold: 95, severity: 'critical', enabled: true, consecutive: 2 },
-  { id: 'disk-warning',   metric: 'disk',   threshold: 85, severity: 'warning',  enabled: true, consecutive: 5 },
-  { id: 'disk-critical',  metric: 'disk',   threshold: 95, severity: 'critical', enabled: true, consecutive: 3 },
+  {
+    id: 'cpu-warning',
+    metric: 'cpu',
+    threshold: 80,
+    severity: 'warning',
+    enabled: true,
+    consecutive: 3,
+  },
+  {
+    id: 'cpu-critical',
+    metric: 'cpu',
+    threshold: 95,
+    severity: 'critical',
+    enabled: true,
+    consecutive: 2,
+  },
+  {
+    id: 'mem-warning',
+    metric: 'memory',
+    threshold: 85,
+    severity: 'warning',
+    enabled: true,
+    consecutive: 3,
+  },
+  {
+    id: 'mem-critical',
+    metric: 'memory',
+    threshold: 95,
+    severity: 'critical',
+    enabled: true,
+    consecutive: 2,
+  },
+  {
+    id: 'disk-warning',
+    metric: 'disk',
+    threshold: 85,
+    severity: 'warning',
+    enabled: true,
+    consecutive: 5,
+  },
+  {
+    id: 'disk-critical',
+    metric: 'disk',
+    threshold: 95,
+    severity: 'critical',
+    enabled: true,
+    consecutive: 3,
+  },
 ]
 
 let eventIdCounter = 0
@@ -167,8 +219,10 @@ export const useAlertStore = create<AlertState>()(
             if (r.id !== id) return r
             const updated = { ...r, ...data }
             // 校验范围：阈值 1-100，连续次数 1-20
-            if (updated.threshold !== undefined) updated.threshold = Math.min(100, Math.max(1, updated.threshold))
-            if (updated.consecutive !== undefined) updated.consecutive = Math.min(20, Math.max(1, updated.consecutive))
+            if (updated.threshold !== undefined)
+              updated.threshold = Math.min(100, Math.max(1, updated.threshold))
+            if (updated.consecutive !== undefined)
+              updated.consecutive = Math.min(20, Math.max(1, updated.consecutive))
             return updated
           }),
         }))
@@ -202,9 +256,7 @@ export const useAlertStore = create<AlertState>()(
               // 检查是否已在最近 60 秒内触发过相同告警（避免重复通知）
               const recentDuplicate = state.history.find(
                 (e) =>
-                  e.hostId === hostId &&
-                  e.ruleId === rule.id &&
-                  Date.now() - e.timestamp < 60_000,
+                  e.hostId === hostId && e.ruleId === rule.id && Date.now() - e.timestamp < 60_000,
               )
 
               if (!recentDuplicate) {
@@ -245,7 +297,10 @@ export const useAlertStore = create<AlertState>()(
           }
         }
 
-        if (fired.length > 0 || Object.keys(newCounters).length !== Object.keys(state.counters).length) {
+        if (
+          fired.length > 0 ||
+          Object.keys(newCounters).length !== Object.keys(state.counters).length
+        ) {
           set((s) => ({
             counters: newCounters,
             history: [...fired, ...s.history].slice(0, 100), // 保留最近 100 条
@@ -286,5 +341,7 @@ export const refreshAlertStore = () => {
     const parsed = JSON.parse(raw)
     const state = parsed.state || parsed
     useAlertStore.setState(state)
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }

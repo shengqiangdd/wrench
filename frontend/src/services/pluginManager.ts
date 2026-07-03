@@ -90,9 +90,7 @@ export async function fetchPluginManifest(pluginId: string): Promise<any> {
  * @param onSandboxReady 沙箱就绪回调（用于组件绑定 iframe 引用）
  * @returns 加载结果
  */
-export async function loadPluginToSandbox(
-  plugin: PluginCatalogItem,
-): Promise<PluginLoadResult> {
+export async function loadPluginToSandbox(plugin: PluginCatalogItem): Promise<PluginLoadResult> {
   try {
     // 1. 下载插件代码
     const code = await fetchPluginCode(plugin.entry)
@@ -156,16 +154,20 @@ export function createSandboxHandlers(pluginId: string) {
       console.error(`[Plugin:${pluginId}] Sandbox error:`, error)
     },
     onReady: (handle: PluginSandboxHandle) => {
-      pluginSandboxManager.register(pluginId, {
-        id: pluginId,
-        name: pluginId,
-        version: '1.0.0',
-        description: '',
-        author: '',
-        entry: '',
-        commands: [],
-        panels: [],
-      } as any, handle)
+      pluginSandboxManager.register(
+        pluginId,
+        {
+          id: pluginId,
+          name: pluginId,
+          version: '1.0.0',
+          description: '',
+          author: '',
+          entry: '',
+          commands: [],
+          panels: [],
+        } as any,
+        handle,
+      )
     },
   }
 }
@@ -191,6 +193,10 @@ export function executeSandboxCommand(pluginId: string, commandId: string): bool
 /**
  * 同步编辑器内容到插件的沙箱
  */
-export function syncEditorToSandbox(content: string | null, language: string | null, pluginId?: string) {
+export function syncEditorToSandbox(
+  content: string | null,
+  language: string | null,
+  pluginId?: string,
+) {
   pluginSandboxManager.syncEditorContent(content, language, pluginId)
 }

@@ -31,11 +31,7 @@ describe('VirtualList', () => {
   it('renders all items when below virtualize threshold', () => {
     const items = Array.from({ length: 10 }, (_, i) => `Item ${i}`)
     syncRender(
-      <VirtualList
-        items={items}
-        itemHeight={40}
-        renderItem={(item) => <span>{item}</span>}
-      />,
+      <VirtualList items={items} itemHeight={40} renderItem={(item) => <span>{item}</span>} />,
     )
     const html = container.innerHTML
     for (let i = 0; i < 10; i++) {
@@ -44,13 +40,7 @@ describe('VirtualList', () => {
   })
 
   it('renders empty items list', () => {
-    syncRender(
-      <VirtualList
-        items={[]}
-        itemHeight={40}
-        renderItem={() => null}
-      />,
-    )
+    syncRender(<VirtualList items={[]} itemHeight={40} renderItem={() => null} />)
     expect(true).toBe(true)
   })
 
@@ -86,11 +76,7 @@ describe('VirtualList', () => {
   it('handles keyboard Home/End keys via tabIndex', () => {
     const items = Array.from({ length: 20 }, (_, i) => `Item ${i}`)
     syncRender(
-      <VirtualList
-        items={items}
-        itemHeight={40}
-        renderItem={(item) => <span>{item}</span>}
-      />,
+      <VirtualList items={items} itemHeight={40} renderItem={(item) => <span>{item}</span>} />,
     )
     const html = container.innerHTML
     expect(html).toContain('Item 0')

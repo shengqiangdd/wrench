@@ -1,6 +1,6 @@
 /**
  * ssh-store.ts — Zustand store for SSH connections and sessions.
- * 
+ *
  * Connections are persisted both in localStorage (via zustand persist)
  * and on the server (SQLite via API) for cross-device durability.
  */
@@ -27,18 +27,22 @@ interface ServerConnection {
 /** Convert server format to local SshConnection format */
 function serverToLocal(s: ServerConnection): SshConnection {
   let parsedConfig: Record<string, unknown> = {}
-  try { parsedConfig = JSON.parse(s.config) } catch { /* ignore */ }
+  try {
+    parsedConfig = JSON.parse(s.config)
+  } catch {
+    /* ignore */
+  }
   return {
     id: s.id,
     name: s.name,
     host: s.host,
     port: s.port,
     username: s.username,
-    authType: s.auth_type === 'vault_ref' ? 'password' : s.auth_type as 'password' | 'key',
-    password: parsedConfig.password as string || undefined,
-    privateKey: parsedConfig.private_key as string || undefined,
-    sudoPassword: parsedConfig.sudo_password as string || undefined,
-    group: parsedConfig.group as string || undefined,
+    authType: s.auth_type === 'vault_ref' ? 'password' : (s.auth_type as 'password' | 'key'),
+    password: (parsedConfig.password as string) || undefined,
+    privateKey: (parsedConfig.private_key as string) || undefined,
+    sudoPassword: (parsedConfig.sudo_password as string) || undefined,
+    group: (parsedConfig.group as string) || undefined,
     createdAt: s.created_at ? new Date(s.created_at).getTime() : Date.now(),
   }
 }
@@ -76,7 +80,7 @@ interface SshState {
   currentSftpEntries: SftpEntry[]
 
   // 服务端同步状态
-  serverSynced: boolean       // true if we've loaded from server
+  serverSynced: boolean // true if we've loaded from server
   serverError: string | null
 
   // 连接配置操作
@@ -114,16 +118,21 @@ export const useSshStore = create<SshState>()(
       addConnection: (conn) => {
         set((s) => ({ connections: [...s.connections, conn] }))
         // Async push to server (fire-and-forget)
-        get().pushToServer(conn).catch(() => { /* best-effort */ })
+        get()
+          .pushToServer(conn)
+          .catch(() => {
+            /* best-effort */
+          })
       },
 
       updateConnection: (id, data) => {
         set((s) => {
-          const updated = s.connections.map((c) =>
-            c.id === id ? { ...c, ...data } : c,
-          )
+          const updated = s.connections.map((c) => (c.id === id ? { ...c, ...data } : c))
           const conn = updated.find((c) => c.id === id)
-          if (conn) get().pushToServer(conn).catch(() => {})
+          if (conn)
+            get()
+              .pushToServer(conn)
+              .catch(() => {})
           return { connections: updated }
         })
       },
@@ -131,10 +140,11 @@ export const useSshStore = create<SshState>()(
       deleteConnection: (id) => {
         set((s) => ({
           connections: s.connections.filter((c) => c.id !== id),
-          selectedConnectionId:
-            s.selectedConnectionId === id ? null : s.selectedConnectionId,
+          selectedConnectionId: s.selectedConnectionId === id ? null : s.selectedConnectionId,
         }))
-        get().removeFromServer(id).catch(() => {})
+        get()
+          .removeFromServer(id)
+          .catch(() => {})
       },
 
       selectConnection: (id) => set({ selectedConnectionId: id }),
@@ -185,14 +195,11 @@ export const useSshStore = create<SshState>()(
         }
       },
 
-      addSession: (session) =>
-        set((s) => ({ sessions: [...s.sessions, session] })),
+      addSession: (session) => set((s) => ({ sessions: [...s.sessions, session] })),
 
       updateSession: (id, data) =>
         set((s) => ({
-          sessions: s.sessions.map((sess) =>
-            sess.id === id ? { ...sess, ...data } : sess,
-          ),
+          sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, ...data } : sess)),
         })),
 
       removeSession: (id) =>
@@ -242,7 +249,9 @@ export const refreshSshStore = () => {
       connections,
       selectedConnectionId: state.selectedConnectionId ?? null,
     })
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -254,9 +263,7 @@ export const refreshSshStore = () => {
  *
  * 因此需要添加一个工具函数来解密单个连接
  */
-export async function decryptConnection(
-  conn: SshConnection,
-): Promise<SshConnection> {
+export async function decryptConnection(conn: SshConnection): Promise<SshConnection> {
   const decrypted = await decryptSshConnection(conn as unknown as Record<string, unknown>)
   return decrypted as unknown as SshConnection
 }

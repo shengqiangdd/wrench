@@ -17,10 +17,13 @@ export interface SshSessionSlice {
   setSshActiveSplitId: (id: string | null) => void
 }
 
-export const createSshSessionSlice: StateCreator<SshSessionSlice, [], [], SshSessionSlice> = (set) => ({
+export const createSshSessionSlice: StateCreator<SshSessionSlice, [], [], SshSessionSlice> = (
+  set,
+) => ({
   sshSessions: [],
   addSshSession: (id) => set((s) => ({ sshSessions: [...s.sshSessions, id] })),
-  removeSshSession: (id) => set((s) => ({ sshSessions: s.sshSessions.filter((sid) => sid !== id) })),
+  removeSshSession: (id) =>
+    set((s) => ({ sshSessions: s.sshSessions.filter((sid) => sid !== id) })),
 
   sshSidebarOpen: false,
   setSshSidebarOpen: (open) => set({ sshSidebarOpen: open }),

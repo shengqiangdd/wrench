@@ -1,4 +1,19 @@
-import { Terminal, FileCode2, Puzzle, Settings, Server, Container, ScrollText, Zap, Activity, PanelRight, PanelLeftClose, KeyRound, Bell, History } from 'lucide-react'
+import {
+  Terminal,
+  FileCode2,
+  Puzzle,
+  Settings,
+  Server,
+  Container,
+  ScrollText,
+  Zap,
+  Activity,
+  PanelRight,
+  PanelLeftClose,
+  KeyRound,
+  Bell,
+  History,
+} from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 
 const navItems = [
@@ -40,7 +55,7 @@ export default function Sidebar() {
               onClick={() => setActiveNav(item.id)}
               className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
                 activeNav === item.id
-                  ? 'bg-slate-800 text-smartbox-400'
+                  ? 'text-smartbox-400 bg-slate-800'
                   : 'text-slate-500 hover:bg-slate-800/50 hover:text-slate-300'
               }`}
               title={item.label}
@@ -57,7 +72,7 @@ export default function Sidebar() {
     <nav className="flex w-56 flex-col gap-0.5 border-r border-slate-700/50 bg-slate-900/50 p-3">
       <div className="mb-4 flex items-center gap-2 px-2">
         <Server size={20} className="text-smartbox-400" />
-        <span className="text-sm font-semibold text-slate-200 flex-1">智盒 SmartBox</span>
+        <span className="flex-1 text-sm font-semibold text-slate-200">智盒 SmartBox</span>
         <button
           onClick={toggleSidebar}
           className="flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-800 hover:text-slate-300"
@@ -78,7 +93,7 @@ export default function Sidebar() {
             <Icon size={16} />
             <span>{item.label}</span>
             {item.id === 'ssh' && sshSessions.length > 0 && (
-              <span className="ml-auto rounded-full bg-smartbox-600/20 px-1.5 py-0.5 text-xs text-smartbox-400">
+              <span className="bg-smartbox-600/20 text-smartbox-400 ml-auto rounded-full px-1.5 py-0.5 text-xs">
                 {sshSessions.length}
               </span>
             )}

@@ -62,9 +62,7 @@ export default function DockerContainerLogs({ connectionId, containerName, onClo
       <div className="mx-4 flex h-[80vh] w-full max-w-4xl flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-2xl">
         {/* 标题栏 */}
         <div className="flex shrink-0 items-center border-b border-slate-700/50 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-200">
-            日志 — {containerName}
-          </h2>
+          <h2 className="text-sm font-semibold text-slate-200">日志 — {containerName}</h2>
           <div className="ml-auto flex items-center gap-2">
             <button
               onClick={handleDownload}
@@ -114,9 +112,7 @@ export default function DockerContainerLogs({ connectionId, containerName, onClo
           ) : error ? (
             <div className="flex h-full items-center justify-center text-red-400">{error}</div>
           ) : (
-            <pre className="whitespace-pre-wrap text-slate-300">
-              {logs || '(无日志输出)'}
-            </pre>
+            <pre className="whitespace-pre-wrap text-slate-300">{logs || '(无日志输出)'}</pre>
           )}
         </div>
       </div>

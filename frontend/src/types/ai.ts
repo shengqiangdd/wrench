@@ -39,10 +39,26 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B (免费)', free: true },
       { value: 'google/gemma-4-26b-a4b-it:free', label: 'Gemma 4 26B A4B (免费)', free: true },
       { value: 'qwen/qwen3-coder:free', label: 'Qwen3 Coder 480B (免费)', free: true },
-      { value: 'qwen/qwen3-next-80b-a3b-instruct:free', label: 'Qwen3 Next 80B (免费)', free: true },
-      { value: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (免费)', free: true },
-      { value: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 3 Super 120B (免费)', free: true },
-      { value: 'nvidia/nemotron-3-ultra-550b-a55b:free', label: 'Nemotron 3 Ultra 550B (免费)', free: true },
+      {
+        value: 'qwen/qwen3-next-80b-a3b-instruct:free',
+        label: 'Qwen3 Next 80B (免费)',
+        free: true,
+      },
+      {
+        value: 'meta-llama/llama-3.3-70b-instruct:free',
+        label: 'Llama 3.3 70B (免费)',
+        free: true,
+      },
+      {
+        value: 'nvidia/nemotron-3-super-120b-a12b:free',
+        label: 'Nemotron 3 Super 120B (免费)',
+        free: true,
+      },
+      {
+        value: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+        label: 'Nemotron 3 Ultra 550B (免费)',
+        free: true,
+      },
       { value: 'openai/gpt-oss-20b:free', label: 'GPT-OSS 20B (免费)', free: true },
       { value: 'openai/gpt-oss-120b:free', label: 'GPT-OSS 120B (免费)', free: true },
       { value: 'mistralai/magistral-medium-2509', label: 'Magistral Medium 2509' },
@@ -142,7 +158,11 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'deepseek-v3-2-exp', label: 'DeepSeek V3.2 Exp', description: 'V3.2 实验版' },
       { value: 'deepseek-reasoner', label: 'DeepSeek R1', description: '推理增强版' },
       { value: 'deepseek-r1-0528', label: 'DeepSeek R1 0528', description: 'R1 最新版' },
-      { value: 'deepseek-reasoner-latest', label: 'DeepSeek R1 (Latest)', description: 'R1 最新稳定版' },
+      {
+        value: 'deepseek-reasoner-latest',
+        label: 'DeepSeek R1 (Latest)',
+        description: 'R1 最新稳定版',
+      },
     ],
   },
   {
@@ -158,9 +178,17 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'Qwen/Qwen3-235B-A22B', label: 'Qwen 3 235B A22B', description: '通义千问旗舰' },
       { value: 'Qwen/Qwen2.5-72B-Instruct', label: 'Qwen 2.5 72B', description: '通义千问' },
       { value: 'Qwen/Qwen2.5-32B-Instruct', label: 'Qwen 2.5 32B', description: '通义千问' },
-      { value: 'meta-llama/Llama-4-Scout-17B-16E', label: 'Llama 4 Scout 17B', description: 'Meta' },
+      {
+        value: 'meta-llama/Llama-4-Scout-17B-16E',
+        label: 'Llama 4 Scout 17B',
+        description: 'Meta',
+      },
       { value: 'meta-llama/Llama-3.3-70B-Instruct', label: 'Llama 3.3 70B', description: 'Meta' },
-      { value: 'Pro/Qwen3-235B-A22B-Turbo', label: 'Qwen 3 235B Turbo', description: '通义千问旗舰加速' },
+      {
+        value: 'Pro/Qwen3-235B-A22B-Turbo',
+        label: 'Qwen 3 235B Turbo',
+        description: '通义千问旗舰加速',
+      },
     ],
   },
   {

@@ -98,11 +98,23 @@ function renderMarkdown(md: string): string {
   html = html.replace(
     /^\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)*)/gm,
     (_, headerRow: string, bodyRows: string) => {
-      const headers = headerRow.split('|').filter(Boolean).map((h: string) => `<th>${h.trim()}</th>`).join('')
-      const rows = bodyRows.trim().split('\n').map((row: string) => {
-        const cells = row.split('|').filter(Boolean).map((c: string) => `<td>${c.trim()}</td>`).join('')
-        return `<tr>${cells}</tr>`
-      }).join('')
+      const headers = headerRow
+        .split('|')
+        .filter(Boolean)
+        .map((h: string) => `<th>${h.trim()}</th>`)
+        .join('')
+      const rows = bodyRows
+        .trim()
+        .split('\n')
+        .map((row: string) => {
+          const cells = row
+            .split('|')
+            .filter(Boolean)
+            .map((c: string) => `<td>${c.trim()}</td>`)
+            .join('')
+          return `<tr>${cells}</tr>`
+        })
+        .join('')
       return `<table class="cm-table"><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`
     },
   )
@@ -130,17 +142,30 @@ function renderMarkdown(md: string): string {
 
     // 空行 — 关闭上下文
     if (!trimmed) {
-      if (inList) { inList = false }
-      if (inTable) { inTable = false }
-      if (inBlockquote) { inBlockquote = false }
+      if (inList) {
+        inList = false
+      }
+      if (inTable) {
+        inTable = false
+      }
+      if (inBlockquote) {
+        inBlockquote = false
+      }
       result.push('')
       continue
     }
 
     // 已经是 HTML 标签的行（标题/列表/引用/表格/代码块等）
-    if (trimmed.startsWith('<h') || trimmed.startsWith('<li') || trimmed.startsWith('<blockquote') ||
-        trimmed.startsWith('<pre') || trimmed.startsWith('<hr') || trimmed.startsWith('<table') ||
-        trimmed.startsWith('<label') || trimmed === '</tbody>') {
+    if (
+      trimmed.startsWith('<h') ||
+      trimmed.startsWith('<li') ||
+      trimmed.startsWith('<blockquote') ||
+      trimmed.startsWith('<pre') ||
+      trimmed.startsWith('<hr') ||
+      trimmed.startsWith('<table') ||
+      trimmed.startsWith('<label') ||
+      trimmed === '</tbody>'
+    ) {
       if (trimmed.startsWith('<li')) inList = true
       if (trimmed.startsWith('<table')) inTable = true
       if (trimmed.startsWith('<blockquote')) inBlockquote = true
@@ -157,30 +182,38 @@ function renderMarkdown(md: string): string {
 
 /** 处理行内格式：粗体、斜体、删除线、链接、图片 */
 function inlineMarkdownToHtml(text: string): string {
-  return text
-    // 图片 ![alt](url)
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="cm-image" loading="lazy">')
-    // 链接 [text](url)
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="cm-link" target="_blank" rel="noopener noreferrer">$1</a>')
-    // 删除线 ~~text~~
-    .replace(/~~([^~]+)~~/g, '<del class="cm-del">$1</del>')
-    // 粗体+斜体 ***text***
-    .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong class="cm-strong"><em class="cm-em">$1</em></strong>')
-    // 粗体 **text**
-    .replace(/\*\*([^*]+)\*\*/g, '<strong class="cm-strong">$1</strong>')
-    // 斜体 *text*
-    .replace(/\*([^*]+)\*/g, '<em class="cm-em">$1</em>')
-    // 下划线 ++text++ 或 ~text~（部分方言）
-    .replace(/\+\+([^+]+)\+\+/g, '<ins class="cm-ins">$1</ins>')
+  return (
+    text
+      // 图片 ![alt](url)
+      .replace(
+        /!\[([^\]]*)\]\(([^)]+)\)/g,
+        '<img src="$2" alt="$1" class="cm-image" loading="lazy">',
+      )
+      // 链接 [text](url)
+      .replace(
+        /\[([^\]]+)\]\(([^)]+)\)/g,
+        '<a href="$2" class="cm-link" target="_blank" rel="noopener noreferrer">$1</a>',
+      )
+      // 删除线 ~~text~~
+      .replace(/~~([^~]+)~~/g, '<del class="cm-del">$1</del>')
+      // 粗体+斜体 ***text***
+      .replace(
+        /\*\*\*([^*]+)\*\*\*/g,
+        '<strong class="cm-strong"><em class="cm-em">$1</em></strong>',
+      )
+      // 粗体 **text**
+      .replace(/\*\*([^*]+)\*\*/g, '<strong class="cm-strong">$1</strong>')
+      // 斜体 *text*
+      .replace(/\*([^*]+)\*/g, '<em class="cm-em">$1</em>')
+      // 下划线 ++text++ 或 ~text~（部分方言）
+      .replace(/\+\+([^+]+)\+\+/g, '<ins class="cm-ins">$1</ins>')
+  )
 }
 
 export default function MarkdownPreview({ content, className = '' }: MarkdownPreviewProps) {
   const html = renderMarkdown(content)
 
   return (
-    <div
-      className={`markdown-preview ${className}`}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className={`markdown-preview ${className}`} dangerouslySetInnerHTML={{ __html: html }} />
   )
 }

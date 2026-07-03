@@ -1,5 +1,15 @@
 import { useState } from 'react'
-import { Play, Clipboard, Loader2, Plus, MoreHorizontal, Pencil, Trash2, Search, Layers } from 'lucide-react'
+import {
+  Play,
+  Clipboard,
+  Loader2,
+  Plus,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Search,
+  Layers,
+} from 'lucide-react'
 import type { QuickCommand, CommandGroup } from './index'
 import { COMMAND_GROUPS } from './index'
 
@@ -31,7 +41,9 @@ export default function CommandsList({
   const [search, setSearch] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
     const map: Record<string, boolean> = {}
-    commandsByGroup.forEach((g) => { map[g.id] = true })
+    commandsByGroup.forEach((g) => {
+      map[g.id] = true
+    })
     return map
   })
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
@@ -60,18 +72,18 @@ export default function CommandsList({
       {/* 搜索和添加 */}
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-700/30 px-4 py-2">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <Search size={14} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
             placeholder="搜索命令..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full min-h-[44px] rounded-md border border-slate-700/50 bg-slate-800/50 py-1.5 pl-8 pr-3 text-xs text-slate-300 placeholder-slate-500 outline-none transition-colors focus:border-smartbox-500/50"
+            className="focus:border-smartbox-500/50 min-h-[44px] w-full rounded-md border border-slate-700/50 bg-slate-800/50 py-1.5 pr-3 pl-8 text-xs text-slate-300 placeholder-slate-500 transition-colors outline-none"
           />
         </div>
         <button
           onClick={onAdd}
-          className="flex min-h-[44px] items-center gap-1 rounded-md bg-smartbox-600/20 px-2.5 py-1.5 text-xs text-smartbox-400 transition-colors hover:bg-smartbox-600/30"
+          className="bg-smartbox-600/20 text-smartbox-400 hover:bg-smartbox-600/30 flex min-h-[44px] items-center gap-1 rounded-md px-2.5 py-1.5 text-xs transition-colors"
           title="新建自定义命令"
         >
           <Plus size={14} />
@@ -86,7 +98,7 @@ export default function CommandsList({
             <p className="text-sm">没有找到匹配的命令</p>
             <button
               onClick={onAdd}
-              className="text-xs text-smartbox-500 transition-colors hover:text-smartbox-400"
+              className="text-smartbox-500 hover:text-smartbox-400 text-xs transition-colors"
             >
               + 新建自定义命令
             </button>
@@ -97,7 +109,7 @@ export default function CommandsList({
               {/* 分组标题 */}
               <button
                 onClick={() => toggleGroup(group.id)}
-                className="flex w-full items-center gap-1.5 rounded-md px-2 min-h-[44px] text-xs text-slate-500 transition-colors hover:bg-slate-800/50"
+                className="flex min-h-[44px] w-full items-center gap-1.5 rounded-md px-2 text-xs text-slate-500 transition-colors hover:bg-slate-800/50"
               >
                 <span className="text-xs">{expandedGroups[group.id] ? '▾' : '▸'}</span>
                 <span>{group.icon || '📁'}</span>
@@ -107,7 +119,7 @@ export default function CommandsList({
 
               {/* 命令卡片 */}
               {expandedGroups[group.id] && (
-                <div className="ml-1 mt-1 space-y-1">
+                <div className="mt-1 ml-1 space-y-1">
                   {group.commands.map((cmd) => (
                     <div
                       key={cmd.id}
@@ -118,10 +130,14 @@ export default function CommandsList({
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium text-slate-200">{cmd.name}</span>
                             {cmd.isBuiltin && (
-                              <span className="rounded bg-slate-800 px-1 py-0.5 text-[9px] text-slate-500">内置</span>
+                              <span className="rounded bg-slate-800 px-1 py-0.5 text-[9px] text-slate-500">
+                                内置
+                              </span>
                             )}
                           </div>
-                          <code className="mt-0.5 block w-full truncate text-[11px] text-slate-500 font-mono">{cmd.command}</code>
+                          <code className="mt-0.5 block w-full truncate font-mono text-[11px] text-slate-500">
+                            {cmd.command}
+                          </code>
                           {cmd.description && (
                             <p className="mt-0.5 text-[10px] text-slate-600">{cmd.description}</p>
                           )}
@@ -132,21 +148,25 @@ export default function CommandsList({
                           <button
                             onClick={() => onExecute(cmd)}
                             disabled={executingId === cmd.id || !connectionId}
-                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-emerald-600/20 hover:text-emerald-400 disabled:opacity-30 flex items-center justify-center"
+                            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 text-slate-500 transition-colors hover:bg-emerald-600/20 hover:text-emerald-400 disabled:opacity-30"
                             title={connectionId ? '执行命令' : '请先连接 SSH'}
                           >
-                            {executingId === cmd.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                            {executingId === cmd.id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Play size={14} />
+                            )}
                           </button>
                           <button
                             onClick={() => onCopyToClipboard(cmd.command)}
-                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-sky-600/20 hover:text-sky-400 flex items-center justify-center"
+                            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 text-slate-500 transition-colors hover:bg-sky-600/20 hover:text-sky-400"
                             title="复制命令"
                           >
                             <Clipboard size={14} />
                           </button>
                           <button
                             onClick={() => onSendToTerminal?.(cmd.command)}
-                            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-violet-600/20 hover:text-violet-400 flex items-center justify-center"
+                            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 text-slate-500 transition-colors hover:bg-violet-600/20 hover:text-violet-400"
                             title="发送到终端"
                           >
                             <span className="text-[10px] font-bold">T</span>
@@ -154,7 +174,7 @@ export default function CommandsList({
                           {onSendToBatch && (
                             <button
                               onClick={() => onSendToBatch?.(cmd.command)}
-                              className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-amber-600/20 hover:text-amber-400 flex items-center justify-center"
+                              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 text-slate-500 transition-colors hover:bg-amber-600/20 hover:text-amber-400"
                               title="发送到批量执行"
                             >
                               <Layers size={14} />
@@ -165,22 +185,31 @@ export default function CommandsList({
                             <div className="relative">
                               <button
                                 onClick={() => setMenuOpen(menuOpen === cmd.id ? null : cmd.id)}
-                                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300 flex items-center justify-center"
+                                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300"
                               >
                                 <MoreHorizontal size={14} />
                               </button>
                               {menuOpen === cmd.id && (
                                 <>
-                                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(null)} />
-                                  <div className="absolute right-0 top-full z-20 mt-1 w-28 overflow-hidden rounded-md border border-slate-700/50 bg-slate-800 shadow-lg">
+                                  <div
+                                    className="fixed inset-0 z-10"
+                                    onClick={() => setMenuOpen(null)}
+                                  />
+                                  <div className="absolute top-full right-0 z-20 mt-1 w-28 overflow-hidden rounded-md border border-slate-700/50 bg-slate-800 shadow-lg">
                                     <button
-                                      onClick={() => { onEdit(cmd); setMenuOpen(null) }}
+                                      onClick={() => {
+                                        onEdit(cmd)
+                                        setMenuOpen(null)
+                                      }}
                                       className="flex w-full items-center gap-2 px-3 py-2 text-xs text-slate-300 transition-colors hover:bg-slate-700/50"
                                     >
                                       <Pencil size={12} /> 编辑
                                     </button>
                                     <button
-                                      onClick={() => { onRemove(cmd.id); setMenuOpen(null) }}
+                                      onClick={() => {
+                                        onRemove(cmd.id)
+                                        setMenuOpen(null)
+                                      }}
                                       className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-400 transition-colors hover:bg-red-900/20"
                                     >
                                       <Trash2 size={12} /> 删除

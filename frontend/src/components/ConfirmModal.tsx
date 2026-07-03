@@ -37,14 +37,11 @@ export function ConfirmModal({
   return (
     <div
       className={`fixed inset-0 z-[100] flex items-center justify-center transition-opacity duration-200 ${
-        open ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        open ? 'opacity-100' : 'pointer-events-none opacity-0'
       }`}
     >
       {/* 遮罩 */}
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={onCancel}
-      />
+      <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
       {/* 弹窗 */}
       <div
         className={`relative z-10 w-full max-w-sm rounded-lg border border-slate-700/50 bg-slate-900 p-5 shadow-2xl transition-transform duration-200 ${
@@ -101,7 +98,7 @@ export function AlertModal({ open, title, message, onClose }: AlertModalProps) {
   return (
     <div
       className={`fixed inset-0 z-[100] flex items-center justify-center transition-opacity duration-200 ${
-        open ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        open ? 'opacity-100' : 'pointer-events-none opacity-0'
       }`}
     >
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
@@ -115,7 +112,7 @@ export function AlertModal({ open, title, message, onClose }: AlertModalProps) {
         <div className="mt-4 flex justify-end">
           <button
             onClick={onClose}
-            className="rounded-md bg-smartbox-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-smartbox-500"
+            className="bg-smartbox-600 hover:bg-smartbox-500 rounded-md px-3 py-1.5 text-xs font-medium text-white transition-colors"
           >
             确定
           </button>

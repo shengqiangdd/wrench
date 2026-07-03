@@ -52,14 +52,8 @@ export const usePluginStore = create<PluginState>()(
           }
           return {
             plugins: [...s.plugins, plugin],
-            commands: [
-              ...s.commands,
-              ...(manifest.commands?.map((c) => ({ ...c })) || []),
-            ],
-            panels: [
-              ...s.panels,
-              ...(manifest.panels?.map((p) => ({ ...p })) || []),
-            ],
+            commands: [...s.commands, ...(manifest.commands?.map((c) => ({ ...c })) || [])],
+            panels: [...s.panels, ...(manifest.panels?.map((p) => ({ ...p })) || [])],
           }
         })
         return manifest.id
@@ -84,9 +78,7 @@ export const usePluginStore = create<PluginState>()(
 
       enablePlugin: (pluginId) =>
         set((s) => ({
-          plugins: s.plugins.map((p) =>
-            p.manifest.id === pluginId ? { ...p, enabled: true } : p,
-          ),
+          plugins: s.plugins.map((p) => (p.manifest.id === pluginId ? { ...p, enabled: true } : p)),
         })),
 
       disablePlugin: (pluginId) =>
@@ -138,5 +130,7 @@ export const refreshPluginStore = () => {
       commands: state.commands || usePluginStore.getState().commands,
       panels: state.panels || usePluginStore.getState().panels,
     })
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }

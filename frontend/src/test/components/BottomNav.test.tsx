@@ -30,7 +30,14 @@ function render(el: React.ReactNode) {
   document.body.appendChild(container)
   const root = createRoot(container)
   flushSync(() => root.render(el))
-  return { container, root, unmount: () => { flushSync(() => root.unmount()); container.remove() } }
+  return {
+    container,
+    root,
+    unmount: () => {
+      flushSync(() => root.unmount())
+      container.remove()
+    },
+  }
 }
 
 describe('BottomNav', () => {
@@ -77,7 +84,7 @@ describe('BottomNav', () => {
     const { container } = render(<BottomNav />)
     const buttons = container.querySelectorAll('button')
     // Click the Docker button
-    const dockerBtn = Array.from(buttons).find(b => b.textContent?.includes('Docker'))
+    const dockerBtn = Array.from(buttons).find((b) => b.textContent?.includes('Docker'))
     expect(dockerBtn).toBeTruthy()
     dockerBtn!.click()
     expect(mockSetActiveNav).toHaveBeenCalledWith('docker')
@@ -101,7 +108,7 @@ describe('BottomNav', () => {
 
     testCases.forEach(({ label, id }) => {
       mockSetActiveNav.mockClear()
-      const btn = Array.from(buttons).find(b => b.textContent?.includes(label))
+      const btn = Array.from(buttons).find((b) => b.textContent?.includes(label))
       expect(btn, `Button "${label}" not found`).toBeTruthy()
       btn!.click()
       expect(mockSetActiveNav).toHaveBeenCalledWith(id)

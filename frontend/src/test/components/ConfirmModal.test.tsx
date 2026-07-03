@@ -23,7 +23,7 @@ afterEach(() => {
 
 async function render(el: React.ReactElement) {
   root.render(el)
-  await new Promise<void>(r => setTimeout(r, 10))
+  await new Promise<void>((r) => setTimeout(r, 10))
 }
 
 describe('ConfirmModal', () => {
@@ -56,13 +56,7 @@ describe('ConfirmModal', () => {
 
   it('renders default button texts', async () => {
     await render(
-      <ConfirmModal
-        open
-        title="Test"
-        message="Test"
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
+      <ConfirmModal open title="Test" message="Test" onConfirm={vi.fn()} onCancel={vi.fn()} />,
     )
     expect(container.textContent).toContain('确认')
     expect(container.textContent).toContain('取消')
@@ -88,13 +82,7 @@ describe('ConfirmModal', () => {
     const onConfirm = vi.fn()
     const onCancel = vi.fn()
     await render(
-      <ConfirmModal
-        open
-        title="Test"
-        message="Test"
-        onConfirm={onConfirm}
-        onCancel={onCancel}
-      />,
+      <ConfirmModal open title="Test" message="Test" onConfirm={onConfirm} onCancel={onCancel} />,
     )
     const buttons = container.querySelectorAll('button')
     // Last button is the confirm button
@@ -107,13 +95,7 @@ describe('ConfirmModal', () => {
   it('calls onCancel when cancel button clicked', async () => {
     const onCancel = vi.fn()
     await render(
-      <ConfirmModal
-        open
-        title="Test"
-        message="Test"
-        onConfirm={vi.fn()}
-        onCancel={onCancel}
-      />,
+      <ConfirmModal open title="Test" message="Test" onConfirm={vi.fn()} onCancel={onCancel} />,
     )
     const buttons = container.querySelectorAll('button')
     expect(buttons.length).toBeGreaterThanOrEqual(2)
@@ -138,13 +120,7 @@ describe('ConfirmModal', () => {
 
   it('has exit animation when closed', async () => {
     await render(
-      <ConfirmModal
-        open
-        title="Test"
-        message="Test"
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
+      <ConfirmModal open title="Test" message="Test" onConfirm={vi.fn()} onCancel={vi.fn()} />,
     )
     // Close it
     root.render(
@@ -156,11 +132,11 @@ describe('ConfirmModal', () => {
         onCancel={vi.fn()}
       />,
     )
-    await new Promise(r => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 20))
     // Should still be in DOM during exit animation
     expect(container.textContent).toContain('Test')
     // After 300ms animation, should be removed
-    await new Promise(r => setTimeout(r, 350))
+    await new Promise((r) => setTimeout(r, 350))
     expect(container.innerHTML).toBe('')
   })
 })

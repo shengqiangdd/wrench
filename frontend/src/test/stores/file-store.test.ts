@@ -130,7 +130,12 @@ describe('useFileStore', () => {
     it('sets local files', () => {
       useFileStore.getState().setLocalFiles('/home/admin', [
         { name: 'src', path: '/home/admin/src', type: 'directory', isDirectory: true },
-        { name: 'package.json', path: '/home/admin/package.json', type: 'file', isDirectory: false },
+        {
+          name: 'package.json',
+          path: '/home/admin/package.json',
+          type: 'file',
+          isDirectory: false,
+        },
       ])
       const state = useFileStore.getState()
       expect(state.currentLocalPath).toBe('/home/admin')

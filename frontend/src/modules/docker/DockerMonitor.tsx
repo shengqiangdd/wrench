@@ -27,8 +27,8 @@ interface MonitorState {
   data: DataPoint[]
 }
 
-const MAX_POINTS = 120    // 2分钟数据（1秒1个点）
-const INTERVAL_MS = 2000  // 2秒轮询
+const MAX_POINTS = 120 // 2分钟数据（1秒1个点）
+const INTERVAL_MS = 2000 // 2秒轮询
 
 // SVG 图表尺寸
 const CHART_W = 300
@@ -47,17 +47,22 @@ function MiniChart({
 }) {
   if (data.length < 2) {
     return (
-      <div className="flex items-center justify-center text-[10px] text-slate-600" style={{ width: CHART_W, height: CHART_H }}>
+      <div
+        className="flex items-center justify-center text-[10px] text-slate-600"
+        style={{ width: CHART_W, height: CHART_H }}
+      >
         等待数据...
       </div>
     )
   }
 
-  const points = data.map((d, i) => {
-    const x = (i / (MAX_POINTS - 1)) * CHART_W
-    const y = CHART_H - (Math.min(d.cpu, maxValue) / maxValue) * (CHART_H - 8) - 4
-    return `${x},${y}`
-  }).join(' ')
+  const points = data
+    .map((d, i) => {
+      const x = (i / (MAX_POINTS - 1)) * CHART_W
+      const y = CHART_H - (Math.min(d.cpu, maxValue) / maxValue) * (CHART_H - 8) - 4
+      return `${x},${y}`
+    })
+    .join(' ')
 
   const latest = data[data.length - 1]
   if (!latest) return null
@@ -71,8 +76,10 @@ function MiniChart({
         {[0.25, 0.5, 0.75].map((f) => (
           <line
             key={f}
-            x1={0} y1={CHART_H - f * (CHART_H - 8) - 4}
-            x2={CHART_W} y2={CHART_H - f * (CHART_H - 8) - 4}
+            x1={0}
+            y1={CHART_H - f * (CHART_H - 8) - 4}
+            x2={CHART_W}
+            y2={CHART_H - f * (CHART_H - 8) - 4}
             stroke="rgba(148,163,184,0.08)"
             strokeWidth={1}
           />
@@ -95,7 +102,7 @@ function MiniChart({
       </svg>
       {/* 最新值标注 */}
       <div
-        className="absolute right-1 top-1 rounded bg-slate-800/80 px-1.5 py-0.5 text-[10px] font-medium"
+        className="absolute top-1 right-1 rounded bg-slate-800/80 px-1.5 py-0.5 text-[10px] font-medium"
         style={{ color }}
       >
         {displayVal}
@@ -181,7 +188,14 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
             }
 
             const pids = parseInt(s.PIDs) || 0
-            const point: DataPoint = { time: now, cpu: cpuPct, mem: memUsed / (1024 * 1024), memPct, memTotal, pids }
+            const point: DataPoint = {
+              time: now,
+              cpu: cpuPct,
+              mem: memUsed / (1024 * 1024),
+              memPct,
+              memTotal,
+              pids,
+            }
 
             const existing = prevMap.get(id)
             if (existing) {
@@ -191,7 +205,9 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
             } else {
               newMonitors.push({ id, name, data: [point] })
             }
-          } catch { /* skip parse errors */ }
+          } catch {
+            /* skip parse errors */
+          }
         }
 
         // 保留未出现在当前轮询但仍有数据的容器（避免闪烁）
@@ -218,10 +234,19 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
     const num = parseFloat(match[1]!)
     const unit = (match[2] || 'B').toUpperCase()
     const units: Record<string, number> = {
-      'B': 1, 'KB': 1024, 'KIB': 1024, 'K': 1024,
-      'MB': 1024 * 1024, 'MIB': 1024 * 1024, 'M': 1024 * 1024,
-      'GB': 1024 ** 3, 'GIB': 1024 ** 3, 'G': 1024 ** 3,
-      'TB': 1024 ** 4, 'TIB': 1024 ** 4, 'T': 1024 ** 4,
+      B: 1,
+      KB: 1024,
+      KIB: 1024,
+      K: 1024,
+      MB: 1024 * 1024,
+      MIB: 1024 * 1024,
+      M: 1024 * 1024,
+      GB: 1024 ** 3,
+      GIB: 1024 ** 3,
+      G: 1024 ** 3,
+      TB: 1024 ** 4,
+      TIB: 1024 ** 4,
+      T: 1024 ** 4,
     }
     return num * (units[unit] || 1)
   }
@@ -256,7 +281,7 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
     <div className="flex h-full flex-col">
       {/* 控制栏 */}
       <div className="flex shrink-0 items-center border-b border-slate-700/30 px-4 py-2">
-        <Activity size={14} className="mr-1.5 text-smartbox-400" />
+        <Activity size={14} className="text-smartbox-400 mr-1.5" />
         <span className="text-xs font-medium text-slate-400">实时监控</span>
         <div className="ml-auto flex items-center gap-2">
           {/* 自动刷新开关 */}
@@ -265,7 +290,7 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
               type="checkbox"
               checked={autoRefresh}
               onChange={(e) => setAutoRefresh(e.target.checked)}
-              className="h-3 w-3 rounded border-slate-600 bg-slate-700 text-smartbox-500"
+              className="text-smartbox-500 h-3 w-3 rounded border-slate-600 bg-slate-700"
             />
             实时
           </label>
@@ -283,10 +308,16 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
       {/* 容器列表（多选） */}
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-700/30 px-4 py-1.5">
         <span className="text-[10px] text-slate-500">选择容器:</span>
-        <button onClick={selectAll} className="rounded px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-800 hover:text-slate-300">
+        <button
+          onClick={selectAll}
+          className="rounded px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+        >
           全选
         </button>
-        <button onClick={deselectAll} className="rounded px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-800 hover:text-slate-300">
+        <button
+          onClick={deselectAll}
+          className="rounded px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+        >
           取消
         </button>
         <div className="ml-2 flex flex-wrap gap-1">
@@ -300,7 +331,7 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
                 onClick={() => toggleSelect(c.ID)}
                 className={`rounded-full px-2 py-0.5 text-[10px] transition-colors ${
                   isSelected
-                    ? 'bg-smartbox-500/20 text-smartbox-300 ring-1 ring-smartbox-500/40'
+                    ? 'bg-smartbox-500/20 text-smartbox-300 ring-smartbox-500/40 ring-1'
                     : 'bg-slate-800 text-slate-500 hover:text-slate-300'
                 }`}
               >
@@ -323,79 +354,122 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
               : '在上方选择一个或多个容器开始监控'}
           </div>
         ) : (
-          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))' }}>
+          <div
+            className="grid gap-3"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))' }}
+          >
             {selectedMonitors
               .sort((a, b) => a.name.localeCompare(b.name))
               .map((m) => {
-              const latest = m.data[m.data.length - 1]
-              const memPct = latest ? latest.memPct : 0
-              const pids = latest ? latest.pids : 0
+                const latest = m.data[m.data.length - 1]
+                const memPct = latest ? latest.memPct : 0
+                const pids = latest ? latest.pids : 0
 
-              return (
-                <div
-                  key={m.id}
-                  className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-3"
-                >
-                  {/* 标题行 */}
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className={`inline-block h-2 w-2 rounded-full ${
-                      memPct > 80 ? 'bg-red-500' : memPct > 50 ? 'bg-amber-500' : 'bg-emerald-500'
-                    }`} />
-                    <span className="text-sm font-medium text-slate-200 truncate">{m.name}</span>
-                    <span className="text-[10px] text-slate-500">{m.id.slice(0, 12)}</span>
-                    {latest && <span className="ml-auto text-[10px] text-slate-500">{pids} PID</span>}
-                  </div>
-
-                  {/* CPU 图表 */}
-                  <div className="mb-1">
-                    <div className="flex items-center gap-1 text-[10px] text-slate-500 mb-0.5">
-                      <Cpu size={10} />
-                      CPU
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <MiniChart data={m.data} color="#60a5fa" maxValue={100} unit="%" />
-                      {latest && (
-                        <div className="shrink-0 space-y-0.5 text-[10px] text-slate-500">
-                          <div>当前: <span className="text-blue-400 font-mono">{latest.cpu.toFixed(1)}%</span></div>
-                          <div>峰值: <span className="text-blue-400 font-mono">{Math.max(...m.data.map(d => d.cpu)).toFixed(1)}%</span></div>
-                          <div>均值: <span className="text-blue-400 font-mono">{(m.data.reduce((a, d) => a + d.cpu, 0) / m.data.length).toFixed(1)}%</span></div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 内存图表 */}
-                  <div>
-                    <div className="flex items-center gap-1 text-[10px] text-slate-500 mb-0.5">
-                      <MemoryStick size={10} />
-                      内存
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <MiniChart
-                        data={m.data.map((d) => ({ ...d, cpu: d.memPct }))}
-                        color="#a78bfa"
-                        maxValue={100}
-                        unit="%"
+                return (
+                  <div
+                    key={m.id}
+                    className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-3"
+                  >
+                    {/* 标题行 */}
+                    <div className="mb-2 flex items-center gap-2">
+                      <span
+                        className={`inline-block h-2 w-2 rounded-full ${
+                          memPct > 80
+                            ? 'bg-red-500'
+                            : memPct > 50
+                              ? 'bg-amber-500'
+                              : 'bg-emerald-500'
+                        }`}
                       />
+                      <span className="truncate text-sm font-medium text-slate-200">{m.name}</span>
+                      <span className="text-[10px] text-slate-500">{m.id.slice(0, 12)}</span>
                       {latest && (
-                        <div className="shrink-0 space-y-0.5 text-[10px] text-slate-500">
-                          <div>使用: <span className="text-purple-400 font-mono">{latest.mem.toFixed(0)} MB</span></div>
-                          <div>占比: <span className="text-purple-400 font-mono">{latest.memPct.toFixed(1)}%</span></div>
-                          <div>总量: <span className="text-purple-400 font-mono">{(latest.memTotal / (1024 * 1024 * 1024)).toFixed(1)} GB</span></div>
-                        </div>
+                        <span className="ml-auto text-[10px] text-slate-500">{pids} PID</span>
                       )}
                     </div>
-                  </div>
 
-                  {/* 提示条 */}{/* Only show if container has data */}
-                  {m.data.length < 5 && (
-                    <div className="mt-1 text-[9px] text-slate-600 italic">
-                      数据采集中 ({m.data.length}/{MAX_POINTS})
+                    {/* CPU 图表 */}
+                    <div className="mb-1">
+                      <div className="mb-0.5 flex items-center gap-1 text-[10px] text-slate-500">
+                        <Cpu size={10} />
+                        CPU
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <MiniChart data={m.data} color="#60a5fa" maxValue={100} unit="%" />
+                        {latest && (
+                          <div className="shrink-0 space-y-0.5 text-[10px] text-slate-500">
+                            <div>
+                              当前:{' '}
+                              <span className="font-mono text-blue-400">
+                                {latest.cpu.toFixed(1)}%
+                              </span>
+                            </div>
+                            <div>
+                              峰值:{' '}
+                              <span className="font-mono text-blue-400">
+                                {Math.max(...m.data.map((d) => d.cpu)).toFixed(1)}%
+                              </span>
+                            </div>
+                            <div>
+                              均值:{' '}
+                              <span className="font-mono text-blue-400">
+                                {(m.data.reduce((a, d) => a + d.cpu, 0) / m.data.length).toFixed(1)}
+                                %
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              )}
-            )}
+
+                    {/* 内存图表 */}
+                    <div>
+                      <div className="mb-0.5 flex items-center gap-1 text-[10px] text-slate-500">
+                        <MemoryStick size={10} />
+                        内存
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <MiniChart
+                          data={m.data.map((d) => ({ ...d, cpu: d.memPct }))}
+                          color="#a78bfa"
+                          maxValue={100}
+                          unit="%"
+                        />
+                        {latest && (
+                          <div className="shrink-0 space-y-0.5 text-[10px] text-slate-500">
+                            <div>
+                              使用:{' '}
+                              <span className="font-mono text-purple-400">
+                                {latest.mem.toFixed(0)} MB
+                              </span>
+                            </div>
+                            <div>
+                              占比:{' '}
+                              <span className="font-mono text-purple-400">
+                                {latest.memPct.toFixed(1)}%
+                              </span>
+                            </div>
+                            <div>
+                              总量:{' '}
+                              <span className="font-mono text-purple-400">
+                                {(latest.memTotal / (1024 * 1024 * 1024)).toFixed(1)} GB
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 提示条 */}
+                    {/* Only show if container has data */}
+                    {m.data.length < 5 && (
+                      <div className="mt-1 text-[9px] text-slate-600 italic">
+                        数据采集中 ({m.data.length}/{MAX_POINTS})
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
           </div>
         )}
       </div>

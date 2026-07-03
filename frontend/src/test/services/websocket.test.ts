@@ -71,7 +71,7 @@ describe('WsClient', () => {
     await vi.waitFor(() => expect(client.status).toBe('connected'))
 
     const promise = client.request({ type: 'get_info' })
-    
+
     const ws = (client as any).ws as MockWebSocket
     // Find the requestId from sent message
     const sentMsg = JSON.parse(ws.sentMessages[0]!)

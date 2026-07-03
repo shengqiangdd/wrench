@@ -1,5 +1,16 @@
 export type Theme = 'dark' | 'light' | 'system'
-export type NavId = 'ssh' | 'commands' | 'files' | 'logs' | 'plugins' | 'settings' | 'docker' | 'monitor' | 'vault' | 'notifications' | 'audit'
+export type NavId =
+  | 'ssh'
+  | 'commands'
+  | 'files'
+  | 'logs'
+  | 'plugins'
+  | 'settings'
+  | 'docker'
+  | 'monitor'
+  | 'vault'
+  | 'notifications'
+  | 'audit'
 
 /** SSH 页面分屏定义 */
 export interface SplitDef {

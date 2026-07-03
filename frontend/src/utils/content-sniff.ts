@@ -57,7 +57,10 @@ function sniffShebang(firstLine: string): string | null {
 
   // 处理 /bin/<interpreter> 格式
   for (const [key, val] of Object.entries(SHEBANG_MAP)) {
-    if (!key.startsWith('/usr/bin/env ') && (afterShebang.startsWith(key) || afterShebang === key)) {
+    if (
+      !key.startsWith('/usr/bin/env ') &&
+      (afterShebang.startsWith(key) || afterShebang === key)
+    ) {
       return val
     }
   }
@@ -69,30 +72,30 @@ function sniffShebang(firstLine: string): string | null {
 
 /** 文件内容头部字节 → 文件类型 / 语言 */
 const MAGIC_SIGNATURES: Array<{
-  match: number[]     // 匹配字节序列（用 -1 表示通配）
-  name: string        // 文件类型名
-  language: string    // CodeMirror 语言标识
+  match: number[] // 匹配字节序列（用 -1 表示通配）
+  name: string // 文件类型名
+  language: string // CodeMirror 语言标识
 }> = [
   // 图片
-  { match: [0x89, 0x50, 0x4E, 0x47], name: 'PNG Image', language: 'text' },
-  { match: [0xFF, 0xD8, 0xFF], name: 'JPEG Image', language: 'text' },
+  { match: [0x89, 0x50, 0x4e, 0x47], name: 'PNG Image', language: 'text' },
+  { match: [0xff, 0xd8, 0xff], name: 'JPEG Image', language: 'text' },
   { match: [0x47, 0x49, 0x46, 0x38], name: 'GIF Image', language: 'text' },
   { match: [0x52, 0x49, 0x46, 0x46], name: 'WebP Image', language: 'text' },
-  { match: [0x42, 0x4D], name: 'BMP Image', language: 'text' },
+  { match: [0x42, 0x4d], name: 'BMP Image', language: 'text' },
 
   // 文档
   { match: [0x25, 0x50, 0x44, 0x46], name: 'PDF Document', language: 'text' },
-  { match: [0x50, 0x4B, 0x03, 0x04], name: 'ZIP/DOCX/XLSX', language: 'text' },
+  { match: [0x50, 0x4b, 0x03, 0x04], name: 'ZIP/DOCX/XLSX', language: 'text' },
 
   // 压缩
-  { match: [0x1F, 0x8B], name: 'GZIP Archive', language: 'text' },
-  { match: [0x42, 0x5A, 0x68], name: 'BZIP2 Archive', language: 'text' },
+  { match: [0x1f, 0x8b], name: 'GZIP Archive', language: 'text' },
+  { match: [0x42, 0x5a, 0x68], name: 'BZIP2 Archive', language: 'text' },
 
   // ELF/可执行
-  { match: [0x7F, 0x45, 0x4C, 0x46], name: 'ELF Binary', language: 'text' },
+  { match: [0x7f, 0x45, 0x4c, 0x46], name: 'ELF Binary', language: 'text' },
 
   // SQLite 数据库
-  { match: [0x53, 0x51, 0x4C, 0x69], name: 'SQLite Database', language: 'text' },
+  { match: [0x53, 0x51, 0x4c, 0x69], name: 'SQLite Database', language: 'text' },
 ]
 
 /** 从二进制头部检测 magic bytes */
@@ -116,11 +119,11 @@ function sniffMagic(headBytes: Uint8Array): string | null {
 /** 常见的无后缀文件名 → 语言映射 */
 const NAMED_FILE_MAP: Record<string, string> = {
   // 构建/配置
-  'dockerfile': 'dockerfile',
-  'makefile': 'makefile',
-  'gemfile': 'ruby',
-  'rakefile': 'ruby',
-  'justfile': 'makefile',
+  dockerfile: 'dockerfile',
+  makefile: 'makefile',
+  gemfile: 'ruby',
+  rakefile: 'ruby',
+  justfile: 'makefile',
 
   // 配置文件
   '.gitignore': 'text',

@@ -1,5 +1,14 @@
 import { useState, useCallback, useEffect } from 'react'
-import { X, Play, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import {
+  X,
+  Play,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+} from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import type { SshConnection } from '../../types/ssh'
 
@@ -166,16 +175,21 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
 
   const successCount = results.filter((r) => r.status === 'success').length
   const errorCount = results.filter((r) => r.status === 'error').length
-  const pendingCount = results.filter((r) => r.status === 'pending' || r.status === 'running').length
+  const pendingCount = results.filter(
+    (r) => r.status === 'pending' || r.status === 'running',
+  ).length
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="mx-2 flex h-[85vh] w-full max-w-4xl flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-2xl">
         {/* 标题 */}
         <div className="flex shrink-0 items-center border-b border-slate-700/50 px-4 py-3">
-          <Play size={16} className="mr-2 text-smartbox-400" />
+          <Play size={16} className="text-smartbox-400 mr-2" />
           <h2 className="text-sm font-semibold text-slate-200">批量命令执行</h2>
-          <button onClick={onClose} className="ml-auto rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300">
+          <button
+            onClick={onClose}
+            className="ml-auto rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
+          >
             <X size={16} />
           </button>
         </div>
@@ -184,14 +198,14 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
           {/* 左侧：连接选择 */}
           <div className="flex w-64 shrink-0 flex-col border-r border-slate-700/50">
             <div className="flex items-center justify-between border-b border-slate-700/20 px-3 py-2">
-              <span className="text-xs font-medium text-slate-400">
-                选择服务器
-              </span>
+              <span className="text-xs font-medium text-slate-400">选择服务器</span>
               <button
                 onClick={selectAll}
-                className="text-[10px] text-smartbox-400 hover:text-smartbox-300 transition-colors"
+                className="text-smartbox-400 hover:text-smartbox-300 text-[10px] transition-colors"
               >
-                {selectedIds.size === filteredConnections.length ? '取消全选' : `全选 (${filteredConnections.length})`}
+                {selectedIds.size === filteredConnections.length
+                  ? '取消全选'
+                  : `全选 (${filteredConnections.length})`}
               </button>
             </div>
             <div className="flex-1 overflow-auto">
@@ -215,7 +229,9 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs font-medium text-slate-200">{conn.name}</div>
-                      <div className="truncate text-[10px] text-slate-500">{conn.username}@{conn.host}</div>
+                      <div className="truncate text-[10px] text-slate-500">
+                        {conn.username}@{conn.host}
+                      </div>
                     </div>
                   </label>
                 ))
@@ -244,7 +260,7 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
                   }
                 }}
                 placeholder="输入要执行的命令... (Cmd/Ctrl + Enter 执行)"
-                className="input min-h-[60px] w-full resize-y text-xs font-mono"
+                className="input min-h-[60px] w-full resize-y font-mono text-xs"
                 rows={2}
                 disabled={running}
               />
@@ -254,11 +270,7 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
                   disabled={!command.trim() || selectedIds.size === 0 || running}
                   className="btn btn-primary flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-50"
                 >
-                  {running ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Play size={14} />
-                  )}
+                  {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                   {running ? '执行中...' : `批量执行 (${selectedIds.size} 台)`}
                 </button>
 
@@ -334,12 +346,16 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
                             <AlertCircle size={14} className="shrink-0 text-slate-500" />
                           )}
                           <div className="min-w-0 flex-1 text-left">
-                            <div className="truncate text-xs font-medium text-slate-200">{r.name}</div>
+                            <div className="truncate text-xs font-medium text-slate-200">
+                              {r.name}
+                            </div>
                             <div className="truncate text-[10px] text-slate-500">{r.host}</div>
                           </div>
                           <span className="text-[10px] text-slate-600">{r.duration}ms</span>
                           {r.exitCode !== null && (
-                            <span className={`text-[10px] ${r.exitCode === 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                            <span
+                              className={`text-[10px] ${r.exitCode === 0 ? 'text-emerald-500' : 'text-red-400'}`}
+                            >
                               exit: {r.exitCode}
                             </span>
                           )}
@@ -359,16 +375,20 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
                               </div>
                             )}
                             {r.stdout ? (
-                              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-950 p-2 text-[11px] leading-relaxed text-slate-300 font-mono">
+                              <pre className="max-h-48 overflow-auto rounded bg-slate-950 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-slate-300">
                                 {r.stdout}
                               </pre>
                             ) : (
-                              <div className="text-[11px] text-slate-600 italic">(无 stdout 输出)</div>
+                              <div className="text-[11px] text-slate-600 italic">
+                                (无 stdout 输出)
+                              </div>
                             )}
                             {r.stderr && (
                               <details className="mt-1">
-                                <summary className="cursor-pointer text-[10px] text-amber-400/70">stderr</summary>
-                                <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-slate-950 p-2 text-[10px] leading-relaxed text-amber-300/70 font-mono">
+                                <summary className="cursor-pointer text-[10px] text-amber-400/70">
+                                  stderr
+                                </summary>
+                                <pre className="mt-1 max-h-24 overflow-auto rounded bg-slate-950 p-2 font-mono text-[10px] leading-relaxed whitespace-pre-wrap text-amber-300/70">
                                   {r.stderr}
                                 </pre>
                               </details>

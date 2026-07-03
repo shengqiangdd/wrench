@@ -50,10 +50,8 @@ export default function DockerDetail({ connectionId, containerId, onClose }: Pro
       <div className="mx-4 flex h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-2xl">
         {/* 标题 */}
         <div className="flex shrink-0 items-center border-b border-slate-700/50 px-4 py-3">
-          <Box size={16} className="mr-2 text-smartbox-400" />
-          <h2 className="text-sm font-semibold text-slate-200">
-            容器详情 — {containerId}
-          </h2>
+          <Box size={16} className="text-smartbox-400 mr-2" />
+          <h2 className="text-sm font-semibold text-slate-200">容器详情 — {containerId}</h2>
           <div className="ml-auto flex items-center gap-1">
             <button
               onClick={() => setShowTerminal(true)}
@@ -63,7 +61,10 @@ export default function DockerDetail({ connectionId, containerId, onClose }: Pro
               <Terminal size={14} />
               终端
             </button>
-            <button onClick={onClose} className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300">
+            <button
+              onClick={onClose}
+              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
+            >
               <X size={16} />
             </button>
           </div>
@@ -99,11 +100,9 @@ export default function DockerDetail({ connectionId, containerId, onClose }: Pro
               {/* 环境变量 */}
               <Section icon={<Box size={14} />} title="环境变量">
                 <div className="max-h-40 overflow-y-auto rounded-md bg-slate-800/50 p-2 font-mono text-xs text-slate-400">
-                  {data.Config?.Env?.length ? (
-                    data.Config.Env.map((env, i) => <div key={i}>{env}</div>)
-                  ) : (
-                    '(无环境变量)'
-                  )}
+                  {data.Config?.Env?.length
+                    ? data.Config.Env.map((env, i) => <div key={i}>{env}</div>)
+                    : '(无环境变量)'}
                 </div>
               </Section>
 
@@ -114,8 +113,12 @@ export default function DockerDetail({ connectionId, containerId, onClose }: Pro
                     {data.Mounts.map((m, i) => (
                       <div key={i} className="rounded-md bg-slate-800/50 p-2 text-xs">
                         <div className="text-slate-400">类型: {m.Type}</div>
-                        <div className="text-slate-400">源: <span className="text-slate-300">{m.Source}</span></div>
-                        <div className="text-slate-400">目标: <span className="text-slate-300">{m.Destination}</span></div>
+                        <div className="text-slate-400">
+                          源: <span className="text-slate-300">{m.Source}</span>
+                        </div>
+                        <div className="text-slate-400">
+                          目标: <span className="text-slate-300">{m.Destination}</span>
+                        </div>
                         <div className="text-slate-400">权限: {m.RW ? '读写' : '只读'}</div>
                       </div>
                     ))}
@@ -141,7 +144,10 @@ export default function DockerDetail({ connectionId, containerId, onClose }: Pro
               {/* 重启策略 */}
               <Section icon={<Box size={14} />} title="重启策略">
                 <Row label="策略" value={data.HostConfig?.RestartPolicy?.Name || 'none'} />
-                <Row label="最大重试" value={String(data.HostConfig?.RestartPolicy?.MaximumRetryCount || 0)} />
+                <Row
+                  label="最大重试"
+                  value={String(data.HostConfig?.RestartPolicy?.MaximumRetryCount || 0)}
+                />
               </Section>
             </div>
           ) : null}
@@ -160,10 +166,18 @@ export default function DockerDetail({ connectionId, containerId, onClose }: Pro
   )
 }
 
-function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+function Section({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode
+  title: string
+  children: React.ReactNode
+}) {
   return (
     <div>
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-slate-400 uppercase">
         {icon}
         {title}
       </div>

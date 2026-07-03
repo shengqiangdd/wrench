@@ -24,10 +24,10 @@ interface TransferTarget {
   host: string
   path: string
   status: 'pending' | 'connecting' | 'transferring' | 'success' | 'error'
-  progress: number      // 0-100
-  speed: string         // 传输速度
+  progress: number // 0-100
+  speed: string // 传输速度
   error?: string
-  size: number          // 已传输字节
+  size: number // 已传输字节
 }
 
 type TransferMode = 'upload' | 'command'
@@ -93,7 +93,8 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
   const setTargetPath = (idx: number, path: string) => {
     setTargets((prev) => {
       const next = [...prev]
-      const entry = next[idx]!; next[idx] = { ...entry, path }
+      const entry = next[idx]!
+      next[idx] = { ...entry, path }
       return next
     })
   }
@@ -131,7 +132,8 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
 
         setTargets((prev) => {
           const next = [...prev]
-          const entry = next[i]!; next[i] = { ...entry, status: 'connecting', progress: 0 }
+          const entry = next[i]!
+          next[i] = { ...entry, status: 'connecting', progress: 0 }
           return next
         })
 
@@ -146,7 +148,8 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
 
           setTargets((prev) => {
             const next = [...prev]
-            const entry = next[i]!; next[i] = { ...entry, status: 'transferring', progress: 10 }
+            const entry = next[i]!
+            next[i] = { ...entry, status: 'transferring', progress: 10 }
             return next
           })
 
@@ -171,22 +174,24 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
 
             setTargets((prev) => {
               const next = [...prev]
-              const entry = next[i]!; next[i] = { ...entry, progress: 100, size: file.size }
+              const entry = next[i]!
+              next[i] = { ...entry, progress: 100, size: file.size }
               return next
             })
           }
 
           setTargets((prev) => {
             const next = [...prev]
-            const entry = next[i]!; next[i] = { ...entry, status: 'success', progress: 100 }
+            const entry = next[i]!
+            next[i] = { ...entry, status: 'success', progress: 100 }
             return next
           })
           addLog(`✅ [${target.name}] 上传完成 (${(file.size / 1024).toFixed(1)} KB)`)
-
         } catch (err: any) {
           setTargets((prev) => {
             const next = [...prev]
-            const entry = next[i]!; next[i] = { ...entry, status: 'error', error: err.message }
+            const entry = next[i]!
+            next[i] = { ...entry, status: 'error', error: err.message }
             return next
           })
           addLog(`❌ [${target.name}] 上传失败: ${err.message}`)
@@ -209,65 +214,65 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
     totalSize: number,
     targetIdx: number,
   ): Promise<void> => {
-      // 启动分块会话
-      const startResult = await wsClient.request({
+    // 启动分块会话
+    const startResult = await wsClient.request({
+      type: 'sftp',
+      connectionId: connId,
+      operation: 'chunk_start',
+      path,
+    })
+
+    if (!startResult.success) {
+      throw new Error(String(startResult.error || '分块上传启动失败'))
+    }
+
+    const chunkId = startResult.chunkId
+    const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB
+    const rawBytes = Math.floor(content.length * 0.75) // base64 → 实际字节
+    const totalChunks = Math.ceil(rawBytes / CHUNK_SIZE)
+
+    for (let c = 0; c < totalChunks; c++) {
+      const start = c * CHUNK_SIZE
+      const end = Math.min(start + CHUNK_SIZE, content.length)
+      const chunkContent = content.slice(start, end)
+
+      const appendResult = await wsClient.request({
         type: 'sftp',
         connectionId: connId,
-        operation: 'chunk_start',
-        path,
+        operation: 'chunk_append',
+        chunkId,
+        content: chunkContent,
       })
 
-      if (!startResult.success) {
-        throw new Error(String(startResult.error || '分块上传启动失败'))
+      if (!appendResult.success) {
+        throw new Error(String(appendResult.error || '分块写入失败'))
       }
 
-        const chunkId = startResult.chunkId
-        const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB
-        const rawBytes = Math.floor(content.length * 0.75) // base64 → 实际字节
-        const totalChunks = Math.ceil(rawBytes / CHUNK_SIZE)
-
-        for (let c = 0; c < totalChunks; c++) {
-          const start = c * CHUNK_SIZE
-          const end = Math.min(start + CHUNK_SIZE, content.length)
-          const chunkContent = content.slice(start, end)
-
-          const appendResult = await wsClient.request({
-            type: 'sftp',
-            connectionId: connId,
-            operation: 'chunk_append',
-            chunkId,
-            content: chunkContent,
-          })
-
-          if (!appendResult.success) {
-            throw new Error(String(appendResult.error || '分块写入失败'))
-          }
-
-          const progress = Math.round(((c + 1) / totalChunks) * 90) + 10
-          setTargets((prev) => {
-            const next = [...prev]
-            const entry = next[targetIdx]!
-            next[targetIdx] = {
-              ...entry,
-              progress,
-              size: Math.round((c + 1) / totalChunks * totalSize),
-            }
-            return next
-          })
+      const progress = Math.round(((c + 1) / totalChunks) * 90) + 10
+      setTargets((prev) => {
+        const next = [...prev]
+        const entry = next[targetIdx]!
+        next[targetIdx] = {
+          ...entry,
+          progress,
+          size: Math.round(((c + 1) / totalChunks) * totalSize),
         }
+        return next
+      })
+    }
 
-        // 完成
-        const finishResult = await wsClient.request({
-          type: 'sftp',
-          connectionId: connId,
-          operation: 'chunk_finish',
-          chunkId,
-          targetPath: path,
-        })
+    // 完成
+    const finishResult = await wsClient.request({
+      type: 'sftp',
+      connectionId: connId,
+      operation: 'chunk_finish',
+      chunkId,
+      targetPath: path,
+    })
 
-        if (!finishResult.success) {
-          throw new Error(String(finishResult.error || '分块上传完成失败'))
-        }
+    if (!finishResult.success) {
+      throw new Error(String(finishResult.error || '分块上传完成失败'))
+    }
   }
 
   // 执行远程命令
@@ -282,7 +287,8 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
 
       setTargets((prev) => {
         const next = [...prev]
-        const entry = next[i]!; next[i] = { ...entry, status: 'connecting', progress: 0 }
+        const entry = next[i]!
+        next[i] = { ...entry, status: 'connecting', progress: 0 }
         return next
       })
 
@@ -301,7 +307,8 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
         if (json.exitCode === 0) {
           setTargets((prev) => {
             const next = [...prev]
-            const entry = next[i]!; next[i] = { ...entry, status: 'success', progress: 100, speed: `${duration}ms` }
+            const entry = next[i]!
+            next[i] = { ...entry, status: 'success', progress: 100, speed: `${duration}ms` }
             return next
           })
           addLog(`✅ [${target.name}] 完成 (${duration}ms)`)
@@ -316,12 +323,15 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
             }
             return next
           })
-          addLog(`❌ [${target.name}] 失败 (${json.exitCode}): ${(json.stderr || '').slice(0, 100)}`)
+          addLog(
+            `❌ [${target.name}] 失败 (${json.exitCode}): ${(json.stderr || '').slice(0, 100)}`,
+          )
         }
       } catch (err: any) {
         setTargets((prev) => {
           const next = [...prev]
-          const entry = next[i]!; next[i] = { ...entry, status: 'error', error: err.message }
+          const entry = next[i]!
+          next[i] = { ...entry, status: 'error', error: err.message }
           return next
         })
         addLog(`❌ [${target.name}] 请求失败: ${err.message}`)
@@ -340,9 +350,12 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
     <div className="flex h-full flex-col bg-slate-900">
       {/* 头部 */}
       <div className="flex shrink-0 items-center border-b border-slate-700/50 px-4 py-2">
-        <Upload size={16} className="mr-2 text-smartbox-400" />
+        <Upload size={16} className="text-smartbox-400 mr-2" />
         <h2 className="text-sm font-semibold text-slate-200">批量文件分发</h2>
-        <button onClick={onClose} className="ml-auto min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300">
+        <button
+          onClick={onClose}
+          className="ml-auto min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
+        >
           <X size={14} />
         </button>
       </div>
@@ -397,12 +410,17 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
                   <div key={i} className="px-3 py-2 transition-colors hover:bg-slate-800/30">
                     <div className="flex items-center gap-2">
                       {/* 状态指示 */}
-                      <div className={`h-2 w-2 shrink-0 rounded-full ${
-                        t.status === 'success' ? 'bg-emerald-500' :
-                        t.status === 'error' ? 'bg-red-500' :
-                        t.status === 'transferring' || t.status === 'connecting' ? 'bg-blue-500 animate-pulse' :
-                        'bg-slate-600'
-                      }`} />
+                      <div
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          t.status === 'success'
+                            ? 'bg-emerald-500'
+                            : t.status === 'error'
+                              ? 'bg-red-500'
+                              : t.status === 'transferring' || t.status === 'connecting'
+                                ? 'animate-pulse bg-blue-500'
+                                : 'bg-slate-600'
+                        }`}
+                      />
                       <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-300">
                         {t.name}
                       </span>
@@ -413,7 +431,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
                     {t.status === 'transferring' && (
                       <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-700">
                         <div
-                          className="h-full rounded-full bg-smartbox-500 transition-all duration-300"
+                          className="bg-smartbox-500 h-full rounded-full transition-all duration-300"
                           style={{ width: `${t.progress}%` }}
                         />
                       </div>
@@ -426,13 +444,13 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
                         value={t.path}
                         onChange={(e) => setTargetPath(i, e.target.value)}
                         placeholder="/root/"
-                        className="mt-1 w-full rounded border border-slate-700/50 bg-slate-800/60 px-2 py-1 text-[11px] text-slate-400 outline-none focus:border-smartbox-500/50"
+                        className="focus:border-smartbox-500/50 mt-1 w-full rounded border border-slate-700/50 bg-slate-800/60 px-2 py-1 text-[11px] text-slate-400 outline-none"
                       />
                     )}
 
                     {/* 状态信息 */}
                     {t.status === 'error' && (
-                      <div className="mt-1 text-[10px] text-red-400 truncate">{t.error}</div>
+                      <div className="mt-1 truncate text-[10px] text-red-400">{t.error}</div>
                     )}
                     {t.status === 'success' && (
                       <div className="mt-1 text-[10px] text-emerald-500">完成</div>
@@ -460,7 +478,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-1.5 rounded-md border border-dashed border-slate-600 px-3 py-2 text-xs text-slate-400 transition-colors hover:border-smartbox-500/50 hover:text-slate-200"
+                    className="hover:border-smartbox-500/50 flex items-center gap-1.5 rounded-md border border-dashed border-slate-600 px-3 py-2 text-xs text-slate-400 transition-colors hover:text-slate-200"
                   >
                     <File size={14} />
                     {selectedFile ? selectedFile.name : '选择文件...'}
@@ -482,7 +500,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
                     value={destPath}
                     onChange={(e) => setAllDestPath(e.target.value)}
                     placeholder="/root/"
-                    className="flex-1 rounded-md border border-slate-700/50 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-smartbox-500/50"
+                    className="focus:border-smartbox-500/50 flex-1 rounded-md border border-slate-700/50 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 outline-none"
                   />
                 </div>
               </div>
@@ -492,14 +510,12 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
                 <button
                   onClick={startUpload}
                   disabled={!selectedFile || targets.length === 0 || running}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-md bg-smartbox-600 px-3 py-2 text-xs text-white transition-colors hover:bg-smartbox-500 disabled:opacity-50"
+                  className="bg-smartbox-600 hover:bg-smartbox-500 flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs text-white transition-colors disabled:opacity-50"
                 >
-                  {running ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Upload size={14} />
-                  )}
-                  {running ? '上传中...' : `开始上传到 ${successCount + errorCount + selectedCount} 台主机`}
+                  {running ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  {running
+                    ? '上传中...'
+                    : `开始上传到 ${successCount + errorCount + selectedCount} 台主机`}
                 </button>
               </div>
             </>
@@ -513,7 +529,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
                   onChange={(e) => setRemoteCommand(e.target.value)}
                   placeholder="例如: rm -rf /tmp/cache/*"
                   rows={3}
-                  className="w-full resize-none rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-smartbox-500/50 font-mono"
+                  className="focus:border-smartbox-500/50 w-full resize-none rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 font-mono text-xs text-slate-200 placeholder-slate-500 outline-none"
                 />
               </div>
 
@@ -529,7 +545,9 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
                   ) : (
                     <Download size={14} />
                   )}
-                  {running ? '执行中...' : `批量执行命令到 ${successCount + errorCount + selectedCount} 台主机`}
+                  {running
+                    ? '执行中...'
+                    : `批量执行命令到 ${successCount + errorCount + selectedCount} 台主机`}
                 </button>
               </div>
             </>

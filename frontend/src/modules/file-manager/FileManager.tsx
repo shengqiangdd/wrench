@@ -15,13 +15,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import {
-  FileCode2,
-  X,
-  PanelLeftClose,
-  PanelLeft,
-  Loader2,
-} from 'lucide-react'
+import { FileCode2, X, PanelLeftClose, PanelLeft, Loader2 } from 'lucide-react'
 import { useSshStore, decryptConnection } from '../../stores/ssh-store'
 import { useAppStore } from '../../stores/app-store'
 import { useFileStore } from '../../stores/file-store'
@@ -36,12 +30,33 @@ function getFileIcon(name: string) {
   const ext = name.split('.').pop()?.toLowerCase()
   if (!ext) return <FileCode2 size={14} className="text-slate-500" />
   switch (ext) {
-    case 'js': case 'ts': case 'tsx': case 'jsx': case 'py': case 'go': case 'rs':
-    case 'java': case 'c': case 'cpp': case 'rb': case 'php': case 'sh': case 'bash':
+    case 'js':
+    case 'ts':
+    case 'tsx':
+    case 'jsx':
+    case 'py':
+    case 'go':
+    case 'rs':
+    case 'java':
+    case 'c':
+    case 'cpp':
+    case 'rb':
+    case 'php':
+    case 'sh':
+    case 'bash':
       return <FileCode2 size={14} className="text-sky-400" />
-    case 'json': case 'yaml': case 'yml': case 'toml': case 'xml':
+    case 'json':
+    case 'yaml':
+    case 'yml':
+    case 'toml':
+    case 'xml':
       return <FileCode2 size={14} className="text-amber-400" />
-    case 'md': case 'txt': case 'log': case 'cfg': case 'conf': case 'env':
+    case 'md':
+    case 'txt':
+    case 'log':
+    case 'cfg':
+    case 'conf':
+    case 'env':
       return <FileCode2 size={14} className="text-slate-400" />
     default:
       return <FileCode2 size={14} className="text-slate-500" />
@@ -49,11 +64,7 @@ function getFileIcon(name: string) {
 }
 
 /** 等待 sftp-ready 事件，最多等 8 秒 */
-function waitForSftpReady(
-  wsClient: WsClient,
-  sessionId: string,
-  timeout = 8000,
-): Promise<boolean> {
+function waitForSftpReady(wsClient: WsClient, sessionId: string, timeout = 8000): Promise<boolean> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), timeout)
     const unsub = wsClient.on('sftp-ready', (data: any) => {
@@ -78,22 +89,27 @@ async function ensureSftpSession(
   onStatus: (msg: string) => void,
 ): Promise<string | null> {
   const conns = useSshStore.getState().connections
-  const conn = conns.find(c => c.id === connId)
+  const conn = conns.find((c) => c.id === connId)
   if (!conn) return null
 
   // 1. 检查是否已有同连接ID的 session（从 SSH 页面复用的）
-  const existing = existingSessions.find(s => s.connectionId === connId && s.status === 'connected')
+  const existing = existingSessions.find(
+    (s) => s.connectionId === connId && s.status === 'connected',
+  )
   if (existing) {
     onStatus('检测到已有 SSH 连接，尝试复用 SFTP...')
     try {
-      await wsClient.request({
-        type: 'sftp',
-        connectionId: existing.id,
-        operation: 'stat',
-        path: '/',
-      }, 5000)
+      await wsClient.request(
+        {
+          type: 'sftp',
+          connectionId: existing.id,
+          operation: 'stat',
+          path: '/',
+        },
+        5000,
+      )
       onStatus('')
-      return existing.id  // ✅ 可用，直接复用
+      return existing.id // ✅ 可用，直接复用
     } catch {
       // 不可用，继续建新连接
       onStatus('已有连接 SFTP 未就绪，创建新连接...')
@@ -220,15 +236,9 @@ export default function FileManager() {
       }
     }
 
-    const sid = await ensureSftpSession(
-      cached.connId,
-      sessArr,
-      addSession,
-      wsClient,
-      (msg) => {
-        if (msg) setStatusMsg(msg)
-      },
-    )
+    const sid = await ensureSftpSession(cached.connId, sessArr, addSession, wsClient, (msg) => {
+      if (msg) setStatusMsg(msg)
+    })
 
     if (sid) {
       setFmState({
@@ -268,9 +278,7 @@ export default function FileManager() {
     // 如果已有有效 session，不做任何事
     if (
       fmState.sessionId &&
-      sessions.some(
-        (s) => s.id === fmState.sessionId && s.status === 'connected',
-      )
+      sessions.some((s) => s.id === fmState.sessionId && s.status === 'connected')
     ) {
       return
     }
@@ -302,13 +310,7 @@ export default function FileManager() {
         }
       }
 
-      const sid = await ensureSftpSession(
-        connId,
-        sessions,
-        addSession,
-        wsClient,
-        setStatusMsg,
-      )
+      const sid = await ensureSftpSession(connId, sessions, addSession, wsClient, setStatusMsg)
 
       if (sid) {
         const currentCache = useAppStore.getState().fmSftpState.pathCache
@@ -332,14 +334,12 @@ export default function FileManager() {
   // 当前 session 是否有效
   const isConnected =
     fmState.sessionId !== null &&
-    sessions.some(
-      (s) => s.id === fmState.sessionId && s.status === 'connected',
-    )
+    sessions.some((s) => s.id === fmState.sessionId && s.status === 'connected')
 
   // 无连接时显示可选连接列表
   if (!isConnected && !connecting) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 text-slate-500 p-4">
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-4 text-slate-500">
         <FileCode2 size={48} className="text-slate-600" />
         <div className="text-center">
           <p className="text-sm font-medium text-slate-400">未连接到任何 SSH</p>
@@ -348,7 +348,9 @@ export default function FileManager() {
         {connections.length > 0 && (
           <div className="flex flex-wrap justify-center gap-2">
             {connections.map((conn) => {
-              const isActive = sessions.some((s) => s.connectionId === conn.id && s.status === 'connected')
+              const isActive = sessions.some(
+                (s) => s.connectionId === conn.id && s.status === 'connected',
+              )
               return (
                 <button
                   key={conn.id}
@@ -359,7 +361,9 @@ export default function FileManager() {
                       : 'border-slate-700/50 bg-slate-800/50 text-slate-400 hover:bg-slate-700/50'
                   }`}
                 >
-                  <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+                  <span
+                    className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-600'}`}
+                  />
                   {conn.name}
                   {isActive ? ' (已连接)' : ''}
                 </button>
@@ -369,7 +373,7 @@ export default function FileManager() {
         )}
         <button
           onClick={() => useAppStore.getState().setActiveNav('ssh')}
-          className="mt-2 rounded-md bg-smartbox-600 px-4 py-2 text-xs text-white transition-colors hover:bg-smartbox-500"
+          className="bg-smartbox-600 hover:bg-smartbox-500 mt-2 rounded-md px-4 py-2 text-xs text-white transition-colors"
         >
           前往 SSH 页面
         </button>
@@ -385,7 +389,7 @@ export default function FileManager() {
           <ResizablePanel side="right" defaultSize={260} minSize={200} maxSize={500}>
             <div className="flex h-full flex-col">
               <div className="flex items-center justify-between border-b border-slate-700/30 px-2 py-1.5">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                <span className="text-[11px] font-medium tracking-wider text-slate-500 uppercase">
                   文件
                 </span>
                 <button
@@ -398,20 +402,20 @@ export default function FileManager() {
               </div>
               <div className="flex-1 overflow-y-auto">
                 <SftpBrowser
-            sessionId={fmState.sessionId}
-            activeConnId={fmState.connId}
-            connectionOptions={connections.map((c) => ({
-              id: c.id,
-              name: c.name,
-              host: c.host,
-            }))}
-            onConnect={connectAndSftp}
-              connecting={connecting}
-              showConnector={true}
-            />
-          </div>
-          </div>
-        </ResizablePanel>
+                  sessionId={fmState.sessionId}
+                  activeConnId={fmState.connId}
+                  connectionOptions={connections.map((c) => ({
+                    id: c.id,
+                    name: c.name,
+                    host: c.host,
+                  }))}
+                  onConnect={connectAndSftp}
+                  connecting={connecting}
+                  showConnector={true}
+                />
+              </div>
+            </div>
+          </ResizablePanel>
         </div>
       )}
 
@@ -430,8 +434,7 @@ export default function FileManager() {
           )}
           {connecting && (
             <span className="flex items-center gap-1 text-xs text-amber-400">
-              <Loader2 size={12} className="animate-spin" />{' '}
-              {statusMsg || '连接中...'}
+              <Loader2 size={12} className="animate-spin" /> {statusMsg || '连接中...'}
             </span>
           )}
           {!isConnected && !connecting && (
@@ -441,9 +444,7 @@ export default function FileManager() {
           )}
           <div className="ml-auto flex items-center gap-1">
             {fileStore.openTabs.length > 0 && (
-              <span className="text-[10px] text-slate-600">
-                {fileStore.openTabs.length} 个标签
-              </span>
+              <span className="text-[10px] text-slate-600">{fileStore.openTabs.length} 个标签</span>
             )}
           </div>
         </div>
@@ -464,9 +465,7 @@ export default function FileManager() {
                 >
                   {getFileIcon(tab.name)}
                   <span className="max-w-[100px] truncate">{tab.name}</span>
-                  {tab.isDirty && (
-                    <span className="text-[10px] text-amber-400">●</span>
-                  )}
+                  {tab.isDirty && <span className="text-[10px] text-amber-400">●</span>}
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -489,14 +488,9 @@ export default function FileManager() {
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <div className="text-center">
-                <FileCode2
-                  size={48}
-                  className="mx-auto mb-3 text-slate-600"
-                />
+                <FileCode2 size={48} className="mx-auto mb-3 text-slate-600" />
                 <p className="text-sm text-slate-500">
-                  {isConnected
-                    ? '在左侧文件浏览器中双击文件打开编辑'
-                    : '请先连接 SSH 服务器'}
+                  {isConnected ? '在左侧文件浏览器中双击文件打开编辑' : '请先连接 SSH 服务器'}
                 </p>
                 <p className="mt-1 text-xs text-slate-600">
                   支持双击文件、右键「在编辑器中打开」、拖拽调整面板宽度

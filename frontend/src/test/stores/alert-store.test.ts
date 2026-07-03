@@ -90,7 +90,15 @@ describe('alert-store', () => {
 
   describe('resetToDefaults', () => {
     it('restores default rules and clears history', () => {
-      useAlertStore.getState().addRule({ metric: 'cpu', threshold: 50, severity: 'warning', enabled: true, consecutive: 1 })
+      useAlertStore
+        .getState()
+        .addRule({
+          metric: 'cpu',
+          threshold: 50,
+          severity: 'warning',
+          enabled: true,
+          consecutive: 1,
+        })
       useAlertStore.getState().clearHistory()
       useAlertStore.getState().resetToDefaults()
       const state = useAlertStore.getState()
@@ -102,7 +110,22 @@ describe('alert-store', () => {
 
   describe('clearHistory', () => {
     it('clears history array', () => {
-      useAlertStore.setState({ history: [{ id: 'x', ruleId: 'r', hostId: 'h', hostName: 'H', metric: 'cpu', value: 99, threshold: 80, severity: 'critical', timestamp: 1, notified: true }] })
+      useAlertStore.setState({
+        history: [
+          {
+            id: 'x',
+            ruleId: 'r',
+            hostId: 'h',
+            hostName: 'H',
+            metric: 'cpu',
+            value: 99,
+            threshold: 80,
+            severity: 'critical',
+            timestamp: 1,
+            notified: true,
+          },
+        ],
+      })
       useAlertStore.getState().clearHistory()
       expect(useAlertStore.getState().history).toHaveLength(0)
     })
@@ -111,12 +134,16 @@ describe('alert-store', () => {
   describe('evaluate', () => {
     it('returns empty when disabled', () => {
       useAlertStore.getState().toggleEnabled()
-      const events = useAlertStore.getState().evaluate('h1', 'Host1', { cpu: 99, memory: 99, disk: 99 })
+      const events = useAlertStore
+        .getState()
+        .evaluate('h1', 'Host1', { cpu: 99, memory: 99, disk: 99 })
       expect(events).toHaveLength(0)
     })
 
     it('returns empty when below all thresholds', () => {
-      const events = useAlertStore.getState().evaluate('h1', 'Host1', { cpu: 10, memory: 10, disk: 10 })
+      const events = useAlertStore
+        .getState()
+        .evaluate('h1', 'Host1', { cpu: 10, memory: 10, disk: 10 })
       expect(events).toHaveLength(0)
     })
 
@@ -125,7 +152,9 @@ describe('alert-store', () => {
       useAlertStore.getState().evaluate('h1', 'Host1', { cpu: 90, memory: 10, disk: 10 })
       useAlertStore.getState().evaluate('h1', 'Host1', { cpu: 90, memory: 10, disk: 10 })
       // 2nd call — cpu-warning has consecutive=3, so still not fired
-      const events = useAlertStore.getState().evaluate('h1', 'Host1', { cpu: 90, memory: 10, disk: 10 })
+      const events = useAlertStore
+        .getState()
+        .evaluate('h1', 'Host1', { cpu: 90, memory: 10, disk: 10 })
       // 3rd consecutive — should fire
       const cpuWarnings = events.filter((e) => e.metric === 'cpu' && e.severity === 'warning')
       expect(cpuWarnings.length).toBeGreaterThanOrEqual(0) // may or may not fire depending on exact counter logic
@@ -146,11 +175,17 @@ describe('alert-store', () => {
       useAlertStore.getState().evaluate('h3', 'Host3', { cpu: 99, memory: 10, disk: 10 })
       useAlertStore.getState().evaluate('h3', 'Host3', { cpu: 99, memory: 10, disk: 10 })
       useAlertStore.getState().evaluate('h3', 'Host3', { cpu: 99, memory: 10, disk: 10 })
-      const afterFire = useAlertStore.getState().history.filter((e) => e.hostId === 'h3' && e.metric === 'cpu')
+      const afterFire = useAlertStore
+        .getState()
+        .history.filter((e) => e.hostId === 'h3' && e.metric === 'cpu')
       expect(afterFire.length).toBeGreaterThanOrEqual(1)
       // Counter was reset — next single evaluation should NOT fire again immediately
-      const nextEvents = useAlertStore.getState().evaluate('h3', 'Host3', { cpu: 99, memory: 10, disk: 10 })
-      const cpuWarningsNext = nextEvents.filter((e) => e.metric === 'cpu' && e.severity === 'warning')
+      const nextEvents = useAlertStore
+        .getState()
+        .evaluate('h3', 'Host3', { cpu: 99, memory: 10, disk: 10 })
+      const cpuWarningsNext = nextEvents.filter(
+        (e) => e.metric === 'cpu' && e.severity === 'warning',
+      )
       expect(cpuWarningsNext).toHaveLength(0)
     })
   })

@@ -22,7 +22,11 @@ function saveConfig(config: Record<string, CustomSource[]>) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
 }
 
-export default function SourceConfig({ connectionId, currentPath, onSelectPath }: SourceConfigProps) {
+export default function SourceConfig({
+  connectionId,
+  currentPath,
+  onSelectPath,
+}: SourceConfigProps) {
   const [discoveredSources, setDiscoveredSources] = useState<LogSource[]>([])
   const [discovering, setDiscovering] = useState(false)
   const [customSources, setCustomSources] = useState<CustomSource[]>(() => {
@@ -50,13 +54,19 @@ export default function SourceConfig({ connectionId, currentPath, onSelectPath }
         const common: LogSource[] = []
         let inCommon = false
         for (const line of lines) {
-          if (line === '---common---') { inCommon = true; continue }
+          if (line === '---common---') {
+            inCommon = true
+            continue
+          }
           if (inCommon) {
             const parts = line.trim().split(/\s+/)
             if (parts.length >= 2) {
               const size = parts[0]
               const path = parts.slice(1).join(' ')
-              const label = PRESET_LOG_PATTERNS.find(p => p.path === path)?.label || path.split('/').pop() || path
+              const label =
+                PRESET_LOG_PATTERNS.find((p) => p.path === path)?.label ||
+                path.split('/').pop() ||
+                path
               common.push({ size, path, label })
             }
           }
@@ -189,20 +199,20 @@ export default function SourceConfig({ connectionId, currentPath, onSelectPath }
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
                 placeholder="名称（如: app-prod）"
-                className="mb-1.5 w-full rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-smartbox-500"
+                className="focus:border-smartbox-500 mb-1.5 w-full rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none"
               />
               <input
                 type="text"
                 value={newPath}
                 onChange={(e) => setNewPath(e.target.value)}
                 placeholder="路径（如: /var/log/myapp/app.log）"
-                className="mb-1.5 w-full rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-smartbox-500"
+                className="focus:border-smartbox-500 mb-1.5 w-full rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none"
               />
               <div className="flex gap-1">
                 <button
                   onClick={handleAddCustom}
                   disabled={!newLabel.trim() || !newPath.trim()}
-                  className="flex-1 rounded bg-smartbox-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-smartbox-500 disabled:opacity-50"
+                  className="bg-smartbox-600/80 hover:bg-smartbox-500 flex-1 rounded px-2 py-1 text-xs text-white transition-colors disabled:opacity-50"
                 >
                   添加
                 </button>

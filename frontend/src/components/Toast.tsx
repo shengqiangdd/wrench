@@ -28,10 +28,16 @@ export default function Toast() {
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { message: string; type: 'success' | 'error' | 'info' }
+      const detail = (e as CustomEvent).detail as {
+        message: string
+        type: 'success' | 'error' | 'info'
+      }
       if (!detail?.message) return
       const id = ++idRef.current
-      setToasts((prev) => [...prev, { id, message: detail.message, type: detail.type || 'info', exiting: false }])
+      setToasts((prev) => [
+        ...prev,
+        { id, message: detail.message, type: detail.type || 'info', exiting: false },
+      ])
       // 自动消失
       setTimeout(() => removeToast(id), 3500)
     }
@@ -43,7 +49,7 @@ export default function Toast() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2">
+    <div className="fixed right-4 bottom-4 z-[9999] flex flex-col gap-2">
       {toasts.map((toast) => {
         const icons = {
           success: <CheckCircle size={16} className="text-emerald-400" />,
@@ -65,7 +71,7 @@ export default function Toast() {
             style={{ minWidth: 200, maxWidth: 360 }}
           >
             <span className="mt-0.5 shrink-0">{icons[toast.type]}</span>
-            <p className="text-xs text-slate-300 leading-relaxed">{toast.message}</p>
+            <p className="text-xs leading-relaxed text-slate-300">{toast.message}</p>
             <button
               onClick={() => removeToast(toast.id)}
               className="ml-1 shrink-0 text-slate-600 hover:text-slate-400"

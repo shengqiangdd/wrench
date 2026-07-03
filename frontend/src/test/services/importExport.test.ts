@@ -10,7 +10,13 @@ vi.stubGlobal('crypto', {
     importKey: vi.fn().mockResolvedValue({ type: 'secret' }),
     deriveKey: vi.fn().mockResolvedValue({ type: 'secret' }),
     encrypt: vi.fn().mockResolvedValue(new ArrayBuffer(16)),
-    decrypt: vi.fn().mockResolvedValue(new TextEncoder().encode('{"version":2,"exportedAt":"2024","appVersion":"1.0","data":{"connections":[],"aiConfig":{},"appState":{"theme":"dark"},"plugins":[]}}').buffer),
+    decrypt: vi
+      .fn()
+      .mockResolvedValue(
+        new TextEncoder().encode(
+          '{"version":2,"exportedAt":"2024","appVersion":"1.0","data":{"connections":[],"aiConfig":{},"appState":{"theme":"dark"},"plugins":[]}}',
+        ).buffer,
+      ),
   },
 })
 
@@ -18,10 +24,9 @@ import { exportConfig, importConfig, collectExportData } from '../../services/im
 
 // Mock store hooks used by collectExportData
 vi.mock('../../stores/ssh-store', () => ({
-  useSshStore: Object.assign(
-    (selector: (s: any) => any) => selector({ connections: [] }),
-    { getState: () => ({ connections: [] }) },
-  ),
+  useSshStore: Object.assign((selector: (s: any) => any) => selector({ connections: [] }), {
+    getState: () => ({ connections: [] }),
+  }),
 }))
 
 vi.mock('../../stores/ai-store', () => ({
@@ -32,10 +37,9 @@ vi.mock('../../stores/ai-store', () => ({
 }))
 
 vi.mock('../../stores/plugin-store', () => ({
-  usePluginStore: Object.assign(
-    (selector: (s: any) => any) => selector({ enabledPlugins: [] }),
-    { getState: () => ({ enabledPlugins: [] }) },
-  ),
+  usePluginStore: Object.assign((selector: (s: any) => any) => selector({ enabledPlugins: [] }), {
+    getState: () => ({ enabledPlugins: [] }),
+  }),
 }))
 
 vi.mock('../../stores/app-store', () => ({
@@ -73,7 +77,7 @@ describe('importExport service', () => {
   })
 
   it('rejects import of corrupted file', async () => {
-    const file = new File(['{invalid json}',], 'config.smartbox', { type: 'application/json' })
+    const file = new File(['{invalid json}'], 'config.smartbox', { type: 'application/json' })
     await expect(importConfig(file, '')).rejects.toThrow()
   })
 })

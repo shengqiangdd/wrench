@@ -99,7 +99,16 @@ export default function VirtualList<T>({
       >
         <div style={{ height: totalHeight, position: 'relative' }}>
           {items.map((item, i) => (
-            <div key={getKey?.(item) ?? i} style={{ position: 'absolute', top: i * itemHeight, left: 0, right: 0, height: itemHeight }}>
+            <div
+              key={getKey?.(item) ?? i}
+              style={{
+                position: 'absolute',
+                top: i * itemHeight,
+                left: 0,
+                right: 0,
+                height: itemHeight,
+              }}
+            >
               {renderItem(item, i)}
             </div>
           ))}
@@ -118,10 +127,7 @@ export default function VirtualList<T>({
       <div style={{ height: totalHeight, position: 'relative' }}>
         <div style={{ transform: `translateY(${paddingTop}px)` }}>
           {visibleItems.map(({ item, index }) => (
-            <div
-              key={getKey?.(item) ?? index}
-              style={{ height: itemHeight }}
-            >
+            <div key={getKey?.(item) ?? index} style={{ height: itemHeight }}>
               {renderItem(item, index)}
             </div>
           ))}

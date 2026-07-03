@@ -72,9 +72,7 @@ const ACTION_COLORS: Record<string, string> = {
 }
 
 function formatAction(action: string): string {
-  return action
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+  return action.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 // 🔥 Memoized action icon component
@@ -86,7 +84,10 @@ const ActionIcon = memo(function ActionIcon({ action }: { action: string }) {
 // 🔥 Memoized log row component
 const LogRow = memo(function LogRow({ entry }: { entry: AuditEntry }) {
   const colorClass = ACTION_COLORS[entry.action] || 'text-slate-500'
-  const formattedDetail = useMemo(() => formatDetail(entry.action, entry.detail), [entry.action, entry.detail])
+  const formattedDetail = useMemo(
+    () => formatDetail(entry.action, entry.detail),
+    [entry.action, entry.detail],
+  )
 
   return (
     <div className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-slate-800/20">
@@ -95,14 +96,10 @@ const LogRow = memo(function LogRow({ entry }: { entry: AuditEntry }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-300">
-            {formatAction(entry.action)}
-          </span>
-          <span className="text-[10px] text-slate-600">
-            {entry.timestamp}
-          </span>
+          <span className="text-xs font-medium text-slate-300">{formatAction(entry.action)}</span>
+          <span className="text-[10px] text-slate-600">{entry.timestamp}</span>
         </div>
-        <div className="mt-0.5 text-[11px] text-slate-500 break-all whitespace-pre-wrap line-clamp-2">
+        <div className="mt-0.5 line-clamp-2 text-[11px] break-all whitespace-pre-wrap text-slate-500">
           {formattedDetail}
         </div>
       </div>
@@ -156,7 +153,7 @@ export default function AuditLogPage() {
       {/* Toolbar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-800/50 px-4 py-2">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <Search size={14} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-500" />
           <input
             className="input w-full pl-8 text-xs"
             placeholder="搜索操作记录..."
@@ -176,12 +173,7 @@ export default function AuditLogPage() {
             </option>
           ))}
         </select>
-        <button
-          onClick={fetchLogs}
-          disabled={loading}
-          className="btn btn-ghost p-2"
-          title="刷新"
-        >
+        <button onClick={fetchLogs} disabled={loading} className="btn btn-ghost p-2" title="刷新">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>

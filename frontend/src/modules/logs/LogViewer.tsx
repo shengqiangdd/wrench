@@ -85,13 +85,15 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
       wsRef.current = ws
 
       ws.onopen = () => {
-        ws.send(JSON.stringify({
-          type: 'logtail_start',
-          connectionId,
-          requestId: reqId,
-          logPath,
-          lines: lineCount,
-        }))
+        ws.send(
+          JSON.stringify({
+            type: 'logtail_start',
+            connectionId,
+            requestId: reqId,
+            logPath,
+            lines: lineCount,
+          }),
+        )
       }
 
       ws.onmessage = (event) => {
@@ -114,7 +116,9 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
             setError(msg.message)
             setFollowMode(false)
           }
-        } catch { /* ignore parse errors */ }
+        } catch {
+          /* ignore parse errors */
+        }
       }
 
       ws.onerror = () => {
@@ -134,12 +138,14 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
   // 停止跟踪
   const stopFollow = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'logtail_stop',
-        connectionId,
-        requestId: requestIdRef.current,
-        logPath,
-      }))
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'logtail_stop',
+          connectionId,
+          requestId: requestIdRef.current,
+          logPath,
+        }),
+      )
       wsRef.current.close()
     }
     wsRef.current = null
@@ -160,11 +166,13 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
     return () => {
       if (wsRef.current) {
         try {
-          wsRef.current.send(JSON.stringify({
-            type: 'logtail_stop',
-            connectionId,
-            logPath,
-          }))
+          wsRef.current.send(
+            JSON.stringify({
+              type: 'logtail_stop',
+              connectionId,
+              logPath,
+            }),
+          )
         } catch {}
         wsRef.current.close()
       }
@@ -253,9 +261,11 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
 
         {/* 搜索按钮 */}
         <button
-          onClick={() => setSearchResult(prev => prev ? '' : ' ')}
+          onClick={() => setSearchResult((prev) => (prev ? '' : ' '))}
           className={`rounded px-2 py-0.5 transition-colors ${
-            searchResult ? 'bg-smartbox-600/20 text-smartbox-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+            searchResult
+              ? 'bg-smartbox-600/20 text-smartbox-400'
+              : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
           }`}
           title="搜索"
         >
@@ -298,17 +308,20 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
             onChange={(e) => setSearchTerm(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="搜索关键词..."
-            className="flex-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-smartbox-500"
+            className="focus:border-smartbox-500 flex-1 rounded border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none"
           />
           <button
             onClick={handleSearch}
             disabled={searching || !searchTerm.trim()}
-            className="rounded bg-smartbox-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-smartbox-500 disabled:opacity-50"
+            className="bg-smartbox-600/80 hover:bg-smartbox-500 rounded px-2 py-1 text-xs text-white transition-colors disabled:opacity-50"
           >
             {searching ? '搜索中...' : '搜索'}
           </button>
           <button
-            onClick={() => { setSearchResult(''); setSearchTerm('') }}
+            onClick={() => {
+              setSearchResult('')
+              setSearchTerm('')
+            }}
             className="rounded px-1.5 py-1 text-xs text-slate-500 hover:text-slate-300"
           >
             关闭
@@ -323,25 +336,26 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
             <Search size={12} />
             <span>搜索结果</span>
           </div>
-          <pre className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300">{searchResult}</pre>
+          <pre className="text-xs leading-relaxed whitespace-pre-wrap text-slate-300">
+            {searchResult}
+          </pre>
         </div>
       )}
 
       {/* 错误提示 */}
-      {error && (() => {
-        const friendly = friendlyError(error, logPath)
-        return (
-          <div className="shrink-0 border-b border-red-900/30 bg-red-950/20 px-3 py-2 text-xs">
-            <div className="flex items-center gap-2 text-red-400">
-              <AlertTriangle size={14} className="shrink-0" />
-              <span className="font-medium">{friendly ? friendly.title : error}</span>
+      {error &&
+        (() => {
+          const friendly = friendlyError(error, logPath)
+          return (
+            <div className="shrink-0 border-b border-red-900/30 bg-red-950/20 px-3 py-2 text-xs">
+              <div className="flex items-center gap-2 text-red-400">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span className="font-medium">{friendly ? friendly.title : error}</span>
+              </div>
+              {friendly && <p className="mt-1 pl-5 text-[11px] text-red-400/70">{friendly.hint}</p>}
             </div>
-            {friendly && (
-              <p className="mt-1 pl-5 text-[11px] text-red-400/70">{friendly.hint}</p>
-            )}
-          </div>
-        )
-      })()}
+          )
+        })()}
 
       {/* 日志内容 */}
       <div ref={scrollRef} className="flex-1 overflow-auto bg-slate-950/80">
@@ -350,9 +364,7 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
           </div>
         ) : (
-          <pre
-            className="min-h-full whitespace-pre-wrap p-3 font-mono text-xs leading-relaxed text-slate-300"
-          >
+          <pre className="min-h-full p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-slate-300">
             {content || '(空)'}
           </pre>
         )}

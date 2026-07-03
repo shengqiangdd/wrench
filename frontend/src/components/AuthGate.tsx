@@ -29,7 +29,10 @@ export function AuthGate({ children }: AuthGateProps) {
         await getWsClient()
         // 尝试从服务端同步 SSH 连接（静默失败不影响启动）
         const { useSshStore } = await import('../stores/ssh-store')
-        useSshStore.getState().syncFromServer().catch(() => {})
+        useSshStore
+          .getState()
+          .syncFromServer()
+          .catch(() => {})
         if (!cancelled) {
           setAuthState('ready')
         }
@@ -42,7 +45,9 @@ export function AuthGate({ children }: AuthGateProps) {
     }
 
     init()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   if (authState === 'loading') {

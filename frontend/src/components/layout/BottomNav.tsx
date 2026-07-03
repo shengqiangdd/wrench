@@ -1,4 +1,14 @@
-import { Terminal, FileCode2, Puzzle, Settings, Activity, Zap, Container, ScrollText, History } from 'lucide-react'
+import {
+  Terminal,
+  FileCode2,
+  Puzzle,
+  Settings,
+  Activity,
+  Zap,
+  Container,
+  ScrollText,
+  History,
+} from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useSshStore } from '../../stores/ssh-store'
 
@@ -26,18 +36,29 @@ export default function BottomNav() {
   if (isSshPage && hasActiveSession && !sshSftpOpen) return null
 
   return (
-    <nav className="relative z-10 flex items-center justify-evenly border-t border-slate-700/50 bg-slate-900 lg:hidden" style={{ minHeight: '48px' }}>
+    <nav
+      className="relative z-10 flex items-center justify-evenly border-t border-slate-700/50 bg-slate-900 lg:hidden"
+      style={{ minHeight: '48px' }}
+    >
       {navItems.map((item) => {
         const Icon = item.icon
         return (
           <button
             key={item.id}
             onClick={() => setActiveNav(item.id)}
-            className="flex shrink-0 flex-col items-center justify-center gap-0.5 px-1 py-1 text-[10px] transition-colors touch-manipulation"
+            className="flex shrink-0 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-1 text-[10px] transition-colors"
             style={{ minWidth: '44px', minHeight: '44px' }}
           >
-            <Icon size={20} className={activeNav === item.id ? 'text-smartbox-400' : 'text-slate-500'} />
-            <span className={activeNav === item.id ? 'text-smartbox-400' : 'text-slate-500'} style={{ fontSize: '9px', lineHeight: '1' }}>{item.label}</span>
+            <Icon
+              size={20}
+              className={activeNav === item.id ? 'text-smartbox-400' : 'text-slate-500'}
+            />
+            <span
+              className={activeNav === item.id ? 'text-smartbox-400' : 'text-slate-500'}
+              style={{ fontSize: '9px', lineHeight: '1' }}
+            >
+              {item.label}
+            </span>
           </button>
         )
       })}

@@ -26,7 +26,9 @@ let _fileStore: any = null
 function getFileStore() {
   if (!_fileStore) {
     // 动态 import，仅在需要时加载
-    import('../stores/file-store').then(m => { _fileStore = m.useFileStore })
+    import('../stores/file-store').then((m) => {
+      _fileStore = m.useFileStore
+    })
   }
   return _fileStore
 }
@@ -67,7 +69,16 @@ export default function PluginSandbox({
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const pendingRef = useRef<Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>>(new Map())
+  const pendingRef = useRef<
+    Map<
+      number,
+      {
+        resolve: (v: unknown) => void
+        reject: (e: Error) => void
+        timer: ReturnType<typeof setTimeout>
+      }
+    >
+  >(new Map())
   const handleRef = useRef<PluginSandboxHandle | null>(null)
   const handlersRegisteredRef = useRef(false)
 
@@ -333,12 +344,15 @@ export default function PluginSandbox({
             const activeTab = state.openTabs?.find((t: any) => t.id === state.activeTabId)
             const iframe = iframeRef.current
             if (iframe?.contentWindow) {
-              iframe.contentWindow.postMessage({
-                source: 'smartbox-host',
-                type: 'editorContentUpdate',
-                content: activeTab?.content ?? null,
-                language: activeTab?.language ?? null,
-              }, '*')
+              iframe.contentWindow.postMessage(
+                {
+                  source: 'smartbox-host',
+                  type: 'editorContentUpdate',
+                  content: activeTab?.content ?? null,
+                  language: activeTab?.language ?? null,
+                },
+                '*',
+              )
             }
           }
           break
@@ -358,25 +372,33 @@ export default function PluginSandbox({
     const handle: PluginSandboxHandle = {
       executeCommand: (commandId, args) => {
         const iframe = iframeRef.current
-        iframe?.contentWindow?.postMessage({
-          source: 'smartbox-host',
-          type: 'executeCommand',
-          commandId,
-          args: args || [],
-        }, '*')
+        iframe?.contentWindow?.postMessage(
+          {
+            source: 'smartbox-host',
+            type: 'executeCommand',
+            commandId,
+            args: args || [],
+          },
+          '*',
+        )
       },
       updateEditorContent: (content, language) => {
         const iframe = iframeRef.current
-        iframe?.contentWindow?.postMessage({
-          source: 'smartbox-host',
-          type: 'editorContentUpdate',
-          content,
-          language,
-        }, '*')
+        iframe?.contentWindow?.postMessage(
+          {
+            source: 'smartbox-host',
+            type: 'editorContentUpdate',
+            content,
+            language,
+          },
+          '*',
+        )
       },
       destroy: () => {
         const iframe = iframeRef.current
-        if (iframe) { iframe.src = 'about:blank' }
+        if (iframe) {
+          iframe.src = 'about:blank'
+        }
       },
       iframe: iframeRef.current,
       reload: (_newManifest, _newCode) => {},

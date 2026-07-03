@@ -29,13 +29,9 @@ export default function ConnectionForm({ onClose, editId }: Props) {
   // 如果加密值以 !e: 开头，显示为占位符提示用户重新输入
   const existingPwd = existing?.password || ''
   const existingKey = existing?.privateKey || ''
-  const [password, setPassword] = useState(
-    existingPwd.startsWith('!e:') ? '' : existingPwd,
-  )
+  const [password, setPassword] = useState(existingPwd.startsWith('!e:') ? '' : existingPwd)
   const [showPassword, setShowPassword] = useState(false)
-  const [privateKey, setPrivateKey] = useState(
-    existingKey.startsWith('!e:') ? '' : existingKey,
-  )
+  const [privateKey, setPrivateKey] = useState(existingKey.startsWith('!e:') ? '' : existingKey)
   const [group, setGroup] = useState(existing?.group || '')
   // sudo 密码：默认与 SSH 密码相同，可独立设置
   const [sudoPassword, setSudoPassword] = useState(existing?.sudoPassword || password || '')
@@ -52,10 +48,8 @@ export default function ConnectionForm({ onClose, editId }: Props) {
       const raw = getConnectionData()
       // 检查重复连接：相同 host + port + username
       if (!existing) {
-        const dup = connections.find(c =>
-          c.host === raw.host &&
-          c.port === raw.port &&
-          c.username === raw.username
+        const dup = connections.find(
+          (c) => c.host === raw.host && c.port === raw.port && c.username === raw.username,
         )
         if (dup) {
           return '已存在完全相同的连接：' + (dup.name || dup.host)
@@ -65,13 +59,13 @@ export default function ConnectionForm({ onClose, editId }: Props) {
       const data = { ...raw }
       try {
         if (data.password) {
-          data.password = await encryptField(data.password) as string
+          data.password = (await encryptField(data.password)) as string
         }
         if (data.sudoPassword) {
-          data.sudoPassword = await encryptField(data.sudoPassword) as string
+          data.sudoPassword = (await encryptField(data.sudoPassword)) as string
         }
         if (data.privateKey) {
-          data.privateKey = await encryptField(data.privateKey) as string
+          data.privateKey = (await encryptField(data.privateKey)) as string
         }
       } catch (err) {
         console.warn('[ConnectionForm] 加密失败，使用明文存储:', err)
@@ -97,19 +91,22 @@ export default function ConnectionForm({ onClose, editId }: Props) {
   const wsClient = getWsClientSync()
 
   // 构建连接配置对象
-  const getConnectionData = useCallback((): SshConnection => ({
-    id: existing?.id || `ssh_${Date.now()}`,
-    name,
-    host,
-    port: parseInt(port) || 22,
-    username,
-    authType,
-    ...(authType === 'password' ? { password } : { privateKey }),
-    sudoPassword: sudoPassword || password || undefined,
-    group: group || undefined,
-    createdAt: existing?.createdAt || Date.now(),
-    lastConnectedAt: existing?.lastConnectedAt,
-  }), [existing, name, host, port, username, authType, password, privateKey, sudoPassword, group])
+  const getConnectionData = useCallback(
+    (): SshConnection => ({
+      id: existing?.id || `ssh_${Date.now()}`,
+      name,
+      host,
+      port: parseInt(port) || 22,
+      username,
+      authType,
+      ...(authType === 'password' ? { password } : { privateKey }),
+      sudoPassword: sudoPassword || password || undefined,
+      group: group || undefined,
+      createdAt: existing?.createdAt || Date.now(),
+      lastConnectedAt: existing?.lastConnectedAt,
+    }),
+    [existing, name, host, port, username, authType, password, privateKey, sudoPassword, group],
+  )
 
   // 测试连接
   const handleTestConnection = useCallback(async () => {
@@ -123,16 +120,19 @@ export default function ConnectionForm({ onClose, editId }: Props) {
     setTestMessage('正在测试连接...')
 
     try {
-      const msg = await wsClient.request({
-        type: 'test',
-        connectionId: `test_${Date.now()}`,
-        host,
-        port: parseInt(port) || 22,
-        username,
-        password: authType === 'password' ? password : undefined,
-        privateKey: authType === 'key' ? privateKey : undefined,
-        sudoPassword: sudoPassword || password || undefined,
-      }, 12000)
+      const msg = await wsClient.request(
+        {
+          type: 'test',
+          connectionId: `test_${Date.now()}`,
+          host,
+          port: parseInt(port) || 22,
+          username,
+          password: authType === 'password' ? password : undefined,
+          privateKey: authType === 'key' ? privateKey : undefined,
+          sudoPassword: sudoPassword || password || undefined,
+        },
+        12000,
+      )
 
       if ((msg as any).success) {
         setTestStatus('success')
@@ -148,13 +148,11 @@ export default function ConnectionForm({ onClose, editId }: Props) {
   }, [host, port, username, password, privateKey, sudoPassword, authType, wsClient])
 
   // 检测输入是否完整、可测试
-  const canTest = host && username && (
-    authType === 'password' ? true : !!privateKey
-  )
+  const canTest = host && username && (authType === 'password' ? true : !!privateKey)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm pt-4 pb-12 md:items-center md:pt-0 md:pb-0">
-      <div className="mx-4 w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 shadow-xl my-auto">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 pt-4 pb-12 backdrop-blur-sm md:items-center md:pt-0 md:pb-0">
+      <div className="mx-4 my-auto w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 shadow-xl">
         {/* 标题栏 */}
         <div className="flex items-center justify-between border-b border-slate-700/50 px-4 py-3">
           <h3 className="text-sm font-semibold text-slate-200">
@@ -167,7 +165,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
 
         {/* 表单 */}
         <form action={saveAction} className="space-y-3 p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs text-slate-500">名称 *</label>
               <input
@@ -245,7 +243,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
                   />
                   <button
                     type="button"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    className="absolute top-1/2 right-2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
                     onClick={() => setShowPassword(!showPassword)}
                     tabIndex={-1}
                   >
@@ -269,7 +267,9 @@ export default function ConnectionForm({ onClose, editId }: Props) {
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs text-slate-500">
                 sudo 密码
-                <span className="text-slate-600 ml-1">（默认与 SSH 密码相同，用于 sudo -S 提权）</span>
+                <span className="ml-1 text-slate-600">
+                  （默认与 SSH 密码相同，用于 sudo -S 提权）
+                </span>
               </label>
               <div className="relative">
                 <input
@@ -282,7 +282,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
                 />
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                  className="absolute top-1/2 right-2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
                   onClick={() => setShowSudoPassword(!showSudoPassword)}
                   tabIndex={-1}
                 >
@@ -349,8 +349,10 @@ export default function ConnectionForm({ onClose, editId }: Props) {
                     <Loader2 size={14} className="animate-spin" />
                     保存中...
                   </>
+                ) : existing ? (
+                  '保存修改'
                 ) : (
-                  existing ? '保存修改' : '添加连接'
+                  '添加连接'
                 )}
               </button>
             </div>

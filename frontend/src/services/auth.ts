@@ -14,7 +14,7 @@
 // ── JWT 令牌缓存 ──
 
 let _jwtToken: string | null = null
-let _jwtExpiresAt = 0  // Unix epoch (ms), 0 表示未知
+let _jwtExpiresAt = 0 // Unix epoch (ms), 0 表示未知
 let _jwtPromise: Promise<string> | null = null
 
 /** 提前刷新阈值：到期前 5 分钟刷新 */
@@ -40,7 +40,7 @@ export async function refreshToken(): Promise<string> {
     const host = window.location.host
     const resp = await fetch(`${protocol}//${host}/api/ws-token`, {
       method: 'POST',
-      headers: { 'Accept': 'application/json' },
+      headers: { Accept: 'application/json' },
     })
 
     if (!resp.ok) {
@@ -51,7 +51,8 @@ export async function refreshToken(): Promise<string> {
     const data = await resp.json()
     // 兼容两种响应格式：直接 token 或嵌套在 data 中
     const tokenField = (data as { token?: string }).token ?? data.data?.token
-    const expiresIn: number = (data as { expiresIn?: number }).expiresIn ?? data.data?.expiresIn ?? 86400
+    const expiresIn: number =
+      (data as { expiresIn?: number }).expiresIn ?? data.data?.expiresIn ?? 86400
 
     if (!tokenField) {
       throw new Error('Auth token endpoint returned no token')
@@ -82,10 +83,7 @@ export function clearToken() {
  *
  * 遇到 401 时自动清除缓存并重试一次。
  */
-export async function authedFetch(
-  url: string,
-  options: RequestInit = {},
-): Promise<Response> {
+export async function authedFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = await getToken()
   const headers = new Headers(options.headers ?? {})
   headers.set('Authorization', `Bearer ${token}`)

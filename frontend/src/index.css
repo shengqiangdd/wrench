@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ============================================
    Tailwind v4 自定义主题 — smartbox 品牌色
@@ -24,31 +24,31 @@
    ============================================ */
 :root {
   /* 深色主题（默认） */
-  --bg-surface: #020617;        /* slate-950 */
-  --bg-elevated: #0f172a;       /* slate-900 */
-  --bg-card: #1e293b;           /* slate-800 */
-  --bg-hover: #334155;          /* slate-700 */
-  --text-primary: #f1f5f9;      /* slate-100 */
-  --text-secondary: #cbd5e1;    /* slate-300 */
-  --text-muted: #94a3b8;        /* slate-400 */
-  --text-dim: #64748b;          /* slate-500 */
-  --border-color: rgba(51, 65, 85, 0.5);  /* slate-700/50 */
-  --border-color-strong: #475569;          /* slate-600 */
+  --bg-surface: #020617; /* slate-950 */
+  --bg-elevated: #0f172a; /* slate-900 */
+  --bg-card: #1e293b; /* slate-800 */
+  --bg-hover: #334155; /* slate-700 */
+  --text-primary: #f1f5f9; /* slate-100 */
+  --text-secondary: #cbd5e1; /* slate-300 */
+  --text-muted: #94a3b8; /* slate-400 */
+  --text-dim: #64748b; /* slate-500 */
+  --border-color: rgba(51, 65, 85, 0.5); /* slate-700/50 */
+  --border-color-strong: #475569; /* slate-600 */
   --backdrop-alpha: 0.8;
 }
 
 /* 浅色主题 — 通过 .dark 类切换；无 .dark = 浅色 */
 html:not(.dark) {
   --bg-surface: #ffffff;
-  --bg-elevated: #f1f5f9;       /* slate-100 */
+  --bg-elevated: #f1f5f9; /* slate-100 */
   --bg-card: #ffffff;
-  --bg-hover: #e2e8f0;          /* slate-200 */
-  --text-primary: #0f172a;      /* slate-900 */
-  --text-secondary: #334155;    /* slate-700 */
-  --text-muted: #64748b;        /* slate-500 */
-  --text-dim: #94a3b8;          /* slate-400 */
-  --border-color: rgba(148, 163, 184, 0.4);  /* slate-400/40 */
-  --border-color-strong: #cbd5e1;             /* slate-300 */
+  --bg-hover: #e2e8f0; /* slate-200 */
+  --text-primary: #0f172a; /* slate-900 */
+  --text-secondary: #334155; /* slate-700 */
+  --text-muted: #64748b; /* slate-500 */
+  --text-dim: #94a3b8; /* slate-400 */
+  --border-color: rgba(148, 163, 184, 0.4); /* slate-400/40 */
+  --border-color-strong: #cbd5e1; /* slate-300 */
   --backdrop-alpha: 0.95;
 }
 
@@ -59,18 +59,23 @@ html:not(.dark) {
    Base 全局样式
    ============================================ */
 @layer base {
-  *, ::after, ::before {
+  *,
+  ::after,
+  ::before {
     border-color: var(--border-color);
   }
 
-  html, body, #root {
+  html,
+  body,
+  #root {
     height: 100%;
   }
 
   body {
     background-color: var(--bg-surface);
     color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    font-family:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
       'Noto Sans SC', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -95,18 +100,30 @@ html:not(.dark) {
   }
 
   /* 移动端输入框修正 — iOS 防止自动缩放 */
-  input, textarea, select {
+  input,
+  textarea,
+  select {
     font-size: 16px;
     -webkit-appearance: none;
     appearance: none;
   }
 
   /* 隐藏滚动条 */
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 
   /* 移动端触屏优化 */
-  input, textarea, select, button, a, [role="button"] {
+  input,
+  textarea,
+  select,
+  button,
+  a,
+  [role='button'] {
     -webkit-touch-callout: none;
   }
 
@@ -114,17 +131,27 @@ html:not(.dark) {
     -webkit-tap-highlight-color: transparent;
   }
 
-  button, a, [role="button"], .btn, .sidebar-item, input, textarea, select {
+  button,
+  a,
+  [role='button'],
+  .btn,
+  .sidebar-item,
+  input,
+  textarea,
+  select {
     touch-action: manipulation;
     cursor: pointer;
   }
 
-  input, textarea {
+  input,
+  textarea {
     -webkit-user-select: text;
     user-select: text;
   }
 
-  .overflow-auto, .overflow-y-auto, .overflow-x-auto {
+  .overflow-auto,
+  .overflow-y-auto,
+  .overflow-x-auto {
     -webkit-overflow-scrolling: touch;
   }
 }
@@ -134,40 +161,96 @@ html:not(.dark) {
    ============================================ */
 html:not(.dark) {
   /* 背景覆盖 */
-  .bg-slate-950 { background-color: var(--bg-surface) !important; }
-  .bg-slate-900 { background-color: var(--bg-elevated) !important; }
-  :where(.bg-slate-900\/80) { background-color: color-mix(in srgb, var(--bg-elevated) 80%, transparent) !important; }
-  :where(.bg-slate-900\/95) { background-color: color-mix(in srgb, var(--bg-elevated) 95%, transparent) !important; }
-  :where(.bg-slate-900\/50) { background-color: color-mix(in srgb, var(--bg-elevated) 50%, transparent) !important; }
-  .bg-slate-800 { background-color: var(--bg-card) !important; }
-  :where(.bg-slate-800\/95) { background-color: color-mix(in srgb, var(--bg-card) 95%, transparent) !important; }
-  :where(.bg-slate-800\/50) { background-color: color-mix(in srgb, var(--bg-card) 50%, transparent) !important; }
-  :where(.bg-slate-800\/30) { background-color: color-mix(in srgb, var(--bg-card) 30%, transparent) !important; }
-  :where(.hover\:bg-slate-800):hover { background-color: var(--bg-hover) !important; }
-  :where(.hover\:bg-slate-800\/50):hover { background-color: color-mix(in srgb, var(--bg-hover) 50%, transparent) !important; }
-  :where(.hover\:bg-slate-700):hover { background-color: var(--bg-hover) !important; }
-  :where(.hover\:bg-slate-800\/30):hover { background-color: color-mix(in srgb, var(--bg-hover) 30%, transparent) !important; }
+  .bg-slate-950 {
+    background-color: var(--bg-surface) !important;
+  }
+  .bg-slate-900 {
+    background-color: var(--bg-elevated) !important;
+  }
+  :where(.bg-slate-900\/80) {
+    background-color: color-mix(in srgb, var(--bg-elevated) 80%, transparent) !important;
+  }
+  :where(.bg-slate-900\/95) {
+    background-color: color-mix(in srgb, var(--bg-elevated) 95%, transparent) !important;
+  }
+  :where(.bg-slate-900\/50) {
+    background-color: color-mix(in srgb, var(--bg-elevated) 50%, transparent) !important;
+  }
+  .bg-slate-800 {
+    background-color: var(--bg-card) !important;
+  }
+  :where(.bg-slate-800\/95) {
+    background-color: color-mix(in srgb, var(--bg-card) 95%, transparent) !important;
+  }
+  :where(.bg-slate-800\/50) {
+    background-color: color-mix(in srgb, var(--bg-card) 50%, transparent) !important;
+  }
+  :where(.bg-slate-800\/30) {
+    background-color: color-mix(in srgb, var(--bg-card) 30%, transparent) !important;
+  }
+  :where(.hover\:bg-slate-800):hover {
+    background-color: var(--bg-hover) !important;
+  }
+  :where(.hover\:bg-slate-800\/50):hover {
+    background-color: color-mix(in srgb, var(--bg-hover) 50%, transparent) !important;
+  }
+  :where(.hover\:bg-slate-700):hover {
+    background-color: var(--bg-hover) !important;
+  }
+  :where(.hover\:bg-slate-800\/30):hover {
+    background-color: color-mix(in srgb, var(--bg-hover) 30%, transparent) !important;
+  }
 
   /* 文字颜色覆盖 */
-  .text-slate-100 { color: var(--text-primary) !important; }
-  .text-slate-200 { color: var(--text-secondary) !important; }
-  .text-slate-300 { color: var(--text-secondary) !important; }
-  .text-slate-400 { color: var(--text-muted) !important; }
-  .text-slate-500 { color: var(--text-dim) !important; }
-  .text-slate-600 { color: var(--text-dim) !important; }
-  :where(.group:hover .group-hover\:text-slate-300) { color: var(--text-secondary) !important; }
+  .text-slate-100 {
+    color: var(--text-primary) !important;
+  }
+  .text-slate-200 {
+    color: var(--text-secondary) !important;
+  }
+  .text-slate-300 {
+    color: var(--text-secondary) !important;
+  }
+  .text-slate-400 {
+    color: var(--text-muted) !important;
+  }
+  .text-slate-500 {
+    color: var(--text-dim) !important;
+  }
+  .text-slate-600 {
+    color: var(--text-dim) !important;
+  }
+  :where(.group:hover .group-hover\:text-slate-300) {
+    color: var(--text-secondary) !important;
+  }
 
   /* 边框覆盖 */
-  :where(.border-slate-700\/50) { border-color: var(--border-color) !important; }
-  :where(.border-slate-700\/30) { border-color: var(--border-color) !important; }
-  .border-slate-700 { border-color: var(--border-color-strong) !important; }
-  :where(.border-slate-700\/60) { border-color: var(--border-color) !important; }
-  :where(.border-slate-600\/50) { border-color: var(--border-color) !important; }
-  .border-slate-600 { border-color: var(--border-color-strong) !important; }
-  :where(.placeholder-slate-500)::placeholder { color: var(--text-dim) !important; }
+  :where(.border-slate-700\/50) {
+    border-color: var(--border-color) !important;
+  }
+  :where(.border-slate-700\/30) {
+    border-color: var(--border-color) !important;
+  }
+  .border-slate-700 {
+    border-color: var(--border-color-strong) !important;
+  }
+  :where(.border-slate-700\/60) {
+    border-color: var(--border-color) !important;
+  }
+  :where(.border-slate-600\/50) {
+    border-color: var(--border-color) !important;
+  }
+  .border-slate-600 {
+    border-color: var(--border-color-strong) !important;
+  }
+  :where(.placeholder-slate-500)::placeholder {
+    color: var(--text-dim) !important;
+  }
 
   /* kbd 背景 */
-  kbd, .rounded.border.border-slate-700, .rounded.border.border-slate-600 {
+  kbd,
+  .rounded.border.border-slate-700,
+  .rounded.border.border-slate-600 {
     background-color: var(--bg-card);
   }
 
@@ -232,8 +315,12 @@ html:not(.dark) {
 @utility btn-primary {
   background-color: #0284c7;
   color: white;
-  &:hover { background-color: #0ea5e9; }
-  &:active { background-color: #0369a1; }
+  &:hover {
+    background-color: #0ea5e9;
+  }
+  &:active {
+    background-color: #0369a1;
+  }
 }
 
 @utility btn-ghost {
@@ -267,8 +354,13 @@ html:not(.dark) {
   outline: none;
   transition: all 150ms;
   box-sizing: border-box;
-  &:focus { border-color: #0284c7; box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.3); }
-  &::placeholder { color: var(--text-dim); }
+  &:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.3);
+  }
+  &::placeholder {
+    color: var(--text-dim);
+  }
 }
 
 /* 别名：项目中广泛使用 className="input" */
@@ -285,8 +377,13 @@ html:not(.dark) {
   outline: none;
   transition: all 150ms;
   box-sizing: border-box;
-  &:focus { border-color: #0284c7; box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.3); }
-  &::placeholder { color: var(--text-dim); }
+  &:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.3);
+  }
+  &::placeholder {
+    color: var(--text-dim);
+  }
 }
 
 @utility sidebar-item {
@@ -303,7 +400,10 @@ html:not(.dark) {
     background-color: var(--bg-hover) !important;
     color: var(--text-secondary) !important;
   }
-  &.active { background-color: var(--bg-hover); color: #38bdf8; }
+  &.active {
+    background-color: var(--bg-hover);
+    color: #38bdf8;
+  }
 }
 
 @utility badge {
@@ -376,20 +476,56 @@ html:not(.dark) {
   line-height: 1.3;
 }
 
-.markdown-preview h1 { font-size: 1.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
-.markdown-preview h2 { font-size: 1.375rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.25em; }
-.markdown-preview h3 { font-size: 1.125rem; }
-.markdown-preview h4 { font-size: 1rem; }
-.markdown-preview h5 { font-size: 0.875rem; }
-.markdown-preview h6 { font-size: 0.8125rem; color: var(--text-dim); }
+.markdown-preview h1 {
+  font-size: 1.75rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.3em;
+}
+.markdown-preview h2 {
+  font-size: 1.375rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.25em;
+}
+.markdown-preview h3 {
+  font-size: 1.125rem;
+}
+.markdown-preview h4 {
+  font-size: 1rem;
+}
+.markdown-preview h5 {
+  font-size: 0.875rem;
+}
+.markdown-preview h6 {
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+}
 
-.markdown-preview p { margin: 0.75em 0; }
-.markdown-preview a { color: #38bdf8; text-decoration: underline; text-underline-offset: 2px; }
-.markdown-preview a:hover { color: #7dd3fc; }
-.markdown-preview img { max-width: 100%; border-radius: 0.5rem; margin: 1em 0; }
-.markdown-preview strong { color: var(--text-primary); font-weight: 600; }
-.markdown-preview em { font-style: italic; }
-.markdown-preview del { color: var(--text-dim); }
+.markdown-preview p {
+  margin: 0.75em 0;
+}
+.markdown-preview a {
+  color: #38bdf8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-preview a:hover {
+  color: #7dd3fc;
+}
+.markdown-preview img {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  margin: 1em 0;
+}
+.markdown-preview strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.markdown-preview em {
+  font-style: italic;
+}
+.markdown-preview del {
+  color: var(--text-dim);
+}
 
 .markdown-preview code.cm-inline-code {
   background-color: rgba(30, 41, 59, 0.8);
@@ -438,7 +574,9 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
   border-radius: 0 0.375rem 0.375rem 0;
 }
 
-.markdown-preview blockquote.cm-blockquote p { margin: 0.25em 0; }
+.markdown-preview blockquote.cm-blockquote p {
+  margin: 0.25em 0;
+}
 
 .markdown-preview table.cm-table {
   border-collapse: collapse;
@@ -464,13 +602,20 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
   background-color: color-mix(in srgb, var(--bg-card) 20%, transparent);
 }
 
-.markdown-preview ul, .markdown-preview ol {
+.markdown-preview ul,
+.markdown-preview ol {
   margin: 0.5em 0;
   padding-left: 1.5em;
 }
 
-.markdown-preview li.cm-li { margin: 0.25em 0; }
-.markdown-preview hr.cm-hr { border: none; border-top: 1px solid var(--border-color); margin: 1.5em 0; }
+.markdown-preview li.cm-li {
+  margin: 0.25em 0;
+}
+.markdown-preview hr.cm-hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 1.5em 0;
+}
 
 .markdown-preview label.cm-task {
   display: flex;
@@ -480,7 +625,7 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
   cursor: default;
 }
 
-.markdown-preview label.cm-task input[type="checkbox"] {
+.markdown-preview label.cm-task input[type='checkbox'] {
   appearance: auto;
   -webkit-appearance: auto;
   accent-color: #38bdf8;
@@ -498,7 +643,7 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
 @media (pointer: coarse) {
   button.rounded.p-1,
   a.rounded.p-1,
-  [role="button"].rounded.p-1 {
+  [role='button'].rounded.p-1 {
     min-width: 44px;
     min-height: 44px;
     display: inline-flex;

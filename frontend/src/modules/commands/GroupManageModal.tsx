@@ -11,7 +11,13 @@ interface GroupManageModalProps {
   onClose: () => void
 }
 
-export default function GroupManageModal({ allGroups, customGroups, onSaveGroup, onRemoveGroup, onClose }: GroupManageModalProps) {
+export default function GroupManageModal({
+  allGroups,
+  customGroups,
+  onSaveGroup,
+  onRemoveGroup,
+  onClose,
+}: GroupManageModalProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [icon, setIcon] = useState('📁')
@@ -43,7 +49,10 @@ export default function GroupManageModal({ allGroups, customGroups, onSaveGroup,
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
       <div
         className="w-full max-w-sm rounded-lg border border-slate-700/50 bg-slate-900 shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -51,12 +60,15 @@ export default function GroupManageModal({ allGroups, customGroups, onSaveGroup,
         {/* 标题 */}
         <div className="flex items-center justify-between border-b border-slate-700/30 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-200">管理分组</h2>
-          <button onClick={onClose} className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300">
+          <button
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
+          >
             <X size={16} />
           </button>
         </div>
 
-        <div className="max-h-80 overflow-y-auto p-3 space-y-1">
+        <div className="max-h-80 space-y-1 overflow-y-auto p-3">
           {allGroups.map((g) => (
             <div
               key={g.id}
@@ -68,39 +80,43 @@ export default function GroupManageModal({ allGroups, customGroups, onSaveGroup,
                     type="text"
                     value={icon}
                     onChange={(e) => setIcon(e.target.value)}
-                    className="w-8 rounded border border-slate-700/50 bg-slate-800 px-1 py-1 text-xs text-center outline-none"
+                    className="w-8 rounded border border-slate-700/50 bg-slate-800 px-1 py-1 text-center text-xs outline-none"
                     maxLength={2}
                   />
                   <input
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="flex-1 rounded border border-slate-700/50 bg-slate-800 px-2 py-1 text-xs text-slate-200 outline-none focus:border-smartbox-500/50"
+                    className="focus:border-smartbox-500/50 flex-1 rounded border border-slate-700/50 bg-slate-800 px-2 py-1 text-xs text-slate-200 outline-none"
                     autoFocus
                   />
                   <button
                     onClick={handleSave}
-                    className="min-w-[44px] min-h-[44px] rounded p-1 text-emerald-400 transition-colors hover:bg-emerald-900/20"
+                    className="min-h-[44px] min-w-[44px] rounded p-1 text-emerald-400 transition-colors hover:bg-emerald-900/20"
                   >
                     <Check size={14} />
                   </button>
                 </>
               ) : (
                 <>
-                  <span className="text-sm w-6 text-center">{g.icon || '📁'}</span>
-                  <span className="flex-1 text-xs text-slate-300">{g.name.replace(/^[^\s]+\s/, '')}</span>
-                  <span className="text-[10px] text-slate-600">{isBuiltin(g.id) ? '内置' : '自定义'}</span>
+                  <span className="w-6 text-center text-sm">{g.icon || '📁'}</span>
+                  <span className="flex-1 text-xs text-slate-300">
+                    {g.name.replace(/^[^\s]+\s/, '')}
+                  </span>
+                  <span className="text-[10px] text-slate-600">
+                    {isBuiltin(g.id) ? '内置' : '自定义'}
+                  </span>
                   {!isBuiltin(g.id) && (
                     <div className="flex gap-0.5">
                       <button
                         onClick={() => handleEdit(g)}
-                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300"
+                        className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700/50 hover:text-slate-300"
                       >
                         <Pencil size={12} />
                       </button>
                       <button
                         onClick={() => onRemoveGroup(g.id)}
-                        className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-red-900/20 hover:text-red-400"
+                        className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-red-900/20 hover:text-red-400"
                       >
                         <Trash2 size={12} />
                       </button>
@@ -120,7 +136,7 @@ export default function GroupManageModal({ allGroups, customGroups, onSaveGroup,
                 type="text"
                 value={icon}
                 onChange={(e) => setIcon(e.target.value)}
-                className="w-8 rounded border border-slate-700/50 bg-slate-800 px-1 py-1.5 text-xs text-center outline-none"
+                className="w-8 rounded border border-slate-700/50 bg-slate-800 px-1 py-1.5 text-center text-xs outline-none"
                 maxLength={2}
                 placeholder="📁"
               />
@@ -129,27 +145,35 @@ export default function GroupManageModal({ allGroups, customGroups, onSaveGroup,
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="输入分组名称..."
-                className="flex-1 rounded border border-slate-700/50 bg-slate-800 px-2 py-1.5 text-xs text-slate-200 outline-none placeholder-slate-600 focus:border-smartbox-500/50"
+                className="focus:border-smartbox-500/50 flex-1 rounded border border-slate-700/50 bg-slate-800 px-2 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none"
                 autoFocus
-                onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setShowNewForm(false) }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreate()
+                  if (e.key === 'Escape') setShowNewForm(false)
+                }}
               />
               <button
                 onClick={handleCreate}
                 disabled={!name.trim()}
-                className="rounded-md bg-smartbox-600/30 px-3 py-1.5 text-xs text-smartbox-400 transition-colors hover:bg-smartbox-600/40 disabled:opacity-40"
+                className="bg-smartbox-600/30 text-smartbox-400 hover:bg-smartbox-600/40 rounded-md px-3 py-1.5 text-xs transition-colors disabled:opacity-40"
               >
                 创建
               </button>
               <button
                 onClick={() => setShowNewForm(false)}
-                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:text-slate-300"
+                className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:text-slate-300"
               >
                 <X size={14} />
               </button>
             </div>
           ) : (
             <button
-              onClick={() => { setShowNewForm(true); setName(''); setIcon('📁'); setEditingId(null) }}
+              onClick={() => {
+                setShowNewForm(true)
+                setName('')
+                setIcon('📁')
+                setEditingId(null)
+              }}
               className="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
             >
               <Plus size={14} />

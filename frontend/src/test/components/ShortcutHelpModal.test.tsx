@@ -23,7 +23,7 @@ afterEach(() => {
 
 async function render(el: React.ReactElement) {
   root.render(el)
-  await new Promise<void>(r => setTimeout(r, 10))
+  await new Promise<void>((r) => setTimeout(r, 10))
 }
 
 describe('ShortcutHelpModal', () => {
@@ -74,14 +74,14 @@ describe('ShortcutHelpModal', () => {
     await render(<ShortcutHelpModal open onClose={onClose} />)
 
     // Wait a bit longer for useEffect to register the keydown listener
-    await new Promise(r => setTimeout(r, 50))
-    
+    await new Promise((r) => setTimeout(r, 50))
+
     // Create a proper KeyboardEvent with key property
     const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
     window.dispatchEvent(event)
-    
+
     // Wait for the event handler to run
-    await new Promise(r => setTimeout(r, 50))
+    await new Promise((r) => setTimeout(r, 50))
     expect(onClose).toHaveBeenCalled()
   })
 
@@ -92,7 +92,7 @@ describe('ShortcutHelpModal', () => {
     const event = new Event('keydown', { bubbles: true })
     Object.defineProperty(event, 'key', { value: 'Enter' })
     window.dispatchEvent(event)
-    await new Promise(r => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 20))
     expect(onClose).not.toHaveBeenCalled()
   })
 

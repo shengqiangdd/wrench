@@ -41,20 +41,21 @@ export default function ConnectionList({ onConnect }: Props) {
   const QUICK_PREFIX = 'quick_'
 
   // 按分组归类（过滤掉快速连接，它在快速连接栏里展示）
-  const grouped = connections.reduce<
-    Record<string, { label: string; items: SshConnection[] }>
-  >((acc, conn) => {
-    if (conn.id.startsWith(QUICK_PREFIX)) return acc
-    const key = conn.group || '_ungrouped'
-    if (!acc[key]) {
-      acc[key] = {
-        label: conn.group || '未分组',
-        items: [],
+  const grouped = connections.reduce<Record<string, { label: string; items: SshConnection[] }>>(
+    (acc, conn) => {
+      if (conn.id.startsWith(QUICK_PREFIX)) return acc
+      const key = conn.group || '_ungrouped'
+      if (!acc[key]) {
+        acc[key] = {
+          label: conn.group || '未分组',
+          items: [],
+        }
       }
-    }
-    acc[key].items.push(conn)
-    return acc
-  }, {})
+      acc[key].items.push(conn)
+      return acc
+    },
+    {},
+  )
 
   const filtered = (items: SshConnection[]) =>
     filter
@@ -86,8 +87,8 @@ export default function ConnectionList({ onConnect }: Props) {
   // ── 开发模式：从服务端获取 SSH 测试环境变量 ──
   useEffect(() => {
     fetch('/api/ssh/test-config')
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         if (data.host) setQuickHost(data.host)
         if (data.user) setQuickUser(data.user)
         if (data.password) setQuickPassword(data.password)
@@ -129,26 +130,23 @@ export default function ConnectionList({ onConnect }: Props) {
       <div className="mb-2 flex items-center gap-1.5">
         <div className="relative min-w-0 flex-1">
           <input
-            className="input w-full pl-7 pr-2 py-1.5 text-xs"
+            className="input w-full py-1.5 pr-2 pl-7 text-xs"
             placeholder="搜索..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
-          <Search
-            size={13}
-            className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500"
-          />
+          <Search size={13} className="absolute top-1/2 left-2 -translate-y-1/2 text-slate-500" />
         </div>
         <button
           onClick={() => setShowFileBatch(true)}
-          className="btn btn-ghost shrink-0 px-2 hidden sm:inline-flex"
+          className="btn btn-ghost hidden shrink-0 px-2 sm:inline-flex"
           title="批量文件分发"
         >
           <Upload size={14} />
         </button>
         <button
           onClick={() => setShowBatch(true)}
-          className="btn btn-ghost shrink-0 px-2 hidden sm:inline-flex"
+          className="btn btn-ghost hidden shrink-0 px-2 sm:inline-flex"
           title="批量执行命令"
         >
           <Play size={14} />
@@ -158,7 +156,7 @@ export default function ConnectionList({ onConnect }: Props) {
             setEditId(null)
             setShowForm(true)
           }}
-          className="btn btn-primary shrink-0 px-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
+          className="btn btn-primary flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center px-2"
           title="新建连接"
         >
           <Plus size={14} />
@@ -178,7 +176,7 @@ export default function ConnectionList({ onConnect }: Props) {
         </button>
 
         {quickOpen && (
-          <div className="border-t border-amber-600/15 px-3 pb-3 pt-2">
+          <div className="border-t border-amber-600/15 px-3 pt-2 pb-3">
             <div className="mb-2 flex gap-2">
               <input
                 className="input flex-1 text-xs"
@@ -188,7 +186,7 @@ export default function ConnectionList({ onConnect }: Props) {
                 onKeyDown={(e) => e.key === 'Enter' && doQuickConnect()}
               />
               <input
-                className="input w-16 text-xs text-center"
+                className="input w-16 text-center text-xs"
                 placeholder="端口"
                 value={quickPort}
                 onChange={(e) => setQuickPort(e.target.value)}
@@ -214,7 +212,7 @@ export default function ConnectionList({ onConnect }: Props) {
                 />
                 <button
                   onClick={() => setQuickShowPwd(!quickShowPwd)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  className="absolute top-1/2 right-2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
                 >
                   {quickShowPwd ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
@@ -226,7 +224,10 @@ export default function ConnectionList({ onConnect }: Props) {
               className="btn-primary flex w-full items-center justify-center gap-1.5 py-1.5 text-xs disabled:opacity-50"
             >
               <Zap size={14} />
-              快速连接 {quickUser.trim() && quickHost.trim() ? `${quickUser.trim()}@${quickHost.trim()}` : ''}
+              快速连接{' '}
+              {quickUser.trim() && quickHost.trim()
+                ? `${quickUser.trim()}@${quickHost.trim()}`
+                : ''}
             </button>
           </div>
         )}
@@ -250,12 +251,10 @@ export default function ConnectionList({ onConnect }: Props) {
                 {Object.keys(grouped).length > 1 && (
                   <div className="mb-1.5 flex items-center gap-1.5 px-1">
                     <FolderOpen size={12} className="shrink-0 text-slate-500" />
-                    <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                    <span className="text-[11px] font-medium tracking-wider text-slate-500 uppercase">
                       {group.label}
                     </span>
-                    <span className="text-[10px] text-slate-600">
-                      ({items.length})
-                    </span>
+                    <span className="text-[10px] text-slate-600">({items.length})</span>
                   </div>
                 )}
                 <div className="space-y-1">
@@ -272,11 +271,7 @@ export default function ConnectionList({ onConnect }: Props) {
                             : 'bg-slate-800 text-slate-500'
                         }`}
                       >
-                        {isActive(conn.id) ? (
-                          <PlugZap size={14} />
-                        ) : (
-                          <Terminal size={14} />
-                        )}
+                        {isActive(conn.id) ? <PlugZap size={14} /> : <Terminal size={14} />}
                       </span>
 
                       {/* 连接信息 */}
@@ -291,13 +286,13 @@ export default function ConnectionList({ onConnect }: Props) {
                             }`}
                           />
                         </div>
-                        <div className="text-[11px] text-slate-500 truncate">
+                        <div className="truncate text-[11px] text-slate-500">
                           {conn.username}@{conn.host}:{conn.port}
                         </div>
                       </div>
 
                       {/* 操作按钮：移动端始终显示，桌面端 hover 显示 */}
-                      <div className="flex gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                      <div className="flex gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                         <button
                           onClick={() => handleConnect(conn.id)}
                           className="btn-icon text-emerald-500 hover:bg-emerald-500/10"

@@ -12,9 +12,5 @@ interface Props {
 }
 
 export default function SftpSidebar({ sessionId }: Props) {
-  return (
-    <SftpBrowser
-      sessionId={sessionId}
-    />
-  )
+  return <SftpBrowser sessionId={sessionId} />
 }

@@ -37,7 +37,14 @@ function render(el: React.ReactNode) {
   document.body.appendChild(container)
   const root = createRoot(container)
   flushSync(() => root.render(el))
-  return { container, root, unmount: () => { flushSync(() => root.unmount()); container.remove() } }
+  return {
+    container,
+    root,
+    unmount: () => {
+      flushSync(() => root.unmount())
+      container.remove()
+    },
+  }
 }
 
 describe('Sidebar (expanded)', () => {
@@ -75,8 +82,9 @@ describe('Sidebar (expanded)', () => {
 
   it('calls setActiveNav on click', () => {
     const { container } = render(<Sidebar />)
-    const dockerBtn = Array.from(container.querySelectorAll('.sidebar-item'))
-      .find(b => b.textContent?.includes('Docker'))
+    const dockerBtn = Array.from(container.querySelectorAll('.sidebar-item')).find((b) =>
+      b.textContent?.includes('Docker'),
+    )
     expect(dockerBtn).toBeTruthy()
     click(dockerBtn)
     expect(mockSetActiveNav).toHaveBeenCalledWith('docker')
@@ -84,11 +92,15 @@ describe('Sidebar (expanded)', () => {
 
   it('shows SSH session count badge', () => {
     useAppStore.setState({
-      sshSessions: [{ id: 's1', host: 'host1' }, { id: 's2', host: 'host2' }],
+      sshSessions: [
+        { id: 's1', host: 'host1' },
+        { id: 's2', host: 'host2' },
+      ],
     } as any)
     const { container } = render(<Sidebar />)
-    const sshBtn = Array.from(container.querySelectorAll('.sidebar-item'))
-      .find(b => b.textContent?.includes('SSH'))
+    const sshBtn = Array.from(container.querySelectorAll('.sidebar-item')).find((b) =>
+      b.textContent?.includes('SSH'),
+    )
     expect(sshBtn).toBeTruthy()
     expect(sshBtn!.textContent).toContain('2')
   })
@@ -96,8 +108,9 @@ describe('Sidebar (expanded)', () => {
   it('does not show badge when zero sessions', () => {
     useAppStore.setState({ sshSessions: [] } as any)
     const { container } = render(<Sidebar />)
-    const sshBtn = Array.from(container.querySelectorAll('.sidebar-item'))
-      .find(b => b.textContent?.includes('SSH'))
+    const sshBtn = Array.from(container.querySelectorAll('.sidebar-item')).find((b) =>
+      b.textContent?.includes('SSH'),
+    )
     expect(sshBtn).toBeTruthy()
     // Should not contain session count badge
     const badge = sshBtn!.querySelector('[class*="rounded-full"]')
@@ -157,7 +170,7 @@ describe('Sidebar (collapsed)', () => {
     // In collapsed mode, active button has bg-slate-800 + text-smartbox-400
     const buttons = container.querySelectorAll('nav button')
     let foundActive = false
-    buttons.forEach(btn => {
+    buttons.forEach((btn) => {
       const classes = btn.getAttribute('class') || ''
       if (classes.includes('smartbox-400')) {
         foundActive = true
@@ -168,8 +181,9 @@ describe('Sidebar (collapsed)', () => {
 
   it('calls setActiveNav in collapsed mode', () => {
     const { container } = render(<Sidebar />)
-    const dockerBtn = Array.from(container.querySelectorAll('nav button'))
-      .find(b => b.getAttribute('title') === 'Docker 管理')
+    const dockerBtn = Array.from(container.querySelectorAll('nav button')).find(
+      (b) => b.getAttribute('title') === 'Docker 管理',
+    )
     expect(dockerBtn).toBeTruthy()
     click(dockerBtn)
     expect(mockSetActiveNav).toHaveBeenCalledWith('docker')

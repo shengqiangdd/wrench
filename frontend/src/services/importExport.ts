@@ -73,9 +73,7 @@ export const EXPORT_EXTENSION = '.smartbox'
 // ─── 辅助：通知 ───
 
 function notify(message: string, type: 'success' | 'error' | 'info' = 'info') {
-  window.dispatchEvent(
-    new CustomEvent('smartbox-notification', { detail: { message, type } }),
-  )
+  window.dispatchEvent(new CustomEvent('smartbox-notification', { detail: { message, type } }))
 }
 
 // ─── 导出 ───
@@ -139,10 +137,7 @@ export function collectExportData(): ExportData['data'] {
       customBaseUrl: false,
       enabled: false,
     },
-    enabledPlugins:
-      pluginStore?.plugins
-        ?.filter((p) => p.enabled)
-        .map((p) => p.manifest.id) || [],
+    enabledPlugins: pluginStore?.plugins?.filter((p) => p.enabled).map((p) => p.manifest.id) || [],
     alertConfig: alertStore?.rules
       ? { enabled: alertStore.enabled ?? true, rules: alertStore.rules }
       : undefined,
@@ -186,14 +181,16 @@ export function exportConfig(password?: string): void {
 
   if (password) {
     // 加密导出
-    encrypt(jsonStr, password).then((encrypted) => {
-      // 格式: 魔数(16 字节 base64) + 加密内容
-      const wrapped = `${EXPORT_MAGIC}|${encrypted}`
-      performDownload(wrapped, `smartbox-config-encrypted${EXPORT_EXTENSION}`)
-      notify('配置已导出（密码加密）✅', 'success')
-    }).catch((err) => {
-      notify('导出失败：加密出错 ' + err.message, 'error')
-    })
+    encrypt(jsonStr, password)
+      .then((encrypted) => {
+        // 格式: 魔数(16 字节 base64) + 加密内容
+        const wrapped = `${EXPORT_MAGIC}|${encrypted}`
+        performDownload(wrapped, `smartbox-config-encrypted${EXPORT_EXTENSION}`)
+        notify('配置已导出（密码加密）✅', 'success')
+      })
+      .catch((err) => {
+        notify('导出失败：加密出错 ' + err.message, 'error')
+      })
   } else {
     // 明文导出
     performDownload(jsonStr, `smartbox-config${EXPORT_EXTENSION}`)
@@ -218,10 +215,7 @@ function readFileAsText(file: File): Promise<string> {
 /**
  * 解析导入文件内容
  */
-async function parseImportContent(
-  content: string,
-  password?: string,
-): Promise<ExportData> {
+async function parseImportContent(content: string, password?: string): Promise<ExportData> {
   // 检查是否为加密格式
   if (content.startsWith(EXPORT_MAGIC + '|')) {
     if (!password) {
@@ -269,10 +263,7 @@ function applyImportData(data: ExportData['data']): void {
         (store.state.connections as SshConnection[])?.map((c: SshConnection) => c.id) || [],
       )
       const newConns = d.connections.filter((c) => !existingIds.has(c.id))
-      store.state.connections = [
-        ...(store.state.connections || []),
-        ...newConns,
-      ]
+      store.state.connections = [...(store.state.connections || []), ...newConns]
       localStorage.setItem('smartbox-ssh', JSON.stringify(store))
     } catch (e) {
       console.warn('[ImportExport] 导入 SSH 连接失败:', e)
@@ -300,9 +291,7 @@ function applyImportData(data: ExportData['data']): void {
       store.state = store.state || { plugins: [] }
       const plugins = store.state.plugins || []
       for (const pid of d.enabledPlugins) {
-        const existing = plugins.find(
-          (p: { manifest: { id: string } }) => p.manifest?.id === pid,
-        )
+        const existing = plugins.find((p: { manifest: { id: string } }) => p.manifest?.id === pid)
         if (existing) {
           existing.enabled = true
         } else {
@@ -349,10 +338,7 @@ function applyImportData(data: ExportData['data']): void {
  * @param file 用户选择的文件
  * @param password 解密密码（如果文件加密）
  */
-export async function importConfig(
-  file: File,
-  password?: string,
-): Promise<void> {
+export async function importConfig(file: File, password?: string): Promise<void> {
   const content = await readFileAsText(file)
 
   let data: ExportData
@@ -425,10 +411,7 @@ export async function importConfigFromFile(): Promise<void> {
 /**
  * 带密码的加密文件导入
  */
-export async function importEncryptedFile(
-  file: File,
-  password: string,
-): Promise<void> {
+export async function importEncryptedFile(file: File, password: string): Promise<void> {
   const content = await readFileAsText(file)
   const data = await parseImportContent(content, password)
   const error = validateImportData(data)

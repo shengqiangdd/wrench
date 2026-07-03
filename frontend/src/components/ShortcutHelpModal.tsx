@@ -83,7 +83,9 @@ export default function ShortcutHelpModal({ open, onClose }: Props) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
     >
       <div className="relative max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-700/60 bg-slate-900 p-5 shadow-2xl">
         {/* 头部 */}
@@ -91,7 +93,7 @@ export default function ShortcutHelpModal({ open, onClose }: Props) {
           <h2 className="text-sm font-semibold text-slate-200">快捷键列表</h2>
           <button
             onClick={onClose}
-            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+            className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
           >
             <X size={14} />
           </button>
@@ -101,7 +103,7 @@ export default function ShortcutHelpModal({ open, onClose }: Props) {
         <div className="space-y-4">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.title}>
-              <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <h3 className="mb-1.5 text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
                 {group.title}
               </h3>
               <div className="space-y-1">
@@ -123,7 +125,11 @@ export default function ShortcutHelpModal({ open, onClose }: Props) {
 
         {/* 底部提示 */}
         <p className="mt-4 text-[10px] text-slate-600">
-          按 <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 font-mono">Esc</kbd> 或点击外部关闭
+          按{' '}
+          <kbd className="rounded border border-slate-700 bg-slate-800 px-1 py-0.5 font-mono">
+            Esc
+          </kbd>{' '}
+          或点击外部关闭
         </p>
       </div>
     </div>

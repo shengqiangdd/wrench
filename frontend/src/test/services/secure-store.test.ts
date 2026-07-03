@@ -98,7 +98,13 @@ describe('secure-store', () => {
 
   describe('encryptSshConnection / decryptSshConnection', () => {
     it('encrypts password and privateKey fields', async () => {
-      const conn = { host: '192.168.1.1', port: 22, username: 'root', password: 'mypass', privateKey: 'key-data' }
+      const conn = {
+        host: '192.168.1.1',
+        port: 22,
+        username: 'root',
+        password: 'mypass',
+        privateKey: 'key-data',
+      }
       const encrypted = await encryptSshConnection(conn)
 
       expect(encrypted.host).toBe('192.168.1.1') // non-sensitive unchanged
@@ -106,10 +112,10 @@ describe('secure-store', () => {
 
       // password and privateKey should be encrypted (or plaintext if crypto unavailable)
       if (encrypted.password !== 'mypass') {
-        expect((encrypted.password as string)).toMatch(/^!e:/)
+        expect(encrypted.password as string).toMatch(/^!e:/)
       }
       if (encrypted.privateKey !== 'key-data') {
-        expect((encrypted.privateKey as string)).toMatch(/^!e:/)
+        expect(encrypted.privateKey as string).toMatch(/^!e:/)
       }
     })
 

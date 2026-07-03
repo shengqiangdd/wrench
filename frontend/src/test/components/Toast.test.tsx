@@ -23,7 +23,7 @@ afterEach(() => {
 
 async function render(el: React.ReactElement) {
   root.render(el)
-  await new Promise<void>(r => setTimeout(r, 10))
+  await new Promise<void>((r) => setTimeout(r, 10))
 }
 
 function fireNotification(message: string, type: 'success' | 'error' | 'info' = 'info') {
@@ -43,21 +43,21 @@ describe('Toast', () => {
   it('displays a notification when event is fired', async () => {
     await render(<Toast />)
     fireNotification('Hello World', 'success')
-    await new Promise(r => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 20))
     expect(container.textContent).toContain('Hello World')
   })
 
   it('shows success text', async () => {
     await render(<Toast />)
     fireNotification('Success!', 'success')
-    await new Promise(r => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 20))
     expect(container.textContent).toContain('Success!')
   })
 
   it('shows error text', async () => {
     await render(<Toast />)
     fireNotification('Error!', 'error')
-    await new Promise(r => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 20))
     expect(container.textContent).toContain('Error!')
   })
 
@@ -68,19 +68,19 @@ describe('Toast', () => {
         detail: { message: '', type: 'info' },
       }),
     )
-    await new Promise(r => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 20))
     expect(container.innerHTML).toBe('')
   })
 
   it('removes toast when close button is clicked', async () => {
     await render(<Toast />)
     fireNotification('Closable', 'info')
-    await new Promise(r => setTimeout(r, 20))
+    await new Promise((r) => setTimeout(r, 20))
     const closeBtn = container.querySelector('button')
     expect(closeBtn).toBeTruthy()
     closeBtn!.click()
     // Toast has 300ms exit animation then gets removed
-    await new Promise(r => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 400))
     expect(container.innerHTML).toBe('')
   })
 })

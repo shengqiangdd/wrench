@@ -200,7 +200,7 @@ export class WsClient {
       clearTimeout(pending.timer)
       this.pendingRequests.delete(requestId)
       if (data.error) {
-        pending.reject(new Error(data.message as string || '未知错误'))
+        pending.reject(new Error((data.message as string) || '未知错误'))
       } else {
         pending.resolve(data)
       }

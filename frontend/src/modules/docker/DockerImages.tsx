@@ -1,5 +1,14 @@
 import { useState, useCallback } from 'react'
-import { Trash2, Search, RefreshCw, Download, Upload, Tag as TagIcon, Layers, X } from 'lucide-react'
+import {
+  Trash2,
+  Search,
+  RefreshCw,
+  Download,
+  Upload,
+  Tag as TagIcon,
+  Layers,
+  X,
+} from 'lucide-react'
 import type { DockerImage } from './index'
 
 function notify(message: string, type: 'success' | 'error' | 'info' = 'info') {
@@ -43,35 +52,39 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
   const [detailTab, setDetailTab] = useState<'history' | 'inspect'>('history')
 
   const filtered = filter
-    ? images.filter((img) =>
-        img.Repository.toLowerCase().includes(filter.toLowerCase()) ||
-        img.Tag.toLowerCase().includes(filter.toLowerCase()) ||
-        img.ID.startsWith(filter)
+    ? images.filter(
+        (img) =>
+          img.Repository.toLowerCase().includes(filter.toLowerCase()) ||
+          img.Tag.toLowerCase().includes(filter.toLowerCase()) ||
+          img.ID.startsWith(filter),
       )
     : images
 
   // 删除镜像
-  const doRmi = useCallback(async (id: string, force?: boolean) => {
-    setActionLoading(id)
-    try {
-      const res = await fetch('/api/docker/rmi', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionId, id, force }),
-      })
-      const json = await res.json()
-      if (!json.success) {
-        notify(`删除失败: ${json.error || '未知错误'}`, 'error')
-      } else {
-        notify(`已删除镜像 ${id.slice(0, 12)}`, 'success')
-        onRefresh()
+  const doRmi = useCallback(
+    async (id: string, force?: boolean) => {
+      setActionLoading(id)
+      try {
+        const res = await fetch('/api/docker/rmi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connectionId, id, force }),
+        })
+        const json = await res.json()
+        if (!json.success) {
+          notify(`删除失败: ${json.error || '未知错误'}`, 'error')
+        } else {
+          notify(`已删除镜像 ${id.slice(0, 12)}`, 'success')
+          onRefresh()
+        }
+      } catch (err: any) {
+        notify(`删除请求失败: ${err.message}`, 'error')
+      } finally {
+        setActionLoading(null)
       }
-    } catch (err: any) {
-      notify(`删除请求失败: ${err.message}`, 'error')
-    } finally {
-      setActionLoading(null)
-    }
-  }, [connectionId, onRefresh])
+    },
+    [connectionId, onRefresh],
+  )
 
   // 打开操作对话框
   const openModal = useCallback((type: ActionType, image?: DockerImage) => {
@@ -132,29 +145,40 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
   }, [modal, connectionId, onRefresh])
 
   // 查看详情
-  const showDetails = useCallback(async (img: DockerImage) => {
-    setSelectedImage(img)
-    setDetailTab('history')
-    setHistory([])
-    setInspectData(null)
-    setHistoryLoading(true)
-    try {
-      const res = await fetch('/api/docker/history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionId, id: img.ID }),
-      })
-      const json = await res.json()
-      if (json.success) {
-        const lines = json.data.trim().split('\n').filter(Boolean)
-        const list: HistoryLayer[] = lines.map((line: string) => {
-          try { return JSON.parse(line) } catch { return null }
-        }).filter(Boolean)
-        setHistory(list)
+  const showDetails = useCallback(
+    async (img: DockerImage) => {
+      setSelectedImage(img)
+      setDetailTab('history')
+      setHistory([])
+      setInspectData(null)
+      setHistoryLoading(true)
+      try {
+        const res = await fetch('/api/docker/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connectionId, id: img.ID }),
+        })
+        const json = await res.json()
+        if (json.success) {
+          const lines = json.data.trim().split('\n').filter(Boolean)
+          const list: HistoryLayer[] = lines
+            .map((line: string) => {
+              try {
+                return JSON.parse(line)
+              } catch {
+                return null
+              }
+            })
+            .filter(Boolean)
+          setHistory(list)
+        }
+      } catch {
+        /* ignore */
       }
-    } catch { /* ignore */ }
-    setHistoryLoading(false)
-  }, [connectionId])
+      setHistoryLoading(false)
+    },
+    [connectionId],
+  )
 
   const loadInspect = useCallback(async () => {
     if (!selectedImage) return
@@ -167,9 +191,15 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
       })
       const json = await res.json()
       if (json.success) {
-        try { setInspectData(JSON.parse(json.data)) } catch { setInspectData(json.data) }
+        try {
+          setInspectData(JSON.parse(json.data))
+        } catch {
+          setInspectData(json.data)
+        }
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     setInspectLoading(false)
   }, [connectionId, selectedImage])
 
@@ -189,13 +219,13 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
       {/* 工具栏 */}
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-700/30 px-4 py-2">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <Search size={14} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="搜索镜像名称 / 标签 / ID..."
-            className="w-full rounded-md border border-slate-700/50 bg-slate-800/60 py-1.5 pl-8 pr-3 text-xs text-slate-300 placeholder-slate-500 outline-none focus:border-smartbox-500/50"
+            className="focus:border-smartbox-500/50 w-full rounded-md border border-slate-700/50 bg-slate-800/60 py-1.5 pr-3 pl-8 text-xs text-slate-300 placeholder-slate-500 outline-none"
           />
         </div>
         <button
@@ -215,7 +245,9 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
       {/* 主区域：列表 + 详情面板 */}
       <div className="flex flex-1 overflow-hidden">
         {/* 镜像列表 */}
-        <div className={`flex flex-col overflow-hidden ${selectedImage ? 'w-1/2 border-r border-slate-700/30' : 'flex-1'}`}>
+        <div
+          className={`flex flex-col overflow-hidden ${selectedImage ? 'w-1/2 border-r border-slate-700/30' : 'flex-1'}`}
+        >
           <div className="flex-1 overflow-auto">
             {loading && images.length === 0 ? (
               <div className="flex h-full items-center justify-center">
@@ -230,7 +262,8 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                 {filtered.map((img) => {
                   const key = `${img.ID}-${img.Tag}`
                   const shortId = img.ID.replace('sha256:', '').slice(0, 12)
-                  const isLoading = actionLoading === shortId || actionLoading === `${img.Repository}:${img.Tag}`
+                  const isLoading =
+                    actionLoading === shortId || actionLoading === `${img.Repository}:${img.Tag}`
                   const isActive = selectedImage?.ID === img.ID && selectedImage?.Tag === img.Tag
 
                   return (
@@ -238,15 +271,15 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                       key={key}
                       onClick={() => showDetails(img)}
                       className={`flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors ${
-                        isActive
-                          ? 'bg-smartbox-900/20'
-                          : 'hover:bg-slate-800/40'
+                        isActive ? 'bg-smartbox-900/20' : 'hover:bg-slate-800/40'
                       }`}
                     >
                       {/* 镜像信息 */}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className={`truncate text-sm font-medium ${isActive ? 'text-smartbox-300' : 'text-slate-200'}`}>
+                          <span
+                            className={`truncate text-sm font-medium ${isActive ? 'text-smartbox-300' : 'text-slate-200'}`}
+                          >
                             {isDangling(img) ? '<none>:<none>' : `${img.Repository}:${img.Tag}`}
                           </span>
                           {isDangling(img) && (
@@ -263,17 +296,20 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                       </div>
 
                       {/* 操作按钮 */}
-                      <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex" onClick={(e) => e.stopPropagation()}>
+                      <div
+                        className="hidden shrink-0 items-center gap-0.5 group-hover:flex"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <button
                           onClick={() => openModal('push', img)}
-                          className="min-w-[44px] min-h-[44px] rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200"
+                          className="min-h-[44px] min-w-[44px] rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200"
                           title="推送镜像"
                         >
                           <Upload size={13} />
                         </button>
                         <button
                           onClick={() => openModal('tag', img)}
-                          className="min-w-[44px] min-h-[44px] rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200"
+                          className="min-h-[44px] min-w-[44px] rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200"
                           title="打标签"
                         >
                           <TagIcon size={13} />
@@ -281,7 +317,7 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                         <button
                           onClick={() => doRmi(img.ID, true)}
                           disabled={isLoading}
-                          className="min-w-[44px] min-h-[44px] rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
+                          className="min-h-[44px] min-w-[44px] rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
                           title="删除镜像"
                         >
                           <Trash2 size={13} />
@@ -306,15 +342,18 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
             <div className="flex shrink-0 items-center border-b border-slate-700/30 px-4 py-2">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-slate-200">
-                  {isDangling(selectedImage) ? '<none>:<none>' : `${selectedImage.Repository}:${selectedImage.Tag}`}
+                  {isDangling(selectedImage)
+                    ? '<none>:<none>'
+                    : `${selectedImage.Repository}:${selectedImage.Tag}`}
                 </div>
                 <div className="text-[11px] text-slate-500">
-                  {selectedImage.ID.replace('sha256:', '').slice(0, 19)} · {selectedImage.Size} · {selectedImage.CreatedSince}
+                  {selectedImage.ID.replace('sha256:', '').slice(0, 19)} · {selectedImage.Size} ·{' '}
+                  {selectedImage.CreatedSince}
                 </div>
               </div>
               <button
                 onClick={() => setSelectedImage(null)}
-                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
+                className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
               >
                 <X size={14} />
               </button>
@@ -333,7 +372,10 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                 <Layers size={12} /> 构建历史
               </button>
               <button
-                onClick={() => { setDetailTab('inspect'); if (!inspectData) loadInspect() }}
+                onClick={() => {
+                  setDetailTab('inspect')
+                  if (!inspectData) loadInspect()
+                }}
                 className={`flex items-center gap-1 border-b-2 px-3 py-2 text-xs transition-colors ${
                   detailTab === 'inspect'
                     ? 'border-smartbox-400 text-slate-200'
@@ -364,9 +406,11 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                             {layer.ID ? layer.ID.slice(0, 12) : '---'}
                           </span>
                           <span className="text-[11px] text-slate-500">{layer.Size || '0 B'}</span>
-                          <span className="text-[11px] text-slate-500">{layer.CreatedSince || ''}</span>
+                          <span className="text-[11px] text-slate-500">
+                            {layer.CreatedSince || ''}
+                          </span>
                         </div>
-                        <div className="mt-1 text-[11px] text-slate-400 leading-relaxed">
+                        <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
                           {layer.CreatedBy || '(空)'}
                         </div>
                       </div>
@@ -388,7 +432,7 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                     加载中...
                   </div>
                 ) : (
-                  <pre className="p-4 font-mono text-[11px] text-slate-400 leading-relaxed">
+                  <pre className="p-4 font-mono text-[11px] leading-relaxed text-slate-400">
                     {JSON.stringify(inspectData, null, 2)}
                   </pre>
                 )}
@@ -403,12 +447,10 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-[440px] rounded-lg border border-slate-700/50 bg-slate-900 shadow-2xl">
             <div className="flex items-center border-b border-slate-700/30 px-4 py-3">
-              <h3 className="text-sm font-semibold text-slate-200">
-                {getActionTitle(modal.type)}
-              </h3>
+              <h3 className="text-sm font-semibold text-slate-200">{getActionTitle(modal.type)}</h3>
               <button
                 onClick={() => setModal(null)}
-                className="ml-auto min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
+                className="ml-auto min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
               >
                 <X size={14} />
               </button>
@@ -423,11 +465,13 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                     value={modalInput}
                     onChange={(e) => setModalInput(e.target.value)}
                     placeholder="例如: nginx:latest 或 ubuntu:22.04"
-                    className="w-full rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-smartbox-500/50"
+                    className="focus:border-smartbox-500/50 w-full rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none"
                     autoFocus
                     onKeyDown={(e) => e.key === 'Enter' && doAction()}
                   />
-                  <p className="mt-1 text-[11px] text-slate-500">输入完整的镜像名称（支持 registry 地址）</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    输入完整的镜像名称（支持 registry 地址）
+                  </p>
                 </div>
               )}
 
@@ -439,11 +483,13 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                     value={modalInput}
                     onChange={(e) => setModalInput(e.target.value)}
                     placeholder="registry.example.com/myimage:latest"
-                    className="w-full rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-smartbox-500/50"
+                    className="focus:border-smartbox-500/50 w-full rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none"
                     autoFocus
                     onKeyDown={(e) => e.key === 'Enter' && doAction()}
                   />
-                  <p className="mt-1 text-[11px] text-slate-500">需要先登录目标 registry（在服务器上 docker login）</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    需要先登录目标 registry（在服务器上 docker login）
+                  </p>
                 </div>
               )}
 
@@ -455,7 +501,7 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                       type="text"
                       value={modalInput}
                       onChange={(e) => setModalInput(e.target.value)}
-                      className="w-full rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-smartbox-500/50"
+                      className="focus:border-smartbox-500/50 w-full rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none"
                     />
                   </div>
                   <div>
@@ -465,7 +511,7 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
                       value={modalInput2}
                       onChange={(e) => setModalInput2(e.target.value)}
                       placeholder="例如: myrepo/myimage:v2"
-                      className="w-full rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-smartbox-500/50"
+                      className="focus:border-smartbox-500/50 w-full rounded-md border border-slate-700/50 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none"
                       autoFocus
                       onKeyDown={(e) => e.key === 'Enter' && doAction()}
                     />
@@ -476,7 +522,8 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
               {modal.type === 'prune' && (
                 <div className="rounded-lg border border-amber-900/30 bg-amber-950/20 p-3">
                   <p className="text-xs text-amber-400">
-                    将清理所有未使用的镜像（dangling images 和未被任何容器引用的镜像）。此操作不可撤销。
+                    将清理所有未使用的镜像（dangling images
+                    和未被任何容器引用的镜像）。此操作不可撤销。
                   </p>
                 </div>
               )}
@@ -492,7 +539,7 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
               <button
                 onClick={doAction}
                 disabled={modalLoading || (modal.type !== 'prune' && !modalInput.trim())}
-                className="flex items-center gap-1 rounded-md bg-smartbox-600 px-3 py-1.5 text-xs text-white transition-colors hover:bg-smartbox-500 disabled:opacity-50"
+                className="bg-smartbox-600 hover:bg-smartbox-500 flex items-center gap-1 rounded-md px-3 py-1.5 text-xs text-white transition-colors disabled:opacity-50"
               >
                 {modalLoading && (
                   <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -509,18 +556,26 @@ export default function DockerImages({ connectionId, images, loading, onRefresh 
 
 function getActionLabel(type: ActionType): string {
   switch (type) {
-    case 'pull': return '拉取'
-    case 'push': return '推送'
-    case 'tag': return '打标签'
-    case 'prune': return '清理'
+    case 'pull':
+      return '拉取'
+    case 'push':
+      return '推送'
+    case 'tag':
+      return '打标签'
+    case 'prune':
+      return '清理'
   }
 }
 
 function getActionTitle(type: ActionType): string {
   switch (type) {
-    case 'pull': return '拉取镜像'
-    case 'push': return '推送镜像'
-    case 'tag': return '打标签'
-    case 'prune': return '清理未使用镜像'
+    case 'pull':
+      return '拉取镜像'
+    case 'push':
+      return '推送镜像'
+    case 'tag':
+      return '打标签'
+    case 'prune':
+      return '清理未使用镜像'
   }
 }

@@ -7,13 +7,7 @@
 
 import type { AiMessage } from '../types/ai'
 
-export type AiCodeAction =
-  | 'explain'
-  | 'refactor'
-  | 'fix'
-  | 'optimize'
-  | 'comment'
-  | 'translate'
+export type AiCodeAction = 'explain' | 'refactor' | 'fix' | 'optimize' | 'comment' | 'translate'
 
 export interface AiCodeActionResult {
   original: string
@@ -113,7 +107,10 @@ export async function aiCodeAction(
   const messages: AiMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'system', content: ACTION_PROMPTS[action] },
-    { role: 'user', content: `以下是我的 ${language} 代码：\n\n\`\`\`${language}\n${code}\n\`\`\`` },
+    {
+      role: 'user',
+      content: `以下是我的 ${language} 代码：\n\n\`\`\`${language}\n${code}\n\`\`\``,
+    },
   ]
 
   const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`
@@ -122,7 +119,7 @@ export async function aiCodeAction(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'HTTP-Referer': window.location.origin,
       'X-Title': 'SmartBox',
     },
@@ -157,7 +154,9 @@ function parseActionResult(content: string, originalCode: string): AiCodeActionR
 
   // 提取 explanation / diff / issues
   const explMatch = content.match(/```(?:explanation|diff|issues|summary)\n([\s\S]*?)```/)
-  const explanation = explMatch ? explMatch[1]!.trim() : content.replace(/```[\s\S]*?```/g, '').trim()
+  const explanation = explMatch
+    ? explMatch[1]!.trim()
+    : content.replace(/```[\s\S]*?```/g, '').trim()
 
   return { original: originalCode, modified, explanation }
 }
@@ -165,7 +164,10 @@ function parseActionResult(content: string, originalCode: string): AiCodeActionR
 /**
  * 计算简单差异行的辅助函数
  */
-export function computeDiffLines(original: string, modified: string): { added: number; removed: number } {
+export function computeDiffLines(
+  original: string,
+  modified: string,
+): { added: number; removed: number } {
   const origLines = original.split('\n')
   const modLines = modified.split('\n')
   let added = 0

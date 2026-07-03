@@ -78,9 +78,7 @@ export default function ResizablePanel({
       if (!isDragging.current) return
       const delta = (isHorizontal ? e.clientX : e.clientY) - startPos.current
       // 面板在分隔线之前（left/top），delta 直接加；之后（right/bottom）要反向
-      const newSize = isBefore
-        ? startSize.current + delta
-        : startSize.current - delta
+      const newSize = isBefore ? startSize.current + delta : startSize.current - delta
       setInternalSize(Math.max(minSize, Math.min(maxSize, newSize)))
     },
     [isHorizontal, isBefore, minSize, maxSize],
@@ -123,9 +121,7 @@ export default function ResizablePanel({
       const touch = e.touches[0]
       if (!touch) return
       const delta = (isHorizontal ? touch.clientX : touch.clientY) - startPos.current
-      const newSize = isBefore
-        ? startSize.current + delta
-        : startSize.current - delta
+      const newSize = isBefore ? startSize.current + delta : startSize.current - delta
       setInternalSize(Math.max(minSize, Math.min(maxSize, newSize)))
     },
     [isHorizontal, isBefore, minSize, maxSize],
@@ -161,7 +157,7 @@ export default function ResizablePanel({
       <div
         className={`absolute ${
           isHorizontal ? 'top-0 w-1 cursor-col-resize' : 'left-0 h-1 cursor-row-resize'
-        } z-20 transition-colors hover:bg-smartbox-500/30 active:bg-smartbox-500/50 ${handleClassName}`}
+        } hover:bg-smartbox-500/30 active:bg-smartbox-500/50 z-20 transition-colors ${handleClassName}`}
         style={{
           [isHorizontal ? (isBefore ? 'right' : 'left') : isBefore ? 'bottom' : 'top']: -4,
           [isHorizontal ? 'height' : 'width']: '100%',
@@ -173,9 +169,9 @@ export default function ResizablePanel({
         <div
           className={`absolute ${
             isHorizontal
-              ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-10 w-4 rounded-full'
-              : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-4 rounded-full'
-          } bg-slate-600/50 group-hover:bg-smartbox-400/50 transition-colors`}
+              ? 'top-1/2 left-1/2 h-10 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full'
+              : 'top-1/2 left-1/2 h-4 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full'
+          } group-hover:bg-smartbox-400/50 bg-slate-600/50 transition-colors`}
         />
       </div>
 

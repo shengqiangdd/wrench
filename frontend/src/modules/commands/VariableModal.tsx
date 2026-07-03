@@ -23,7 +23,9 @@ export default function VariableModal({ cmd, onConfirm, onCancel }: VariableModa
     } else {
       // 没定义 variables 字段，从命令中自动提取
       const vars = extractVariables(cmd.command)
-      vars.forEach((v) => { initial[v] = '' })
+      vars.forEach((v) => {
+        initial[v] = ''
+      })
     }
     setValues(initial)
   }, [cmd])
@@ -46,7 +48,10 @@ export default function VariableModal({ cmd, onConfirm, onCancel }: VariableModa
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onCancel}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onCancel}
+    >
       <div
         className="w-[460px] rounded-lg border border-slate-700/50 bg-slate-900 shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -55,9 +60,14 @@ export default function VariableModal({ cmd, onConfirm, onCancel }: VariableModa
         <div className="flex items-center justify-between border-b border-slate-700/30 px-4 py-3">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-slate-200">模板变量</h3>
-            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">{cmd.name}</span>
+            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">
+              {cmd.name}
+            </span>
           </div>
-          <button onClick={onCancel} className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300">
+          <button
+            onClick={onCancel}
+            className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+          >
             <X size={14} />
           </button>
         </div>
@@ -66,7 +76,10 @@ export default function VariableModal({ cmd, onConfirm, onCancel }: VariableModa
         <div className="space-y-3 p-4">
           <p className="text-[11px] text-slate-500">此命令包含变量占位符，请填写实际值：</p>
 
-          {(cmd.variables || Object.keys(values).map((k) => ({ name: k, label: k } as CommandVariable))).map((v) => (
+          {(
+            cmd.variables ||
+            Object.keys(values).map((k) => ({ name: k, label: k }) as CommandVariable)
+          ).map((v) => (
             <div key={v.name}>
               <label className="mb-1 block text-[11px] font-medium text-slate-400">
                 {v.label || v.name}
@@ -76,7 +89,7 @@ export default function VariableModal({ cmd, onConfirm, onCancel }: VariableModa
                 value={values[v.name] || ''}
                 onChange={(e) => setValues((prev) => ({ ...prev, [v.name]: e.target.value }))}
                 placeholder={v.placeholder || `输入 ${v.name}`}
-                className="w-full rounded-md border border-slate-700/50 bg-slate-800/50 px-3 py-2 text-xs font-mono text-slate-200 placeholder-slate-600 outline-none transition-colors focus:border-smartbox-500/50"
+                className="focus:border-smartbox-500/50 w-full rounded-md border border-slate-700/50 bg-slate-800/50 px-3 py-2 font-mono text-xs text-slate-200 placeholder-slate-600 transition-colors outline-none"
                 autoFocus={!v.defaultValue}
               />
             </div>
@@ -102,7 +115,7 @@ export default function VariableModal({ cmd, onConfirm, onCancel }: VariableModa
           <button
             onClick={handleConfirm}
             disabled={!allFilled}
-            className="rounded-md bg-smartbox-600 px-3 py-1.5 text-xs text-white transition-colors hover:bg-smartbox-500 disabled:opacity-50"
+            className="bg-smartbox-600 hover:bg-smartbox-500 rounded-md px-3 py-1.5 text-xs text-white transition-colors disabled:opacity-50"
           >
             执行
           </button>

@@ -61,10 +61,18 @@ const store: Record<string, string> = {}
 Object.defineProperty(globalThis, 'localStorage', {
   value: {
     getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => { store[key] = value },
-    removeItem: (key: string) => { delete store[key] },
-    clear: () => { Object.keys(store).forEach(k => delete store[k]) },
-    get length() { return Object.keys(store).length },
+    setItem: (key: string, value: string) => {
+      store[key] = value
+    },
+    removeItem: (key: string) => {
+      delete store[key]
+    },
+    clear: () => {
+      Object.keys(store).forEach((k) => delete store[k])
+    },
+    get length() {
+      return Object.keys(store).length
+    },
     key: (index: number) => Object.keys(store)[index] ?? null,
   },
   writable: true,
@@ -77,7 +85,9 @@ if (typeof URL.createObjectURL === 'undefined') {
   URL.createObjectURL = (_blob: Blob) => `blob:mock-${++blobId}`
 }
 if (typeof URL.revokeObjectURL === 'undefined') {
-  URL.revokeObjectURL = (_url: string) => { /* no-op in jsdom */ }
+  URL.revokeObjectURL = (_url: string) => {
+    /* no-op in jsdom */
+  }
 }
 
 // Mock ResizeObserver for jsdom (used by VirtualList)
@@ -105,7 +115,8 @@ if (typeof IntersectionObserver === 'undefined') {
     unobserve(_target: Element) {}
     disconnect() {}
   }
-  globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver
+  globalThis.IntersectionObserver =
+    MockIntersectionObserver as unknown as typeof IntersectionObserver
 }
 
 // Mock scrollIntoView for jsdom (used by CommandPalette)

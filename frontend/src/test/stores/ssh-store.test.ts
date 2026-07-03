@@ -133,7 +133,12 @@ describe('useSshStore', () => {
     })
 
     it('sets SFTP entries', () => {
-      useSshStore.getState().setCurrentSftpEntries([mockSftpEntry, { ...mockSftpEntry, name: 'dir1', type: 'directory' }])
+      useSshStore
+        .getState()
+        .setCurrentSftpEntries([
+          mockSftpEntry,
+          { ...mockSftpEntry, name: 'dir1', type: 'directory' },
+        ])
       expect(useSshStore.getState().currentSftpEntries).toHaveLength(2)
       expect(useSshStore.getState().currentSftpEntries[1]!.type).toBe('directory')
     })

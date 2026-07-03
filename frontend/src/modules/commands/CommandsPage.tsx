@@ -69,7 +69,9 @@ export default function CommandsPage() {
 
   /** 发送命令到终端 */
   const handleSendToTerminal = useCallback((cmdStr: string) => {
-    window.dispatchEvent(new CustomEvent('smartbox:send-to-terminal', { detail: { command: cmdStr } }))
+    window.dispatchEvent(
+      new CustomEvent('smartbox:send-to-terminal', { detail: { command: cmdStr } }),
+    )
   }, [])
 
   /** 发送到批量执行面板 */
@@ -207,7 +209,12 @@ export default function CommandsPage() {
       {importError && (
         <div className="flex shrink-0 items-center gap-2 border-b border-red-900/30 bg-red-950/20 px-4 py-2 text-xs text-red-400">
           <span>{importError}</span>
-          <button onClick={() => setImportError(null)} className="ml-auto text-red-500 hover:text-red-300">✕</button>
+          <button
+            onClick={() => setImportError(null)}
+            className="ml-auto text-red-500 hover:text-red-300"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -231,7 +238,7 @@ export default function CommandsPage() {
 
         {/* 右侧：执行结果（桌面端侧栏，移动端全屏覆盖） */}
         {outputPanelOpen && (
-          <div className="fixed inset-0 z-40 bg-slate-950 md:static md:z-auto md:w-96 md:shrink-0 md:border-l md:border-slate-700/30 md:bg-slate-900/40 md:ml-0">
+          <div className="fixed inset-0 z-40 bg-slate-950 md:static md:z-auto md:ml-0 md:w-96 md:shrink-0 md:border-l md:border-slate-700/30 md:bg-slate-900/40">
             <CommandOutput
               results={results}
               onClose={removeResult}
@@ -248,7 +255,10 @@ export default function CommandsPage() {
         <CommandFormModal
           editCmd={editCmd}
           onSave={handleSave}
-          onClose={() => { setShowForm(false); setEditCmd(null) }}
+          onClose={() => {
+            setShowForm(false)
+            setEditCmd(null)
+          }}
         />
       )}
 

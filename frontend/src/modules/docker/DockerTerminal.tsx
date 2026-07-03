@@ -35,7 +35,12 @@ interface Props {
   onClose: () => void
 }
 
-export default function DockerTerminal({ connectionId, containerId, shell = '/bin/bash', onClose }: Props) {
+export default function DockerTerminal({
+  connectionId,
+  containerId,
+  shell = '/bin/bash',
+  onClose,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -50,7 +55,8 @@ export default function DockerTerminal({ connectionId, containerId, shell = '/bi
       cursorBlink: true,
       cursorStyle: 'block',
       fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Source Code Pro', Menlo, monospace",
+      fontFamily:
+        "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Source Code Pro', Menlo, monospace",
       allowTransparency: true,
       rows: 30,
       cols: 100,

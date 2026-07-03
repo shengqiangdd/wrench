@@ -57,8 +57,7 @@ export const useAiStore = create<AiState>()(
       fetchedModelsAt: null,
       isFetchingModels: false,
 
-      setConfig: (partial) =>
-        set((s) => ({ config: { ...s.config, ...partial } })),
+      setConfig: (partial) => set((s) => ({ config: { ...s.config, ...partial } })),
 
       addMessage: (msg) =>
         set((s) => {
@@ -76,21 +75,15 @@ export const useAiStore = create<AiState>()(
       finalizeStreaming: () =>
         set((s) => ({
           isStreaming: false,
-          messages: [
-            ...s.messages,
-            { role: 'assistant', content: s.streamingContent },
-          ],
+          messages: [...s.messages, { role: 'assistant', content: s.streamingContent }],
           streamingContent: '',
         })),
 
-      addSuggestion: (suggestion) =>
-        set((s) => ({ suggestions: [suggestion, ...s.suggestions] })),
+      addSuggestion: (suggestion) => set((s) => ({ suggestions: [suggestion, ...s.suggestions] })),
 
       markSuggestionApplied: (id) =>
         set((s) => ({
-          suggestions: s.suggestions.map((sg) =>
-            sg.id === id ? { ...sg, applied: true } : sg,
-          ),
+          suggestions: s.suggestions.map((sg) => (sg.id === id ? { ...sg, applied: true } : sg)),
         })),
 
       removeSuggestion: (id) =>
@@ -98,8 +91,7 @@ export const useAiStore = create<AiState>()(
           suggestions: s.suggestions.filter((sg) => sg.id !== id),
         })),
 
-      setFetchedModels: (models) =>
-        set({ fetchedModels: models, fetchedModelsAt: Date.now() }),
+      setFetchedModels: (models) => set({ fetchedModels: models, fetchedModelsAt: Date.now() }),
 
       setIsFetchingModels: (v) => set({ isFetchingModels: v }),
 
@@ -140,5 +132,7 @@ export const refreshAiStore = () => {
     useAiStore.setState({
       config: { ...useAiStore.getState().config, ...(state.config || {}) },
     })
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }

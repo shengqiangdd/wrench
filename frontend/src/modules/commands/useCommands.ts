@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { QuickCommand, CommandGroup } from './index'
-import { BUILTIN_COMMANDS, COMMAND_GROUPS, BUILTIN_GROUPS, STORAGE_KEY, DEFAULT_CUSTOM } from './index'
+import {
+  BUILTIN_COMMANDS,
+  COMMAND_GROUPS,
+  BUILTIN_GROUPS,
+  STORAGE_KEY,
+  DEFAULT_CUSTOM,
+} from './index'
 
 const GROUP_STORAGE_KEY = 'smartbox-command-groups'
 
@@ -79,9 +85,12 @@ export function useCommands() {
   }, [])
 
   /** 更新自定义命令 */
-  const updateCommand = useCallback((id: string, updates: Partial<Omit<QuickCommand, 'id' | 'isBuiltin'>>) => {
-    setCustomCommands((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)))
-  }, [])
+  const updateCommand = useCallback(
+    (id: string, updates: Partial<Omit<QuickCommand, 'id' | 'isBuiltin'>>) => {
+      setCustomCommands((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)))
+    },
+    [],
+  )
 
   /** 删除自定义命令 */
   const removeCommand = useCallback((id: string) => {

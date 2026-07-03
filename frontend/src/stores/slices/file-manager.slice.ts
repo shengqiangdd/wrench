@@ -8,7 +8,9 @@ export interface FileManagerSlice {
   setFmSftpState: (state: SftpState) => void
 }
 
-export const createFileManagerSlice: StateCreator<FileManagerSlice, [], [], FileManagerSlice> = (set) => ({
+export const createFileManagerSlice: StateCreator<FileManagerSlice, [], [], FileManagerSlice> = (
+  set,
+) => ({
   fmSidebarOpen: false,
   setFmSidebarOpen: (open) => set({ fmSidebarOpen: open }),
   fmSftpState: { connId: null, sessionId: null, pathCache: {} },

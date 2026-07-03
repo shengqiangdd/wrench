@@ -74,7 +74,9 @@ function RuleRow({
       </span>
 
       {/* 严重级别 */}
-      <span className={`shrink-0 text-[10px] font-medium ${severityInfo?.color || 'text-slate-400'}`}>
+      <span
+        className={`shrink-0 text-[10px] font-medium ${severityInfo?.color || 'text-slate-400'}`}
+      >
         {severityInfo?.label || rule.severity}
       </span>
 
@@ -86,8 +88,10 @@ function RuleRow({
           min={1}
           max={100}
           value={rule.threshold}
-          onChange={(e) => onUpdate({ threshold: Math.min(100, Math.max(1, Number(e.target.value) || 1)) })}
-          className="w-14 rounded border border-slate-700/50 bg-slate-900 px-1.5 py-0.5 text-center text-[11px] text-slate-300 outline-none focus:border-smartbox-500/50"
+          onChange={(e) =>
+            onUpdate({ threshold: Math.min(100, Math.max(1, Number(e.target.value) || 1)) })
+          }
+          className="focus:border-smartbox-500/50 w-14 rounded border border-slate-700/50 bg-slate-900 px-1.5 py-0.5 text-center text-[11px] text-slate-300 outline-none"
         />
         <span className="text-[10px] text-slate-600">%</span>
       </div>
@@ -100,8 +104,10 @@ function RuleRow({
           min={1}
           max={20}
           value={rule.consecutive}
-          onChange={(e) => onUpdate({ consecutive: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })}
-          className="w-10 rounded border border-slate-700/50 bg-slate-900 px-1.5 py-0.5 text-center text-[11px] text-slate-300 outline-none focus:border-smartbox-500/50"
+          onChange={(e) =>
+            onUpdate({ consecutive: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })
+          }
+          className="focus:border-smartbox-500/50 w-10 rounded border border-slate-700/50 bg-slate-900 px-1.5 py-0.5 text-center text-[11px] text-slate-300 outline-none"
         />
         <span className="text-[10px] text-slate-600">次</span>
       </div>
@@ -109,7 +115,7 @@ function RuleRow({
       {/* 删除 */}
       <button
         onClick={onDelete}
-        className="ml-auto shrink-0 min-w-[44px] min-h-[44px] rounded p-1 text-slate-600 transition-colors hover:bg-red-900/20 hover:text-red-400"
+        className="ml-auto min-h-[44px] min-w-[44px] shrink-0 rounded p-1 text-slate-600 transition-colors hover:bg-red-900/20 hover:text-red-400"
         title="删除规则"
       >
         <Trash2 size={12} />
@@ -138,7 +144,10 @@ function AddRuleForm({ onClose }: { onClose: () => void }) {
     const existing = useAlertStore.getState().rules
     const duplicate = existing.some((r) => r.metric === metric && r.severity === severity)
     if (duplicate) {
-      notify(`已存在 ${METRIC_OPTIONS.find((m) => m.value === metric)?.label} - ${SEVERITY_OPTIONS.find((s) => s.value === severity)?.label} 规则`, 'info')
+      notify(
+        `已存在 ${METRIC_OPTIONS.find((m) => m.value === metric)?.label} - ${SEVERITY_OPTIONS.find((s) => s.value === severity)?.label} 规则`,
+        'info',
+      )
       return
     }
     addRule({ metric, severity, threshold, consecutive, enabled: true })
@@ -146,7 +155,7 @@ function AddRuleForm({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="rounded-lg border border-smartbox-500/30 bg-smartbox-900/10 p-3">
+    <div className="border-smartbox-500/30 bg-smartbox-900/10 rounded-lg border p-3">
       <div className="flex flex-wrap items-center gap-3">
         {/* 指标 */}
         <div className="flex items-center gap-1">
@@ -189,7 +198,7 @@ function AddRuleForm({ onClose }: { onClose: () => void }) {
             max={100}
             value={threshold}
             onChange={(e) => setThreshold(Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
-            className="w-14 rounded border border-slate-700/50 bg-slate-900 px-1.5 py-0.5 text-center text-[11px] text-slate-300 outline-none focus:border-smartbox-500/50"
+            className="focus:border-smartbox-500/50 w-14 rounded border border-slate-700/50 bg-slate-900 px-1.5 py-0.5 text-center text-[11px] text-slate-300 outline-none"
           />
           <span className="text-[10px] text-slate-600">%</span>
         </div>
@@ -203,7 +212,7 @@ function AddRuleForm({ onClose }: { onClose: () => void }) {
             max={20}
             value={consecutive}
             onChange={(e) => setConsecutive(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
-            className="w-10 rounded border border-slate-700/50 bg-slate-900 px-1.5 py-0.5 text-center text-[11px] text-slate-300 outline-none focus:border-smartbox-500/50"
+            className="focus:border-smartbox-500/50 w-10 rounded border border-slate-700/50 bg-slate-900 px-1.5 py-0.5 text-center text-[11px] text-slate-300 outline-none"
           />
           <span className="text-[10px] text-slate-600">次</span>
         </div>
@@ -212,14 +221,14 @@ function AddRuleForm({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-1.5">
           <button
             onClick={handleAdd}
-            className="flex items-center gap-1 rounded-md bg-smartbox-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-smartbox-500"
+            className="bg-smartbox-600 hover:bg-smartbox-500 flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium text-white transition-colors"
           >
             <Save size={11} />
             添加
           </button>
           <button
             onClick={onClose}
-            className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:text-slate-300"
+            className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:text-slate-300"
           >
             <X size={14} />
           </button>
@@ -230,7 +239,16 @@ function AddRuleForm({ onClose }: { onClose: () => void }) {
 }
 
 export default function AlertSettings() {
-  const { rules, enabled, soundEnabled, toggleEnabled, toggleSound, updateRule, deleteRule, resetToDefaults } = useAlertStore()
+  const {
+    rules,
+    enabled,
+    soundEnabled,
+    toggleEnabled,
+    toggleSound,
+    updateRule,
+    deleteRule,
+    resetToDefaults,
+  } = useAlertStore()
   const [expanded, setExpanded] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
 
@@ -241,7 +259,11 @@ export default function AlertSettings() {
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-slate-700/20"
       >
-        {expanded ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
+        {expanded ? (
+          <ChevronDown size={14} className="text-slate-500" />
+        ) : (
+          <ChevronRight size={14} className="text-slate-500" />
+        )}
         <Shield size={14} className="text-amber-400" />
         <span className="text-xs font-medium text-slate-300">告警规则</span>
         <span className="ml-1 text-[10px] text-slate-600">
@@ -258,8 +280,8 @@ export default function AlertSettings() {
             }}
             className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
               soundEnabled
-                ? 'bg-blue-900/30 text-blue-400 border border-blue-500/30'
-                : 'bg-slate-800 text-slate-500 border border-slate-700/30'
+                ? 'border border-blue-500/30 bg-blue-900/30 text-blue-400'
+                : 'border border-slate-700/30 bg-slate-800 text-slate-500'
             }`}
             title={soundEnabled ? '点击关闭声音' : '点击开启声音'}
           >
@@ -274,8 +296,8 @@ export default function AlertSettings() {
             }}
             className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
               enabled
-                ? 'bg-green-900/30 text-green-400 border border-green-500/30'
-                : 'bg-slate-800 text-slate-500 border border-slate-700/30'
+                ? 'border border-green-500/30 bg-green-900/30 text-green-400'
+                : 'border border-slate-700/30 bg-slate-800 text-slate-500'
             }`}
           >
             {enabled ? (
@@ -293,10 +315,10 @@ export default function AlertSettings() {
 
       {/* 展开内容 */}
       {expanded && (
-        <div className="border-t border-slate-700/30 px-3 py-3 space-y-2">
+        <div className="space-y-2 border-t border-slate-700/30 px-3 py-3">
           {/* 规则列表 */}
           {rules.length === 0 ? (
-            <p className="text-center text-[11px] text-slate-600 py-4">暂无告警规则</p>
+            <p className="py-4 text-center text-[11px] text-slate-600">暂无告警规则</p>
           ) : (
             <div className="space-y-1.5">
               {rules.map((rule) => (
@@ -317,7 +339,7 @@ export default function AlertSettings() {
             <div className="flex items-center gap-2 pt-1">
               <button
                 onClick={() => setShowAdd(true)}
-                className="flex items-center gap-1 rounded-md border border-slate-600/50 px-2.5 py-1.5 text-[11px] text-slate-400 transition-colors hover:border-smartbox-500/40 hover:text-smartbox-300"
+                className="hover:border-smartbox-500/40 hover:text-smartbox-300 flex items-center gap-1 rounded-md border border-slate-600/50 px-2.5 py-1.5 text-[11px] text-slate-400 transition-colors"
               >
                 <Plus size={12} />
                 添加规则
@@ -333,9 +355,10 @@ export default function AlertSettings() {
           )}
 
           {/* 说明 */}
-          <p className="text-[10px] text-slate-600 leading-relaxed pt-1">
-            <ShieldAlert size={10} className="inline-block mr-1 text-amber-500/60" />
-            告警通过连续触发防止瞬间抖动：指标连续 N 次超过阈值才会触发通知。同一告警 60 秒内不重复通知。
+          <p className="pt-1 text-[10px] leading-relaxed text-slate-600">
+            <ShieldAlert size={10} className="mr-1 inline-block text-amber-500/60" />
+            告警通过连续触发防止瞬间抖动：指标连续 N 次超过阈值才会触发通知。同一告警 60
+            秒内不重复通知。
           </p>
         </div>
       )}

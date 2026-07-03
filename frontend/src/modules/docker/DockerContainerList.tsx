@@ -1,7 +1,14 @@
-import { useState, useCallback, useOptimistic, lazy, Suspense, startTransition, memo, useMemo } from 'react'
 import {
-  Play, Square, RotateCcw, Trash2, FileText, Search, Eye,
-} from 'lucide-react'
+  useState,
+  useCallback,
+  useOptimistic,
+  lazy,
+  Suspense,
+  startTransition,
+  memo,
+  useMemo,
+} from 'react'
+import { Play, Square, RotateCcw, Trash2, FileText, Search, Eye } from 'lucide-react'
 import type { DockerContainer, ContainerStatus } from './index'
 import { STATUS_DOTS } from './index'
 
@@ -43,12 +50,14 @@ const ContainerRow = memo(function ContainerRow({
 
   return (
     <div
-      className={`group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-800/40 cursor-pointer ${
+      className={`group flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-slate-800/40 ${
         isSelected ? 'bg-slate-800/60' : ''
       }`}
     >
       {/* Status indicator */}
-      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOTS[c.State] || 'bg-slate-500'}`} />
+      <span
+        className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOTS[c.State] || 'bg-slate-500'}`}
+      />
 
       {/* Name + Image */}
       <div className="min-w-0 flex-1">
@@ -66,14 +75,17 @@ const ContainerRow = memo(function ContainerRow({
       </div>
 
       {/* Action buttons */}
-      <div className="flex shrink-0 items-center gap-1 opacity-100" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="flex shrink-0 items-center gap-1 opacity-100"
+        onClick={(e) => e.stopPropagation()}
+      >
         {!isSelfContainer && (
           <>
             {isRunning ? (
               <button
                 onClick={() => doAction(c.Names || shortId, 'stop')}
                 disabled={isLoading}
-                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-amber-400 disabled:opacity-40"
+                className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-amber-400 disabled:opacity-40"
                 title="停止"
               >
                 <Square size={14} />
@@ -82,7 +94,7 @@ const ContainerRow = memo(function ContainerRow({
               <button
                 onClick={() => doAction(c.Names || shortId, 'start')}
                 disabled={isLoading}
-                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-emerald-400 disabled:opacity-40"
+                className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-emerald-400 disabled:opacity-40"
                 title="启动"
               >
                 <Play size={14} />
@@ -92,7 +104,7 @@ const ContainerRow = memo(function ContainerRow({
               <button
                 onClick={() => doAction(c.Names || shortId, 'rm')}
                 disabled={isLoading}
-                className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
+                className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
                 title="删除"
               >
                 <Trash2 size={14} />
@@ -102,14 +114,14 @@ const ContainerRow = memo(function ContainerRow({
         )}
         <button
           onClick={() => onShowLogs(c.Names || shortId)}
-          className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
+          className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
           title="查看日志"
         >
           <FileText size={14} />
         </button>
         <button
           onClick={() => onShowDetail(c.Names || shortId)}
-          className="min-w-[44px] min-h-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
+          className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-300"
           title="查看详情"
         >
           <Eye size={14} />
@@ -125,7 +137,11 @@ const ContainerRow = memo(function ContainerRow({
 })
 
 /** 乐观更新：对指定容器执行状态切换而不等待 API */
-function optimisticToggle(containers: DockerContainer[], id: string, action: string): DockerContainer[] {
+function optimisticToggle(
+  containers: DockerContainer[],
+  id: string,
+  action: string,
+): DockerContainer[] {
   return containers.map((c) => {
     const matchId = c.Names || c.ID.slice(0, 12)
     if (matchId !== id) return c
@@ -134,7 +150,12 @@ function optimisticToggle(containers: DockerContainer[], id: string, action: str
   })
 }
 
-export default function DockerContainerList({ connectionId, containers, loading, onRefresh }: Props) {
+export default function DockerContainerList({
+  connectionId,
+  containers,
+  loading,
+  onRefresh,
+}: Props) {
   const [filter, setFilter] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [logTarget, setLogTarget] = useState<string | null>(null)
@@ -148,50 +169,54 @@ export default function DockerContainerList({ connectionId, containers, loading,
   // 🔥 Memoize filtered list to prevent unnecessary re-renders
   const filtered = useMemo(() => {
     if (!filter) return optimisticContainers
-    return optimisticContainers.filter((c) =>
-      c.Names.toLowerCase().includes(filter.toLowerCase()) ||
-      c.Image.toLowerCase().includes(filter.toLowerCase()) ||
-      c.ID.startsWith(filter)
+    return optimisticContainers.filter(
+      (c) =>
+        c.Names.toLowerCase().includes(filter.toLowerCase()) ||
+        c.Image.toLowerCase().includes(filter.toLowerCase()) ||
+        c.ID.startsWith(filter),
     )
   }, [optimisticContainers, filter])
 
-  const doAction = useCallback(async (id: string, action: string) => {
-    // 立即乐观更新 UI
-    startTransition(() => addOptimistic({ id, action }))
+  const doAction = useCallback(
+    async (id: string, action: string) => {
+      // 立即乐观更新 UI
+      startTransition(() => addOptimistic({ id, action }))
 
-    setActionLoading(id)
-    try {
-      const res = await fetch(`/api/docker/${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionId, id }),
-      })
-      const json = await res.json()
-      if (!json.success) {
-        notify(`${action} 失败: ${json.error || '未知错误'}`, 'error')
-      } else {
-        notify(`${action} 成功`, 'success')
-        onRefresh()
+      setActionLoading(id)
+      try {
+        const res = await fetch(`/api/docker/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connectionId, id }),
+        })
+        const json = await res.json()
+        if (!json.success) {
+          notify(`${action} 失败: ${json.error || '未知错误'}`, 'error')
+        } else {
+          notify(`${action} 成功`, 'success')
+          onRefresh()
+        }
+      } catch (err: any) {
+        notify(`${action} 请求失败: ${err.message}`, 'error')
+      } finally {
+        setActionLoading(null)
       }
-    } catch (err: any) {
-      notify(`${action} 请求失败: ${err.message}`, 'error')
-    } finally {
-      setActionLoading(null)
-    }
-  }, [connectionId, onRefresh, addOptimistic])
+    },
+    [connectionId, onRefresh, addOptimistic],
+  )
 
   return (
     <div className="flex h-full flex-col">
       {/* 搜索栏 */}
       <div className="flex shrink-0 items-center border-b border-slate-700/30 px-4 py-2">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <Search size={14} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="搜索容器名称 / 镜像 / ID..."
-            className="w-full rounded-md border border-slate-700/50 bg-slate-800/60 py-1.5 pl-8 pr-3 text-xs text-slate-300 placeholder-slate-500 outline-none focus:border-smartbox-500/50"
+            className="focus:border-smartbox-500/50 w-full rounded-md border border-slate-700/50 bg-slate-800/60 py-1.5 pr-3 pl-8 text-xs text-slate-300 placeholder-slate-500 outline-none"
           />
         </div>
       </div>

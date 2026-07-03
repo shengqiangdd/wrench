@@ -30,9 +30,7 @@ const NAV_PATH: Record<NavId, string> = {
   audit: '/audit',
 }
 
-const PATH_TO_NAV = Object.fromEntries(
-  Object.entries(NAV_PATH).map(([k, v]) => [v, k as NavId]),
-)
+const PATH_TO_NAV = Object.fromEntries(Object.entries(NAV_PATH).map(([k, v]) => [v, k as NavId]))
 
 function AppContent() {
   const theme = useAppStore((s) => s.theme)

@@ -6,7 +6,19 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Bell, Plus, Trash2, Send, Check, X, Loader2, MessageSquare, Globe, Mail, MessageCircle } from 'lucide-react'
+import {
+  Bell,
+  Plus,
+  Trash2,
+  Send,
+  Check,
+  X,
+  Loader2,
+  MessageSquare,
+  Globe,
+  Mail,
+  MessageCircle,
+} from 'lucide-react'
 import { authedFetch } from '../../services/auth'
 
 interface NotificationChannel {
@@ -47,7 +59,9 @@ export default function NotificationsPage() {
     }
   }, [])
 
-  useEffect(() => { loadChannels() }, [loadChannels])
+  useEffect(() => {
+    loadChannels()
+  }, [loadChannels])
 
   const deleteChannel = async (id: string) => {
     if (!confirm('确定删除此通知渠道？')) return
@@ -89,7 +103,7 @@ export default function NotificationsPage() {
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 rounded-lg bg-smartbox-600 px-4 py-2 text-sm font-medium text-white hover:bg-smartbox-500"
+          className="bg-smartbox-600 hover:bg-smartbox-500 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"
         >
           <Plus size={16} />
           添加渠道
@@ -106,24 +120,41 @@ export default function NotificationsPage() {
           <div className="flex flex-col items-center gap-2 py-20 text-slate-500">
             <Bell size={40} className="text-red-400" />
             <p className="text-sm">加载失败：{error}</p>
-            <button onClick={loadChannels} className="mt-2 text-sm text-smartbox-400 hover:underline">重试</button>
+            <button
+              onClick={loadChannels}
+              className="text-smartbox-400 mt-2 text-sm hover:underline"
+            >
+              重试
+            </button>
           </div>
         ) : channels.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-20 text-slate-500">
             <Bell size={40} />
             <p className="text-sm">还没有配置任何通知渠道</p>
-            <p className="text-xs text-slate-600">配置后，告警将通过 Discord、Slack、Telegram 或 Email 发送给你</p>
-            <button onClick={() => setShowAddModal(true)} className="mt-2 text-sm text-smartbox-400 hover:underline">
+            <p className="text-xs text-slate-600">
+              配置后，告警将通过 Discord、Slack、Telegram 或 Email 发送给你
+            </p>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="text-smartbox-400 mt-2 text-sm hover:underline"
+            >
               添加第一个渠道
             </button>
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             {channels.map((ch) => {
-              const meta = CHANNEL_META[ch.type] || { label: ch.type, icon: Globe, color: 'text-slate-400' }
+              const meta = CHANNEL_META[ch.type] || {
+                label: ch.type,
+                icon: Globe,
+                color: 'text-slate-400',
+              }
               const Icon = meta.icon
               return (
-                <div key={ch.id} className="group rounded-xl border border-slate-700/50 bg-slate-800/30 p-5 hover:border-slate-600/50">
+                <div
+                  key={ch.id}
+                  className="group rounded-xl border border-slate-700/50 bg-slate-800/30 p-5 hover:border-slate-600/50"
+                >
                   <div className="mb-4 flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`rounded-lg bg-slate-800 p-2 ${meta.color}`}>
@@ -132,9 +163,13 @@ export default function NotificationsPage() {
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-slate-200">{ch.name}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-xs ${
-                            ch.enabled ? 'bg-emerald-900/30 text-emerald-400' : 'bg-slate-700/50 text-slate-500'
-                          }`}>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs ${
+                              ch.enabled
+                                ? 'bg-emerald-900/30 text-emerald-400'
+                                : 'bg-slate-700/50 text-slate-500'
+                            }`}
+                          >
                             {ch.enabled ? '启用' : '禁用'}
                           </span>
                         </div>
@@ -143,7 +178,7 @@ export default function NotificationsPage() {
                     </div>
                     <button
                       onClick={() => deleteChannel(ch.id)}
-                      className="opacity-0 group-hover:opacity-100 rounded p-1.5 text-slate-500 hover:bg-red-900/30 hover:text-red-400 transition-all"
+                      className="rounded p-1.5 text-slate-500 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-900/30 hover:text-red-400"
                       title="删除"
                     >
                       <Trash2 size={14} />
@@ -195,7 +230,13 @@ export default function NotificationsPage() {
 
 type ChannelType = 'discord' | 'slack' | 'telegram' | 'email'
 
-function AddChannelModal({ onClose, onCreated }: { onClose: () => void; onCreated: (ch: NotificationChannel) => void }) {
+function AddChannelModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void
+  onCreated: (ch: NotificationChannel) => void
+}) {
   const [name, setName] = useState('')
   const [type, setType] = useState<ChannelType>('discord')
   const [webhookUrl, setWebhookUrl] = useState('')
@@ -276,8 +317,12 @@ function AddChannelModal({ onClose, onCreated }: { onClose: () => void; onCreate
             <input
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
-              placeholder={type === 'discord' ? 'https://discord.com/api/webhooks/...' : 'https://hooks.slack.com/services/...'}
+              className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+              placeholder={
+                type === 'discord'
+                  ? 'https://discord.com/api/webhooks/...'
+                  : 'https://hooks.slack.com/services/...'
+              }
             />
           </div>
         )
@@ -289,7 +334,7 @@ function AddChannelModal({ onClose, onCreated }: { onClose: () => void; onCreate
               <input
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 font-mono placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+                className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
                 placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
               />
             </div>
@@ -298,7 +343,7 @@ function AddChannelModal({ onClose, onCreated }: { onClose: () => void; onCreate
               <input
                 value={chatId}
                 onChange={(e) => setChatId(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+                className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
                 placeholder="-1001234567890"
               />
             </div>
@@ -310,29 +355,60 @@ function AddChannelModal({ onClose, onCreated }: { onClose: () => void; onCreate
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-medium text-slate-400">SMTP 服务器</label>
-                <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none" placeholder="smtp.gmail.com" />
+                <input
+                  value={smtpHost}
+                  onChange={(e) => setSmtpHost(e.target.value)}
+                  className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                  placeholder="smtp.gmail.com"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-400">端口</label>
-                <input value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none" placeholder="587" />
+                <input
+                  value={smtpPort}
+                  onChange={(e) => setSmtpPort(e.target.value)}
+                  className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                  placeholder="587"
+                />
               </div>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-400">用户名</label>
-              <input value={username} onChange={(e) => setUsername(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none" placeholder="user@gmail.com" />
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                placeholder="user@gmail.com"
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-400">密码</label>
-              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none" placeholder="应用专用密码" />
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                placeholder="应用专用密码"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-400">发件人</label>
-                <input value={from} onChange={(e) => setFrom(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none" placeholder="alerts@yourdomain.com" />
+                <input
+                  value={from}
+                  onChange={(e) => setFrom(e.target.value)}
+                  className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                  placeholder="alerts@yourdomain.com"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-400">收件人</label>
-                <input value={to} onChange={(e) => setTo(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none" placeholder="admin@yourdomain.com" />
+                <input
+                  value={to}
+                  onChange={(e) => setTo(e.target.value)}
+                  className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                  placeholder="admin@yourdomain.com"
+                />
               </div>
             </div>
           </>
@@ -341,8 +417,14 @@ function AddChannelModal({ onClose, onCreated }: { onClose: () => void; onCreate
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="mb-4 text-lg font-semibold text-slate-200">添加通知渠道</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -350,7 +432,7 @@ function AddChannelModal({ onClose, onCreated }: { onClose: () => void; onCreate
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+              className="focus:border-smartbox-500 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
               placeholder="例如：运维 Discord"
               autoFocus
             />
@@ -385,15 +467,21 @@ function AddChannelModal({ onClose, onCreated }: { onClose: () => void; onCreate
           {error && <p className="text-xs text-red-400">{error}</p>}
 
           <div className="flex justify-end gap-3 border-t border-slate-700/50 pt-4">
-            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:bg-slate-800">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:bg-slate-800"
+            >
               取消
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 rounded-lg bg-smartbox-600 px-4 py-2 text-sm font-medium text-white hover:bg-smartbox-500 disabled:opacity-50"
+              className="bg-smartbox-600 hover:bg-smartbox-500 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              {saving && <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+              {saving && (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              )}
               保存
             </button>
           </div>

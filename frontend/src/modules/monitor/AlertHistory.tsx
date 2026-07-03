@@ -46,7 +46,10 @@ function MetricBadge({ metric }: { metric: string }) {
     memory: { text: '内存', color: 'bg-violet-900/40 text-violet-400 border-violet-500/30' },
     disk: { text: '磁盘', color: 'bg-emerald-900/40 text-emerald-400 border-emerald-500/30' },
   }
-  const info = labels[metric] || { text: metric, color: 'bg-slate-800 text-slate-400 border-slate-700' }
+  const info = labels[metric] || {
+    text: metric,
+    color: 'bg-slate-800 text-slate-400 border-slate-700',
+  }
   return (
     <span className={`rounded border px-1 py-0.5 text-[9px] font-medium ${info.color}`}>
       {info.text}
@@ -61,8 +64,8 @@ function EventRow({ event }: { event: AlertEvent }) {
     <div
       className={`flex items-center gap-2 rounded-md px-2.5 py-2 text-[11px] transition-colors ${
         isCritical
-          ? 'bg-red-900/10 border border-red-500/10 hover:bg-red-900/20'
-          : 'bg-amber-900/10 border border-amber-500/10 hover:bg-amber-900/20'
+          ? 'border border-red-500/10 bg-red-900/10 hover:bg-red-900/20'
+          : 'border border-amber-500/10 bg-amber-900/10 hover:bg-amber-900/20'
       }`}
     >
       {/* 严重级别图标 */}
@@ -73,7 +76,7 @@ function EventRow({ event }: { event: AlertEvent }) {
       )}
 
       {/* 主机名 */}
-      <span className="shrink-0 font-medium text-slate-300 max-w-[100px] truncate">
+      <span className="max-w-[100px] shrink-0 truncate font-medium text-slate-300">
         {event.hostName}
       </span>
 
@@ -88,7 +91,7 @@ function EventRow({ event }: { event: AlertEvent }) {
       <span className="text-slate-500">{event.threshold}%</span>
 
       {/* 时间 */}
-      <span className="ml-auto shrink-0 text-[10px] text-slate-600 flex items-center gap-1">
+      <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] text-slate-600">
         <Clock size={10} />
         {formatTime(event.timestamp)}
       </span>
@@ -152,9 +155,7 @@ export default function AlertHistory() {
   const { history, clearHistory } = useAlertStore()
   const [expanded, setExpanded] = useState(false)
 
-  const recentCount = history.filter(
-    (e) => Date.now() - e.timestamp < 3_600_000,
-  ).length
+  const recentCount = history.filter((e) => Date.now() - e.timestamp < 3_600_000).length
 
   return (
     <div className="rounded-lg border border-slate-700/50 bg-slate-800/60">
@@ -170,11 +171,9 @@ export default function AlertHistory() {
         )}
         <History size={14} className="text-smartbox-400" />
         <span className="text-xs font-medium text-slate-300">告警历史</span>
-        <span className="ml-1 text-[10px] text-slate-600">
-          {history.length} 条记录
-        </span>
+        <span className="ml-1 text-[10px] text-slate-600">{history.length} 条记录</span>
         {recentCount > 0 && (
-          <span className="ml-1 rounded-full bg-red-900/30 px-1.5 py-0.5 text-[9px] font-medium text-red-400 border border-red-500/20">
+          <span className="ml-1 rounded-full border border-red-500/20 bg-red-900/30 px-1.5 py-0.5 text-[9px] font-medium text-red-400">
             最近 1 小时 {recentCount} 条
           </span>
         )}
@@ -187,7 +186,7 @@ export default function AlertHistory() {
                 e.stopPropagation()
                 exportToCsv(history)
               }}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-600 transition-colors hover:bg-smartbox-900/20 hover:text-smartbox-400"
+              className="hover:bg-smartbox-900/20 hover:text-smartbox-400 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-600 transition-colors"
               title="导出 CSV"
             >
               <FileSpreadsheet size={10} />
@@ -198,7 +197,7 @@ export default function AlertHistory() {
                 e.stopPropagation()
                 exportToJson(history)
               }}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-600 transition-colors hover:bg-smartbox-900/20 hover:text-smartbox-400"
+              className="hover:bg-smartbox-900/20 hover:text-smartbox-400 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-600 transition-colors"
               title="导出 JSON"
             >
               <FileJson size={10} />
@@ -225,10 +224,12 @@ export default function AlertHistory() {
             <div className="flex flex-col items-center justify-center py-6 text-center">
               <History size={24} className="mb-2 text-slate-700" />
               <p className="text-[11px] text-slate-600">暂无告警记录</p>
-              <p className="text-[10px] text-slate-700 mt-0.5">当指标超过阈值时，告警会记录在这里</p>
+              <p className="mt-0.5 text-[10px] text-slate-700">
+                当指标超过阈值时，告警会记录在这里
+              </p>
             </div>
           ) : (
-            <div className="space-y-1.5 max-h-64 overflow-auto">
+            <div className="max-h-64 space-y-1.5 overflow-auto">
               {history.map((event) => (
                 <EventRow key={event.id} event={event} />
               ))}

@@ -14,7 +14,14 @@ describe('ai-operations', () => {
 
   describe('ACTION_LABELS', () => {
     it('has labels for all actions', () => {
-      const actions: AiCodeAction[] = ['explain', 'refactor', 'fix', 'optimize', 'comment', 'translate']
+      const actions: AiCodeAction[] = [
+        'explain',
+        'refactor',
+        'fix',
+        'optimize',
+        'comment',
+        'translate',
+      ]
       for (const action of actions) {
         expect(typeof ACTION_LABELS[action]).toBe('string')
         expect(ACTION_LABELS[action].length).toBeGreaterThan(0)
@@ -24,7 +31,14 @@ describe('ai-operations', () => {
 
   describe('ACTION_ICONS', () => {
     it('has icons for all actions', () => {
-      const actions: AiCodeAction[] = ['explain', 'refactor', 'fix', 'optimize', 'comment', 'translate']
+      const actions: AiCodeAction[] = [
+        'explain',
+        'refactor',
+        'fix',
+        'optimize',
+        'comment',
+        'translate',
+      ]
       for (const action of actions) {
         expect(typeof ACTION_ICONS[action]).toBe('string')
       }
@@ -68,15 +82,31 @@ describe('ai-operations', () => {
   describe('aiCodeAction', () => {
     it('parses code block from AI response', async () => {
       const mockResponse = {
-        choices: [{ message: { content: '```code\nconst x = 1;\n```\n```explanation\nAdded a variable.\n```' } }],
+        choices: [
+          {
+            message: {
+              content: '```code\nconst x = 1;\n```\n```explanation\nAdded a variable.\n```',
+            },
+          },
+        ],
       }
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-        text: () => Promise.resolve(''),
-      }))
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve(mockResponse),
+          text: () => Promise.resolve(''),
+        }),
+      )
 
-      const result = await aiCodeAction('explain', 'let x;', 'javascript', 'sk-test', 'gpt-4', 'https://api.openai.com/v1')
+      const result = await aiCodeAction(
+        'explain',
+        'let x;',
+        'javascript',
+        'sk-test',
+        'gpt-4',
+        'https://api.openai.com/v1',
+      )
       expect(result.modified).toBe('const x = 1;')
       expect(result.explanation).toContain('Added a variable')
       expect(result.original).toBe('let x;')
@@ -86,22 +116,35 @@ describe('ai-operations', () => {
       const mockResponse = {
         choices: [{ message: { content: 'This code declares a variable.' } }],
       }
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(mockResponse),
-        text: () => Promise.resolve(''),
-      }))
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve(mockResponse),
+          text: () => Promise.resolve(''),
+        }),
+      )
 
-      const result = await aiCodeAction('explain', 'let x;', 'javascript', 'sk-test', 'gpt-4', 'https://api.openai.com/v1')
+      const result = await aiCodeAction(
+        'explain',
+        'let x;',
+        'javascript',
+        'sk-test',
+        'gpt-4',
+        'https://api.openai.com/v1',
+      )
       expect(result.modified).toBe('let x;')
     })
 
     it('throws on API error', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: false,
-        status: 401,
-        text: () => Promise.resolve('Unauthorized'),
-      }))
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 401,
+          text: () => Promise.resolve('Unauthorized'),
+        }),
+      )
 
       await expect(
         aiCodeAction('fix', 'code', 'python', 'bad-key', 'gpt-4', 'https://api.openai.com/v1'),
@@ -117,7 +160,14 @@ describe('ai-operations', () => {
       })
       vi.stubGlobal('fetch', fetchSpy)
 
-      await aiCodeAction('explain', 'code', 'js', 'sk-test', 'gpt-4', 'https://api.example.com/v1///')
+      await aiCodeAction(
+        'explain',
+        'code',
+        'js',
+        'sk-test',
+        'gpt-4',
+        'https://api.example.com/v1///',
+      )
       expect(fetchSpy).toHaveBeenCalledWith(
         'https://api.example.com/v1/chat/completions',
         expect.anything(),

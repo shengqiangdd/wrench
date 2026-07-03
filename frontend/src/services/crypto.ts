@@ -20,13 +20,10 @@ const IV_LENGTH = 12
  */
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const enc = new TextEncoder()
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(password),
-    'PBKDF2',
-    false,
-    ['deriveBits', 'deriveKey'],
-  )
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, [
+    'deriveBits',
+    'deriveKey',
+  ])
 
   return crypto.subtle.deriveKey(
     {
@@ -70,10 +67,7 @@ export async function encrypt(plaintext: string, password: string): Promise<stri
 /**
  * 解密密文
  */
-export async function decrypt(
-  encrypted: string,
-  password: string,
-): Promise<string> {
+export async function decrypt(encrypted: string, password: string): Promise<string> {
   try {
     const combined = base64ToArray(encrypted)
     const salt = combined.slice(0, SALT_LENGTH)
@@ -81,11 +75,7 @@ export async function decrypt(
     const ciphertext = combined.slice(SALT_LENGTH + IV_LENGTH)
 
     const key = await deriveKey(password, salt)
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      ciphertext,
-    )
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
 
     return new TextDecoder().decode(decrypted)
   } catch {
@@ -96,10 +86,7 @@ export async function decrypt(
 /**
  * 验证密码是否正确（尝试加解密一个测试值）
  */
-export async function verifyPassword(
-  password: string,
-  testEncrypted: string,
-): Promise<boolean> {
+export async function verifyPassword(password: string, testEncrypted: string): Promise<boolean> {
   try {
     await decrypt(testEncrypted, password)
     return true
