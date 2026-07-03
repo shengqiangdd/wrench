@@ -1,57 +1,62 @@
-use axum::{
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
-    },
-    response::IntoResponse,
-};
-use bytes::Bytes;
-use futures_util::{SinkExt, StreamExt};
-use std::sync::Arc;
-use tracing::info;
+use std::time::Duration;
 
-use crate::app_state::AppState;
+use base64::Engine as _;
 
-/// WebSocket batch command handler (/ws/batch)
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_batch_socket(socket, state))
+/// Batching configuration for output data streams.
+///
+/// Accumulates data chunks and flushes on size threshold (e.g. 16KB)
+/// or time interval (e.g. 50ms), whichever comes first.
+#[derive(Clone, Debug)]
+pub struct BatchConfig {
+    /// Flush when buffer exceeds this size (bytes).
+    pub size_threshold: usize,
+    /// Max latency before a forced flush.
+    pub max_interval: Duration,
 }
 
-async fn handle_batch_socket(socket: WebSocket, _state: Arc<AppState>) {
-    info!("Batch WebSocket connected");
-
-    let (mut sender, mut receiver) = socket.split();
-
-    let send_task = tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-            if sender.send(Message::Ping(Bytes::new())).await.is_err() {
-                break;
-            }
+impl Default for BatchConfig {
+    fn default() -> Self {
+        Self {
+            size_threshold: 16_384,     // 16 KB
+            max_interval: Duration::from_millis(50), // 50 ms max latency
         }
-    });
+    }
+}
 
-    let recv_task = tokio::spawn(async move {
-        while let Some(msg) = receiver.next().await {
-            match msg {
-                Ok(Message::Text(_text)) => {}
-                Ok(Message::Close(_)) => break,
-                Err(e) => {
-                    tracing::warn!("Batch WS error: {:?}", e);
-                    break;
-                }
-                _ => {}
-            }
+impl BatchConfig {
+    /// Fast path for interactive terminal output.
+    pub fn terminal() -> Self {
+        Self {
+            size_threshold: 8_192,
+            max_interval: Duration::from_millis(30),
         }
-    });
-
-    tokio::select! {
-        _ = send_task => {},
-        _ = recv_task => {},
     }
 
-    info!("Batch WebSocket disconnected");
+    /// High-latency path for log tailing.
+    pub fn log_tail() -> Self {
+        Self {
+            size_threshold: 32_768,
+            max_interval: Duration::from_millis(200),
+        }
+    }
+}
+
+/// Helper to encode buffered bytes as base64 in a JSON object.
+///
+/// Returns `(base64_data, json_object)` for flexible use.
+pub fn encode_buffer_as_data(buffer: &[u8]) -> String {
+    base64::engine::general_purpose::STANDARD.encode(buffer)
+}
+
+/// Create a flush timer pinned on the heap (suitable for use in `tokio::select!`).
+pub fn new_flush_timer(interval: Duration) -> std::pin::Pin<Box<tokio::time::Sleep>> {
+    Box::pin(tokio::time::sleep(interval))
+}
+
+/// Reset a pinned flush timer to fire after the given interval.
+pub fn reset_timer(
+    timer: &mut std::pin::Pin<Box<tokio::time::Sleep>>,
+    interval: Duration,
+) {
+    timer.as_mut().reset(tokio::time::Instant::now() + interval);
 }

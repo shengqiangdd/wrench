@@ -180,7 +180,6 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/ws", get(websocket::terminal::ws_handler))
         .route("/ws/terminal", get(websocket::terminal::ws_handler))
         .route("/ws/logs", get(websocket::logs::ws_handler))
-        .route("/ws/batch", get(websocket::batch::ws_handler))
         .route("/ws/docker/stats", get(websocket::docker_stats::ws_handler))
         .layer(ws_auth_layer)
         .layer(cors);
