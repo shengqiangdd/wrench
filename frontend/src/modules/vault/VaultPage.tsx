@@ -1,0 +1,341 @@
+/**
+ * VaultPage.tsx — Secret Vault UI
+ *
+ * 加密存储 SSH 密钥、API 密钥、密码等敏感凭据。
+ * 所有数据在存储前经由服务端 AES-256-GCM 加密。
+ */
+
+import { useState, useEffect, useCallback } from 'react'
+import { KeyRound, Plus, Trash2, Eye, EyeOff, Copy, Check, Terminal, Key, Lock, FileText, Search } from 'lucide-react'
+import { authedFetch } from '../../services/auth'
+
+interface VaultEntry {
+  id: string
+  name: string
+  kind: string
+  value: string
+  tags: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+const KIND_META: Record<string, { label: string; icon: any; color: string }> = {
+  ssh_key: { label: 'SSH Key', icon: Terminal, color: 'text-emerald-400' },
+  api_key: { label: 'API Key', icon: Key, color: 'text-blue-400' },
+  password: { label: 'Password', icon: Lock, color: 'text-amber-400' },
+  note: { label: 'Note', icon: FileText, color: 'text-slate-400' },
+}
+
+export default function VaultPage() {
+  const [entries, setEntries] = useState<VaultEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showValues, setShowValues] = useState<Set<string>>(new Set())
+  const [copied, setCopied] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [kindFilter, setKindFilter] = useState<string>('all')
+
+  const loadEntries = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await authedFetch('/api/vault')
+      const data = await res.json()
+      setEntries(data.data || [])
+    } catch (e: any) {
+      setError(e.message || 'Failed to load vault entries')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadEntries() }, [loadEntries])
+
+  const deleteEntry = async (id: string) => {
+    if (!confirm('确定删除此凭据？此操作不可撤销。')) return
+    try {
+      await authedFetch(`/api/vault/${id}`, { method: 'DELETE' })
+      setEntries((prev) => prev.filter((e) => e.id !== id))
+    } catch (e: any) {
+      alert('删除失败: ' + (e.message || '未知错误'))
+    }
+  }
+
+  const copyValue = async (id: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(id)
+      setTimeout(() => setCopied(null), 2000)
+    } catch { /* fallback */ }
+  }
+
+  const toggleShow = (id: string) => {
+    setShowValues((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const filtered = entries.filter((e) => {
+    if (kindFilter !== 'all' && e.kind !== kindFilter) return false
+    if (search && !e.name.toLowerCase().includes(search.toLowerCase()) &&
+        !e.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))) return false
+    return true
+  })
+
+  const kindMeta = (kind: string) => KIND_META[kind] ?? KIND_META.note!
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-slate-700/50 px-6 py-4">
+        <div className="flex items-center gap-3">
+          <KeyRound size={22} className="text-smartbox-400" />
+          <h1 className="text-lg font-semibold text-slate-200">凭据保险箱</h1>
+          <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+            端到端加密
+          </span>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-2 rounded-lg bg-smartbox-600 px-4 py-2 text-sm font-medium text-white hover:bg-smartbox-500"
+        >
+          <Plus size={16} />
+          新增凭据
+        </button>
+      </div>
+
+      {/* Search & Filter */}
+      <div className="flex items-center gap-3 border-b border-slate-700/50 px-6 py-3">
+        <div className="relative flex-1 max-w-md">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索凭据..."
+            className="w-full rounded-lg border border-slate-700 bg-slate-800/50 py-2 pl-9 pr-3 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+          />
+        </div>
+        <div className="flex gap-1">
+          {['all', 'ssh_key', 'api_key', 'password', 'note'].map((k) => (
+            <button
+              key={k}
+              onClick={() => setKindFilter(k)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                kindFilter === k
+                  ? 'bg-smartbox-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+              }`}
+            >
+              {k === 'all' ? '全部' : KIND_META[k]?.label || k}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-2 py-20 text-slate-500">
+            <KeyRound size={40} className="text-red-400" />
+            <p className="text-sm">加载失败：{error}</p>
+            <button onClick={loadEntries} className="mt-2 text-sm text-smartbox-400 hover:underline">重试</button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-20 text-slate-500">
+            <KeyRound size={40} />
+            <p className="text-sm">{search ? '无匹配凭据' : '还没有存储任何凭据'}</p>
+            {!search && (
+              <button onClick={() => setShowAddModal(true)} className="mt-2 text-sm text-smartbox-400 hover:underline">
+                添加第一个凭据
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((entry) => {
+              const meta = kindMeta(entry.kind)
+              const Icon = meta.icon
+              return (
+                <div key={entry.id} className="group rounded-xl border border-slate-700/50 bg-slate-800/30 p-4 hover:border-slate-600/50">
+                  <div className="mb-3 flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <Icon size={18} className={meta.color} />
+                      <div>
+                        <div className="text-sm font-medium text-slate-200">{entry.name}</div>
+                        <div className="text-xs text-slate-500">{meta.label}</div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteEntry(entry.id)}
+                      className="opacity-0 group-hover:opacity-100 rounded p-1 text-slate-500 hover:bg-red-900/30 hover:text-red-400 transition-all"
+                      title="删除"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+
+                  <div className="mb-3 flex items-center gap-2">
+                    <code className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded bg-slate-900/50 px-2 py-1 font-mono text-xs text-slate-400">
+                      {showValues.has(entry.id) ? entry.value : '••••••••••••••••'}
+                    </code>
+                    <button
+                      onClick={() => toggleShow(entry.id)}
+                      className="rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
+                      title={showValues.has(entry.id) ? '隐藏' : '显示'}
+                    >
+                      {showValues.has(entry.id) ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                    <button
+                      onClick={() => copyValue(entry.id, entry.value)}
+                      className="rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
+                      title="复制"
+                    >
+                      {copied === entry.id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                    </button>
+                  </div>
+
+                  {entry.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {entry.tags.map((tag) => (
+                        <span key={tag} className="rounded bg-slate-700/30 px-1.5 py-0.5 text-xs text-slate-500">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Add Modal */}
+      {showAddModal && (
+        <AddEntryModal
+          onClose={() => setShowAddModal(false)}
+          onCreated={(entry) => {
+            setEntries((prev) => [entry, ...prev])
+            setShowAddModal(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function AddEntryModal({ onClose, onCreated }: { onClose: () => void; onCreated: (entry: VaultEntry) => void }) {
+  const [name, setName] = useState('')
+  const [kind, setKind] = useState('password')
+  const [value, setValue] = useState('')
+  const [tagsStr, setTagsStr] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim() || !value.trim()) {
+      setError('名称和值不能为空')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const tags = tagsStr.split(',').map((t) => t.trim()).filter(Boolean)
+      const res = await authedFetch('/api/vault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), kind, value: value.trim(), tags }),
+      })
+      const data = await res.json()
+      if (data.data?.id) {
+        const newEntry: VaultEntry = {
+          id: data.data.id,
+          name: name.trim(),
+          kind,
+          value: value.trim(),
+          tags,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+        onCreated(newEntry)
+      }
+    } catch (e: any) {
+      setError(e.message || '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-4 text-lg font-semibold text-slate-200">新增凭据</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-400">名称</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+              placeholder="例如：生产服务器 SSH Key"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-400">类型</label>
+            <select
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 focus:border-smartbox-500 focus:outline-none"
+            >
+              <option value="ssh_key">SSH Key</option>
+              <option value="api_key">API Key</option>
+              <option value="password">Password</option>
+              <option value="note">Note</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-400">值</label>
+            <textarea
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              className="h-24 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-mono text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+              placeholder="粘贴 SSH 私钥、API Key 或密码..."
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-400">标签（逗号分隔，可选）</label>
+            <input
+              value={tagsStr}
+              onChange={(e) => setTagsStr(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-smartbox-500 focus:outline-none"
+              placeholder="production, web, devops"
+            />
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-400 hover:bg-slate-800">
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-2 rounded-lg bg-smartbox-600 px-4 py-2 text-sm font-medium text-white hover:bg-smartbox-500 disabled:opacity-50"
+            >
+              {saving && <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+              保存
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}

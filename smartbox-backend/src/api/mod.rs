@@ -10,3 +10,5 @@ pub mod logs;
 pub mod plugins;
 pub mod ai;
 pub mod sftp;
+pub mod vault;
+pub mod notifications;

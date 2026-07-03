@@ -25,6 +25,8 @@ const NAV_PATH: Record<NavId, string> = {
   logs: '/logs',
   plugins: '/plugins',
   settings: '/settings',
+  vault: '/vault',
+  notifications: '/notifications',
 }
 
 const PATH_TO_NAV = Object.fromEntries(

@@ -153,6 +153,17 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/sftp/mkdir", axum::routing::post(api::sftp::sftp_mkdir))
         .route("/sftp/rename", axum::routing::post(api::sftp::sftp_rename))
         .route("/sftp/stat", axum::routing::post(api::sftp::sftp_stat))
+        // ─── Vault routes ───
+        .route("/vault/types", get(api::vault::get_vault_types))
+        .route("/vault", get(api::vault::list_vault_entries))
+        .route("/vault", axum::routing::post(api::vault::create_vault_entry))
+        .route("/vault/{id}", axum::routing::put(api::vault::update_vault_entry))
+        .route("/vault/{id}", axum::routing::delete(api::vault::delete_vault_entry))
+        // ─── Notification Channel routes ───
+        .route("/notifications", get(api::notifications::list_channels))
+        .route("/notifications", axum::routing::post(api::notifications::upsert_channel))
+        .route("/notifications/{id}", axum::routing::delete(api::notifications::delete_channel))
+        .route("/notifications/test/{id}", axum::routing::post(api::notifications::test_channel))
         .layer(auth_layer);
 
     // Combine public + protected API routes under /api

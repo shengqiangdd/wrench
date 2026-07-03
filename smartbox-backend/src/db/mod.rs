@@ -76,6 +76,12 @@ impl Database {
                 tracing::info!("DB migration V1 applied");
             }
 
+            if version < 2 {
+                conn.execute_batch(SCHEMA_V2)?;
+                conn.pragma_update(None, "user_version", 2)?;
+                tracing::info!("DB migration V2 applied (vault + notifications)");
+            }
+
             Ok::<_, anyhow::Error>(())
         })
         .await
@@ -212,6 +218,185 @@ impl Database {
         .await
     }
 
+    // ─── Vault ──────────────────────────────────────────────────
+
+    /// List all vault entries.
+    pub async fn list_vault_entries(&self) -> anyhow::Result<Vec<VaultEntry>> {
+        self.exec(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, kind, encrypted_value, tags, created_at, updated_at
+                 FROM vault_entries ORDER BY updated_at DESC",
+            )?;
+
+            let rows = stmt.query_map([], |row| {
+                Ok(VaultEntry {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    encrypted_value: row.get(3)?,
+                    tags: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })?;
+
+            let mut entries = Vec::new();
+            for row in rows {
+                entries.push(row?);
+            }
+            Ok(entries)
+        })
+        .await
+    }
+
+    /// Get a single vault entry by ID.
+    pub async fn get_vault_entry(&self, entry_id: &str) -> anyhow::Result<Option<VaultEntry>> {
+        let id = entry_id.to_string();
+        self.exec(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, kind, encrypted_value, tags, created_at, updated_at
+                 FROM vault_entries WHERE id = ?1",
+            )?;
+
+            let mut rows = stmt.query_map([&id], |row| {
+                Ok(VaultEntry {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    encrypted_value: row.get(3)?,
+                    tags: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })?;
+
+            Ok(rows.next().transpose()?)
+        })
+        .await
+    }
+
+    /// Insert a vault entry.
+    pub async fn insert_vault_entry(&self, entry: &VaultEntry) -> anyhow::Result<()> {
+        let id = entry.id.clone();
+        let name = entry.name.clone();
+        let kind = entry.kind.clone();
+        let enc_val = entry.encrypted_value.clone();
+        let tags = entry.tags.clone();
+        let created_at = entry.created_at.clone();
+        let updated_at = entry.updated_at.clone();
+
+        self.exec(move |conn| {
+            conn.execute(
+                "INSERT INTO vault_entries (id, name, kind, encrypted_value, tags, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![id, name, kind, enc_val, tags, created_at, updated_at],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Update a vault entry.
+    pub async fn update_vault_entry(&self, entry: &VaultEntry) -> anyhow::Result<bool> {
+        let id = entry.id.clone();
+        let name = entry.name.clone();
+        let kind = entry.kind.clone();
+        let enc_val = entry.encrypted_value.clone();
+        let tags = entry.tags.clone();
+        let updated_at = entry.updated_at.clone();
+
+        self.exec(move |conn| {
+            let affected = conn.execute(
+                "UPDATE vault_entries SET name=?2, kind=?3, encrypted_value=?4, tags=?5, updated_at=?6
+                 WHERE id=?1",
+                rusqlite::params![id, name, kind, enc_val, tags, updated_at],
+            )?;
+            Ok(affected > 0)
+        })
+        .await
+    }
+
+    /// Delete a vault entry.
+    pub async fn delete_vault_entry(&self, entry_id: &str) -> anyhow::Result<bool> {
+        let id = entry_id.to_string();
+        self.exec(move |conn| {
+            let affected = conn.execute(
+                "DELETE FROM vault_entries WHERE id = ?1",
+                rusqlite::params![id],
+            )?;
+            Ok(affected > 0)
+        })
+        .await
+    }
+
+    // ─── Notification Channels ──────────────────────────────────
+
+    /// List all notification channels.
+    pub async fn list_notification_channels(&self) -> anyhow::Result<Vec<NotificationChannel>> {
+        self.exec(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, channel_type, config, enabled, created_at, updated_at
+                 FROM notification_channels ORDER BY created_at ASC",
+            )?;
+
+            let rows = stmt.query_map([], |row| {
+                Ok(NotificationChannel {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    channel_type: row.get(2)?,
+                    config: row.get(3)?,
+                    enabled: row.get::<_, i32>(4)? != 0,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })?;
+
+            let mut channels = Vec::new();
+            for row in rows {
+                channels.push(row?);
+            }
+            Ok(channels)
+        })
+        .await
+    }
+
+    /// Upsert a notification channel.
+    pub async fn upsert_notification_channel(&self, ch: &NotificationChannel) -> anyhow::Result<()> {
+        let id = ch.id.clone();
+        let name = ch.name.clone();
+        let ctype = ch.channel_type.clone();
+        let config = ch.config.clone();
+        let enabled = ch.enabled as i32;
+        let created_at = ch.created_at.clone();
+        let updated_at = ch.updated_at.clone();
+
+        self.exec(move |conn| {
+            conn.execute(
+                "INSERT INTO notification_channels (id, name, channel_type, config, enabled, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name, channel_type=excluded.channel_type, config=excluded.config,
+                    enabled=excluded.enabled, updated_at=excluded.updated_at",
+                rusqlite::params![id, name, ctype, config, enabled, created_at, updated_at],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Delete a notification channel.
+    pub async fn delete_notification_channel(&self, channel_id: &str) -> anyhow::Result<bool> {
+        let id = channel_id.to_string();
+        self.exec(move |conn| {
+            let affected = conn.execute(
+                "DELETE FROM notification_channels WHERE id = ?1",
+                rusqlite::params![id],
+            )?;
+            Ok(affected > 0)
+        })
+        .await
+    }
+
     // ─── Internal helpers ────────────────────────────────────────
 
     /// Execute a closure on the database connection via `spawn_blocking`.
@@ -227,6 +412,32 @@ impl Database {
         })
         .await?
     }
+}
+
+// ─── Vault types ───────────────────────────────────────────────
+
+/// A vault entry representing an encrypted credential.
+#[derive(Debug, Clone)]
+pub struct VaultEntry {
+    pub id: String,
+    pub name: String,
+    pub kind: String,       // ssh_key | api_key | password | note
+    pub encrypted_value: String,
+    pub tags: String,       // JSON array
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A notification channel configuration.
+#[derive(Debug, Clone)]
+pub struct NotificationChannel {
+    pub id: String,
+    pub name: String,
+    pub channel_type: String, // discord | slack | telegram | email
+    pub config: String,       // JSON object with webhook URL, token, etc.
+    pub enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 // ─── Schema definitions ──────────────────────────────────────────
@@ -252,6 +463,28 @@ CREATE TABLE IF NOT EXISTS alerts (
     message   TEXT    NOT NULL,
     value     REAL    NOT NULL,
     threshold REAL    NOT NULL
+);
+";
+
+const SCHEMA_V2: &str = "
+CREATE TABLE IF NOT EXISTS vault_entries (
+    id              TEXT    PRIMARY KEY,
+    name            TEXT    NOT NULL,
+    kind            TEXT    NOT NULL DEFAULT 'password',
+    encrypted_value TEXT    NOT NULL,
+    tags            TEXT    NOT NULL DEFAULT '[]',
+    created_at      TEXT    NOT NULL,
+    updated_at      TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notification_channels (
+    id          TEXT    PRIMARY KEY,
+    name        TEXT    NOT NULL,
+    channel_type TEXT   NOT NULL,
+    config      TEXT    NOT NULL DEFAULT '{}',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL
 );
 ";
 
@@ -384,6 +617,104 @@ mod tests {
             let _db1 = Database::open_in_memory().await.unwrap();
             let _db2 = Database::open_in_memory().await.unwrap();
             // No crash = migration is idempotent
+        });
+    }
+
+    // ─── Vault tests ─────────────────────────────────────────
+
+    fn sample_vault_entry(id: &str, name: &str, kind: &str, value: &str) -> VaultEntry {
+        VaultEntry {
+            id: id.to_string(),
+            name: name.to_string(),
+            kind: kind.to_string(),
+            encrypted_value: value.to_string(),
+            tags: "[]".to_string(),
+            created_at: "2026-07-03T10:00:00Z".to_string(),
+            updated_at: "2026-07-03T10:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_vault_crud() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(test_db());
+
+        rt.block_on(async {
+            let e1 = sample_vault_entry("v1", "My SSH Key", "ssh_key", "encrypted-data-1");
+            let e2 = sample_vault_entry("v2", "My API Key", "api_key", "encrypted-data-2");
+
+            db.insert_vault_entry(&e1).await.unwrap();
+            db.insert_vault_entry(&e2).await.unwrap();
+
+            let list = db.list_vault_entries().await.unwrap();
+            assert_eq!(list.len(), 2);
+
+            let found = db.get_vault_entry("v1").await.unwrap().unwrap();
+            assert_eq!(found.name, "My SSH Key");
+            assert_eq!(found.encrypted_value, "encrypted-data-1");
+
+            // Update
+            let updated = VaultEntry {
+                name: "My Updated Key".into(),
+                ..e1
+            };
+            let ok = db.update_vault_entry(&updated).await.unwrap();
+            assert!(ok);
+
+            let found2 = db.get_vault_entry("v1").await.unwrap().unwrap();
+            assert_eq!(found2.name, "My Updated Key");
+
+            // Delete
+            let deleted = db.delete_vault_entry("v2").await.unwrap();
+            assert!(deleted);
+            let list2 = db.list_vault_entries().await.unwrap();
+            assert_eq!(list2.len(), 1);
+
+            // Delete non-existent
+            let deleted2 = db.delete_vault_entry("nonexistent").await.unwrap();
+            assert!(!deleted2);
+        });
+    }
+
+    #[test]
+    fn test_notification_channel_crud() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(test_db());
+
+        rt.block_on(async {
+            let ch = NotificationChannel {
+                id: "ch1".into(),
+                name: "Discord Ops".into(),
+                channel_type: "discord".into(),
+                config: r#"{"webhookUrl":"https://discord.com/api/webhooks/xxx"}"#.into(),
+                enabled: true,
+                created_at: "2026-07-03T10:00:00Z".into(),
+                updated_at: "2026-07-03T10:00:00Z".into(),
+            };
+
+            db.upsert_notification_channel(&ch).await.unwrap();
+
+            let list = db.list_notification_channels().await.unwrap();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].channel_type, "discord");
+            assert!(list[0].enabled);
+
+            // Upsert (update)
+            let updated = NotificationChannel {
+                name: "Discord Ops Updated".into(),
+                enabled: false,
+                ..ch
+            };
+            db.upsert_notification_channel(&updated).await.unwrap();
+
+            let list2 = db.list_notification_channels().await.unwrap();
+            assert_eq!(list2.len(), 1);
+            assert!(!list2[0].enabled);
+
+            // Delete
+            db.delete_notification_channel("ch1").await.unwrap();
+            let list3 = db.list_notification_channels().await.unwrap();
+            assert_eq!(list3.len(), 0);
         });
     }
 }

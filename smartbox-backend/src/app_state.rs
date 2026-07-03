@@ -210,6 +210,7 @@ mod tests {
             cors_origins: vec!["*".into()],
             openrouter_api_key: None,
             jwt_secret: "test-jwt-secret".into(),
+            vault_key: None,
             database_url: None, // memory-only mode for tests
             log_level: "warn".into(),
         }

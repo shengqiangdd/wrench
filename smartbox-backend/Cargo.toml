@@ -33,6 +33,7 @@ thiserror = "1.0"
 aes-gcm = "0.10"
 subtle = "2.6"
 base64 = "0.22"
+sha2 = "0.10"
 rand = "0.8"
 
 # SSH client

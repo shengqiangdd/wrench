@@ -9,8 +9,10 @@ const MonitorPage = lazy(() => import('../../modules/monitor/MonitorPage'))
 const LogsPage = lazy(() => import('../../modules/logs/LogsPage'))
 const PluginsPage = lazy(() => import('../../modules/plugins/PluginsPage'))
 const SettingsPanel = lazy(() => import('../../modules/settings/SettingsPanel'))
+const VaultPage = lazy(() => import('../../modules/vault/VaultPage'))
+const NotificationsPage = lazy(() => import('../../modules/notifications/NotificationsPage'))
 
-const NAVS = ['ssh', 'commands', 'docker', 'monitor', 'files', 'logs', 'plugins', 'settings'] as const
+const NAVS = ['ssh', 'commands', 'docker', 'monitor', 'files', 'logs', 'plugins', 'settings', 'vault', 'notifications'] as const
 
 const PAGES: Record<string, React.ReactNode> = {
   ssh: <SshPlaceholder />,
@@ -21,6 +23,8 @@ const PAGES: Record<string, React.ReactNode> = {
   logs: <LogsPage />,
   plugins: <PluginsPage />,
   settings: <SettingsPanel />,
+  vault: <VaultPage />,
+  notifications: <NotificationsPage />,
 }
 
 function Loading() {

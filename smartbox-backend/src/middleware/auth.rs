@@ -14,17 +14,21 @@ use crate::app_state::AppState;
 /// Returns `true` if the token is valid (exists and not expired).
 /// Consumes the token (one-time use).
 fn validate_token(state: &Arc<AppState>, token: &str) -> bool {
-    let entry = state.ws_tokens.get(token);
-    match entry {
-        Some(info) => {
-            if info.expires_at < chrono::Utc::now() {
-                return false; // Expired
-            }
-            // One-time use: remove after validation
-            state.ws_tokens.remove(token);
-            true
+    // Check validity in a block so the Ref (read-lock) is dropped before remove
+    // to avoid DashMap read→write deadlock on the same shard.
+    let is_valid = {
+        let entry = state.ws_tokens.get(token);
+        match entry {
+            Some(info) => info.expires_at >= chrono::Utc::now(),
+            None => false,
         }
-        None => false,
+    };
+
+    if is_valid {
+        state.ws_tokens.remove(token);
+        true
+    } else {
+        false
     }
 }
 
@@ -109,11 +113,21 @@ mod tests {
             cors_origins: vec!["*".into()],
             openrouter_api_key: None,
             jwt_secret: "test-jwt-secret".into(),
-            database_url: Some("sqlite::memory:".into()),
+            vault_key: None,
+            database_url: None,
             log_level: "warn".into(),
         };
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(AppState::new(config)).unwrap().into()
+        Arc::new(AppState {
+            config,
+            db: None,
+            connections: dashmap::DashMap::new(),
+            docker_clients: dashmap::DashMap::new(),
+            alerts: parking_lot::RwLock::new(Vec::new()),
+            audit_logs: parking_lot::RwLock::new(Vec::new()),
+            ws_tokens: dashmap::DashMap::new(),
+            marketplace_cache: parking_lot::RwLock::new(None),
+            active_logtails: dashmap::DashMap::new(),
+        })
     }
 
     #[test]

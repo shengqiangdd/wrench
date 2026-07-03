@@ -9,6 +9,7 @@ pub struct AppConfig {
     pub cors_origins: Vec<String>,
     pub openrouter_api_key: Option<String>,
     pub jwt_secret: String,
+    pub vault_key: Option<String>,
     pub database_url: Option<String>,
     pub log_level: String,
 }
@@ -46,6 +47,8 @@ impl AppConfig {
         let jwt_secret = std::env::var("JWT_SECRET")
             .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
 
+        let vault_key = std::env::var("VAULT_KEY").ok();
+
         let database_url = std::env::var("DATABASE_URL")
             .ok()
             .or_else(|| {
@@ -68,6 +71,7 @@ impl AppConfig {
             cors_origins,
             openrouter_api_key,
             jwt_secret,
+            vault_key,
             database_url,
             log_level,
         })
