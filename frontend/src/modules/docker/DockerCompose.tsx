@@ -42,6 +42,7 @@ export default function DockerCompose({ connectionId }: Props) {
   const [loading, setLoading] = useState(false)
   const [expandedPath, setExpandedPath] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [logData, setLogData] = useState<{ key: string; content: string } | null>(null)
   const [search, setSearch] = useState('')
   const [manualPath, setManualPath] = useState('')
 
@@ -172,6 +173,8 @@ export default function DockerCompose({ connectionId }: Props) {
     const key = `${action}:${path}:${service || ''}`
     if (actionLoading) return
     setActionLoading(key)
+    // Clear previous log data when fetching new logs
+    if (action === 'logs') setLogData({ key, content: '' })
     try {
       const res = await fetch('/api/docker/compose/action', {
         method: 'POST',
@@ -181,14 +184,19 @@ export default function DockerCompose({ connectionId }: Props) {
       const json = await res.json()
       if (!json.success) {
         notify(`${action} 失败: ${json.error || '未知错误'}`, 'error')
+      } else if (action === 'logs') {
+        setLogData({ key, content: json.data || '(empty)' })
       } else {
         notify(`${action} 成功`, 'success')
       }
       // 操作完成后刷新状态
-      if (expandedPath === path) {
+      if (expandedPath === path && action !== 'logs') {
         setTimeout(() => fetchServices(path), 500)
       }
     } catch (err: any) {
+      if (action === 'logs') {
+        setLogData({ key, content: `请求失败: ${err.message}` })
+      }
       notify(`${action} 请求失败: ${err.message}`, 'error')
     } finally {
       setActionLoading(null)
@@ -425,12 +433,24 @@ export default function DockerCompose({ connectionId }: Props) {
                     </div>
                   )}
                   {/* logs 输出区 */}
-                  {actionLoading?.startsWith('logs:') && (
-                    <div className="border-t border-slate-800/40 bg-slate-950/60 px-4 py-2">
-                      <div className="flex items-center gap-2 text-xs text-amber-400/70">
-                        <Loader2 size={12} className="animate-spin" />
-                        获取日志...
+                  {logData && logData.key.startsWith(`logs:${project.path}:`) && (
+                    <div className="border-t border-slate-800/40 bg-slate-950/60">
+                      <div className="flex items-center justify-between px-4 py-1.5">
+                        <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                          日志 — {logData.key.split(':')[2] || '全部'}
+                        </span>
+                        <button
+                          onClick={() => setLogData(null)}
+                          className="rounded p-0.5 text-slate-600 hover:text-slate-400"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M18 6 6 18M6 6l12 12" />
+                          </svg>
+                        </button>
                       </div>
+                      <pre className="max-h-64 overflow-auto px-4 pb-3 font-mono text-[11px] leading-relaxed text-slate-400 whitespace-pre-wrap break-all">
+                        {logData.content}
+                      </pre>
                     </div>
                   )}
                 </div>

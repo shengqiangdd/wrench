@@ -369,6 +369,10 @@ pub async fn compose_action(
     if req.action == "up" {
         args.push("-d");
     }
+    if req.action == "logs" {
+        args.push("--tail=200");
+        args.push("--timestamps");
+    }
 
     match docker_exec(&state, &req.connection_id, &args).await {
         Ok(data) => ApiResponse::success(serde_json::json!({ "data": data })),

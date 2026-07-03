@@ -4,6 +4,10 @@ import { flushSync } from 'react-dom'
 import { useAppStore } from '../../stores/app-store'
 import Sidebar from '../../components/layout/Sidebar'
 
+function click(el: Element | null | undefined) {
+  if (el) (el as HTMLElement).click()
+}
+
 const mockSetActiveNav = vi.fn()
 const mockToggleSidebar = vi.fn()
 
@@ -73,7 +77,7 @@ describe('Sidebar (expanded)', () => {
     const dockerBtn = Array.from(container.querySelectorAll('.sidebar-item'))
       .find(b => b.textContent?.includes('Docker'))
     expect(dockerBtn).toBeTruthy()
-    dockerBtn!.click()
+    click(dockerBtn)
     expect(mockSetActiveNav).toHaveBeenCalledWith('docker')
   })
 
@@ -103,7 +107,7 @@ describe('Sidebar (expanded)', () => {
     const { container } = render(<Sidebar />)
     const collapseBtn = container.querySelector('button[title="收起侧边栏"]')
     expect(collapseBtn).toBeTruthy()
-    collapseBtn!.click()
+    click(collapseBtn)
     expect(mockToggleSidebar).toHaveBeenCalled()
   })
 
@@ -141,7 +145,7 @@ describe('Sidebar (collapsed)', () => {
     const { container } = render(<Sidebar />)
     const expandBtn = container.querySelector('button[title="展开侧边栏"]')
     expect(expandBtn).toBeTruthy()
-    expandBtn!.click()
+    click(expandBtn)
     expect(mockToggleSidebar).toHaveBeenCalled()
   })
 
@@ -166,7 +170,7 @@ describe('Sidebar (collapsed)', () => {
     const dockerBtn = Array.from(container.querySelectorAll('nav button'))
       .find(b => b.getAttribute('title') === 'Docker 管理')
     expect(dockerBtn).toBeTruthy()
-    dockerBtn!.click()
+    click(dockerBtn)
     expect(mockSetActiveNav).toHaveBeenCalledWith('docker')
   })
 })
