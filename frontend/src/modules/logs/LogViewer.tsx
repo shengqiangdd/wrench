@@ -25,13 +25,6 @@ interface LogViewerProps {
   onClose: () => void
 }
 
-/** 获取 WebSocket 基础 URL */
-function getWsBase(): string {
-  const loc = window.location
-  const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${loc.host}/ws`
-}
-
 export default function LogViewer({ connectionId, logPath, onClose }: LogViewerProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -51,7 +44,8 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/logs/tail', {
+      const { authedFetch } = await import('../../services/auth')
+      const res = await authedFetch('/api/logs/tail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId, path: logPath, lines: lineCount }),
@@ -81,54 +75,59 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
   }, [content, autoScroll])
 
   // ─── WebSocket 实时跟踪 ───
-  const startFollow = useCallback(() => {
+  const startFollow = useCallback(async () => {
     setError(null)
-    const ws = new WebSocket(getWsBase())
-    const reqId = requestIdRef.current
-    wsRef.current = ws
+    try {
+      const { buildWsUrl } = await import('../../services/auth')
+      const wsUrl = await buildWsUrl('/ws')
+      const ws = new WebSocket(wsUrl)
+      const reqId = requestIdRef.current
+      wsRef.current = ws
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({
-        type: 'logtail_start',
-        connectionId,
-        requestId: reqId,
-        logPath,
-        lines: lineCount,
-      }))
-    }
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          type: 'logtail_start',
+          connectionId,
+          requestId: reqId,
+          logPath,
+          lines: lineCount,
+        }))
+      }
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data)
-        if (msg.type === 'logtail_started') {
-          setFollowMode(true)
-        } else if (msg.type === 'logtail_data' && msg.lines) {
-          setContent((prev) => {
-            const combined = prev + (prev.endsWith('\n') ? '' : '\n') + msg.lines.join('\n')
-            // 限制内存使用：最大 50000 行
-            const lineArr = combined.split('\n')
-            if (lineArr.length > 50000) {
-              return lineArr.slice(lineArr.length - 50000).join('\n')
-            }
-            return combined
-          })
-        } else if (msg.type === 'logtail_stopped') {
-          setFollowMode(false)
-        } else if (msg.type === 'error') {
-          setError(msg.message)
-          setFollowMode(false)
-        }
-      } catch {}
-    }
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+          if (msg.type === 'logtail_started') {
+            setFollowMode(true)
+          } else if (msg.type === 'logtail_data' && msg.lines) {
+            setContent((prev) => {
+              const combined = prev + (prev.endsWith('\n') ? '' : '\n') + msg.lines.join('\n')
+              const lineArr = combined.split('\n')
+              if (lineArr.length > 50000) {
+                return lineArr.slice(lineArr.length - 50000).join('\n')
+              }
+              return combined
+            })
+          } else if (msg.type === 'logtail_stopped') {
+            setFollowMode(false)
+          } else if (msg.type === 'error') {
+            setError(msg.message)
+            setFollowMode(false)
+          }
+        } catch { /* ignore parse errors */ }
+      }
 
-    ws.onerror = () => {
-      setError('WebSocket 连接失败')
-      setFollowMode(false)
-    }
+      ws.onerror = () => {
+        setError('WebSocket 连接失败')
+        setFollowMode(false)
+      }
 
-    ws.onclose = () => {
-      setFollowMode(false)
-      wsRef.current = null
+      ws.onclose = () => {
+        setFollowMode(false)
+        wsRef.current = null
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '无法获取认证令牌')
     }
   }, [connectionId, logPath, lineCount])
 

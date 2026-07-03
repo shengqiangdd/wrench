@@ -234,7 +234,7 @@ async function resolveWsUrl(): Promise<string> {
     return buildWsUrl('/ws')
   } catch (err) {
     console.error('[WS] Failed to resolve WebSocket URL:', err)
-    // 尝试不带 token 连接（后端会拒绝，但至少让错误清晰）
+    // 尝试不带 token 连接（后端会拒绝，但错误更清晰）
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
     return `${protocol}//${host}/ws`
@@ -242,14 +242,16 @@ async function resolveWsUrl(): Promise<string> {
 }
 
 /**
- * 获取 WS 客户端（异步，确保 token 就绪后连接）
- * 所有需要 WS 连接的组件都应通过此函数获取客户端。
+ * 获取 WS 客户端（异步，确保 token 就绪后连接）—— 由 AuthGate 在应用启动时调用。
+ *
+ * - 首次调用时创建 WsClient 实例并建立认证连接
+ * - 后续调用直接返回已连实例
  *
  * @throws 如果无法获取认证令牌则抛出错误
  */
 export async function getWsClient(): Promise<WsClient> {
   if (!_instance) {
-    _instance = new WsClient('') // URL will be set below
+    _instance = new WsClient('') // URL 在下面设置
   }
   // 获取新令牌（每次连接/重连都是新的）
   const url = await resolveWsUrl()
@@ -260,15 +262,18 @@ export async function getWsClient(): Promise<WsClient> {
 }
 
 /**
- * 同步获取已有实例（不触发连接，仅用于事件监听）
- * ⚠️ 必须先调用 getWsClient() 完成 token 获取和连接。
- * 此函数仅在 getWsClient() 已完成初始化后安全使用。
+ * 同步获取已有 WsClient 实例。
+ *
+ * - 如果 `getWsClient()` 已在应用启动时调用，返回已认证的实例
+ * - 否则创建一个指向 `ws://host/ws` 的退化实例（兼容旧逻辑）
  */
 export function getWsClientSync(): WsClient {
-  if (!_instance) {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
-    _instance = new WsClient(`${protocol}//${host}/ws`)
+  if (_instance) {
+    return _instance
   }
+  // 退化：创建未认证的实例
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.host
+  _instance = new WsClient(`${protocol}//${host}/ws`)
   return _instance
 }

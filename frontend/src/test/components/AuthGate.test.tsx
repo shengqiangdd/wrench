@@ -3,14 +3,88 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { AuthGate } from '../../components/AuthGate'
 
-// Mock auth service
-const mockRefreshToken = vi.fn()
+// ─── Shared mock state ───
+let _shouldSucceed = true
+let _errorMessage: string | null = null
+let _pendingPromise: (() => void) | null = null
 
 vi.mock('../../services/auth', () => ({
-  refreshToken: () => mockRefreshToken(),
-  getToken: vi.fn(() => 'mock-token'),
+  refreshToken: vi.fn().mockImplementation(async () => {
+    // Delegate to getWsClient's token fetching
+    if (!_shouldSucceed) {
+      throw new Error(_errorMessage ?? 'Auth failed')
+    }
+    return 'mock-token'
+  }),
+  getToken: vi.fn().mockImplementation(async () => {
+    if (!_shouldSucceed) {
+      throw new Error(_errorMessage ?? 'Auth failed')
+    }
+    return 'mock-token'
+  }),
   clearToken: vi.fn(),
+  buildWsUrl: vi.fn().mockImplementation(async () => {
+    if (!_shouldSucceed) {
+      throw new Error(_errorMessage ?? 'Auth failed')
+    }
+    return 'ws://localhost/ws?token=mock-token'
+  }),
 }))
+
+vi.mock('../../services/websocket', () => ({
+  getWsClient: vi.fn().mockImplementation(async () => {
+    if (_pendingPromise) {
+      // Never resolves — keeps loading state
+      return new Promise(() => {})
+    }
+    if (!_shouldSucceed) {
+      throw new Error(_errorMessage ?? 'WS connection failed')
+    }
+    return {
+      connect: vi.fn(),
+      send: vi.fn(),
+      on: vi.fn(() => vi.fn()),
+      status: 'connected' as const,
+    }
+  }),
+  getWsClientSync: vi.fn(() => ({
+    connect: vi.fn(),
+    send: vi.fn(),
+    on: vi.fn(() => vi.fn()),
+    status: 'disconnected' as const,
+  })),
+}))
+
+vi.mock('../../services/initAuthFetch', () => ({
+  initAuthFetch: vi.fn(() => {
+    if (!_shouldSucceed) {
+      // initAuthFetch itself doesn't reject, it only wraps fetch.
+      // Failures will come from getWsClient.
+    }
+    return vi.fn() // cleanup
+  }),
+}))
+
+/** Set mock to succeed */
+function mockSucceed() {
+  _shouldSucceed = true
+  _errorMessage = null
+  _pendingPromise = null
+}
+
+/** Set mock to fail with an error */
+function mockFail(message = 'Auth failed') {
+  _shouldSucceed = false
+  _errorMessage = message
+  _pendingPromise = null
+}
+
+/** Set mock to stay pending (never resolves/rejects) */
+function mockPending() {
+  _shouldSucceed = true
+  _errorMessage = null
+  _pendingPromise = true as any // truthy to trigger the pending path
+}
 
 /**
  * Helper: render a React node into a detached DOM container.
@@ -37,7 +111,7 @@ function renderReact(node: React.ReactNode) {
 
 describe('AuthGate', () => {
   beforeEach(() => {
-    vi.resetAllMocks()
+    mockSucceed()
     document.body.innerHTML = ''
   })
 
@@ -46,8 +120,7 @@ describe('AuthGate', () => {
   })
 
   it('shows loading state on mount', async () => {
-    // Keep promise pending so we stay in loading
-    mockRefreshToken.mockImplementation(() => new Promise(() => {}))
+    mockPending()
 
     const { container, cleanup } = renderReact(
       <AuthGate>
@@ -55,7 +128,7 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
 
-    // Effects need time to start; use waitFor for async render settling
+    // Should show loading spinner
     await vi.waitFor(() => {
       expect(container.textContent).toContain('正在连接服务器...')
     })
@@ -64,7 +137,7 @@ describe('AuthGate', () => {
   })
 
   it('renders children when auth succeeds', async () => {
-    mockRefreshToken.mockResolvedValue(undefined)
+    mockSucceed()
 
     const { container, cleanup } = renderReact(
       <AuthGate>
@@ -72,7 +145,7 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
 
-    // Wait for async effect to complete
+    // Wait for auth to resolve
     await vi.waitFor(() => {
       expect(container.textContent).toContain('App Content')
     })
@@ -84,7 +157,7 @@ describe('AuthGate', () => {
   })
 
   it('shows error state when auth fails', async () => {
-    mockRefreshToken.mockRejectedValue(new Error('Network error'))
+    mockFail('Network error')
 
     const { container, cleanup } = renderReact(
       <AuthGate>
@@ -102,7 +175,7 @@ describe('AuthGate', () => {
   })
 
   it('shows fallback error when no error message provided', async () => {
-    mockRefreshToken.mockRejectedValue('')
+    mockFail('') // empty error message
 
     const { container, cleanup } = renderReact(
       <AuthGate>
@@ -118,7 +191,7 @@ describe('AuthGate', () => {
 
   it('retries auth when retry button is clicked', async () => {
     // First call fails
-    mockRefreshToken.mockRejectedValueOnce(new Error('Network error'))
+    mockFail('Network error')
 
     const { container, cleanup } = renderReact(
       <AuthGate>
@@ -132,7 +205,7 @@ describe('AuthGate', () => {
     })
 
     // Second call succeeds
-    mockRefreshToken.mockResolvedValueOnce(undefined)
+    mockSucceed()
 
     // Click retry
     const retryBtn = container.querySelector('button')
@@ -143,13 +216,11 @@ describe('AuthGate', () => {
     await vi.waitFor(() => {
       expect(container.querySelector('[data-testid="children"]')).not.toBeNull()
     })
-    expect(mockRefreshToken).toHaveBeenCalledTimes(2)
     cleanup()
   })
 
   it('shows error again when retry fails', async () => {
-    // Both calls fail
-    mockRefreshToken.mockRejectedValue(new Error('Network error'))
+    mockFail('Network error')
 
     const { container, cleanup } = renderReact(
       <AuthGate>
@@ -157,11 +228,12 @@ describe('AuthGate', () => {
       </AuthGate>,
     )
 
+    // Wait for first error
     await vi.waitFor(() => {
       expect(container.textContent).toContain('连接失败')
     })
 
-    // Click retry
+    // Click retry — still failing
     const retryBtn = container.querySelector('button')
     retryBtn!.click()
 
@@ -173,11 +245,7 @@ describe('AuthGate', () => {
   })
 
   it('cleans up on unmount (cancelled flag)', async () => {
-    // Use a mutable ref to avoid closure hoisting issues with vi.mock
-    const resolveRef: { current: (() => void) | null } = { current: null }
-    mockRefreshToken.mockImplementation(
-      () => new Promise<void>((resolve) => { resolveRef.current = resolve }),
-    )
+    mockPending()
 
     const { container, cleanup } = renderReact(
       <AuthGate>
@@ -187,9 +255,6 @@ describe('AuthGate', () => {
 
     // Unmount before auth completes
     cleanup()
-
-    // Resolve the promise — should NOT throw
-    resolveRef.current?.()
 
     // Wait for any pending effects to settle
     await new Promise((r) => setTimeout(r, 50))

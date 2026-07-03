@@ -23,8 +23,10 @@ export function AuthGate({ children }: AuthGateProps) {
 
     async function init() {
       try {
-        const { refreshToken } = await import('../services/auth')
-        await refreshToken()
+        const { initAuthFetch } = await import('../services/initAuthFetch')
+        initAuthFetch()
+        const { getWsClient } = await import('../services/websocket')
+        await getWsClient()
         if (!cancelled) {
           setAuthState('ready')
         }
@@ -63,15 +65,18 @@ export function AuthGate({ children }: AuthGateProps) {
             onClick={() => {
               setAuthState('loading')
               setError(null)
-              import('../services/auth').then(({ refreshToken }) =>
-                refreshToken().then(
-                  () => setAuthState('ready'),
-                  (err) => {
-                    setError(err instanceof Error ? err.message : String(err))
-                    setAuthState('error')
-                  },
-                ),
-              )
+              import('../services/initAuthFetch').then(({ initAuthFetch }) => {
+                initAuthFetch()
+                import('../services/websocket').then(({ getWsClient }) =>
+                  getWsClient().then(
+                    () => setAuthState('ready'),
+                    (err) => {
+                      setError(err instanceof Error ? err.message : String(err))
+                      setAuthState('error')
+                    },
+                  ),
+                )
+              })
             }}
             className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
