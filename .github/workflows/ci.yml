@@ -1,7 +1,7 @@
 name: CI
 on: [push, pull_request]
 jobs:
-  build:
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,3 +22,18 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+
+  rust-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+      - run: cargo check
+        working-directory: smartbox-backend
+      - run: cargo clippy -- -D warnings
+        working-directory: smartbox-backend
+      - run: cargo test
+        working-directory: smartbox-backend
