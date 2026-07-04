@@ -56,6 +56,7 @@ export default defineConfig({
           if (isExternal(id, 'react-router')) return 'vendor-router'
           if (isExternal(id, 'zustand')) return 'vendor-state'
           if (isExternal(id, 'lucide-react')) return 'vendor-lucide'
+          if (isExternal(id, 'idb')) return 'vendor-idb'
         },
       },
     },
