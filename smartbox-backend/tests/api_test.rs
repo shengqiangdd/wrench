@@ -23,13 +23,6 @@ fn test_config() -> AppConfig {
     }
 }
 
-fn build_test_app() -> smartbox_backend::axum::Router {
-    let config = test_config();
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let state = rt.block_on(AppState::new(config)).expect("Failed to create AppState");
-    smartbox_backend::build_app(Arc::new(state))
-}
-
 #[tokio::test]
 async fn test_health_endpoint_returns_200() {
     let config = test_config();
