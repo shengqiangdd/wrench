@@ -23,11 +23,15 @@ fn test_config() -> AppConfig {
     }
 }
 
-#[tokio::test]
-async fn test_health_endpoint_returns_200() {
+async fn build_test_app() -> axum::Router {
     let config = test_config();
     let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state));
+    smartbox_backend::build_app(Arc::new(state)).await
+}
+
+#[tokio::test]
+async fn test_health_endpoint_returns_200() {
+    let app = build_test_app().await;
 
     let response = app
         .oneshot(
@@ -44,9 +48,7 @@ async fn test_health_endpoint_returns_200() {
 
 #[tokio::test]
 async fn test_404_for_nonexistent_api() {
-    let config = test_config();
-    let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state));
+    let app = build_test_app().await;
 
     let response = app
         .oneshot(
@@ -63,9 +65,7 @@ async fn test_404_for_nonexistent_api() {
 
 #[tokio::test]
 async fn test_cors_headers_present() {
-    let config = test_config();
-    let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state));
+    let app = build_test_app().await;
 
     let response = app
         .oneshot(
@@ -86,9 +86,7 @@ async fn test_cors_headers_present() {
 
 #[tokio::test]
 async fn test_auth_middleware_blocks_unauthenticated() {
-    let config = test_config();
-    let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state));
+    let app = build_test_app().await;
 
     let response = app
         .oneshot(
@@ -110,10 +108,10 @@ async fn test_auth_middleware_blocks_unauthenticated() {
 #[tokio::test]
 async fn test_auth_middleware_allows_authenticated() {
     let config = test_config();
-    let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state));
+    let state = AppState::new(config.clone()).await.expect("Failed to create AppState");
+    let app = smartbox_backend::build_app(Arc::new(state)).await;
 
-    // Create a valid JWT token
+    // Create a valid JWT token using the same secret
     let jwt_service = JwtService::from_secret(&config.jwt_secret)
         .expect("Failed to create JWT service");
     let claims = Claims::new("test".into(), "api+ws", 86400);
@@ -140,9 +138,7 @@ async fn test_auth_middleware_allows_authenticated() {
 
 #[tokio::test]
 async fn test_vault_blocked_without_auth() {
-    let config = test_config();
-    let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state));
+    let app = build_test_app().await;
 
     let response = app
         .oneshot(
@@ -159,9 +155,7 @@ async fn test_vault_blocked_without_auth() {
 
 #[tokio::test]
 async fn test_notifications_blocked_without_auth() {
-    let config = test_config();
-    let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state));
+    let app = build_test_app().await;
 
     let response = app
         .oneshot(
@@ -178,9 +172,7 @@ async fn test_notifications_blocked_without_auth() {
 
 #[tokio::test]
 async fn test_system_backup_blocked_without_auth() {
-    let config = test_config();
-    let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state));
+    let app = build_test_app().await;
 
     let response = app
         .oneshot(
@@ -197,11 +189,8 @@ async fn test_system_backup_blocked_without_auth() {
 
 #[tokio::test]
 async fn test_jwt_token_endpoint_accessible() {
-    let config = test_config();
-    let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state));
+    let app = build_test_app().await;
 
-    // POST /api/ws-token is mounted outside auth middleware
     let response = app
         .oneshot(
             Request::builder()
@@ -217,9 +206,4 @@ async fn test_jwt_token_endpoint_accessible() {
     // Should be accessible without auth (not 401 or 404)
     assert_ne!(response.status(), StatusCode::NOT_FOUND);
     assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
-
-    // If 200 OK, the response should have a JSON body with a token field
-    if response.status() == StatusCode::OK {
-        // Success — we trust the handler works correctly
-    }
 }
