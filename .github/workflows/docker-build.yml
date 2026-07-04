@@ -45,6 +45,7 @@ jobs:
   # ── Docker 多架构构建与推送 ──
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
@@ -83,7 +84,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
+          cache-from: |
+            type=gha
+            type=registry,ref=ghcr.io/${{ github.repository }}:cache
           cache-to: type=gha,mode=max
           build-args: |
             BUILD_HASH=${{ github.sha }}
