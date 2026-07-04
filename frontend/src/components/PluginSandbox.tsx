@@ -295,86 +295,83 @@ export default function PluginSandbox({
     handlersRegisteredRef.current = true
 
     // ── 消息类型校验 ──
-    const handleMessage = useCallback(
-      (event: MessageEvent) => {
-        // 验证消息来源和类型
-        const data = event.data
-        if (!data || typeof data !== 'object') return
-        if (data.source !== 'smartbox-plugin-sandbox') return
-        if (typeof data.pluginId !== 'string') return
-        if (typeof data.type !== 'string') return
-        if (!data.payload || typeof data.payload !== 'object') return
+    function handleMessage(event: MessageEvent) {
+      // 验证消息来源和类型
+      const data = event.data
+      if (!data || typeof data !== 'object') return
+      if (data.source !== 'smartbox-plugin-sandbox') return
+      if (typeof data.pluginId !== 'string') return
+      if (typeof data.type !== 'string') return
+      if (!data.payload || typeof data.payload !== 'object') return
 
-        switch (data.type) {
-          case 'sandboxReady': {
-            setReady(true)
-            setLoading(false)
-            onReady?.(handleRef.current!)
-            break
-          }
-          case 'registerCommand': {
-            const cmd = data.payload.command as any
-            if (cmd?.id) {
-              onCommandRegistered?.(cmd)
-            }
-            break
-          }
-          case 'showNotification': {
-            const { message, type } = data.payload as any
-            onNotification?.(message || '', type || 'info')
-            break
-          }
-          case 'pluginError': {
-            const error = data.payload.error as string
-            setLoadError(error)
-            setLoading(false)
-            onError?.(error)
-            break
-          }
-          case 'setEditorContent': {
-            // 插件写入编辑器内容
-            const fileStore = getFileStore()
-            if (fileStore) {
-              const state = fileStore.getState()
-              const content = data.payload.content as string
-              if (state.activeTabId && content !== undefined) {
-                state.updateFileContent(state.activeTabId, content)
-              }
-            }
-            break
-          }
-          case 'getEditorContent': {
-            // 插件请求编辑器内容 → 回复
-            const fileStore = getFileStore()
-            if (fileStore) {
-              const state = fileStore.getState()
-              const activeTab = state.openTabs?.find((t: any) => t.id === state.activeTabId)
-              const iframe = iframeRef.current
-              if (iframe?.contentWindow) {
-                iframe.contentWindow.postMessage(
-                  {
-                    source: 'smartbox-host',
-                    type: 'editorContentUpdate',
-                    content: activeTab?.content ?? null,
-                    language: activeTab?.language ?? null,
-                  },
-                  '*',
-                )
-              }
-            }
-            break
-          }
+      switch (data.type) {
+        case 'sandboxReady': {
+          setReady(true)
+          setLoading(false)
+          onReady?.(handleRef.current!)
+          break
         }
-      },
-      [manifest.id, onReady, onCommandRegistered, onNotification, onError],
-    )
+        case 'registerCommand': {
+          const cmd = data.payload.command as any
+          if (cmd?.id) {
+            onCommandRegistered?.(cmd)
+          }
+          break
+        }
+        case 'showNotification': {
+          const { message, type } = data.payload as any
+          onNotification?.(message || '', type || 'info')
+          break
+        }
+        case 'pluginError': {
+          const error = data.payload.error as string
+          setLoadError(error)
+          setLoading(false)
+          onError?.(error)
+          break
+        }
+        case 'setEditorContent': {
+          // 插件写入编辑器内容
+          const fileStore = getFileStore()
+          if (fileStore) {
+            const state = fileStore.getState()
+            const content = data.payload.content as string
+            if (state.activeTabId && content !== undefined) {
+              state.updateFileContent(state.activeTabId, content)
+            }
+          }
+          break
+        }
+        case 'getEditorContent': {
+          // 插件请求编辑器内容 → 回复
+          const fileStore = getFileStore()
+          if (fileStore) {
+            const state = fileStore.getState()
+            const activeTab = state.openTabs?.find((t: any) => t.id === state.activeTabId)
+            const iframe = iframeRef.current
+            if (iframe?.contentWindow) {
+              iframe.contentWindow.postMessage(
+                {
+                  source: 'smartbox-host',
+                  type: 'editorContentUpdate',
+                  content: activeTab?.content ?? null,
+                  language: activeTab?.language ?? null,
+                },
+                '*',
+              )
+            }
+          }
+          break
+        }
+      }
+    }
 
     window.addEventListener('message', handleMessage)
     return () => {
       window.removeEventListener('message', handleMessage)
       handlersRegisteredRef.current = false
     }
-  }, [manifest.id, onReady, onCommandRegistered, onNotification, onError])
+  }, [onReady, onCommandRegistered, onNotification, onError])
 
   // ── 暴露 handle ──
   useEffect(() => {
