@@ -36,7 +36,7 @@ const buildTimestamp = Date.now()
 export default defineConfig({
   build: {
     minify: 'esbuild',
-    sourcemap: process.env.NODE_ENV === 'production' ? 'hidden' : true,
+    sourcemap: process.env.NODE_ENV === 'production' ? false : true,
     esbuildOptions: {
       drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
     },
@@ -56,7 +56,6 @@ export default defineConfig({
           if (isExternal(id, 'react-router')) return 'vendor-router'
           if (isExternal(id, 'zustand')) return 'vendor-state'
           if (isExternal(id, 'lucide-react')) return 'vendor-lucide'
-          if (isExternal(id, 'idb')) return 'vendor-idb'
         },
       },
     },
@@ -64,13 +63,14 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
   },
   plugins: [
-    // Note: React Compiler (babel-plugin-react-compiler) is installed but not
-    // configured here because @vitejs/plugin-react v6 + Vite 8's Oxc JSX
-    // transform injects $RefreshSig$ at Oxc level, and the Babel plugin
-    // running after Oxc breaks the React Refresh runtime in dev mode.
-    // To enable for production-only builds, create a vite.build.config.ts
-    // or use the CI pipeline with a custom build script.
-    react(),
+    // React Compiler 仅在生产环境启用（dev 模式下 Oxc+HMR 与 Babel 不兼容）
+    react({
+      babel: process.env.NODE_ENV === 'production' ? {
+        plugins: [
+          ['babel-plugin-react-compiler', { target: '19' }],
+        ],
+      } : undefined,
+    }),
     tailwindcss(),
     createHtmlPlugin({
       inject: {
