@@ -31,9 +31,13 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: smartbox-backend
       - run: cargo check
         working-directory: smartbox-backend
       - run: cargo clippy -- -D warnings
         working-directory: smartbox-backend
       - run: cargo test
         working-directory: smartbox-backend
+

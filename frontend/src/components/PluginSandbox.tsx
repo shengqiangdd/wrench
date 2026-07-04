@@ -84,8 +84,9 @@ export default function PluginSandbox({
 
   // ── 生成沙箱 HTML（只在 manifest.id 或 pluginCode 变化时重新生成） ──
   const generateSandboxHTML = useCallback(() => {
+    const nonce = Math.random().toString(36).slice(2, 18)
     const styleBlock = `
-      <style>
+      <style nonce="${nonce}">
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; background: transparent; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #e2e8f0; overflow: auto; }
         #plugin-root { min-height: 100%; padding: 4px; }
@@ -259,7 +260,7 @@ export default function PluginSandbox({
 })();
 `
     return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">${styleBlock}</head><body><div id="plugin-root"></div><script>${script}</script></body></html>`
+<html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src 'self'; img-src 'self' data: https:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self' https:; font-src 'self' data:;"></head><body><div id="plugin-root"></div><script nonce="${nonce}">${script}</script></body></html>`
   }, [manifest.id, manifest.name, pluginCode])
 
   // ── 使用 srcdoc 而不是 blob URL（避免 Safari 的 blob: 限制）
@@ -293,72 +294,80 @@ export default function PluginSandbox({
     if (handlersRegisteredRef.current) return
     handlersRegisteredRef.current = true
 
-    const handleMessage = (event: MessageEvent) => {
-      const data = event.data as SandboxMessage
-      if (!data || data.source !== 'smartbox-plugin-sandbox') return
-      if (data.pluginId !== manifest.id) return
+    // ── 消息类型校验 ──
+    const handleMessage = useCallback(
+      (event: MessageEvent) => {
+        // 验证消息来源和类型
+        const data = event.data
+        if (!data || typeof data !== 'object') return
+        if (data.source !== 'smartbox-plugin-sandbox') return
+        if (typeof data.pluginId !== 'string') return
+        if (typeof data.type !== 'string') return
+        if (!data.payload || typeof data.payload !== 'object') return
 
-      switch (data.type) {
-        case 'sandboxReady': {
-          setReady(true)
-          setLoading(false)
-          onReady?.(handleRef.current!)
-          break
-        }
-        case 'registerCommand': {
-          const cmd = data.payload.command as any
-          if (cmd?.id) {
-            onCommandRegistered?.(cmd)
+        switch (data.type) {
+          case 'sandboxReady': {
+            setReady(true)
+            setLoading(false)
+            onReady?.(handleRef.current!)
+            break
           }
-          break
-        }
-        case 'showNotification': {
-          const { message, type } = data.payload as any
-          onNotification?.(message || '', type || 'info')
-          break
-        }
-        case 'pluginError': {
-          const error = data.payload.error as string
-          setLoadError(error)
-          setLoading(false)
-          onError?.(error)
-          break
-        }
-        case 'setEditorContent': {
-          // 插件写入编辑器内容
-          const fileStore = getFileStore()
-          if (fileStore) {
-            const state = fileStore.getState()
-            const content = data.payload.content as string
-            if (state.activeTabId && content !== undefined) {
-              state.updateFileContent(state.activeTabId, content)
+          case 'registerCommand': {
+            const cmd = data.payload.command as any
+            if (cmd?.id) {
+              onCommandRegistered?.(cmd)
             }
+            break
           }
-          break
-        }
-        case 'getEditorContent': {
-          // 插件请求编辑器内容 → 回复
-          const fileStore = getFileStore()
-          if (fileStore) {
-            const state = fileStore.getState()
-            const activeTab = state.openTabs?.find((t: any) => t.id === state.activeTabId)
-            const iframe = iframeRef.current
-            if (iframe?.contentWindow) {
-              iframe.contentWindow.postMessage(
-                {
-                  source: 'smartbox-host',
-                  type: 'editorContentUpdate',
-                  content: activeTab?.content ?? null,
-                  language: activeTab?.language ?? null,
-                },
-                '*',
-              )
+          case 'showNotification': {
+            const { message, type } = data.payload as any
+            onNotification?.(message || '', type || 'info')
+            break
+          }
+          case 'pluginError': {
+            const error = data.payload.error as string
+            setLoadError(error)
+            setLoading(false)
+            onError?.(error)
+            break
+          }
+          case 'setEditorContent': {
+            // 插件写入编辑器内容
+            const fileStore = getFileStore()
+            if (fileStore) {
+              const state = fileStore.getState()
+              const content = data.payload.content as string
+              if (state.activeTabId && content !== undefined) {
+                state.updateFileContent(state.activeTabId, content)
+              }
             }
+            break
           }
-          break
+          case 'getEditorContent': {
+            // 插件请求编辑器内容 → 回复
+            const fileStore = getFileStore()
+            if (fileStore) {
+              const state = fileStore.getState()
+              const activeTab = state.openTabs?.find((t: any) => t.id === state.activeTabId)
+              const iframe = iframeRef.current
+              if (iframe?.contentWindow) {
+                iframe.contentWindow.postMessage(
+                  {
+                    source: 'smartbox-host',
+                    type: 'editorContentUpdate',
+                    content: activeTab?.content ?? null,
+                    language: activeTab?.language ?? null,
+                  },
+                  '*',
+                )
+              }
+            }
+            break
+          }
         }
-      }
-    }
+      },
+      [manifest.id, onReady, onCommandRegistered, onNotification, onError],
+    )
 
     window.addEventListener('message', handleMessage)
     return () => {
@@ -431,7 +440,7 @@ export default function PluginSandbox({
         ref={iframeRef}
         title={`沙箱: ${manifest.name}`}
         className="h-full w-full border-0"
-        sandbox="allow-scripts"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
         style={{ background: 'transparent' }}
       />
     </div>
