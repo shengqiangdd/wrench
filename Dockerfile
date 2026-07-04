@@ -41,56 +41,24 @@ WORKDIR /app
 # Copy Cargo manifests for dependency caching
 COPY smartbox-backend/Cargo.toml smartbox-backend/Cargo.lock* ./
 
-# Create dummy source files matching the actual module structure
-# so cargo can resolve all workspace members and cache dependencies
+# Create dummy source files so cargo can cache dependencies
 RUN mkdir -p src && cat > src/main.rs << 'EOF'
 fn main() {}
 EOF
-RUN cat > src/lib.rs << 'EOF'
-pub mod app_state;
-pub mod config;
-pub mod error;
-pub mod response;
-pub mod api;
-pub mod websocket;
-pub mod ssh;
-pub mod docker;
-pub mod middleware;
-pub mod utils;
-pub mod db;
-pub mod models;
-pub mod notify;
-EOF
-
-# Create all module stub files so dependency resolution works fully
-RUN mkdir -p src/api src/websocket src/ssh src/docker src/middleware src/utils src/db src/notify
-RUN cat > src/api/mod.rs << 'EOF'
-pub mod hello;
-EOF
-RUN echo "" > src/api/hello.rs
-RUN cat > src/utils/mod.rs << 'EOF'
-pub mod crypto;
-pub mod jwt;
-pub mod path;
-pub mod validator;
-EOF
-RUN echo "" > src/utils/crypto.rs
-RUN echo "" > src/utils/jwt.rs
-RUN echo "" > src/utils/path.rs
-RUN echo "" > src/utils/validator.rs
-RUN echo "" > src/websocket/mod.rs
-RUN echo "" > src/ssh/mod.rs
-RUN echo "" > src/docker/mod.rs
-RUN echo "" > src/middleware/mod.rs
-RUN echo "" > src/db/mod.rs
+# Empty lib.rs — module stubs not needed; cargo resolves deps from Cargo.toml only
+RUN echo "" > src/lib.rs
 
 # Ensure Cargo.lock exists (for reproducible builds)
 RUN if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
 
-# Copy the actual source code (overwrites dummies)
+# ── 关键优化：先用 dummy 源码编译依赖缓存层 ──
+# 此步骤编译所有第三方依赖，只有 Cargo.lock 变化时才失效
+RUN cargo build --release 2>&1 || true
+
+# ── 然后覆盖真实源码，只重新编译 app 代码 ──
 COPY smartbox-backend/src/ ./src/
 
-# Force rebuild of the rust-builder crate with real source
+# 增量编译：依赖已缓存，只编译 smartbox-backend 自身的代码
 RUN cargo build --release
 
 # ============================================
