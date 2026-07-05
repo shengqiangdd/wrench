@@ -49,16 +49,28 @@ afterEach(() => {
     activeNav: 'ssh',
   })
   setPluginState({ commands: [], executeCommand: () => {} })
+  // Clean up React roots first, then DOM
+  for (const r of roots) {
+    try {
+      flushSync(() => r.unmount())
+    } catch {
+      /* ignore */
+    }
+  }
+  roots.length = 0
   document.body.innerHTML = ''
   // Clear registered commands from test isolation
   const reg = (globalThis as unknown as { __commandRegistry?: unknown[] }).__commandRegistry
   if (reg) reg.length = 0
 })
 
+const roots: import('react-dom/client').Root[] = []
+
 function render(el: React.ReactNode) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
+  roots.push(root)
   flushSync(() => root.render(el))
   return {
     container,
