@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Cache npm dependencies
 COPY frontend/package.json frontend/package-lock.json ./frontend/
-RUN cd frontend && npm ci
+RUN cd frontend && npm ci --prefer-offline
 
 # Inject build hash to bust cache
 RUN echo "$BUILD_HASH" > /tmp/build-hash.txt
@@ -28,6 +28,8 @@ ENV CARGO_NET_RETRY=5
 ENV CARGO_HTTP_TIMEOUT=120
 # Limit parallelism to prevent OOM on memory-constrained runners
 ENV CARGO_BUILD_JOBS=4
+# Use sparse protocol for crates.io (much faster than default git)
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev && \
