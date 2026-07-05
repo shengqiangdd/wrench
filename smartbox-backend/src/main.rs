@@ -16,31 +16,70 @@ fn print_usage() {
 }
 
 /// Set up OS signal handlers for graceful shutdown.
+///
 /// Returns a future that resolves when a shutdown signal is received.
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-        tracing::info!("Received SIGINT (Ctrl+C), starting graceful shutdown...");
-    };
+///
+/// IMPORTANT: Signal handlers must be installed BEFORE `axum::serve` starts,
+/// because signals sent early (before the handler is registered) will be
+/// marked as "pending" by the kernel and delivered immediately upon
+/// registration. This would cause an immediate exit with code 0 and create
+/// a Docker restart loop.
+///
+/// The handlers are installed once here, and a `Notify` is used to
+/// communicate the signal to the graceful shutdown future.
+fn install_shutdown_signal() -> std::sync::Arc<tokio::sync::Notify> {
+    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
 
-    #[cfg(unix)]
-    let sigterm = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
-        tracing::info!("Received SIGTERM, starting graceful shutdown...");
-    };
-
-    #[cfg(not(unix))]
-    let sigterm = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = sigterm => {},
+    // ── SIGINT (Ctrl+C) ──
+    {
+        let n = notify.clone();
+        tokio::spawn(async move {
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => {
+                    tracing::info!("Received SIGINT (Ctrl+C), starting graceful shutdown...");
+                    n.notify_one();
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to install SIGINT handler ({}), graceful Ctrl+C will not work",
+                        e
+                    );
+                }
+            }
+        });
     }
+
+    // ── SIGTERM (docker stop) ──
+    #[cfg(unix)]
+    {
+        let n = notify.clone();
+        tokio::spawn(async move {
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(mut sig) => {
+                    sig.recv().await;
+                    tracing::info!("Received SIGTERM, starting graceful shutdown...");
+                    n.notify_one();
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to install SIGTERM handler ({}), graceful docker stop will not work",
+                        e
+                    );
+                }
+            }
+        });
+    }
+
+    notify
+}
+
+/// Wait for a shutdown signal. Must only be called after
+/// `install_shutdown_signal()` has been invoked.
+async fn wait_for_shutdown(notify: std::sync::Arc<tokio::sync::Notify>) {
+    notify.notified().await;
+    tracing::info!("Shutdown signal received — initiating graceful shutdown");
+    // Small delay to let the logger flush before the process exits
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 }
 
 #[tokio::main]
@@ -161,6 +200,12 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // ─── Install shutdown signal handlers BEFORE starting the server ───
+    // This is critical: signals sent early (before handler registration) become
+    // "pending" kernel signals and get delivered immediately upon registration,
+    // causing an instant exit with code 0 (and a Docker restart loop).
+    let shutdown_notify = install_shutdown_signal();
+
     // Start server
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -169,7 +214,7 @@ async fn main() -> anyhow::Result<()> {
     // Run server with graceful shutdown on SIGTERM/SIGINT
     tracing::info!("Server started. Use Ctrl+C or 'docker stop' to gracefully shut down.");
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(wait_for_shutdown(shutdown_notify))
         .await?;
 
     tracing::info!("Server has shut down gracefully.");
