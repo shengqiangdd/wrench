@@ -47,6 +47,11 @@ impl SshSession {
         *self.last_used.blocking_lock() = Instant::now();
     }
 
+    /// Async variant of touch for use in async contexts.
+    pub async fn touch_async(&self) {
+        *self.last_used.lock().await = Instant::now();
+    }
+
     /// Check if this session has been idle longer than the timeout.
     pub fn is_idle(&self) -> bool {
         self.last_used.blocking_lock().elapsed().as_secs() > IDLE_TIMEOUT_SECS
@@ -70,7 +75,7 @@ impl SshSession {
 
         if auth_result.success() {
             *self.handle.lock().await = Some(handle);
-            self.touch();
+            self.touch_async().await;
             Ok(())
         } else {
             Err("Password authentication rejected by server".into())
@@ -108,7 +113,7 @@ impl SshSession {
 
         if auth_result.success() {
             *self.handle.lock().await = Some(handle);
-            self.touch();
+            self.touch_async().await;
             Ok(())
         } else {
             Err("Public key authentication rejected by server".into())
@@ -125,7 +130,7 @@ impl SshSession {
     ) -> Result<Arc<SftpSession>, Box<dyn std::error::Error + Send + Sync>> {
         use russh_sftp::client::SftpSession;
 
-        self.touch();
+        self.touch_async().await;
 
         // Check cache first
         {

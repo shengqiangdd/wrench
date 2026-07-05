@@ -102,7 +102,8 @@ pub async fn connect_ssh(
                     // 🔥 Pre-warm SFTP session for first-operation latency reduction
                     let session_arc = {
                         let entry = state.connections.get(&connection_id);
-                        entry.and_then(|c| c.session.clone()).unwrap()
+                        entry.and_then(|c| c.session.clone())
+                            .expect("SSH session just inserted, must exist")
                     };
                     tokio::spawn(async move {
                         let _ = session_arc.get_sftp_session().await;
@@ -145,7 +146,8 @@ pub async fn connect_ssh(
                     // 🔥 Pre-warm SFTP session for first-operation latency reduction
                     let session_arc = {
                         let entry = state.connections.get(&connection_id);
-                        entry.and_then(|c| c.session.clone()).unwrap()
+                        entry.and_then(|c| c.session.clone())
+                            .expect("SSH session just inserted, must exist")
                     };
                     tokio::spawn(async move {
                         let _ = session_arc.get_sftp_session().await;

@@ -28,9 +28,6 @@ ENV CARGO_NET_RETRY=5
 ENV CARGO_HTTP_TIMEOUT=120
 # Limit parallelism to prevent OOM on memory-constrained runners
 ENV CARGO_BUILD_JOBS=4
-# Use single-threaded linker for memory-constrained env
-ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
-ENV CARGO_PROFILE_RELEASE_LTO=fat
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev && \

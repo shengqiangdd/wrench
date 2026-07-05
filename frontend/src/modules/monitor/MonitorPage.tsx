@@ -491,66 +491,62 @@ export default function MonitorPage() {
       if (!sess && !conn) return null
 
       try {
-        // 并发执行多个命令
-        const [cpuRes, memRes, diskRes, uptimeRes, netRes, procRes, ioRes] = await Promise.all([
-          fetch('/api/ssh/exec', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              connectionId: hostId,
-              command:
-                "top -bn1 | head -5 | grep '%Cpu' || mpstat 2>/dev/null | tail -1 || sar -u 1 1 2>/dev/null | tail -1",
-            }),
-          }).then((r) => r.json()),
-          fetch('/api/ssh/exec', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              connectionId: hostId,
-              command: 'cat /proc/meminfo | grep -E "MemTotal|MemAvailable"',
-            }),
-          }).then((r) => r.json()),
-          fetch('/api/ssh/exec', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ connectionId: hostId, command: 'df -k /' }),
-          }).then((r) => r.json()),
-          fetch('/api/ssh/exec', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ connectionId: hostId, command: 'uptime' }),
-          }).then((r) => r.json()),
-          fetch('/api/ssh/exec', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ connectionId: hostId, command: 'cat /proc/net/dev' }),
-          }).then((r) => r.json()),
-          fetch('/api/ssh/exec', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              connectionId: hostId,
-              command: 'ps aux --sort=-%cpu | head -6',
-            }),
-          }).then((r) => r.json()),
-          fetch('/api/ssh/exec', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ connectionId: hostId, command: 'cat /proc/diskstats' }),
-          }).then((r) => r.json()),
-        ])
+        // 🚀 优化: 合并所有命令为一次 SSH exec，减少 7x 网络/SSH 开销
+        // 每个命令的输出用 ===XXX=== 标记分隔，后端顺序执行
+        const combinedCmd = [
+          "echo '===CPU_START==='",
+          "(top -bn1 | head -5 | grep '%Cpu' || mpstat 2>/dev/null | tail -1 || sar -u 1 1 2>/dev/null | tail -1)",
+          "echo '===MEM_START==='",
+          "cat /proc/meminfo | grep -E 'MemTotal|MemAvailable'",
+          "echo '===DISK_START==='",
+          'df -k /',
+          "echo '===UPTIME_START==='",
+          'uptime',
+          "echo '===NET_START==='",
+          'cat /proc/net/dev',
+          "echo '===PROC_START==='",
+          'ps aux --sort=-%cpu | head -6',
+          "echo '===IO_START==='",
+          'cat /proc/diskstats',
+        ].join(' && ')
 
-        if (cpuRes.exitCode !== 0 || memRes.exitCode !== 0 || diskRes.exitCode !== 0) {
+        const resp = await fetch('/api/ssh/exec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connectionId: hostId, command: combinedCmd }),
+        })
+        const data = await resp.json()
+
+        if (data.exitCode !== 0) {
           return null
         }
 
-        const cpu = parseCpuUsage(cpuRes.stdout || '') || 0
-        const memory = parseMemory(memRes.stdout || '')
-        const disk = parseDisk(diskRes.stdout || '')
-        const uptime = parseUptime(uptimeRes.stdout || '')
-        const loadAvg = parseLoadAvg(uptimeRes.stdout || '')
+        const output = data.stdout || ''
+        const sections: Record<string, string> = {}
+        const sectionNames = ['CPU', 'MEM', 'DISK', 'UPTIME', 'NET', 'PROC', 'IO']
+        for (const name of sectionNames) {
+          const marker = `===${name}_START===`
+          const idx = output.indexOf(marker)
+          if (idx !== -1) {
+            const start = idx + marker.length
+            // Find next marker or end
+            let end = output.length
+            for (const n of sectionNames) {
+              const nextMarker = `===${n}_START===`
+              const ni = output.indexOf(nextMarker, start)
+              if (ni !== -1 && ni < end) end = ni
+            }
+            sections[name] = output.slice(start, end).trim()
+          }
+        }
 
-        const net = parseNetRxTx(netRes.stdout || '')
+        const cpu = parseCpuUsage(sections.CPU || '') || 0
+        const memory = parseMemory(sections.MEM || '')
+        const disk = parseDisk(sections.DISK || '')
+        const uptime = parseUptime(sections.UPTIME || '')
+        const loadAvg = parseLoadAvg(sections.UPTIME || '')
+
+        const net = parseNetRxTx(sections.NET || '')
         const now = Date.now()
 
         // 计算网速（差值 / 时间间隔）
@@ -566,8 +562,8 @@ export default function MonitorPage() {
         }
         prevNetRef.current[hostId] = { rx: net.rx, tx: net.tx, time: now }
 
-        const topProcs = parseTopProcs(procRes.stdout || '')
-        const ioRaw = parseDiskIo(ioRes.stdout || '')
+        const topProcs = parseTopProcs(sections.PROC || '')
+        const ioRaw = parseDiskIo(sections.IO || '')
         // 限制 IO 值在合理范围（最大 10 GB/s）
         if (ioRaw.readBps > 10e9) ioRaw.readBps = 0
         if (ioRaw.writeBps > 10e9) ioRaw.writeBps = 0
