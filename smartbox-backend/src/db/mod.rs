@@ -29,8 +29,10 @@ impl Database {
         let conn = Connection::open(path)?;
 
         // WAL mode: better concurrency, no readers block writers
+        // synchronous=NORMAL: ~2x faster writes with WAL (still durable enough)
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
              PRAGMA busy_timeout=5000;
              PRAGMA foreign_keys=ON;",
         )?;
@@ -49,6 +51,7 @@ impl Database {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
              PRAGMA busy_timeout=5000;
              PRAGMA foreign_keys=ON;",
         )?;

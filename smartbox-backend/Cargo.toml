@@ -4,6 +4,13 @@ version = "0.1.0"
 edition = "2021"
 description = "SmartBox Backend - Rust rewrite of the Node.js bridge"
 
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
 [dependencies]
 # Web framework
 axum = { version = "0.8", features = ["ws", "json", "macros"] }

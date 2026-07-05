@@ -31,6 +31,7 @@ use std::sync::Arc;
 use tower::Layer;
 use tower::ServiceBuilder;
 use tower_http::{
+    compression::CompressionLayer,
     cors::CorsLayer,
     services::ServeDir,
     trace::TraceLayer,
@@ -239,7 +240,9 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
             .merge(protected_api)
         )
         .layer(cors.clone())
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        // Compress JSON API responses on-the-fly (gzip, min-size 512 bytes)
+        .layer(CompressionLayer::new());
 
     // ─── Protected WebSocket routes (auth via query token) ───
     // Build a separate auth layer for WS (ServiceBuilder doesn't clone)

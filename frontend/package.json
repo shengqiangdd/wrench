@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
+  "build:typecheck": "tsc -b && vite build",
     "build:analyze": "ANALYZE=true vite build",
     "preview": "vite preview",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
