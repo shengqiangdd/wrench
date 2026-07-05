@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useReducer } from 'react'
+import { memo, useCallback, useState, useEffect, useReducer } from 'react'
 import {
   Layers,
   RefreshCw,
@@ -36,7 +36,7 @@ interface Props {
   connectionId: string
 }
 
-export default function DockerCompose({ connectionId }: Props) {
+function DockerComposeInner({ connectionId }: Props) {
   const [projects, setProjects] = useState<ComposeProject[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedPath, setExpandedPath] = useState<string | null>(null)
@@ -546,3 +546,5 @@ export default function DockerCompose({ connectionId }: Props) {
     </div>
   )
 }
+
+export default memo(DockerComposeInner)

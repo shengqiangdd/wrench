@@ -14,7 +14,7 @@
  * - clipboard 兜底方案（fallbackCopy）
  */
 
-import { useEffect, useCallback, useRef, useReducer } from 'react'
+import { useEffect, useCallback, useRef, useReducer, memo } from 'react'
 import { FileCode2, X, PanelLeftClose, PanelLeft, Loader2 } from 'lucide-react'
 import { useSshStore, decryptConnection } from '../../stores/ssh-store'
 import { useAppStore } from '../../stores/app-store'
@@ -185,7 +185,7 @@ async function ensureSftpSession(
 
 // ─── 主组件 ───
 
-export default function FileManager() {
+function FileManagerInner() {
   const connections = useSshStore((s) => s.connections)
   const sessions = useSshStore((s) => s.sessions)
   const addSession = useSshStore((s) => s.addSession)
@@ -514,3 +514,5 @@ export default function FileManager() {
     </div>
   )
 }
+
+export default memo(FileManagerInner)

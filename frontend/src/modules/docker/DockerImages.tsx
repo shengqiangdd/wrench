@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, memo } from 'react'
 import { Trash2, Search, Download, Upload, Tag as TagIcon, Layers, X } from 'lucide-react'
 import type { DockerImage } from './index'
 
@@ -24,7 +24,7 @@ interface HistoryLayer {
 
 type ActionType = 'pull' | 'push' | 'tag' | 'prune'
 
-export default function DockerImages({ connectionId, images, loading, onRefresh }: Props) {
+function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) {
   const [filter, setFilter] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
@@ -563,3 +563,5 @@ function getActionTitle(type: ActionType): string {
       return '清理未使用镜像'
   }
 }
+
+export default memo(DockerImagesInner)

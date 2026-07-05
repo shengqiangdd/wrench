@@ -11,7 +11,7 @@
  * - sftp-ready 事件监听保障首次加载
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
 import VirtualList from '../../components/VirtualList'
 import {
   Folder,
@@ -476,7 +476,7 @@ function FilePreviewModal({
 const CHUNK_SIZE = 5 * 1024 * 1024 // 每块 5MB
 const CHUNK_THRESHOLD = 50 * 1024 * 1024 // 超过 50MB 才分块
 
-export default function SftpBrowser({
+function SftpBrowserInner({
   sessionId,
   activeConnId,
   connectionOptions,
@@ -1671,3 +1671,5 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
     </div>
   )
 }
+
+export default memo(SftpBrowserInner)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useReducer } from 'react'
+import { useState, useEffect, useRef, useCallback, useReducer, memo } from 'react'
 import { Download, Search, X, ArrowUpDown, Radio, Activity, AlertTriangle } from 'lucide-react'
 
 /** 将常见 SSH/系统错误转为友好提示 */
@@ -25,7 +25,7 @@ interface LogViewerProps {
   onClose: () => void
 }
 
-export default function LogViewer({ connectionId, logPath, onClose }: LogViewerProps) {
+function LogViewerInner({ connectionId, logPath, onClose }: LogViewerProps) {
   type LogsFetchState = {
     status: 'loading' | 'idle' | 'error'
     data: string
@@ -391,3 +391,5 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
     </div>
   )
 }
+
+export default memo(LogViewerInner)
