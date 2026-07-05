@@ -90,16 +90,34 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Install panic hook to log panics before exit (helps diagnose Docker restart loops)
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        tracing::error!(
+            target: "panic",
+            "APPLICATION PANIC: {}",
+            panic_info
+        );
+        // Also eprint for docker logs visibility
+        eprintln!("PANIC: {}", panic_info);
+    }));
+    // Re-arm the original hook so default behavior (abort/backtrace) still happens
+    std::panic::set_hook(prev_hook);
+
     // Load config
     let config = AppConfig::from_env()?;
     tracing::info!("Starting SmartBox Backend PID={} on {}:{}", std::process::id(), config.host, config.port);
     tracing::info!("Frontend dist: {:?}", config.frontend_dist);
+    tracing::info!("Database: {:?}", config.database_url);
+    tracing::info!("Plugins dir: {:?}", config.plugins_dir);
 
     // Build app state
     let state = Arc::new(AppState::new(config.clone()).await?);
+    tracing::info!("App state initialized");
 
     // Build router
     let app = build_app(state.clone()).await;
+    tracing::info!("Router built");
 
     // ─── Idle SSH session cleanup (every 5 minutes) ───
     let cleanup_state = state.clone();
