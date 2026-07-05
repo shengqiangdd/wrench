@@ -1,7 +1,7 @@
 /// Integration tests for SmartBox backend.
 ///
-/// Verifies core infrastructure (AppState, JWT, router construction).
-/// HTTP request tests are gradually added here.
+/// Uses in-process request/response via `tower::ServiceExt::oneshot`
+/// to exercise the full router stack without spawning an HTTP server.
 use std::sync::Arc;
 use std::path::PathBuf;
 use axum::body::Body;
@@ -76,4 +76,115 @@ async fn health_check_returns_200() {
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+}
+
+/// Unknown routes return 404.
+#[tokio::test]
+async fn unknown_route_returns_404() {
+    let app = build_test_app().await;
+    let req = Request::builder()
+        .uri("/api/nonexistent")
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+/// Protected routes return 401 without auth.
+#[tokio::test]
+async fn protected_routes_require_auth() {
+    let app = build_test_app().await;
+    let req = Request::builder()
+        .uri("/api/plugins")
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Invalid JWT is rejected with 401.
+#[tokio::test]
+async fn invalid_jwt_is_rejected() {
+    let app = build_test_app().await;
+    let req = Request::builder()
+        .uri("/api/plugins")
+        .header("Authorization", "Bearer invalid-token")
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Valid JWT passes auth middleware.
+#[tokio::test]
+async fn authenticated_request_passes_auth() {
+    let config = test_config();
+    let state = AppState::new(config.clone()).await.expect("AppState");
+    let app = smartbox_backend::build_app(Arc::new(state)).await;
+
+    let jwt = JwtService::from_secret(&config.jwt_secret).unwrap();
+    let claims = Claims::new("test".into(), "api+ws", 86400);
+    let token = jwt.sign(&claims).unwrap();
+
+    let req = Request::builder()
+        .uri("/api/ai/config")
+        .header("Authorization", format!("Bearer {}", token))
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// ws-token endpoint is public (no auth).
+#[tokio::test]
+async fn ws_token_endpoint_is_public() {
+    let app = build_test_app().await;
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/ws-token")
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{}"#))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert!(
+        resp.status() != StatusCode::UNAUTHORIZED && resp.status() != StatusCode::NOT_FOUND,
+        "Expected public access, got {}",
+        resp.status()
+    );
+}
+
+/// Vault endpoint requires auth.
+#[tokio::test]
+async fn vault_requires_auth() {
+    let app = build_test_app().await;
+    let req = Request::builder()
+        .uri("/api/vault")
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Notifications endpoint requires auth.
+#[tokio::test]
+async fn notifications_require_auth() {
+    let app = build_test_app().await;
+    let req = Request::builder()
+        .uri("/api/notifications")
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// System backup endpoint requires auth.
+#[tokio::test]
+async fn system_backup_requires_auth() {
+    let app = build_test_app().await;
+    let req = Request::builder()
+        .uri("/api/system/backup")
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
