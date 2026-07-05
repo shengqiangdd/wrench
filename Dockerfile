@@ -53,7 +53,8 @@ RUN if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
 
 # ── 关键优化：先用 dummy 源码编译依赖缓存层 ──
 # 此步骤编译所有第三方依赖，只有 Cargo.lock 变化时才失效
-RUN cargo build --release 2>&1 || true
+# 注意：不使用 `|| true` 避免静默吞掉编译失败
+RUN cargo build --release
 
 # ── 然后覆盖真实源码，只重新编译 app 代码 ──
 COPY smartbox-backend/src/ ./src/
@@ -66,6 +67,11 @@ RUN cargo build --release
 # ============================================
 FROM debian:12-slim
 
+# 显式设置运行时路径和环境
+ENV FRONTEND_DIST=/app/frontend/dist \
+    RUST_LOG=smartbox_backend=info,tower_http=info \
+    DATABASE_URL=/data/smartbox.db
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates tzdata openssl curl && \
     rm -rf /var/lib/apt/lists/*
@@ -75,8 +81,11 @@ RUN groupadd -r smartbox && useradd -r -g smartbox -m -d /app smartbox
 
 WORKDIR /app
 
-# Create plugins directory
-RUN mkdir -p plugins && chown smartbox:smartbox /app /app/plugins
+# ── 创建运行时数据目录 ──
+# Docker compose 的 smartbox-data 卷挂载到 /data，
+# 必须确保 smartbox 用户有写权限（否则 SQLite 无法写入）
+RUN mkdir -p /data plugins && \
+    chown smartbox:smartbox /app /app/plugins /data
 
 # Copy Rust binary
 COPY --from=rust-builder /app/target/release/smartbox-backend /app/smartbox-backend

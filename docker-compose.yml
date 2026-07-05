@@ -3,9 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # BUILD_HASH 用于前端构建缓存 bust，可通过环境变量传入：
+      #   BUILD_HASH=$(date +%Y%m%d%H%M%S) docker compose build
+      # 不传时由 COPY frontend/ 文件变更自动 bust 缓存
       args:
-        # 每次 docker compose build 自动注入时间戳，确保前端构建层不命中缓存
-        BUILD_HASH: "${BUILD_HASH:-$(date +%Y%m%d%H%M%S)}"
+        BUILD_HASH: "${BUILD_HASH:-}"
     image: ghcr.io/shengqiangdd/smartbox:latest
     container_name: smartbox
     ports:
