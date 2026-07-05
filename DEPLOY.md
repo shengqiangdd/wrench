@@ -61,11 +61,20 @@ docker run -d \
 ### 构建并运行
 
 ```bash
-# 仅构建
-docker build -t smartbox .
+# 仅构建（利用多阶段构建缓存：Cargo 依赖层 + npm 缓存）
+export JWT_SECRET=$(openssl rand -hex 32)
+docker compose build
 
-# 运行
-docker run -d -p 3001:3001 --name smartbox --restart unless-stopped smartbox
+# 启动
+docker compose up -d
+
+# 查看信号诊断日志
+docker logs smartbox
+
+# 预期看到：
+# [entrypoint] $(date) Starting SmartBox backend...
+# [entrypoint] $(date) Backend started (PID xxx)
+# ... (如果有信号到达会被记录)
 ```
 
 ---
