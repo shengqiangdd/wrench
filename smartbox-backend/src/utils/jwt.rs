@@ -20,12 +20,7 @@ impl Claims {
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs();
-        Self {
-            sub: subject,
-            iat: now,
-            exp: now + expires_in,
-            scope: scope.into(),
-        }
+        Self { sub: subject, iat: now, exp: now + expires_in, scope: scope.into() }
     }
 }
 

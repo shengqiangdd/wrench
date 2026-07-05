@@ -17,7 +17,7 @@ pub struct BatchConfig {
 impl Default for BatchConfig {
     fn default() -> Self {
         Self {
-            size_threshold: 16_384,     // 16 KB
+            size_threshold: 16_384,                  // 16 KB
             max_interval: Duration::from_millis(50), // 50 ms max latency
         }
     }
@@ -26,18 +26,12 @@ impl Default for BatchConfig {
 impl BatchConfig {
     /// Fast path for interactive terminal output.
     pub fn terminal() -> Self {
-        Self {
-            size_threshold: 8_192,
-            max_interval: Duration::from_millis(30),
-        }
+        Self { size_threshold: 8_192, max_interval: Duration::from_millis(30) }
     }
 
     /// High-latency path for log tailing.
     pub fn log_tail() -> Self {
-        Self {
-            size_threshold: 32_768,
-            max_interval: Duration::from_millis(200),
-        }
+        Self { size_threshold: 32_768, max_interval: Duration::from_millis(200) }
     }
 }
 
@@ -54,9 +48,6 @@ pub fn new_flush_timer(interval: Duration) -> std::pin::Pin<Box<tokio::time::Sle
 }
 
 /// Reset a pinned flush timer to fire after the given interval.
-pub fn reset_timer(
-    timer: &mut std::pin::Pin<Box<tokio::time::Sleep>>,
-    interval: Duration,
-) {
+pub fn reset_timer(timer: &mut std::pin::Pin<Box<tokio::time::Sleep>>, interval: Duration) {
     timer.as_mut().reset(tokio::time::Instant::now() + interval);
 }

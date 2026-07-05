@@ -19,7 +19,8 @@ pub async fn issue_jwt_token(
 
     // Create a claims object with client fingerprint
     let claims = Claims::new("client".into(), "api+ws", 86400);
-    let token = jwt_service.sign(&claims)
+    let token = jwt_service
+        .sign(&claims)
         .map_err(|e| ApiResponse::error(500, &format!("Failed to sign JWT: {}", e)))?;
 
     state.add_audit_log("jwt_issued", serde_json::json!({"scope": "api+ws"}), "client");
@@ -32,15 +33,10 @@ pub async fn issue_jwt_token(
 }
 
 /// Get audit logs (GET /api/audit-logs)
-pub async fn get_audit_logs(
-    State(state): State<Arc<AppState>>,
-) -> ApiResponse<AuditLogsResponse> {
+pub async fn get_audit_logs(State(state): State<Arc<AppState>>) -> ApiResponse<AuditLogsResponse> {
     let logs = state.audit_logs.read();
     let total = logs.len();
     let slice: Vec<_> = logs.iter().rev().take(200).cloned().collect();
 
-    ApiResponse::success(AuditLogsResponse {
-        total,
-        logs: slice,
-    })
+    ApiResponse::success(AuditLogsResponse { total, logs: slice })
 }

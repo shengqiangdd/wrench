@@ -19,20 +19,12 @@ pub struct SessionManager {
 
 impl SessionManager {
     pub fn new() -> Self {
-        Self {
-            sessions: HashMap::new(),
-        }
+        Self { sessions: HashMap::new() }
     }
 
     pub fn create_session(&mut self, connection_id: String, shell_type: String) -> String {
         let session_id = uuid::Uuid::new_v4().to_string();
-        let session = SshSession {
-            session_id: session_id.clone(),
-            connection_id,
-            shell_type,
-            cols: 80,
-            rows: 24,
-        };
+        let session = SshSession { session_id: session_id.clone(), connection_id, shell_type, cols: 80, rows: 24 };
         self.sessions.insert(session_id.clone(), session);
         session_id
     }

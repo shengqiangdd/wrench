@@ -39,14 +39,8 @@ pub struct HostHealth {
 }
 
 /// Get health status for all connected hosts (GET /api/hosts/health)
-pub async fn get_all_health(
-    State(state): State<Arc<AppState>>,
-) -> Result<ApiResponse<Vec<HostHealth>>, AppError> {
-    let connection_ids: Vec<String> = state
-        .connections
-        .iter()
-        .map(|entry| entry.key().clone())
-        .collect();
+pub async fn get_all_health(State(state): State<Arc<AppState>>) -> Result<ApiResponse<Vec<HostHealth>>, AppError> {
+    let connection_ids: Vec<String> = state.connections.iter().map(|entry| entry.key().clone()).collect();
 
     if connection_ids.is_empty() {
         return Ok(ApiResponse::success(Vec::new()));
@@ -72,11 +66,18 @@ pub async fn get_all_health(
                 username,
                 connected: false,
                 error: Some("Not connected".into()),
-                cpu_load: None, cpu_load_5: None, cpu_load_15: None,
+                cpu_load: None,
+                cpu_load_5: None,
+                cpu_load_15: None,
                 cpu_cores: None,
-                mem_total_mb: None, mem_used_mb: None, mem_percent: None,
-                disk_total: None, disk_used: None, disk_percent: None,
-                uptime: None, processes: None,
+                mem_total_mb: None,
+                mem_used_mb: None,
+                mem_percent: None,
+                disk_total: None,
+                disk_used: None,
+                disk_percent: None,
+                uptime: None,
+                processes: None,
             });
             continue;
         }
@@ -109,11 +110,18 @@ pub async fn get_all_health(
                 username,
                 connected: true,
                 error: Some(e),
-                cpu_load: None, cpu_load_5: None, cpu_load_15: None,
+                cpu_load: None,
+                cpu_load_5: None,
+                cpu_load_15: None,
                 cpu_cores: None,
-                mem_total_mb: None, mem_used_mb: None, mem_percent: None,
-                disk_total: None, disk_used: None, disk_percent: None,
-                uptime: None, processes: None,
+                mem_total_mb: None,
+                mem_used_mb: None,
+                mem_percent: None,
+                disk_total: None,
+                disk_used: None,
+                disk_percent: None,
+                uptime: None,
+                processes: None,
             }),
         }
     }
@@ -130,7 +138,9 @@ fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
 
     for h in results {
-        if !h.connected { continue; }
+        if !h.connected {
+            continue;
+        }
 
         // CPU load anomaly (load > core count * 0.8 = high load)
         if let (Some(load), Some(cores)) = (h.cpu_load, h.cpu_cores) {
@@ -155,10 +165,19 @@ fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
                 state.add_alert(AlertEntry {
                     id: format!("mem-{}-{}", h.id, chrono::Utc::now().timestamp()),
                     timestamp: now.clone(),
-                    level: if mem_pct > 95.0 { "critical".into() } else { "warning".into() },
+                    level: if mem_pct > 95.0 {
+                        "critical".into()
+                    } else {
+                        "warning".into()
+                    },
                     host: h.host.clone(),
                     metric: "memory".into(),
-                    message: format!("Memory usage {:.1}% ({} MB / {} MB)", mem_pct, h.mem_used_mb.unwrap_or(0), h.mem_total_mb.unwrap_or(0)),
+                    message: format!(
+                        "Memory usage {:.1}% ({} MB / {} MB)",
+                        mem_pct,
+                        h.mem_used_mb.unwrap_or(0),
+                        h.mem_total_mb.unwrap_or(0)
+                    ),
                     value: mem_pct,
                     threshold: 90.0,
                 });
@@ -172,10 +191,19 @@ fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
                 state.add_alert(AlertEntry {
                     id: format!("disk-{}-{}", h.id, chrono::Utc::now().timestamp()),
                     timestamp: now.clone(),
-                    level: if disk_pct > 95.0 { "critical".into() } else { "warning".into() },
+                    level: if disk_pct > 95.0 {
+                        "critical".into()
+                    } else {
+                        "warning".into()
+                    },
                     host: h.host.clone(),
                     metric: "disk".into(),
-                    message: format!("Disk usage {} (used {}/ total {})", disk_pct_str, h.disk_used.as_deref().unwrap_or("?"), h.disk_total.as_deref().unwrap_or("?")),
+                    message: format!(
+                        "Disk usage {} (used {}/ total {})",
+                        disk_pct_str,
+                        h.disk_used.as_deref().unwrap_or("?"),
+                        h.disk_total.as_deref().unwrap_or("?")
+                    ),
                     value: disk_pct,
                     threshold: 85.0,
                 });
@@ -189,30 +217,47 @@ pub async fn diagnose_host(
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<ApiResponse<crate::api_types::DiagnoseResponse>, AppError> {
-    let host_id = body.get("hostId").and_then(|v| v.as_str()).ok_or_else(|| {
-        AppError::BadRequest("Missing hostId".into())
-    })?;
+    let host_id = body
+        .get("hostId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("Missing hostId".into()))?;
 
     // Check host exists and is connected
-    let _conn = state.connections.get(host_id).ok_or_else(|| {
-        AppError::NotFound("Host not found".into())
-    })?;
+    let _conn = state
+        .connections
+        .get(host_id)
+        .ok_or_else(|| AppError::NotFound("Host not found".into()))?;
 
     // Run health check
-    let health = check_host_health(&state, host_id).await
+    let health = check_host_health(&state, host_id)
+        .await
         .map_err(|e| AppError::Internal(format!("Health check failed: {}", e)))?;
 
     // Build diagnosis prompt for AI
     let mut diagnosis_lines = Vec::new();
     diagnosis_lines.push("System Health Report for host".to_string());
     if let Some(load) = health.cpu_load {
-        diagnosis_lines.push(format!("- CPU Load (1min): {:.2} (cores: {})", load, health.cpu_cores.unwrap_or(1)));
+        diagnosis_lines.push(format!(
+            "- CPU Load (1min): {:.2} (cores: {})",
+            load,
+            health.cpu_cores.unwrap_or(1)
+        ));
     }
     if let Some(mem_pct) = health.mem_percent {
-        diagnosis_lines.push(format!("- Memory: {:.1}% used ({}/{} MB)", mem_pct, health.mem_used_mb.unwrap_or(0), health.mem_total_mb.unwrap_or(0)));
+        diagnosis_lines.push(format!(
+            "- Memory: {:.1}% used ({}/{} MB)",
+            mem_pct,
+            health.mem_used_mb.unwrap_or(0),
+            health.mem_total_mb.unwrap_or(0)
+        ));
     }
     if let Some(disk_pct) = &health.disk_percent {
-        diagnosis_lines.push(format!("- Disk: {} used ({} / {})", disk_pct, health.disk_used.as_deref().unwrap_or("?"), health.disk_total.as_deref().unwrap_or("?")));
+        diagnosis_lines.push(format!(
+            "- Disk: {} used ({} / {})",
+            disk_pct,
+            health.disk_used.as_deref().unwrap_or("?"),
+            health.disk_total.as_deref().unwrap_or("?")
+        ));
     }
     if let Some(procs) = health.processes {
         diagnosis_lines.push(format!("- Processes: {}", procs));
@@ -234,8 +279,7 @@ pub async fn diagnose_host(
         String::new()
     };
 
-    let health_value = serde_json::to_value(&health)
-        .unwrap_or_default();
+    let health_value = serde_json::to_value(&health).unwrap_or_default();
 
     Ok(ApiResponse::success(crate::api_types::DiagnoseResponse {
         health: health_value,
@@ -246,26 +290,42 @@ pub async fn diagnose_host(
 
 /// Run health check commands on a single host via SSH.
 async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData, String> {
-    let conn = state.connections.get(host_id)
+    let conn = state
+        .connections
+        .get(host_id)
         .ok_or_else(|| "Host not found".to_string())?;
 
-    let session = conn.session.clone()
+    let session = conn
+        .session
+        .clone()
         .ok_or_else(|| "No active SSH session".to_string())?;
 
     // Collect data from multiple commands
     let load = executor::execute_command(&session, "cat /proc/loadavg | awk '{print $1, $2, $3}'").await?;
-    let mem = executor::execute_command(&session, "free -m | awk 'NR==2{printf \"%d %d %.1f\", $2, $3, ($3/$2)*100}'").await?;
+    let mem = executor::execute_command(&session, "free -m | awk 'NR==2{printf \"%d %d %.1f\", $2, $3, ($3/$2)*100}'")
+        .await?;
     let disk = executor::execute_command(&session, "df -h / | awk 'NR==2{printf \"%s %s %s\", $2, $3, $5}'").await?;
-    let uptime_cmd = executor::execute_command(&session, "uptime -p 2>/dev/null || uptime | sed 's/.*up //' | awk '{print $1, $2, $3, $4}'").await?;
+    let uptime_cmd = executor::execute_command(
+        &session,
+        "uptime -p 2>/dev/null || uptime | sed 's/.*up //' | awk '{print $1, $2, $3, $4}'",
+    )
+    .await?;
     let procs = executor::execute_command(&session, "ps --no-headers -eo pid 2>/dev/null | wc -l").await?;
     let cores = executor::execute_command(&session, "nproc 2>/dev/null || echo 1").await?;
 
     let mut data = HealthData {
-        cpu_load: None, cpu_load_5: None, cpu_load_15: None,
+        cpu_load: None,
+        cpu_load_5: None,
+        cpu_load_15: None,
         cpu_cores: None,
-        mem_total_mb: None, mem_used_mb: None, mem_percent: None,
-        disk_total: None, disk_used: None, disk_percent: None,
-        uptime: None, processes: None,
+        mem_total_mb: None,
+        mem_used_mb: None,
+        mem_percent: None,
+        disk_total: None,
+        disk_used: None,
+        disk_percent: None,
+        uptime: None,
+        processes: None,
     };
 
     // Parse load
@@ -364,8 +424,7 @@ async fn get_ai_diagnosis(api_key: &str, health_report: &str) -> Result<String, 
         return Err(format!("API returned status {}", resp.status()));
     }
 
-    let body: serde_json::Value = resp.json().await
-        .map_err(|e| format!("JSON parse error: {}", e))?;
+    let body: serde_json::Value = resp.json().await.map_err(|e| format!("JSON parse error: {}", e))?;
 
     let content = body["choices"][0]["message"]["content"]
         .as_str()

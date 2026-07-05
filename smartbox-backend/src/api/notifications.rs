@@ -8,7 +8,7 @@
 //!   DELETE /api/notifications/:id      — Delete channel
 //!   POST   /api/notifications/test/:id — Send test alert
 
-use axum::{extract::State, extract::Path, Json};
+use axum::{extract::Path, extract::State, Json};
 use std::sync::Arc;
 
 use crate::api_types::{NotificationChannelEntry, NotificationChannelsResponse};
@@ -23,29 +23,34 @@ const SUPPORTED_TYPES: &[&str] = &["discord", "slack", "telegram", "email"];
 pub async fn list_channels(
     State(state): State<Arc<AppState>>,
 ) -> Result<ApiResponse<NotificationChannelsResponse>, AppError> {
-    let db = state.db.as_ref().ok_or_else(|| AppError::NotFound("Database not available".into()))?;
+    let db = state
+        .db
+        .as_ref()
+        .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
 
-    let channels = db.list_notification_channels().await
+    let channels = db
+        .list_notification_channels()
+        .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
-    let entries: Vec<NotificationChannelEntry> = channels.iter().map(|ch| {
-        let config: serde_json::Value = serde_json::from_str(&ch.config).unwrap_or_default();
-        NotificationChannelEntry {
-            id: ch.id.clone(),
-            channel_type: ch.channel_type.clone(),
-            name: ch.name.clone(),
-            config,
-            enabled: ch.enabled,
-            created_at: ch.created_at.clone(),
-            updated_at: ch.updated_at.clone(),
-        }
-    }).collect();
+    let entries: Vec<NotificationChannelEntry> = channels
+        .iter()
+        .map(|ch| {
+            let config: serde_json::Value = serde_json::from_str(&ch.config).unwrap_or_default();
+            NotificationChannelEntry {
+                id: ch.id.clone(),
+                channel_type: ch.channel_type.clone(),
+                name: ch.name.clone(),
+                config,
+                enabled: ch.enabled,
+                created_at: ch.created_at.clone(),
+                updated_at: ch.updated_at.clone(),
+            }
+        })
+        .collect();
 
     let total = entries.len();
-    Ok(ApiResponse::success(NotificationChannelsResponse {
-        total,
-        channels: entries,
-    }))
+    Ok(ApiResponse::success(NotificationChannelsResponse { total, channels: entries }))
 }
 
 /// Create or update a notification channel (POST /api/notifications)
@@ -53,7 +58,10 @@ pub async fn upsert_channel(
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<ApiResponse<NotificationChannelEntry>, AppError> {
-    let db = state.db.as_ref().ok_or_else(|| AppError::NotFound("Database not available".into()))?;
+    let db = state
+        .db
+        .as_ref()
+        .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
 
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let channel_type = body.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -64,10 +72,15 @@ pub async fn upsert_channel(
         return Err(AppError::BadRequest("name is required".into()));
     }
     if !SUPPORTED_TYPES.contains(&channel_type.as_str()) {
-        return Err(AppError::BadRequest(format!("unsupported type: {}. Supported: {:?}", channel_type, SUPPORTED_TYPES)));
+        return Err(AppError::BadRequest(format!(
+            "unsupported type: {}. Supported: {:?}",
+            channel_type, SUPPORTED_TYPES
+        )));
     }
 
-    let id = body.get("id").and_then(|v| v.as_str())
+    let id = body
+        .get("id")
+        .and_then(|v| v.as_str())
         .map(String::from)
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
@@ -84,7 +97,8 @@ pub async fn upsert_channel(
         updated_at: now,
     };
 
-    db.upsert_notification_channel(&channel).await
+    db.upsert_notification_channel(&channel)
+        .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
     Ok(ApiResponse::success(NotificationChannelEntry {
@@ -103,9 +117,14 @@ pub async fn delete_channel(
     State(state): State<Arc<AppState>>,
     Path(channel_id): Path<String>,
 ) -> Result<ApiResponse<()>, AppError> {
-    let db = state.db.as_ref().ok_or_else(|| AppError::NotFound("Database not available".into()))?;
+    let db = state
+        .db
+        .as_ref()
+        .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
 
-    let deleted = db.delete_notification_channel(&channel_id).await
+    let deleted = db
+        .delete_notification_channel(&channel_id)
+        .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
     if !deleted {
@@ -120,12 +139,18 @@ pub async fn test_channel(
     State(state): State<Arc<AppState>>,
     Path(channel_id): Path<String>,
 ) -> Result<ApiResponse<String>, AppError> {
-    let db = state.db.as_ref().ok_or_else(|| AppError::NotFound("Database not available".into()))?;
+    let db = state
+        .db
+        .as_ref()
+        .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
 
-    let channels = db.list_notification_channels().await
+    let channels = db
+        .list_notification_channels()
+        .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
-    let channel = channels.into_iter()
+    let channel = channels
+        .into_iter()
         .find(|ch| ch.id == channel_id)
         .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
 
@@ -147,9 +172,13 @@ pub async fn test_channel(
 }
 
 async fn send_discord_test(config: &serde_json::Value) -> Result<String, String> {
-    let webhook = config.get("webhookUrl").and_then(|v| v.as_str()).ok_or("Missing webhookUrl")?;
+    let webhook = config
+        .get("webhookUrl")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing webhookUrl")?;
     let client = reqwest::Client::new();
-    let resp = client.post(webhook)
+    let resp = client
+        .post(webhook)
         .json(&serde_json::json!({
             "content": "✅ **SmartBox Test Alert**\nNotification channel is working correctly!",
             "username": "SmartBox",
@@ -166,9 +195,13 @@ async fn send_discord_test(config: &serde_json::Value) -> Result<String, String>
 }
 
 async fn send_slack_test(config: &serde_json::Value) -> Result<String, String> {
-    let webhook = config.get("webhookUrl").and_then(|v| v.as_str()).ok_or("Missing webhookUrl")?;
+    let webhook = config
+        .get("webhookUrl")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing webhookUrl")?;
     let client = reqwest::Client::new();
-    let resp = client.post(webhook)
+    let resp = client
+        .post(webhook)
         .json(&serde_json::json!({
             "text": "✅ *SmartBox Test Alert*\nNotification channel is working correctly!"
         }))
@@ -184,11 +217,15 @@ async fn send_slack_test(config: &serde_json::Value) -> Result<String, String> {
 }
 
 async fn send_telegram_test(config: &serde_json::Value) -> Result<String, String> {
-    let bot_token = config.get("botToken").and_then(|v| v.as_str()).ok_or("Missing botToken")?;
+    let bot_token = config
+        .get("botToken")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing botToken")?;
     let chat_id = config.get("chatId").and_then(|v| v.as_str()).ok_or("Missing chatId")?;
     let client = reqwest::Client::new();
     let url = format!("https://api.telegram.org/bot{}/sendMessage", bot_token);
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .json(&serde_json::json!({
             "chat_id": chat_id,
             "text": "✅ *SmartBox Test Alert*\nNotification channel is working correctly!",
@@ -207,10 +244,19 @@ async fn send_telegram_test(config: &serde_json::Value) -> Result<String, String
 }
 
 async fn send_email_test(config: &serde_json::Value) -> Result<String, String> {
-    let _smtp_host = config.get("smtpHost").and_then(|v| v.as_str()).ok_or("Missing smtpHost")?;
+    let _smtp_host = config
+        .get("smtpHost")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing smtpHost")?;
     let _smtp_port = config.get("smtpPort").and_then(|v| v.as_u64()).unwrap_or(587);
-    let _username = config.get("username").and_then(|v| v.as_str()).ok_or("Missing username")?;
-    let _password = config.get("password").and_then(|v| v.as_str()).ok_or("Missing password")?;
+    let _username = config
+        .get("username")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing username")?;
+    let _password = config
+        .get("password")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing password")?;
     let _from = config.get("from").and_then(|v| v.as_str()).ok_or("Missing from")?;
     let _to = config.get("to").and_then(|v| v.as_str()).ok_or("Missing to")?;
 

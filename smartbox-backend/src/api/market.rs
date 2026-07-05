@@ -1,8 +1,8 @@
+use crate::app_state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use std::sync::Arc;
-use crate::app_state::AppState;
 
 /// A plugin listing from the marketplace index
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -40,10 +40,7 @@ async fn fetch_marketplace_index_inner() -> Result<Vec<MarketPluginListing>, Str
         .map_err(|e| format!("Failed to fetch marketplace index: {}", e))?;
 
     if !resp.status().is_success() {
-        return Err(format!(
-            "Marketplace index returned status: {}",
-            resp.status()
-        ));
+        return Err(format!("Marketplace index returned status: {}", resp.status()));
     }
 
     let index: MarketIndex = resp
@@ -55,9 +52,7 @@ async fn fetch_marketplace_index_inner() -> Result<Vec<MarketPluginListing>, Str
 }
 
 /// Get marketplace index (GET /api/market/index)
-pub async fn get_market_index(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn get_market_index(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     // Check cache first
     {
         let cache = state.marketplace_cache.read();
@@ -84,7 +79,8 @@ pub async fn get_market_index(
                 return axum::Json(serde_json::json!({
                     "plugins": listings,
                     "message": "Cached marketplace index"
-                })).into_response();
+                }))
+                .into_response();
             }
         }
     }
@@ -93,10 +89,7 @@ pub async fn get_market_index(
     let plugins = match fetch_marketplace_index_inner().await {
         Ok(p) => p,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to fetch marketplace: {}", e)
-            ).into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to fetch marketplace: {}", e)).into_response();
         }
     };
 

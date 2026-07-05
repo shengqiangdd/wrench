@@ -20,11 +20,7 @@ pub struct FileEntry {
 }
 
 /// Convert a `Metadata` (which is `FileAttributes`) into our `FileEntry`.
-fn attrs_to_entry(
-    name: String,
-    parent_path: &str,
-    attrs: &FileAttributes,
-) -> FileEntry {
+fn attrs_to_entry(name: String, parent_path: &str, attrs: &FileAttributes) -> FileEntry {
     let path = if parent_path.ends_with('/') {
         format!("{}{}", parent_path, name)
     } else {
@@ -39,24 +35,13 @@ fn attrs_to_entry(
         .map(|p| format!("{:o}", p & 0o7777))
         .unwrap_or_else(|| "----".to_string());
 
-    let modified = attrs
-        .mtime
-        .map(|ts| format_timestamp(ts as u64))
-        .unwrap_or_default();
+    let modified = attrs.mtime.map(|ts| format_timestamp(ts as u64)).unwrap_or_default();
 
-    FileEntry {
-        name,
-        path,
-        is_dir,
-        size,
-        permissions: perm_str,
-        modified,
-    }
+    FileEntry { name, path, is_dir, size, permissions: perm_str, modified }
 }
 
 fn format_timestamp(secs: u64) -> String {
-    let dt = chrono::DateTime::from_timestamp(secs as i64, 0)
-        .unwrap_or_default();
+    let dt = chrono::DateTime::from_timestamp(secs as i64, 0).unwrap_or_default();
     dt.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
@@ -69,10 +54,7 @@ async fn open_sftp(session: &Arc<SshSession>) -> Result<Arc<SftpSession>, String
 }
 
 /// List directory contents via SFTP.
-pub async fn list_directory(
-    session: &Arc<SshSession>,
-    path: &str,
-) -> Result<Vec<FileEntry>, String> {
+pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec<FileEntry>, String> {
     let sftp = open_sftp(session).await?;
     let abs_path = sftp
         .canonicalize(path)
@@ -105,10 +87,7 @@ pub async fn list_directory(
 }
 
 /// Download a file via SFTP.
-pub async fn download_file(
-    session: &Arc<SshSession>,
-    remote_path: &str,
-) -> Result<Vec<u8>, String> {
+pub async fn download_file(session: &Arc<SshSession>, remote_path: &str) -> Result<Vec<u8>, String> {
     let sftp = open_sftp(session).await?;
     let abs_path = sftp
         .canonicalize(remote_path)
@@ -129,18 +108,11 @@ pub async fn download_file(
 }
 
 /// Upload a file via SFTP.
-pub async fn upload_file(
-    session: &Arc<SshSession>,
-    remote_path: &str,
-    data: Vec<u8>,
-) -> Result<(), String> {
+pub async fn upload_file(session: &Arc<SshSession>, remote_path: &str, data: Vec<u8>) -> Result<(), String> {
     let sftp = open_sftp(session).await?;
 
     let mut file = sftp
-        .open_with_flags(
-            remote_path,
-            OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
-        )
+        .open_with_flags(remote_path, OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE)
         .await
         .map_err(|e| format!("Failed to open remote file for writing '{}': {}", remote_path, e))?;
 
@@ -182,11 +154,7 @@ async fn remove_dir_recursive(sftp: &SftpSession, path: &str) -> Result<(), Stri
 }
 
 /// Delete a file or directory via SFTP.
-pub async fn delete_file(
-    session: &Arc<SshSession>,
-    remote_path: &str,
-    recursive: bool,
-) -> Result<(), String> {
+pub async fn delete_file(session: &Arc<SshSession>, remote_path: &str, recursive: bool) -> Result<(), String> {
     let sftp = open_sftp(session).await?;
     let abs_path = sftp
         .canonicalize(remote_path)
@@ -215,10 +183,7 @@ pub async fn delete_file(
 }
 
 /// Create a directory via SFTP.
-pub async fn create_dir(
-    session: &Arc<SshSession>,
-    remote_path: &str,
-) -> Result<(), String> {
+pub async fn create_dir(session: &Arc<SshSession>, remote_path: &str) -> Result<(), String> {
     let sftp = open_sftp(session).await?;
     sftp.create_dir(remote_path)
         .await
@@ -227,11 +192,7 @@ pub async fn create_dir(
 }
 
 /// Rename (move) a file/directory via SFTP.
-pub async fn rename(
-    session: &Arc<SshSession>,
-    from: &str,
-    to: &str,
-) -> Result<(), String> {
+pub async fn rename(session: &Arc<SshSession>, from: &str, to: &str) -> Result<(), String> {
     let sftp = open_sftp(session).await?;
     sftp.rename(from, to)
         .await
@@ -240,10 +201,7 @@ pub async fn rename(
 }
 
 /// Get file metadata (stat) via SFTP.
-pub async fn stat(
-    session: &Arc<SshSession>,
-    remote_path: &str,
-) -> Result<FileEntry, String> {
+pub async fn stat(session: &Arc<SshSession>, remote_path: &str) -> Result<FileEntry, String> {
     let sftp = open_sftp(session).await?;
     let abs_path = sftp
         .canonicalize(remote_path)
@@ -255,11 +213,7 @@ pub async fn stat(
         .await
         .map_err(|e| format!("Failed to stat '{}': {}", abs_path, e))?;
 
-    let name = abs_path
-        .rsplit('/')
-        .next()
-        .unwrap_or(&abs_path)
-        .to_string();
+    let name = abs_path.rsplit('/').next().unwrap_or(&abs_path).to_string();
 
     Ok(attrs_to_entry(name, &abs_path, &metadata))
 }
@@ -301,10 +255,7 @@ mod tests {
 
     #[test]
     fn test_attrs_to_entry_directory() {
-        let attrs = FileAttributes {
-            size: Some(4096),
-            ..FileAttributes::default()
-        };
+        let attrs = FileAttributes { size: Some(4096), ..FileAttributes::default() };
 
         let entry = attrs_to_entry("subdir".into(), "/home/user", &attrs);
         assert_eq!(entry.name, "subdir");
@@ -314,11 +265,7 @@ mod tests {
 
     #[test]
     fn test_attrs_to_entry_no_permissions() {
-        let attrs = FileAttributes {
-            permissions: Some(0),
-            size: Some(0),
-            ..FileAttributes::default()
-        };
+        let attrs = FileAttributes { permissions: Some(0), size: Some(0), ..FileAttributes::default() };
 
         let entry = attrs_to_entry("unknown".into(), "/tmp", &attrs);
         assert!(!entry.is_dir);

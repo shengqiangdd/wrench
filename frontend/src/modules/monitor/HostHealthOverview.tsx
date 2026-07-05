@@ -66,7 +66,7 @@ function StatusIcon({ connected, memPct }: { connected: boolean; memPct: number 
   if (memPct != null && memPct > 90) return <AlertTriangle size={16} className="text-red-400" />
   return <CheckCircle size={16} className="text-emerald-400" />
 }
-const StatusIconMemo = memo(StatusIcon);
+const StatusIconMemo = memo(StatusIcon)
 
 // ─── HostCard sub‑component (memoised) ───
 
@@ -93,7 +93,10 @@ const HostCard = memo(function HostCard({
     >
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
-        <button onClick={onSelect} className="flex items-center gap-2 text-left hover:text-blue-400 transition-colors">
+        <button
+          onClick={onSelect}
+          className="flex items-center gap-2 text-left transition-colors hover:text-blue-400"
+        >
           <StatusIconMemo connected={host.connected} memPct={host.mem_percent} />
           <span className="font-medium text-slate-200">{host.host}</span>
           <span className="text-xs text-slate-500">port {host.port}</span>
@@ -104,7 +107,11 @@ const HostCard = memo(function HostCard({
           className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-700 hover:text-slate-300 disabled:opacity-50"
           title="AI Diagnosis"
         >
-          {diagnosing === host.id ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
+          {diagnosing === host.id ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Brain size={14} />
+          )}
         </button>
       </div>
 
@@ -119,10 +126,15 @@ const HostCard = memo(function HostCard({
             <span className={`text-lg font-semibold tabular-nums ${pctColor(host.cpu_load)}`}>
               {host.cpu_load != null ? `${host.cpu_load.toFixed(1)}%` : '--'}
             </span>
-            {host.cpu_cores != null && <span className="text-xs text-slate-500">{host.cpu_cores} cores</span>}
+            {host.cpu_cores != null && (
+              <span className="text-xs text-slate-500">{host.cpu_cores} cores</span>
+            )}
           </div>
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
-            <div className={`h-full rounded-full transition-all ${pctBg(host.cpu_load)}`} style={{ width: `${host.cpu_load ?? 0}%` }} />
+            <div
+              className={`h-full rounded-full transition-all ${pctBg(host.cpu_load)}`}
+              style={{ width: `${host.cpu_load ?? 0}%` }}
+            />
           </div>
         </div>
 
@@ -137,7 +149,10 @@ const HostCard = memo(function HostCard({
             </span>
           </div>
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
-            <div className={`h-full rounded-full ${pctBg(host.mem_percent)}`} style={{ width: `${host.mem_percent ?? 0}%` }} />
+            <div
+              className={`h-full rounded-full ${pctBg(host.mem_percent)}`}
+              style={{ width: `${host.mem_percent ?? 0}%` }}
+            />
           </div>
           {host.mem_used_mb != null && host.mem_total_mb != null && (
             <div className="mt-1 text-[10px] text-slate-500">
@@ -152,24 +167,37 @@ const HostCard = memo(function HostCard({
             <HardDrive size={12} /> Disk
           </div>
           <div className="flex items-baseline gap-1.5">
-            <span className={`text-lg font-semibold tabular-nums ${pctColor(host.disk_percent != null ? parseFloat(host.disk_percent) : null)}`}>
+            <span
+              className={`text-lg font-semibold tabular-nums ${pctColor(host.disk_percent != null ? parseFloat(host.disk_percent) : null)}`}
+            >
               {host.disk_percent != null ? `${host.disk_percent}` : '--'}
             </span>
           </div>
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
-            <div className={`h-full rounded-full ${pctBg(host.disk_percent != null ? parseFloat(host.disk_percent) : null)}`}
+            <div
+              className={`h-full rounded-full ${pctBg(host.disk_percent != null ? parseFloat(host.disk_percent) : null)}`}
               style={{ width: `${host.disk_percent != null ? parseFloat(host.disk_percent) : 0}%` }}
             />
           </div>
           {host.disk_used != null && host.disk_total != null && (
-            <div className="mt-1 text-[10px] text-slate-500">{host.disk_used} / {host.disk_total}</div>
+            <div className="mt-1 text-[10px] text-slate-500">
+              {host.disk_used} / {host.disk_total}
+            </div>
           )}
         </div>
 
         {/* Uptime + Processes */}
         <div className="rounded-lg bg-slate-800/80 p-2.5">
-          {host.uptime && <div className="mb-2 text-xs text-slate-400"><span className="text-slate-500">Uptime:</span> {host.uptime}</div>}
-          {host.processes != null && <div className="text-xs text-slate-400"><span className="text-slate-500">Processes:</span> {host.processes}</div>}
+          {host.uptime && (
+            <div className="mb-2 text-xs text-slate-400">
+              <span className="text-slate-500">Uptime:</span> {host.uptime}
+            </div>
+          )}
+          {host.processes != null && (
+            <div className="text-xs text-slate-400">
+              <span className="text-slate-500">Processes:</span> {host.processes}
+            </div>
+          )}
           {!host.connected && <div className="text-xs text-red-400">Disconnected</div>}
         </div>
       </div>
@@ -180,7 +208,7 @@ const HostCard = memo(function HostCard({
           <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400">
             <Brain size={12} /> AI Diagnosis
           </div>
-          <p className="text-xs text-slate-300 leading-relaxed">{diagnosis[host.id]}</p>
+          <p className="text-xs leading-relaxed text-slate-300">{diagnosis[host.id]}</p>
         </div>
       )}
     </div>
@@ -189,11 +217,7 @@ const HostCard = memo(function HostCard({
 
 // ─── Main component ───
 
-function HostHealthOverviewInner({
-  onSelectHost,
-}: {
-  onSelectHost?: (hostId: string) => void
-}) {
+function HostHealthOverviewInner({ onSelectHost }: { onSelectHost?: (hostId: string) => void }) {
   type HealthState = {
     hosts: HostHealth[]
     status: 'loading' | 'idle' | 'error'
@@ -248,7 +272,8 @@ function HostHealthOverviewInner({
     [hosts],
   )
   const warning = useMemo(
-    () => hosts.filter((h) => h.connected && (h.mem_percent ?? 0) > 70 && (h.mem_percent ?? 0) <= 90),
+    () =>
+      hosts.filter((h) => h.connected && (h.mem_percent ?? 0) > 70 && (h.mem_percent ?? 0) <= 90),
     [hosts],
   )
 

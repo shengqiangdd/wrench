@@ -11,13 +11,11 @@
 //!   DELETE /api/vault/:id      — Delete an entry
 //!   GET    /api/vault/types    — List supported entry types
 
-use axum::{extract::State, extract::Path, Json};
+use axum::{extract::Path, extract::State, Json};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
-use crate::api_types::{
-    VaultEntryDetail, VaultListResponse, VaultTypeInfo, VaultTypesResponse,
-};
+use crate::api_types::{VaultEntryDetail, VaultListResponse, VaultTypeInfo, VaultTypesResponse};
 use crate::app_state::AppState;
 use crate::db::VaultEntry;
 use crate::error::AppError;
@@ -61,8 +59,7 @@ pub async fn get_vault_types() -> ApiResponse<VaultTypesResponse> {
 }
 
 fn map_vault_entry(e: &VaultEntry, vault_key: &[u8; 32]) -> VaultEntryDetail {
-    let decrypted =
-        crypto::decrypt(&e.encrypted_value, vault_key).unwrap_or_else(|_| "***DECRYPT_FAILED***".into());
+    let decrypted = crypto::decrypt(&e.encrypted_value, vault_key).unwrap_or_else(|_| "***DECRYPT_FAILED***".into());
     let tags: Vec<String> = serde_json::from_str(&e.tags).unwrap_or_default();
 
     VaultEntryDetail {
@@ -94,10 +91,7 @@ pub async fn list_vault_entries(
     let decrypted: Vec<VaultEntryDetail> = entries.iter().map(|e| map_vault_entry(e, &vault_key)).collect();
     let total = decrypted.len();
 
-    Ok(ApiResponse::success(VaultListResponse {
-        total,
-        entries: decrypted,
-    }))
+    Ok(ApiResponse::success(VaultListResponse { total, entries: decrypted }))
 }
 
 /// Create a vault entry (POST /api/vault)
@@ -111,21 +105,9 @@ pub async fn create_vault_entry(
         .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
     let vault_key = get_vault_key(&state)?;
 
-    let name = body
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let kind = body
-        .get("kind")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let value = body
-        .get("value")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let kind = body.get("kind").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let value = body.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let tags: Vec<String> = body
         .get("tags")
         .and_then(|v| v.as_array())
@@ -145,8 +127,8 @@ pub async fn create_vault_entry(
         return Err(AppError::BadRequest("value is required".into()));
     }
 
-    let encrypted = crypto::encrypt(&value, &vault_key)
-        .map_err(|e| AppError::Internal(format!("Encryption failed: {}", e)))?;
+    let encrypted =
+        crypto::encrypt(&value, &vault_key).map_err(|e| AppError::Internal(format!("Encryption failed: {}", e)))?;
     let tags_str = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into());
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
@@ -195,21 +177,17 @@ pub async fn update_vault_entry(
         .and_then(|v| v.as_str())
         .unwrap_or(&existing.kind)
         .to_string();
-    let value = body
-        .get("value")
-        .and_then(|v| v.as_str())
-        .map(String::from);
+    let value = body.get("value").and_then(|v| v.as_str()).map(String::from);
     let tags: Vec<String> = body
         .get("tags")
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
-        .unwrap_or_else(|| {
-            serde_json::from_str(&existing.tags).unwrap_or_default()
-        });
+        .unwrap_or_else(|| serde_json::from_str(&existing.tags).unwrap_or_default());
 
     let encrypted = match value {
-        Some(v) if !v.is_empty() => crypto::encrypt(&v, &vault_key)
-            .map_err(|e| AppError::Internal(format!("Encryption failed: {}", e)))?,
+        Some(v) if !v.is_empty() => {
+            crypto::encrypt(&v, &vault_key).map_err(|e| AppError::Internal(format!("Encryption failed: {}", e)))?
+        }
         _ => existing.encrypted_value.clone(),
     };
 
@@ -259,9 +237,7 @@ pub async fn delete_vault_entry(
 fn get_vault_key(state: &AppState) -> Result<[u8; 32], AppError> {
     let secret = &state.config.jwt_secret;
     if secret.is_empty() {
-        return Err(AppError::Internal(
-            "JWT_SECRET not configured — cannot derive vault key".into(),
-        ));
+        return Err(AppError::Internal("JWT_SECRET not configured — cannot derive vault key".into()));
     }
 
     // Derive a 32-byte key using SHA-256

@@ -16,33 +16,15 @@ pub struct ApiResponse<T: Serialize> {
 
 impl<T: Serialize> ApiResponse<T> {
     pub fn success(data: T) -> Self {
-        Self {
-            success: true,
-            code: 0,
-            msg: "success".into(),
-            data: Some(data),
-            error: None,
-        }
+        Self { success: true, code: 0, msg: "success".into(), data: Some(data), error: None }
     }
 
     pub fn success_msg(msg: &str) -> Self {
-        Self {
-            success: true,
-            code: 0,
-            msg: msg.into(),
-            data: None,
-            error: None,
-        }
+        Self { success: true, code: 0, msg: msg.into(), data: None, error: None }
     }
 
     pub fn error(code: i32, msg: &str) -> Self {
-        Self {
-            success: false,
-            code,
-            msg: msg.into(),
-            data: None,
-            error: Some(msg.into()),
-        }
+        Self { success: false, code, msg: msg.into(), data: None, error: Some(msg.into()) }
     }
 }
 

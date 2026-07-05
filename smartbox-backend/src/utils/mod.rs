@@ -72,4 +72,3 @@ mod tests {
         assert_eq!(escape_sh_arg("${PATH}"), "'${PATH}'");
     }
 }
-

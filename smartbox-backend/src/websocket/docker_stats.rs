@@ -12,10 +12,7 @@ use tracing::info;
 use crate::app_state::AppState;
 
 /// WebSocket Docker stats handler (/ws/docker/stats)
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_docker_stats_socket(socket, state))
 }
 
@@ -33,9 +30,7 @@ async fn handle_docker_stats_socket(socket: WebSocket, _state: Arc<AppState>) {
                 "mem_limit": 0,
                 "timestamp": chrono::Utc::now().to_rfc3339()
             });
-            let msg = Message::Text(
-                serde_json::to_string(&stats).unwrap().into(),
-            );
+            let msg = Message::Text(serde_json::to_string(&stats).unwrap().into());
             if sender.send(msg).await.is_err() {
                 break;
             }

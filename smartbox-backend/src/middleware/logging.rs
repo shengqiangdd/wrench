@@ -1,9 +1,4 @@
-use axum::{
-    body::Body,
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{body::Body, extract::Request, middleware::Next, response::Response};
 use std::time::Instant;
 use tracing::info;
 

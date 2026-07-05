@@ -16,10 +16,7 @@ pub struct ContainerStats {
 
 /// Stream container stats periodically.
 /// In a full implementation, this uses bollard to get Docker stats.
-pub async fn stream_stats(
-    _container_id: &str,
-    _callback: impl Fn(ContainerStats) + Send + 'static,
-) {
+pub async fn stream_stats(_container_id: &str, _callback: impl Fn(ContainerStats) + Send + 'static) {
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 

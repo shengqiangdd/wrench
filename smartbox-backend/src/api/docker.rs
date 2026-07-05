@@ -1,9 +1,6 @@
-use std::sync::Arc;
-use axum::{
-    extract::State,
-    Json,
-};
+use axum::{extract::State, Json};
 use serde::Deserialize;
+use std::sync::Arc;
 
 use crate::api_types::DockerExecResponse;
 use crate::app_state::AppState;
@@ -121,11 +118,7 @@ pub struct DockerExecRequest {
 
 // ─── Helper: execute docker command via SSH ───
 
-async fn docker_exec(
-    state: &Arc<AppState>,
-    connection_id: &str,
-    docker_args: &[&str],
-) -> Result<String, String> {
+async fn docker_exec(state: &Arc<AppState>, connection_id: &str, docker_args: &[&str]) -> Result<String, String> {
     let (host, username, session) = {
         let entry = state.connections.get(connection_id);
         match entry {
@@ -207,9 +200,13 @@ pub async fn start_container(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ActionRequest>,
 ) -> ApiResponse<DockerExecResponse> {
-    state.add_audit_log("docker_start", serde_json::json!({
-        "connectionId": req.connection_id, "containerId": req.id
-    }), "api");
+    state.add_audit_log(
+        "docker_start",
+        serde_json::json!({
+            "connectionId": req.connection_id, "containerId": req.id
+        }),
+        "api",
+    );
     match docker_exec(&state, &req.connection_id, &["start", &req.id]).await {
         Ok(data) => ApiResponse::success(DockerExecResponse { data }),
         Err(e) => ApiResponse::error(-1, &e),
@@ -221,9 +218,13 @@ pub async fn stop_container(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ActionRequest>,
 ) -> ApiResponse<DockerExecResponse> {
-    state.add_audit_log("docker_stop", serde_json::json!({
-        "connectionId": req.connection_id, "containerId": req.id
-    }), "api");
+    state.add_audit_log(
+        "docker_stop",
+        serde_json::json!({
+            "connectionId": req.connection_id, "containerId": req.id
+        }),
+        "api",
+    );
     match docker_exec(&state, &req.connection_id, &["stop", &req.id]).await {
         Ok(data) => ApiResponse::success(DockerExecResponse { data }),
         Err(e) => ApiResponse::error(-1, &e),
@@ -235,9 +236,13 @@ pub async fn restart_container(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ActionRequest>,
 ) -> ApiResponse<DockerExecResponse> {
-    state.add_audit_log("docker_restart", serde_json::json!({
-        "connectionId": req.connection_id, "containerId": req.id
-    }), "api");
+    state.add_audit_log(
+        "docker_restart",
+        serde_json::json!({
+            "connectionId": req.connection_id, "containerId": req.id
+        }),
+        "api",
+    );
     match docker_exec(&state, &req.connection_id, &["restart", &req.id]).await {
         Ok(data) => ApiResponse::success(DockerExecResponse { data }),
         Err(e) => ApiResponse::error(-1, &e),
@@ -317,11 +322,7 @@ pub async fn exec_container(
             req.command.clone(),
         ]
     } else {
-        vec![
-            "exec".into(),
-            req.id.clone(),
-            req.command.clone(),
-        ]
+        vec!["exec".into(), req.id.clone(), req.command.clone()]
     };
     let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     match docker_exec(&state, &req.connection_id, &args_ref).await {
@@ -379,7 +380,13 @@ pub async fn image_history(
     State(state): State<Arc<AppState>>,
     Json(req): Json<HistoryRequest>,
 ) -> ApiResponse<DockerExecResponse> {
-    match docker_exec(&state, &req.connection_id, &["history", &req.id, "--format", "json", "--no-trunc"]).await {
+    match docker_exec(
+        &state,
+        &req.connection_id,
+        &["history", &req.id, "--format", "json", "--no-trunc"],
+    )
+    .await
+    {
         Ok(data) => ApiResponse::success(DockerExecResponse { data }),
         Err(e) => ApiResponse::error(-1, &e),
     }
@@ -390,7 +397,13 @@ pub async fn container_stats(
     State(state): State<Arc<AppState>>,
     Json(req): Json<StatsRequest>,
 ) -> ApiResponse<DockerExecResponse> {
-    match docker_exec(&state, &req.connection_id, &["stats", &req.id, "--no-stream", "--format", "json"]).await {
+    match docker_exec(
+        &state,
+        &req.connection_id,
+        &["stats", &req.id, "--no-stream", "--format", "json"],
+    )
+    .await
+    {
         Ok(data) => ApiResponse::success(DockerExecResponse { data }),
         Err(e) => ApiResponse::error(-1, &e),
     }
@@ -412,7 +425,9 @@ pub async fn compose_action(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ComposeActionRequest>,
 ) -> ApiResponse<DockerExecResponse> {
-    let project_dir = std::path::Path::new(&req.path).parent().unwrap_or(std::path::Path::new("."));
+    let project_dir = std::path::Path::new(&req.path)
+        .parent()
+        .unwrap_or(std::path::Path::new("."));
     let project_dir_str = project_dir.to_string_lossy();
 
     let action_cmd: &str = &req.action;

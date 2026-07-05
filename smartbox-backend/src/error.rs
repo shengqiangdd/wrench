@@ -42,11 +42,7 @@ impl IntoResponse for AppError {
             AppError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, 429, "Too many requests".into()),
             _ => {
                 tracing::error!("Internal error: {:?}", &self);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    500,
-                    "Internal error".into(),
-                )
+                (StatusCode::INTERNAL_SERVER_ERROR, 500, "Internal error".into())
             }
         };
 

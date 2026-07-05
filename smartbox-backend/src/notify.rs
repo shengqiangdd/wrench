@@ -43,8 +43,7 @@ pub async fn dispatch_alert(
     host: &str,
     message: &str,
 ) -> Result<bool, String> {
-    let config: Value = serde_json::from_str(&channel.config)
-        .map_err(|e| format!("Invalid channel config: {}", e))?;
+    let config: Value = serde_json::from_str(&channel.config).map_err(|e| format!("Invalid channel config: {}", e))?;
 
     // Check alert filters (optional)
     if let Some(filters) = config.get("alert_filters") {
@@ -71,18 +70,17 @@ pub async fn dispatch_alert(
 fn should_send_alert(filters: &Value, level: &AlertLevel, metric: &str) -> bool {
     // Check level filter
     if let Some(levels) = filters.get("levels").and_then(|v| v.as_array()) {
-        if !levels.iter().any(|l| {
-            l.as_str().is_some_and(|s| AlertLevel::parse_level(s) == *level)
-        }) {
+        if !levels
+            .iter()
+            .any(|l| l.as_str().is_some_and(|s| AlertLevel::parse_level(s) == *level))
+        {
             return false;
         }
     }
 
     // Check metric filter
     if let Some(metrics) = filters.get("metrics").and_then(|v| v.as_array()) {
-        if !metrics.iter().any(|m| {
-            m.as_str().is_some_and(|s| metric.contains(s))
-        }) {
+        if !metrics.iter().any(|m| m.as_str().is_some_and(|s| metric.contains(s))) {
             return false;
         }
     }
@@ -155,10 +153,7 @@ async fn send_telegram(config: &Value, body: &str) -> Result<bool, String> {
         .get("botToken")
         .and_then(|v| v.as_str())
         .ok_or("Missing botToken")?;
-    let chat_id = config
-        .get("chatId")
-        .and_then(|v| v.as_str())
-        .ok_or("Missing chatId")?;
+    let chat_id = config.get("chatId").and_then(|v| v.as_str()).ok_or("Missing chatId")?;
 
     let url = format!("https://api.telegram.org/bot{}/sendMessage", token);
     let payload = serde_json::json!({
@@ -241,12 +236,7 @@ mod tests {
 
     #[test]
     fn test_format_alert_message() {
-        let msg = format_alert_message(
-            &AlertLevel::Critical,
-            "cpu",
-            "server-01",
-            "CPU usage > 90%",
-        );
+        let msg = format_alert_message(&AlertLevel::Critical, "cpu", "server-01", "CPU usage > 90%");
         assert!(msg.contains("CRITICAL"));
         assert!(msg.contains("server-01"));
         assert!(msg.contains("cpu"));

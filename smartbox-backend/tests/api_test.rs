@@ -1,12 +1,12 @@
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use axum::Router;
+use std::path::PathBuf;
 /// Integration tests for SmartBox backend.
 ///
 /// Uses in-process request/response via `tower::ServiceExt::oneshot`
 /// to exercise the full router stack without spawning an HTTP server.
 use std::sync::Arc;
-use std::path::PathBuf;
-use axum::body::Body;
-use axum::http::{Request, StatusCode};
-use axum::Router;
 use tower::ServiceExt;
 
 use smartbox_backend::app_state::AppState;
@@ -38,14 +38,12 @@ async fn build_test_app() -> Router {
 #[test]
 fn test_app_state_creation() {
     let config = test_config();
-    tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(async {
-            let state = AppState::new(config).await.expect("Failed to create AppState");
-            assert!(state.connections.is_empty());
-            assert!(state.docker_clients.is_empty());
-            assert!(state.ws_tokens.is_empty());
-        });
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let state = AppState::new(config).await.expect("Failed to create AppState");
+        assert!(state.connections.is_empty());
+        assert!(state.docker_clients.is_empty());
+        assert!(state.ws_tokens.is_empty());
+    });
 }
 
 /// Verify that a JWT can be signed and verified.
@@ -70,10 +68,7 @@ async fn test_build_app_creates_router() {
 #[tokio::test]
 async fn health_check_returns_200() {
     let app = build_test_app().await;
-    let req = Request::builder()
-        .uri("/api/health")
-        .body(Body::from(""))
-        .unwrap();
+    let req = Request::builder().uri("/api/health").body(Body::from("")).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
@@ -82,10 +77,7 @@ async fn health_check_returns_200() {
 #[tokio::test]
 async fn unknown_route_returns_404() {
     let app = build_test_app().await;
-    let req = Request::builder()
-        .uri("/api/nonexistent")
-        .body(Body::from(""))
-        .unwrap();
+    let req = Request::builder().uri("/api/nonexistent").body(Body::from("")).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
@@ -94,10 +86,7 @@ async fn unknown_route_returns_404() {
 #[tokio::test]
 async fn protected_routes_require_auth() {
     let app = build_test_app().await;
-    let req = Request::builder()
-        .uri("/api/plugins")
-        .body(Body::from(""))
-        .unwrap();
+    let req = Request::builder().uri("/api/plugins").body(Body::from("")).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
@@ -139,10 +128,7 @@ async fn authenticated_request_passes_auth() {
 #[tokio::test]
 async fn vault_requires_auth() {
     let app = build_test_app().await;
-    let req = Request::builder()
-        .uri("/api/vault")
-        .body(Body::from(""))
-        .unwrap();
+    let req = Request::builder().uri("/api/vault").body(Body::from("")).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }

@@ -20,10 +20,7 @@ fn txt(s: String) -> axum::extract::ws::Utf8Bytes {
 
 /// Main WebSocket handler — the one the frontend actually connects to.
 /// Dispatches messages by `type` field.
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -35,10 +32,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
         match socket.recv().await {
             Some(Ok(Message::Text(text))) => {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                    let msg_type = parsed
-                        .get("type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
                     match msg_type {
                         "ping" => {
@@ -64,24 +58,15 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                         "logtail_stop" => {
                             // If we receive a stop in the main loop (e.g. disconnect),
                             // cancel any active logtail for this connection
-                            let conn_id = parsed
-                                .get("connectionId")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            let log_path = parsed
-                                .get("logPath")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
+                            let conn_id = parsed.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
+                            let log_path = parsed.get("logPath").and_then(|v| v.as_str()).unwrap_or("");
                             let key = format!("{}:{}", conn_id, log_path);
                             if let Some((_, sender)) = state.active_logtails.remove(&key) {
                                 let _ = sender.send(());
                             }
                         }
                         "disconnect" => {
-                            let conn_id = parsed
-                                .get("connectionId")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
+                            let conn_id = parsed.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
                             if !conn_id.is_empty() {
                                 let _ = state.connections.remove(conn_id);
                                 let ack = serde_json::json!({
@@ -125,11 +110,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 // ========== Terminal (interactive shell) ==========
 
 /// Handle "connect" message — open an interactive SSH shell and enter I/O loop.
-async fn handle_terminal_connect(
-    socket: &mut WebSocket,
-    state: &Arc<AppState>,
-    msg: &serde_json::Value,
-) {
+async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
     let connection_id = msg
         .get("connectionId")
         .and_then(|v| v.as_str())
@@ -177,11 +158,7 @@ async fn handle_terminal_connect(
         "type": "connected",
         "connectionId": connection_id
     });
-    if socket
-        .send(Message::Text(txt(ack.to_string())))
-        .await
-        .is_err()
-    {
+    if socket.send(Message::Text(txt(ack.to_string()))).await.is_err() {
         return;
     }
 
@@ -322,11 +299,7 @@ async fn handle_terminal_connect(
 /// Parses the incoming message as a typed `SftpRequest`, looks up the
 /// SSH session, delegates to the type-safe `ssh::sftp` functions, and
 /// sends a typed `SftpResponse` — entirely eliminating raw `serde_json::Value`.
-async fn handle_sftp_operation(
-    socket: &mut WebSocket,
-    state: &Arc<AppState>,
-    msg: &serde_json::Value,
-) {
+async fn handle_sftp_operation(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
     // ── 1. 解析为强类型请求（消除 .get("field") 模式） ──
     let req: SftpRequest = match serde_json::from_value(msg.clone()) {
         Ok(r) => r,
@@ -370,16 +343,11 @@ async fn handle_sftp_operation(
     };
 
     let _ = socket
-        .send(Message::Text(txt(
-            serde_json::to_string(&response).unwrap_or_default(),
-        )))
+        .send(Message::Text(txt(serde_json::to_string(&response).unwrap_or_default())))
         .await;
 }
 
-async fn handle_sftp_list(
-    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
-    req: &SftpRequest,
-) -> SftpResponse {
+async fn handle_sftp_list(session: &std::sync::Arc<crate::ssh::pool::SshSession>, req: &SftpRequest) -> SftpResponse {
     let path = req.path.as_deref().unwrap_or(".");
     match crate::ssh::sftp::list_directory(session, path).await {
         Ok(files) => SftpResponse::success("list").with_files(files),
@@ -425,10 +393,7 @@ async fn handle_sftp_writefile(
     }
 }
 
-async fn handle_sftp_mkdir(
-    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
-    req: &SftpRequest,
-) -> SftpResponse {
+async fn handle_sftp_mkdir(session: &std::sync::Arc<crate::ssh::pool::SshSession>, req: &SftpRequest) -> SftpResponse {
     let path = match req.path.as_deref() {
         Some(p) => p,
         None => return SftpResponse::error("mkdir", "Missing path"),
@@ -439,10 +404,7 @@ async fn handle_sftp_mkdir(
     }
 }
 
-async fn handle_sftp_rmdir(
-    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
-    req: &SftpRequest,
-) -> SftpResponse {
+async fn handle_sftp_rmdir(session: &std::sync::Arc<crate::ssh::pool::SshSession>, req: &SftpRequest) -> SftpResponse {
     let path = match req.path.as_deref() {
         Some(p) => p,
         None => return SftpResponse::error("rmdir", "Missing path"),
@@ -453,10 +415,7 @@ async fn handle_sftp_rmdir(
     }
 }
 
-async fn handle_sftp_unlink(
-    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
-    req: &SftpRequest,
-) -> SftpResponse {
+async fn handle_sftp_unlink(session: &std::sync::Arc<crate::ssh::pool::SshSession>, req: &SftpRequest) -> SftpResponse {
     let path = match req.path.as_deref() {
         Some(p) => p,
         None => return SftpResponse::error("unlink", "Missing path"),
@@ -467,10 +426,7 @@ async fn handle_sftp_unlink(
     }
 }
 
-async fn handle_sftp_rename(
-    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
-    req: &SftpRequest,
-) -> SftpResponse {
+async fn handle_sftp_rename(session: &std::sync::Arc<crate::ssh::pool::SshSession>, req: &SftpRequest) -> SftpResponse {
     let path = match req.path.as_deref() {
         Some(p) => p,
         None => return SftpResponse::error("rename", "Missing path"),
@@ -485,10 +441,7 @@ async fn handle_sftp_rename(
     }
 }
 
-async fn handle_sftp_stat(
-    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
-    req: &SftpRequest,
-) -> SftpResponse {
+async fn handle_sftp_stat(session: &std::sync::Arc<crate::ssh::pool::SshSession>, req: &SftpRequest) -> SftpResponse {
     let path = match req.path.as_deref() {
         Some(p) => p,
         None => return SftpResponse::error("stat", "Missing path"),
@@ -503,26 +456,14 @@ async fn handle_sftp_stat(
 
 /// Handle logtail_start message.
 /// Spawns SSH exec `tail -f` and streams output to the WebSocket.
-async fn handle_logtail_start(
-    socket: &mut WebSocket,
-    state: &Arc<AppState>,
-    msg: &serde_json::Value,
-) {
+async fn handle_logtail_start(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
     let connection_id = msg
         .get("connectionId")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let log_path = msg
-        .get("logPath")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let request_id = msg
-        .get("requestId")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let log_path = msg.get("logPath").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let request_id = msg.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
     // Default 200, clamped to [10, 5000]
     let n = msg
         .get("lines")
@@ -591,11 +532,7 @@ async fn handle_logtail_start(
         "requestId": request_id,
         "logPath": log_path,
     });
-    if socket
-        .send(Message::Text(txt(ack.to_string())))
-        .await
-        .is_err()
-    {
+    if socket.send(Message::Text(txt(ack.to_string()))).await.is_err() {
         return;
     }
 
@@ -690,21 +627,13 @@ async fn handle_logtail_start(
 // ========== Docker Shell (docker exec -it via SSH) ==========
 
 /// Handle "docker_shell" message — SSH docker exec -it into a container and enter I/O loop.
-async fn handle_docker_shell(
-    socket: &mut WebSocket,
-    state: &Arc<AppState>,
-    msg: &serde_json::Value,
-) {
+async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
     let connection_id = msg
         .get("connectionId")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let request_id = msg
-        .get("requestId")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let request_id = msg.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let container_id = msg
         .get("containerId")
         .and_then(|v| v.as_str())
@@ -795,11 +724,7 @@ async fn handle_docker_shell(
         "containerId": container_id,
         "shell": shell,
     });
-    if socket
-        .send(Message::Text(txt(ack.to_string())))
-        .await
-        .is_err()
-    {
+    if socket.send(Message::Text(txt(ack.to_string()))).await.is_err() {
         return;
     }
 
@@ -935,10 +860,10 @@ async fn handle_docker_shell(
         "containerId": container_id,
     });
     if let Some(code) = exit_code {
-        closed.as_object_mut().unwrap().insert(
-            "exitCode".to_string(),
-            serde_json::json!(code),
-        );
+        closed
+            .as_object_mut()
+            .unwrap()
+            .insert("exitCode".to_string(), serde_json::json!(code));
     }
     let _ = socket.send(Message::Text(txt(closed.to_string()))).await;
     info!("Docker shell ended: {} -> {}", connection_id, container_id);
@@ -948,11 +873,7 @@ async fn handle_docker_shell(
 
 /// Flush any buffered terminal output data as a single WebSocket message.
 /// Used when a channel is closing to ensure no data is lost.
-async fn send_buffered_data(
-    buffer: &mut Vec<u8>,
-    socket: &mut WebSocket,
-    connection_id: &str,
-) {
+async fn send_buffered_data(buffer: &mut Vec<u8>, socket: &mut WebSocket, connection_id: &str) {
     if !buffer.is_empty() {
         let encoded = base64::engine::general_purpose::STANDARD.encode(buffer.as_slice());
         buffer.clear();

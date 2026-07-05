@@ -21,14 +21,7 @@ fn s(body: &serde_json::Value, key: &str) -> String {
 }
 
 /// Log an audit event for SFTP operations.
-fn audit(
-    state: &AppState,
-    action: &str,
-    connection_id: &str,
-    host: &str,
-    username: &str,
-    detail: serde_json::Value,
-) {
+fn audit(state: &AppState, action: &str, connection_id: &str, host: &str, username: &str, detail: serde_json::Value) {
     let ip = "0.0.0.0".to_string();
     let full = serde_json::json!({
         "connection_id": connection_id,
@@ -54,8 +47,14 @@ pub async fn sftp_list_dir(
 
     match crate::ssh::sftp::list_directory(&session, &path).await {
         Ok(entries) => {
-            audit(&state, "sftp_list", &connection_id, &host, &username,
-                serde_json::json!({"path": path, "entries": entries.len()}));
+            audit(
+                &state,
+                "sftp_list",
+                &connection_id,
+                &host,
+                &username,
+                serde_json::json!({"path": path, "entries": entries.len()}),
+            );
             Json(ApiResponse::success(entries))
         }
         Err(e) => Json(ApiResponse::error(2, &e)),
@@ -84,8 +83,14 @@ pub async fn sftp_upload(
 
     match crate::ssh::sftp::upload_file(&session, &remote_path, data).await {
         Ok(_) => {
-            audit(&state, "sftp_upload", &connection_id, &host, &username,
-                serde_json::json!({"path": remote_path}));
+            audit(
+                &state,
+                "sftp_upload",
+                &connection_id,
+                &host,
+                &username,
+                serde_json::json!({"path": remote_path}),
+            );
             Json(ApiResponse::success(()))
         }
         Err(e) => Json(ApiResponse::error(4, &e)),
@@ -107,8 +112,14 @@ pub async fn sftp_download(
 
     match crate::ssh::sftp::download_file(&session, &remote_path).await {
         Ok(data) => {
-            audit(&state, "sftp_download", &connection_id, &host, &username,
-                serde_json::json!({"path": remote_path, "size": data.len()}));
+            audit(
+                &state,
+                "sftp_download",
+                &connection_id,
+                &host,
+                &username,
+                serde_json::json!({"path": remote_path, "size": data.len()}),
+            );
             let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
             Json(ApiResponse::success(b64))
         }
@@ -132,8 +143,14 @@ pub async fn sftp_delete(
 
     match crate::ssh::sftp::delete_file(&session, &path, recursive).await {
         Ok(_) => {
-            audit(&state, "sftp_delete", &connection_id, &host, &username,
-                serde_json::json!({"path": path, "recursive": recursive}));
+            audit(
+                &state,
+                "sftp_delete",
+                &connection_id,
+                &host,
+                &username,
+                serde_json::json!({"path": path, "recursive": recursive}),
+            );
             Json(ApiResponse::success(()))
         }
         Err(e) => Json(ApiResponse::error(6, &e)),
@@ -155,8 +172,14 @@ pub async fn sftp_mkdir(
 
     match crate::ssh::sftp::create_dir(&session, &path).await {
         Ok(_) => {
-            audit(&state, "sftp_mkdir", &connection_id, &host, &username,
-                serde_json::json!({"path": path}));
+            audit(
+                &state,
+                "sftp_mkdir",
+                &connection_id,
+                &host,
+                &username,
+                serde_json::json!({"path": path}),
+            );
             Json(ApiResponse::success(()))
         }
         Err(e) => Json(ApiResponse::error(7, &e)),
@@ -179,8 +202,14 @@ pub async fn sftp_rename(
 
     match crate::ssh::sftp::rename(&session, &from, &to).await {
         Ok(_) => {
-            audit(&state, "sftp_rename", &connection_id, &host, &username,
-                serde_json::json!({"from": from, "to": to}));
+            audit(
+                &state,
+                "sftp_rename",
+                &connection_id,
+                &host,
+                &username,
+                serde_json::json!({"from": from, "to": to}),
+            );
             Json(ApiResponse::success(()))
         }
         Err(e) => Json(ApiResponse::error(8, &e)),

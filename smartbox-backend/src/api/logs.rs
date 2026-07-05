@@ -6,9 +6,7 @@ use crate::app_state::AppState;
 use crate::response::ApiResponse;
 
 /// List available log sources (GET /api/log-sources)
-pub async fn list_sources(
-    State(_state): State<Arc<AppState>>,
-) -> ApiResponse<Vec<LogSource>> {
+pub async fn list_sources(State(_state): State<Arc<AppState>>) -> ApiResponse<Vec<LogSource>> {
     let mut sources: Vec<LogSource> = Vec::new();
 
     // Detect common log directories
@@ -32,19 +30,13 @@ pub async fn list_sources(
     // Check which common log files exist locally
     for (path, label) in &common_logs {
         if std::path::Path::new(path).exists() {
-            sources.push(LogSource {
-                path: path.to_string(),
-                label: label.to_string(),
-            });
+            sources.push(LogSource { path: path.to_string(), label: label.to_string() });
         }
     }
 
     // Always include syslog if sources is empty (fallback)
     if sources.is_empty() {
-        sources.push(LogSource {
-            path: "/var/log/syslog".into(),
-            label: "System Log (syslog)".into(),
-        });
+        sources.push(LogSource { path: "/var/log/syslog".into(), label: "System Log (syslog)".into() });
     }
 
     ApiResponse::success(sources)
@@ -55,14 +47,8 @@ pub async fn tail_log(
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> ApiResponse<LogTailResponse> {
-    let path = body
-        .get("path")
-        .and_then(|v| v.as_str())
-        .unwrap_or("/var/log/syslog");
-    let lines = body
-        .get("lines")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(50) as usize;
+    let path = body.get("path").and_then(|v| v.as_str()).unwrap_or("/var/log/syslog");
+    let lines = body.get("lines").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
     // Get SSH connection — use first connected host or fall back to local
     let entry = state.connections.iter().next();
@@ -72,12 +58,7 @@ pub async fn tail_log(
             match session {
                 Some(s) => {
                     let cmd = format!("tail -n {} \"{}\" 2>/dev/null || echo 'File not found: {}'", lines, path, path);
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(15),
-                        s.exec(&cmd),
-                    )
-                    .await
-                    {
+                    match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                         Ok(Ok((stdout, _, _))) => Some(stdout),
                         _ => None,
                     }
@@ -105,14 +86,8 @@ pub async fn grep_log(
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> ApiResponse<GrepResponse> {
-    let pattern = body
-        .get("pattern")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let path = body
-        .get("path")
-        .and_then(|v| v.as_str())
-        .unwrap_or("/var/log/syslog");
+    let pattern = body.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+    let path = body.get("path").and_then(|v| v.as_str()).unwrap_or("/var/log/syslog");
 
     if pattern.is_empty() {
         return ApiResponse::error(-1, "pattern required");
@@ -125,13 +100,11 @@ pub async fn grep_log(
             let session = e.value().session.as_ref();
             match session {
                 Some(s) => {
-                    let cmd = format!("grep -i '{}' \"{}\" 2>/dev/null | tail -200 || echo 'No matches or file not found'", pattern, path);
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(15),
-                        s.exec(&cmd),
-                    )
-                    .await
-                    {
+                    let cmd = format!(
+                        "grep -i '{}' \"{}\" 2>/dev/null | tail -200 || echo 'No matches or file not found'",
+                        pattern, path
+                    );
+                    match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                         Ok(Ok((stdout, _, _))) => Some(stdout),
                         _ => None,
                     }
@@ -150,9 +123,5 @@ pub async fn grep_log(
     };
 
     let content = content.unwrap_or_else(|| format!("Unable to grep: {}", path));
-    ApiResponse::success(GrepResponse {
-        content,
-        pattern: pattern.to_string(),
-        path: path.to_string(),
-    })
+    ApiResponse::success(GrepResponse { content, pattern: pattern.to_string(), path: path.to_string() })
 }

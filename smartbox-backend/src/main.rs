@@ -1,9 +1,9 @@
-use std::path::PathBuf;
-use std::time::Duration;
 use smartbox_backend::build_app;
 use smartbox_backend::config::AppConfig;
 use smartbox_backend::AppState;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 fn print_usage() {
@@ -40,10 +40,7 @@ fn install_shutdown_signal() -> std::sync::Arc<tokio::sync::Notify> {
                     n.notify_one();
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Failed to install SIGINT handler ({}), graceful Ctrl+C will not work",
-                        e
-                    );
+                    tracing::warn!("Failed to install SIGINT handler ({}), graceful Ctrl+C will not work", e);
                 }
             }
         });
@@ -61,10 +58,7 @@ fn install_shutdown_signal() -> std::sync::Arc<tokio::sync::Notify> {
                     n.notify_one();
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Failed to install SIGTERM handler ({}), graceful docker stop will not work",
-                        e
-                    );
+                    tracing::warn!("Failed to install SIGTERM handler ({}), graceful docker stop will not work", e);
                 }
             }
         });
@@ -145,7 +139,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Load config
     let config = AppConfig::from_env()?;
-    tracing::info!("Starting SmartBox Backend PID={} on {}:{}", std::process::id(), config.host, config.port);
+    tracing::info!(
+        "Starting SmartBox Backend PID={} on {}:{}",
+        std::process::id(),
+        config.host,
+        config.port
+    );
     tracing::info!("Frontend dist: {:?}", config.frontend_dist);
     tracing::info!("Database: {:?}", config.database_url);
     tracing::info!("Plugins dir: {:?}", config.plugins_dir);
@@ -165,11 +164,7 @@ async fn main() -> anyhow::Result<()> {
         loop {
             interval.tick().await;
             let mut disconnected = 0usize;
-            let ids: Vec<String> = cleanup_state
-                .connections
-                .iter()
-                .map(|e| e.key().clone())
-                .collect();
+            let ids: Vec<String> = cleanup_state.connections.iter().map(|e| e.key().clone()).collect();
             for id in ids {
                 // Remove connection if session is idle or closed
                 let should_remove = {
@@ -238,10 +233,7 @@ async fn cmd_db_backup(output: &PathBuf) -> anyhow::Result<()> {
     }
 
     // Use SQLite's backup API via rusqlite
-    let src_conn = rusqlite::Connection::open_with_flags(
-        &src,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )?;
+    let src_conn = rusqlite::Connection::open_with_flags(&src, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
 
     let mut dst_conn = rusqlite::Connection::open(output)?;
 
@@ -276,10 +268,7 @@ async fn cmd_db_restore(input: &PathBuf) -> anyhow::Result<()> {
     eprintln!("WARNING: This will OVERWRITE the current database at: {}", dst.display());
     eprintln!("Restore from backup: {}", input.display());
 
-    let src_conn = rusqlite::Connection::open_with_flags(
-        input,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )?;
+    let src_conn = rusqlite::Connection::open_with_flags(input, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
 
     let mut dst_conn = rusqlite::Connection::open(&dst)?;
 

@@ -1,9 +1,7 @@
 use axum::{extract::State, Json};
 use std::sync::Arc;
 
-use crate::api_types::{
-    SshConnectResponse, SshDisconnectRequest, SshExecRequest, SshExecResponse,
-};
+use crate::api_types::{SshConnectResponse, SshDisconnectRequest, SshExecRequest, SshExecResponse};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
 use crate::ssh::client::{ConnectRequest, SshConnection};
@@ -58,11 +56,7 @@ pub async fn exec_command(
             let ip = "0.0.0.0".to_string();
             state.add_audit_log("ssh_exec", detail, &ip);
 
-            ApiResponse::success(SshExecResponse {
-                stdout,
-                stderr,
-                exit_code: exit_code as i32,
-            })
+            ApiResponse::success(SshExecResponse { stdout, stderr, exit_code: exit_code as i32 })
         }
         Err(e) => ApiResponse::error(500, &format!("SSH exec error: {}", e)),
     }
@@ -84,27 +78,15 @@ pub async fn connect_ssh(
     if let Some(password) = &body.password {
         if !password.is_empty() && session.connect_password(password).await.is_ok() {
             save_connection(&state, &connection_id, &host, port, &username, session).await;
-            return ApiResponse::success(SshConnectResponse {
-                connection_id,
-                host,
-                port,
-                username,
-            });
+            return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
         }
     }
 
     // Try key auth
     if let Some(private_key) = &body.private_key {
-        if !private_key.is_empty()
-            && session.connect_key(private_key, None).await.is_ok()
-        {
+        if !private_key.is_empty() && session.connect_key(private_key, None).await.is_ok() {
             save_connection(&state, &connection_id, &host, port, &username, session).await;
-            return ApiResponse::success(SshConnectResponse {
-                connection_id,
-                host,
-                port,
-                username,
-            });
+            return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
         }
     }
 

@@ -4,21 +4,21 @@
 //! Integrates with the Secret Vault: `auth_type = "vault_ref"` stores a
 //! vault entry ID in `config.vault_entry_id` for encrypted credential retrieval.
 
-use std::sync::Arc;
+use crate::app_state::AppState;
+use crate::db::SshConnection;
+use crate::error::AppError;
+use crate::response::ApiResponse;
 use axum::{
     extract::{Path, State},
     Json,
 };
 use serde::{Deserialize, Serialize};
-use crate::db::SshConnection;
-use crate::app_state::AppState;
-use crate::response::ApiResponse;
-use crate::error::AppError;
+use std::sync::Arc;
 
 /// JSON body for creating/updating an SSH connection.
 #[derive(Debug, Deserialize)]
 pub struct UpsertConnectionRequest {
-    pub id: Option<String>,           // omit or null for new; provide to update
+    pub id: Option<String>, // omit or null for new; provide to update
     pub name: String,
     pub host: String,
     #[serde(default = "default_port")]
@@ -28,14 +28,20 @@ pub struct UpsertConnectionRequest {
     #[serde(default = "default_auth_type")]
     pub auth_type: String,
     #[serde(default)]
-    pub config: String,               // JSON string
+    pub config: String, // JSON string
     #[serde(default)]
     pub sort_order: i32,
 }
 
-fn default_port() -> u16 { 22 }
-fn default_username() -> String { "root".to_string() }
-fn default_auth_type() -> String { "password".to_string() }
+fn default_port() -> u16 {
+    22
+}
+fn default_username() -> String {
+    "root".to_string()
+}
+fn default_auth_type() -> String {
+    "password".to_string()
+}
 
 /// JSON response body for a connection.
 #[derive(Debug, Serialize)]
@@ -73,8 +79,14 @@ impl From<SshConnection> for ConnectionResponse {
 pub async fn list_connections(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<ConnectionResponse>>>, AppError> {
-    let db = state.db.as_ref().ok_or_else(|| AppError::NotFound("Database not available".into()))?;
-    let conns = db.list_ssh_connections().await.map_err(|e| AppError::Internal(e.to_string()))?;
+    let db = state
+        .db
+        .as_ref()
+        .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
+    let conns = db
+        .list_ssh_connections()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     let resp: Vec<ConnectionResponse> = conns.into_iter().map(Into::into).collect();
     Ok(Json(ApiResponse::success(resp)))
 }
@@ -84,7 +96,10 @@ pub async fn upsert_connection(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<UpsertConnectionRequest>,
 ) -> Result<Json<ApiResponse<ConnectionResponse>>, AppError> {
-    let db = state.db.as_ref().ok_or_else(|| AppError::NotFound("Database not available".into()))?;
+    let db = state
+        .db
+        .as_ref()
+        .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
     let now = chrono::Utc::now().to_rfc3339();
     let id = payload.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
@@ -101,8 +116,12 @@ pub async fn upsert_connection(
         updated_at: now,
     };
 
-    db.upsert_ssh_connection(&conn).await.map_err(|e| AppError::Internal(e.to_string()))?;
-    let saved = db.list_ssh_connections().await
+    db.upsert_ssh_connection(&conn)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let saved = db
+        .list_ssh_connections()
+        .await
         .map_err(|e| AppError::Internal(e.to_string()))?
         .into_iter()
         .find(|c| c.id == conn.id)
@@ -116,8 +135,14 @@ pub async fn delete_connection(
     State(state): State<Arc<AppState>>,
     Path(connection_id): Path<String>,
 ) -> Result<Json<ApiResponse<bool>>, AppError> {
-    let db = state.db.as_ref().ok_or_else(|| AppError::NotFound("Database not available".into()))?;
-    let deleted = db.delete_ssh_connection(&connection_id).await.map_err(|e| AppError::Internal(e.to_string()))?;
+    let db = state
+        .db
+        .as_ref()
+        .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
+    let deleted = db
+        .delete_ssh_connection(&connection_id)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     if !deleted {
         return Err(AppError::NotFound("Connection not found".into()));
     }

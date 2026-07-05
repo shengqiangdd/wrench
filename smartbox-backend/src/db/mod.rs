@@ -37,9 +37,7 @@ impl Database {
              PRAGMA foreign_keys=ON;",
         )?;
 
-        let db = Self {
-            conn: Arc::new(Mutex::new(conn)),
-        };
+        let db = Self { conn: Arc::new(Mutex::new(conn)) };
 
         db.migrate().await?;
         tracing::info!("SQLite database ready: {}", path.display());
@@ -56,9 +54,7 @@ impl Database {
              PRAGMA foreign_keys=ON;",
         )?;
 
-        let db = Self {
-            conn: Arc::new(Mutex::new(conn)),
-        };
+        let db = Self { conn: Arc::new(Mutex::new(conn)) };
 
         db.migrate().await?;
         Ok(db)
@@ -99,13 +95,7 @@ impl Database {
     // ─── Audit Logs ──────────────────────────────────────────────
 
     /// Insert an audit log entry asynchronously.
-    pub async fn insert_audit_log(
-        &self,
-        timestamp: &str,
-        action: &str,
-        detail: &str,
-        ip: &str,
-    ) -> anyhow::Result<i64> {
+    pub async fn insert_audit_log(&self, timestamp: &str, action: &str, detail: &str, ip: &str) -> anyhow::Result<i64> {
         let ts = timestamp.to_string();
         let act = action.to_string();
         let det = detail.to_string();
@@ -122,10 +112,7 @@ impl Database {
     }
 
     /// Load recent audit logs (most recent first).
-    pub async fn load_recent_audit_logs(
-        &self,
-        limit: usize,
-    ) -> anyhow::Result<Vec<AuditEntry>> {
+    pub async fn load_recent_audit_logs(&self, limit: usize) -> anyhow::Result<Vec<AuditEntry>> {
         let limit_i64 = limit as i64;
 
         self.exec(move |conn| {
@@ -143,15 +130,9 @@ impl Database {
                 let detail_str: String = row.get(3)?;
                 let ip: String = row.get(4)?;
 
-                let detail: serde_json::Value =
-                    serde_json::from_str(&detail_str).unwrap_or(serde_json::Value::Null);
+                let detail: serde_json::Value = serde_json::from_str(&detail_str).unwrap_or(serde_json::Value::Null);
 
-                Ok(AuditEntry {
-                    timestamp,
-                    action,
-                    detail,
-                    ip,
-                })
+                Ok(AuditEntry { timestamp, action, detail, ip })
             })?;
 
             let mut entries = Vec::new();
@@ -168,10 +149,7 @@ impl Database {
     // ─── Alerts ──────────────────────────────────────────────────
 
     /// Insert an alert entry asynchronously.
-    pub async fn insert_alert(
-        &self,
-        alert: &AlertEntry,
-    ) -> anyhow::Result<i64> {
+    pub async fn insert_alert(&self, alert: &AlertEntry) -> anyhow::Result<i64> {
         let id = alert.id.clone();
         let timestamp = alert.timestamp.clone();
         let level = alert.level.clone();
@@ -329,10 +307,7 @@ impl Database {
     pub async fn delete_vault_entry(&self, entry_id: &str) -> anyhow::Result<bool> {
         let id = entry_id.to_string();
         self.exec(move |conn| {
-            let affected = conn.execute(
-                "DELETE FROM vault_entries WHERE id = ?1",
-                rusqlite::params![id],
-            )?;
+            let affected = conn.execute("DELETE FROM vault_entries WHERE id = ?1", rusqlite::params![id])?;
             Ok(affected > 0)
         })
         .await
@@ -397,10 +372,7 @@ impl Database {
     pub async fn delete_notification_channel(&self, channel_id: &str) -> anyhow::Result<bool> {
         let id = channel_id.to_string();
         self.exec(move |conn| {
-            let affected = conn.execute(
-                "DELETE FROM notification_channels WHERE id = ?1",
-                rusqlite::params![id],
-            )?;
+            let affected = conn.execute("DELETE FROM notification_channels WHERE id = ?1", rusqlite::params![id])?;
             Ok(affected > 0)
         })
         .await
@@ -429,7 +401,7 @@ impl Database {
         self.exec(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, name, host, port, username, auth_type, config, sort_order, created_at, updated_at
-                 FROM ssh_connections ORDER BY sort_order ASC"
+                 FROM ssh_connections ORDER BY sort_order ASC",
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok(SshConnection {
@@ -450,7 +422,8 @@ impl Database {
                 list.push(row?);
             }
             Ok(list)
-        }).await
+        })
+        .await
     }
 
     /// Upsert an SSH connection.
@@ -486,29 +459,26 @@ impl Database {
         self.exec(move |c| {
             let affected = c.execute("DELETE FROM ssh_connections WHERE id = ?1", rusqlite::params![id])?;
             Ok(affected > 0)
-        }).await
+        })
+        .await
     }
 
     /// List all tables and their row counts (for system maintenance UI).
     pub async fn list_table_counts(&self) -> anyhow::Result<Vec<(String, i64)>> {
         self.exec(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
             )?;
-            let table_names: Vec<String> = stmt.query_map([], |row| row.get(0))?
-                .collect::<Result<_, _>>()?;
+            let table_names: Vec<String> = stmt.query_map([], |row| row.get(0))?.collect::<Result<_, _>>()?;
 
             let mut tables = Vec::new();
             for name in &table_names {
-                let count: i64 = conn.query_row(
-                    &format!("SELECT COUNT(*) FROM \"{}\"", name),
-                    [],
-                    |row| row.get(0),
-                )?;
+                let count: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM \"{}\"", name), [], |row| row.get(0))?;
                 tables.push((name.clone(), count));
             }
             Ok(tables)
-        }).await
+        })
+        .await
     }
 }
 
@@ -519,9 +489,9 @@ impl Database {
 pub struct VaultEntry {
     pub id: String,
     pub name: String,
-    pub kind: String,       // ssh_key | api_key | password | note
+    pub kind: String, // ssh_key | api_key | password | note
     pub encrypted_value: String,
-    pub tags: String,       // JSON array
+    pub tags: String, // JSON array
     pub created_at: String,
     pub updated_at: String,
 }
@@ -546,8 +516,8 @@ pub struct SshConnection {
     pub host: String,
     pub port: u16,
     pub username: String,
-    pub auth_type: String,   // password | key | vault_ref
-    pub config: String,      // JSON: {password, private_key, vault_entry_id, sudo_password, group}
+    pub auth_type: String, // password | key | vault_ref
+    pub config: String,    // JSON: {password, private_key, vault_entry_id, sudo_password, group}
     pub sort_order: i32,
     pub created_at: String,
     pub updated_at: String,
@@ -644,14 +614,9 @@ mod tests {
         let db = rt.block_on(test_db());
 
         rt.block_on(async move {
-            db.insert_audit_log(
-                "2026-01-01T00:00:00Z",
-                "ssh_connect",
-                r#"{"host":"192.168.1.1"}"#,
-                "10.0.0.1",
-            )
-            .await
-            .unwrap();
+            db.insert_audit_log("2026-01-01T00:00:00Z", "ssh_connect", r#"{"host":"192.168.1.1"}"#, "10.0.0.1")
+                .await
+                .unwrap();
 
             let logs = db.load_recent_audit_logs(10).await.unwrap();
             assert_eq!(logs.len(), 1);
@@ -782,10 +747,7 @@ mod tests {
             assert_eq!(found.encrypted_value, "encrypted-data-1");
 
             // Update
-            let updated = VaultEntry {
-                name: "My Updated Key".into(),
-                ..e1
-            };
+            let updated = VaultEntry { name: "My Updated Key".into(), ..e1 };
             let ok = db.update_vault_entry(&updated).await.unwrap();
             assert!(ok);
 
@@ -828,11 +790,7 @@ mod tests {
             assert!(list[0].enabled);
 
             // Upsert (update)
-            let updated = NotificationChannel {
-                name: "Discord Ops Updated".into(),
-                enabled: false,
-                ..ch
-            };
+            let updated = NotificationChannel { name: "Discord Ops Updated".into(), enabled: false, ..ch };
             db.upsert_notification_channel(&updated).await.unwrap();
 
             let list2 = db.list_notification_channels().await.unwrap();

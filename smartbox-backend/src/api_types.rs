@@ -293,4 +293,3 @@ pub struct VaultTypeInfo {
 pub struct VaultTypesResponse {
     pub types: Vec<VaultTypeInfo>,
 }
-

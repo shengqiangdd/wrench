@@ -11,13 +11,12 @@ pub fn validate_host(host: &str) -> bool {
     let ipv4_re = Regex::new(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$").unwrap();
     if ipv4_re.is_match(host) {
         let parts: Vec<&str> = host.split('.').collect();
-        return parts.iter().all(|p| {
-            p.parse::<u8>().is_ok()
-        });
+        return parts.iter().all(|p| p.parse::<u8>().is_ok());
     }
 
     // Hostname (simple check)
-    let hostname_re = Regex::new(r"^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$").unwrap();
+    let hostname_re =
+        Regex::new(r"^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$").unwrap();
     hostname_re.is_match(host)
 }
 
@@ -65,19 +64,7 @@ pub fn validate_connection_params(
 
 /// Detect command injection attempts.
 pub fn detect_injection(input: &str) -> bool {
-    let dangerous = [
-        ";",
-        "`",
-        "$(",
-        "|",
-        "&&",
-        "||",
-        ">",
-        "<",
-        "${",
-        "\n",
-        "\r",
-    ];
+    let dangerous = [";", "`", "$(", "|", "&&", "||", ">", "<", "${", "\n", "\r"];
     dangerous.iter().any(|c| input.contains(c))
 }
 

@@ -63,10 +63,7 @@ impl SshSession {
     }
 
     /// Connect using password authentication.
-    pub async fn connect_password(
-        &self,
-        password: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn connect_password(&self, password: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = Arc::new(client::Config::default());
         let handler = SshHandler;
 
@@ -107,9 +104,7 @@ impl SshSession {
 
         let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(private_key), None);
 
-        let auth_result = handle
-            .authenticate_publickey(&self.username, key_with_hash)
-            .await?;
+        let auth_result = handle.authenticate_publickey(&self.username, key_with_hash).await?;
 
         if auth_result.success() {
             *self.handle.lock().await = Some(handle);
@@ -125,9 +120,7 @@ impl SshSession {
     /// SFTP sessions are spawned as a channel on the SSH connection and
     /// can be reused for multiple file operations, avoiding the overhead
     /// of repeatedly negotiating the SFTP protocol.
-    pub async fn get_sftp_session(
-        &self,
-    ) -> Result<Arc<SftpSession>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_sftp_session(&self) -> Result<Arc<SftpSession>, Box<dyn std::error::Error + Send + Sync>> {
         use russh_sftp::client::SftpSession;
 
         self.touch_async().await;
@@ -142,9 +135,7 @@ impl SshSession {
 
         // Create new SFTP session
         let mut handle_lock = self.handle.lock().await;
-        let handle = handle_lock
-            .as_mut()
-            .ok_or_else(|| "SSH not connected".to_string())?;
+        let handle = handle_lock.as_mut().ok_or_else(|| "SSH not connected".to_string())?;
 
         let channel = handle.channel_open_session().await?;
         channel
@@ -171,10 +162,7 @@ impl SshSession {
     }
 
     /// Execute a command and return (stdout, stderr, exit_code).
-    pub async fn exec(
-        &self,
-        command: &str,
-    ) -> Result<(String, String, u32), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn exec(&self, command: &str) -> Result<(String, String, u32), Box<dyn std::error::Error + Send + Sync>> {
         self.touch();
         let mut lock = self.handle.lock().await;
         let handle = lock.as_mut().ok_or("SSH not connected")?;
@@ -182,9 +170,7 @@ impl SshSession {
         let mut channel = handle.channel_open_session().await?;
 
         // Request PTY for better command compatibility
-        let _ = channel
-            .request_pty(false, "xterm-256color", 80, 24, 0, 0, &[])
-            .await;
+        let _ = channel.request_pty(false, "xterm-256color", 80, 24, 0, 0, &[]).await;
 
         channel.exec(true, command).await?;
 
@@ -224,10 +210,7 @@ impl SshSession {
         &self,
         cols: u32,
         rows: u32,
-    ) -> Result<
-        russh::Channel<client::Msg>,
-        Box<dyn std::error::Error + Send + Sync>,
-    > {
+    ) -> Result<russh::Channel<client::Msg>, Box<dyn std::error::Error + Send + Sync>> {
         let mut lock = self.handle.lock().await;
         let handle = lock.as_mut().ok_or("SSH not connected")?;
 
@@ -262,10 +245,7 @@ impl SshSession {
         command: &str,
         cols: u32,
         rows: u32,
-    ) -> Result<
-        russh::Channel<client::Msg>,
-        Box<dyn std::error::Error + Send + Sync>,
-    > {
+    ) -> Result<russh::Channel<client::Msg>, Box<dyn std::error::Error + Send + Sync>> {
         let mut lock = self.handle.lock().await;
         let handle = lock.as_mut().ok_or("SSH not connected")?;
 
@@ -282,9 +262,7 @@ impl SshSession {
     }
 
     /// Get a lock to access the underlying client handle (for advanced channel management).
-    pub async fn get_handle(
-        &self,
-    ) -> tokio::sync::MutexGuard<'_, Option<client::Handle<SshHandler>>> {
+    pub async fn get_handle(&self) -> tokio::sync::MutexGuard<'_, Option<client::Handle<SshHandler>>> {
         self.handle.lock().await
     }
 

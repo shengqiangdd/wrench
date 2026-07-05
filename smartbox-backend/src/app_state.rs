@@ -74,10 +74,7 @@ impl AppState {
 
         // Load recent data from database if available
         let (audit_logs, alerts) = if let Some(ref database) = db {
-            let recent_logs = database
-                .load_recent_audit_logs(1000)
-                .await
-                .unwrap_or_default();
+            let recent_logs = database.load_recent_audit_logs(1000).await.unwrap_or_default();
             let recent_alerts = database.load_alerts(500).await.unwrap_or_default();
             tracing::info!(
                 "Loaded {} audit logs and {} alerts from database",
@@ -98,9 +95,7 @@ impl AppState {
             marketplace_cache: RwLock::new(None),
             active_logtails: DashMap::new(),
             db,
-            jwt_service: RwLock::new(
-                JwtService::from_secret(&config.jwt_secret).ok(),
-            ),
+            jwt_service: RwLock::new(JwtService::from_secret(&config.jwt_secret).ok()),
             config,
         })
     }
@@ -190,14 +185,10 @@ impl AppState {
                     if let Ok(channels) = db.list_notification_channels().await {
                         let alert_level = crate::notify::AlertLevel::parse_level(&level);
                         for ch in channels {
-                            if !ch.enabled { continue; }
-                            let _ = crate::notify::dispatch_alert(
-                                &ch,
-                                &alert_level,
-                                &metric,
-                                &host,
-                                &message,
-                            ).await;
+                            if !ch.enabled {
+                                continue;
+                            }
+                            let _ = crate::notify::dispatch_alert(&ch, &alert_level, &metric, &host, &message).await;
                         }
                     }
                 }
@@ -302,11 +293,14 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let state = rt.block_on(AppState::new(test_config())).unwrap();
 
-        state.ws_tokens.insert("abc".into(), WsTokenInfo {
-            token: "abc".into(),
-            ip: "10.0.0.1".into(),
-            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
-        });
+        state.ws_tokens.insert(
+            "abc".into(),
+            WsTokenInfo {
+                token: "abc".into(),
+                ip: "10.0.0.1".into(),
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            },
+        );
 
         assert!(state.ws_tokens.contains_key("abc"));
         assert!(!state.ws_tokens.contains_key("nonexistent"));

@@ -7,9 +7,7 @@ use crate::app_state::AppState;
 use crate::response::ApiResponse;
 
 /// Get monitoring metrics (GET /api/metrics)
-pub async fn get_metrics(
-    State(_state): State<Arc<AppState>>,
-) -> ApiResponse<MetricsResponse> {
+pub async fn get_metrics(State(_state): State<Arc<AppState>>) -> ApiResponse<MetricsResponse> {
     ApiResponse::success(MetricsResponse {
         hosts: Vec::new(),
         timestamp: SystemTime::now()

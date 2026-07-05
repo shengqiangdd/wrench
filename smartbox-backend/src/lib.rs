@@ -1,18 +1,18 @@
+pub mod api;
+pub mod api_types;
 pub mod app_state;
 pub mod config;
+pub mod docker;
 pub mod error;
 pub mod response;
-pub mod api_types;
-pub mod api;
-pub mod websocket;
 pub mod ssh;
-pub mod docker;
+pub mod websocket;
 
-pub mod middleware;
-pub mod utils;
 pub mod db;
+pub mod middleware;
 pub mod models;
 pub mod notify;
+pub mod utils;
 
 pub use app_state::AppState;
 
@@ -30,12 +30,7 @@ use axum::{
 use std::sync::Arc;
 use tower::Layer;
 use tower::ServiceBuilder;
-use tower_http::{
-    compression::CompressionLayer,
-    cors::CorsLayer,
-    services::ServeDir,
-    trace::TraceLayer,
-};
+use tower_http::{compression::CompressionLayer, cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 use tracing::info;
 
 /// Serve the SPA index.html with a service-worker-unregister script injected.
@@ -75,10 +70,7 @@ if ('serviceWorker' in navigator) {
 /// - Hashed assets (JS/CSS/fonts with content hash in name): immutable, 1 year
 /// - Other static assets (images, fonts): 7 days
 /// - index.html and non-static paths: no-store (handled by SPA handler)
-async fn static_cache_middleware(
-    req: axum::http::Request<Body>,
-    next: axum_middleware::Next,
-) -> Response {
+async fn static_cache_middleware(req: axum::http::Request<Body>, next: axum_middleware::Next) -> Response {
     let path = req.uri().path().to_string();
     let mut response = next.run(req).await;
 
@@ -97,9 +89,7 @@ async fn static_cache_middleware(
             Some("public, max-age=604800")
         }
         // Other static files — 1 day
-        Some("json" | "xml" | "map" | "txt") => {
-            Some("public, max-age=86400")
-        }
+        Some("json" | "xml" | "map" | "txt") => Some("public, max-age=86400"),
         // Everything else — no-store
         _ => None,
     };
@@ -138,19 +128,21 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
     let auth_layer = ServiceBuilder::new()
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
-            middleware::auth::auth_middleware as fn(
-                _: axum::extract::State<Arc<AppState>>,
-                _: axum::http::Request<Body>,
-                _: axum_middleware::Next,
-            ) -> _,
+            middleware::auth::auth_middleware
+                as fn(
+                    _: axum::extract::State<Arc<AppState>>,
+                    _: axum::http::Request<Body>,
+                    _: axum_middleware::Next,
+                ) -> _,
         ))
         .layer(axum_middleware::from_fn_with_state(
             state.clone(),
-            middleware::rate_limit::rate_limit_middleware as fn(
-                _: axum::extract::State<Arc<AppState>>,
-                _: axum::http::Request<Body>,
-                _: axum_middleware::Next,
-            ) -> _,
+            middleware::rate_limit::rate_limit_middleware
+                as fn(
+                    _: axum::extract::State<Arc<AppState>>,
+                    _: axum::http::Request<Body>,
+                    _: axum_middleware::Next,
+                ) -> _,
         ));
 
     // ─── Public API routes (no auth required) ───
@@ -221,7 +213,10 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/notifications", get(api::notifications::list_channels))
         .route("/notifications", axum::routing::post(api::notifications::upsert_channel))
         .route("/notifications/{id}", axum::routing::delete(api::notifications::delete_channel))
-        .route("/notifications/test/{id}", axum::routing::post(api::notifications::test_channel))
+        .route(
+            "/notifications/test/{id}",
+            axum::routing::post(api::notifications::test_channel),
+        )
         // ─── SSH Connection persistence routes ───
         .route("/connections", get(api::connections::list_connections))
         .route("/connections", axum::routing::post(api::connections::upsert_connection))
@@ -235,10 +230,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
 
     // Combine public + protected API routes under /api
     let api_routes = Router::new()
-        .nest("/api", Router::new()
-            .merge(public_api)
-            .merge(protected_api)
-        )
+        .nest("/api", Router::new().merge(public_api).merge(protected_api))
         .layer(cors.clone())
         .layer(TraceLayer::new_for_http())
         // Compress JSON API responses on-the-fly (gzip, min-size 512 bytes)
@@ -246,15 +238,11 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
 
     // ─── Protected WebSocket routes (auth via query token) ───
     // Build a separate auth layer for WS (ServiceBuilder doesn't clone)
-    let ws_auth_layer = ServiceBuilder::new()
-        .layer(axum_middleware::from_fn_with_state(
-            state.clone(),
-            middleware::auth::auth_middleware as fn(
-                _: axum::extract::State<Arc<AppState>>,
-                _: axum::http::Request<Body>,
-                _: axum_middleware::Next,
-            ) -> _,
-        ));
+    let ws_auth_layer = ServiceBuilder::new().layer(axum_middleware::from_fn_with_state(
+        state.clone(),
+        middleware::auth::auth_middleware
+            as fn(_: axum::extract::State<Arc<AppState>>, _: axum::http::Request<Body>, _: axum_middleware::Next) -> _,
+    ));
 
     let ws_routes = Router::new()
         .route("/ws", get(websocket::terminal::ws_handler))
@@ -288,8 +276,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
     let fallback = serve_dir.fallback(spa_handler);
 
     // Wrap with static cache middleware for optimal asset caching
-    let fallback = axum_middleware::from_fn(static_cache_middleware)
-        .layer(fallback);
+    let fallback = axum_middleware::from_fn(static_cache_middleware).layer(fallback);
 
     Router::new()
         .merge(app_with_state)

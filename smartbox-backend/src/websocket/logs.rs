@@ -13,10 +13,7 @@ use tracing::info;
 use crate::app_state::AppState;
 
 /// WebSocket log stream handler (/ws/logs)
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_logs_socket(socket, state))
 }
 

@@ -7,7 +7,7 @@
 //!   GET /api/ai/fetch-free-models — Fetch free models from OpenRouter
 //!   GET /api/ai/fetch-all-models  — Fetch models with optional `?provider=`
 
-use axum::{extract::State, extract::Query};
+use axum::{extract::Query, extract::State};
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -30,9 +30,7 @@ pub async fn get_ai_config(State(state): State<Arc<AppState>>) -> ApiResponse<Ai
 }
 
 /// Fetch free models from OpenRouter (GET /api/ai/fetch-free-models)
-pub async fn fetch_free_models(
-    State(state): State<Arc<AppState>>,
-) -> ApiResponse<ModelsListResponse> {
+pub async fn fetch_free_models(State(state): State<Arc<AppState>>) -> ApiResponse<ModelsListResponse> {
     let api_key = match &state.config.openrouter_api_key {
         Some(k) => k.clone(),
         None => {
@@ -53,11 +51,7 @@ pub async fn fetch_free_models(
         Ok(resp) => {
             if resp.status().is_success() {
                 let data: serde_json::Value = resp.json().await.unwrap_or_default();
-                let models = data
-                    .get("data")
-                    .and_then(|d| d.as_array())
-                    .cloned()
-                    .unwrap_or_default();
+                let models = data.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
                 let free_models: Vec<ModelListItem> = models
                     .into_iter()
                     .filter(|m| {
@@ -68,11 +62,7 @@ pub async fn fetch_free_models(
                             .unwrap_or(false)
                     })
                     .map(|m| ModelListItem {
-                        value: m
-                            .get("id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
+                        value: m.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         label: m
                             .get("name")
                             .or_else(|| m.get("id"))
@@ -80,17 +70,11 @@ pub async fn fetch_free_models(
                             .unwrap_or("")
                             .to_string(),
                         free: true,
-                        description: m
-                            .get("description")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
+                        description: m.get("description").and_then(|v| v.as_str()).map(String::from),
                     })
                     .collect();
 
-                ApiResponse::success(ModelsListResponse {
-                    models: free_models,
-                    error: None,
-                })
+                ApiResponse::success(ModelsListResponse { models: free_models, error: None })
             } else {
                 ApiResponse::success(ModelsListResponse {
                     models: Vec::new(),
@@ -98,10 +82,7 @@ pub async fn fetch_free_models(
                 })
             }
         }
-        Err(e) => ApiResponse::success(ModelsListResponse {
-            models: Vec::new(),
-            error: Some(e.to_string()),
-        }),
+        Err(e) => ApiResponse::success(ModelsListResponse { models: Vec::new(), error: Some(e.to_string()) }),
     }
 }
 
@@ -116,10 +97,7 @@ pub async fn fetch_all_models(
         "openrouter" => fetch_openrouter_models(&state).await,
         "openai" => fetch_openai_models().await,
         "siliconflow" => fetch_siliconflow_models().await,
-        other => ModelsListResponse {
-            models: Vec::new(),
-            error: Some(format!("Unknown provider: {}", other)),
-        },
+        other => ModelsListResponse { models: Vec::new(), error: Some(format!("Unknown provider: {}", other)) },
     };
 
     ApiResponse::success(result)
@@ -129,10 +107,7 @@ async fn fetch_openrouter_models(state: &AppState) -> ModelsListResponse {
     let api_key = match &state.config.openrouter_api_key {
         Some(k) => k,
         None => {
-            return ModelsListResponse {
-                models: Vec::new(),
-                error: Some("API key not configured".into()),
-            };
+            return ModelsListResponse { models: Vec::new(), error: Some("API key not configured".into()) };
         }
     };
 
@@ -145,19 +120,11 @@ async fn fetch_openrouter_models(state: &AppState) -> ModelsListResponse {
     {
         Ok(resp) if resp.status().is_success() => {
             let data: serde_json::Value = resp.json().await.unwrap_or_default();
-            let models = data
-                .get("data")
-                .and_then(|d| d.as_array())
-                .cloned()
-                .unwrap_or_default();
+            let models = data.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
             let items: Vec<ModelListItem> = models
                 .into_iter()
                 .map(|m| ModelListItem {
-                    value: m
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                    value: m.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     label: m
                         .get("name")
                         .or_else(|| m.get("id"))
@@ -173,19 +140,10 @@ async fn fetch_openrouter_models(state: &AppState) -> ModelsListResponse {
                     description: None,
                 })
                 .collect();
-            ModelsListResponse {
-                models: items,
-                error: None,
-            }
+            ModelsListResponse { models: items, error: None }
         }
-        Ok(resp) => ModelsListResponse {
-            models: Vec::new(),
-            error: Some(format!("HTTP {}", resp.status())),
-        },
-        Err(e) => ModelsListResponse {
-            models: Vec::new(),
-            error: Some(e.to_string()),
-        },
+        Ok(resp) => ModelsListResponse { models: Vec::new(), error: Some(format!("HTTP {}", resp.status())) },
+        Err(e) => ModelsListResponse { models: Vec::new(), error: Some(e.to_string()) },
     }
 }
 
@@ -194,51 +152,26 @@ async fn fetch_openai_models() -> ModelsListResponse {
     match client.get("https://api.openai.com/v1/models").send().await {
         Ok(resp) if resp.status().is_success() => {
             let data: serde_json::Value = resp.json().await.unwrap_or_default();
-            let models = data
-                .get("data")
-                .and_then(|d| d.as_array())
-                .cloned()
-                .unwrap_or_default();
+            let models = data.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
             let items: Vec<ModelListItem> = models
                 .into_iter()
                 .map(|m| ModelListItem {
-                    value: m
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    label: m
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                    value: m.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    label: m.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     free: true,
                     description: None,
                 })
                 .collect();
-            ModelsListResponse {
-                models: items,
-                error: None,
-            }
+            ModelsListResponse { models: items, error: None }
         }
-        Ok(resp) => ModelsListResponse {
-            models: Vec::new(),
-            error: Some(format!("HTTP {}", resp.status())),
-        },
-        Err(e) => ModelsListResponse {
-            models: Vec::new(),
-            error: Some(e.to_string()),
-        },
+        Ok(resp) => ModelsListResponse { models: Vec::new(), error: Some(format!("HTTP {}", resp.status())) },
+        Err(e) => ModelsListResponse { models: Vec::new(), error: Some(e.to_string()) },
     }
 }
 
 async fn fetch_siliconflow_models() -> ModelsListResponse {
     let client = reqwest::Client::new();
-    match client
-        .get("https://api.siliconflow.cn/v1/models")
-        .send()
-        .await
-    {
+    match client.get("https://api.siliconflow.cn/v1/models").send().await {
         Ok(resp) if resp.status().is_success() => {
             let data: serde_json::Value = resp.json().await.unwrap_or_default();
             // SiliconFlow returns an array directly
@@ -252,11 +185,7 @@ async fn fetch_siliconflow_models() -> ModelsListResponse {
             let items: Vec<ModelListItem> = models
                 .into_iter()
                 .map(|m| ModelListItem {
-                    value: m
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                    value: m.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     label: m
                         .get("name")
                         .or_else(|| m.get("id"))
@@ -272,18 +201,9 @@ async fn fetch_siliconflow_models() -> ModelsListResponse {
                     description: None,
                 })
                 .collect();
-            ModelsListResponse {
-                models: items,
-                error: None,
-            }
+            ModelsListResponse { models: items, error: None }
         }
-        Ok(resp) => ModelsListResponse {
-            models: Vec::new(),
-            error: Some(format!("HTTP {}", resp.status())),
-        },
-        Err(e) => ModelsListResponse {
-            models: Vec::new(),
-            error: Some(e.to_string()),
-        },
+        Ok(resp) => ModelsListResponse { models: Vec::new(), error: Some(format!("HTTP {}", resp.status())) },
+        Err(e) => ModelsListResponse { models: Vec::new(), error: Some(e.to_string()) },
     }
 }

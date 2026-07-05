@@ -59,11 +59,7 @@ fn validate_jwt(state: &Arc<AppState>, token: &str) -> bool {
 ///
 /// Routes that don't need auth (/api/health, /api/ws-token, static files)
 /// should be mounted outside the protected router.
-pub async fn auth_middleware(
-    State(state): State<Arc<AppState>>,
-    req: Request<Body>,
-    next: Next,
-) -> Response {
+pub async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request<Body>, next: Next) -> Response {
     let method = req.method();
 
     // Always allow OPTIONS (CORS preflight)
@@ -117,7 +113,6 @@ pub async fn auth_middleware(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,11 +152,14 @@ mod tests {
     fn test_validate_token_valid() {
         let state = make_state();
         // Insert a valid token
-        state.ws_tokens.insert("valid-token-123".into(), WsTokenInfo {
-            token: "valid-token-123".into(),
-            ip: "127.0.0.1".into(),
-            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
-        });
+        state.ws_tokens.insert(
+            "valid-token-123".into(),
+            WsTokenInfo {
+                token: "valid-token-123".into(),
+                ip: "127.0.0.1".into(),
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            },
+        );
 
         assert!(validate_token(&state, "valid-token-123"));
         // Token should be consumed (one-time use)
@@ -177,11 +175,14 @@ mod tests {
     #[test]
     fn test_validate_token_expired() {
         let state = make_state();
-        state.ws_tokens.insert("expired-token".into(), WsTokenInfo {
-            token: "expired-token".into(),
-            ip: "127.0.0.1".into(),
-            expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
-        });
+        state.ws_tokens.insert(
+            "expired-token".into(),
+            WsTokenInfo {
+                token: "expired-token".into(),
+                ip: "127.0.0.1".into(),
+                expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+            },
+        );
 
         assert!(!validate_token(&state, "expired-token"));
     }
@@ -189,11 +190,14 @@ mod tests {
     #[test]
     fn test_validate_token_one_time_use() {
         let state = make_state();
-        state.ws_tokens.insert("one-time".into(), WsTokenInfo {
-            token: "one-time".into(),
-            ip: "10.0.0.1".into(),
-            expires_at: chrono::Utc::now() + chrono::Duration::hours(2),
-        });
+        state.ws_tokens.insert(
+            "one-time".into(),
+            WsTokenInfo {
+                token: "one-time".into(),
+                ip: "10.0.0.1".into(),
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(2),
+            },
+        );
 
         // First call succeeds
         assert!(validate_token(&state, "one-time"));

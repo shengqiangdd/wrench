@@ -22,19 +22,15 @@ impl AppConfig {
             .parse::<u16>()
             .unwrap_or(3001);
 
-        let frontend_dist = std::env::var("FRONTEND_DIST")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                let cwd = std::env::current_dir().unwrap_or_default();
-                cwd.join("frontend").join("dist")
-            });
+        let frontend_dist = std::env::var("FRONTEND_DIST").map(PathBuf::from).unwrap_or_else(|_| {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            cwd.join("frontend").join("dist")
+        });
 
-        let plugins_dir = std::env::var("PLUGINS_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                let cwd = std::env::current_dir().unwrap_or_default();
-                cwd.join("plugins")
-            });
+        let plugins_dir = std::env::var("PLUGINS_DIR").map(PathBuf::from).unwrap_or_else(|_| {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            cwd.join("plugins")
+        });
 
         let cors_origins = std::env::var("CORS_ORIGINS")
             .unwrap_or_default()
@@ -44,23 +40,20 @@ impl AppConfig {
             .collect();
 
         let openrouter_api_key = std::env::var("OPENROUTER_API_KEY").ok();
-        let jwt_secret = std::env::var("JWT_SECRET")
-            .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
+        let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
 
         let vault_key = std::env::var("VAULT_KEY").ok();
 
-        let database_url = std::env::var("DATABASE_URL")
-            .ok()
-            .or_else(|| {
-                // Default to /data/smartbox.db when running in Docker
-                let in_container = std::path::Path::new("/.dockerenv").exists()
-                    || std::env::var("DOCKER_CONTAINER").is_ok();
-                if in_container {
-                    Some("/data/smartbox.db".into())
-                } else {
-                    None
-                }
-            });
+        let database_url = std::env::var("DATABASE_URL").ok().or_else(|| {
+            // Default to /data/smartbox.db when running in Docker
+            let in_container =
+                std::path::Path::new("/.dockerenv").exists() || std::env::var("DOCKER_CONTAINER").is_ok();
+            if in_container {
+                Some("/data/smartbox.db".into())
+            } else {
+                None
+            }
+        });
         let log_level = std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".into());
 
         Ok(Self {

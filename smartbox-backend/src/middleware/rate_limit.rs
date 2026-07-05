@@ -5,13 +5,9 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use std::{
-    collections::VecDeque,
-    sync::Arc,
-    time::Instant,
-};
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::{collections::VecDeque, sync::Arc, time::Instant};
 
 use crate::app_state::AppState;
 
@@ -27,11 +23,7 @@ pub struct RateLimiter {
 
 impl RateLimiter {
     pub fn new(window_secs: u64, max_requests: u32) -> Self {
-        Self {
-            window_secs,
-            max_requests,
-            clients: Mutex::new(HashMap::new()),
-        }
+        Self { window_secs, max_requests, clients: Mutex::new(HashMap::new()) }
     }
 
     /// Check if a request from `key` is allowed.
@@ -65,11 +57,7 @@ impl RateLimiter {
 ///
 /// Uses client IP address as the rate limit key.
 /// Limit: 60 requests per minute by default.
-pub async fn rate_limit_middleware(
-    State(_state): State<Arc<AppState>>,
-    req: Request<Body>,
-    next: Next,
-) -> Response {
+pub async fn rate_limit_middleware(State(_state): State<Arc<AppState>>, req: Request<Body>, next: Next) -> Response {
     // Get client IP from headers or connection info
     let client_ip = req
         .headers()

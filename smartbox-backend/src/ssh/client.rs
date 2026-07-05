@@ -14,21 +14,8 @@ pub struct SshConnection {
 }
 
 impl SshConnection {
-    pub fn new(
-        connection_id: String,
-        host: String,
-        port: u16,
-        username: String,
-        auth_method: String,
-    ) -> Self {
-        Self {
-            connection_id,
-            host,
-            port,
-            username,
-            auth_method,
-            session: None,
-        }
+    pub fn new(connection_id: String, host: String, port: u16, username: String, auth_method: String) -> Self {
+        Self { connection_id, host, port, username, auth_method, session: None }
     }
 
     pub fn is_connected(&self) -> bool {

@@ -31,11 +31,7 @@ pub async fn add_host(
     Json(body): Json<serde_json::Value>,
 ) -> ApiResponse<HostCreatedResponse> {
     let id = uuid::Uuid::new_v4().to_string();
-    let host = body
-        .get("host")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let host = body.get("host").and_then(|v| v.as_str()).unwrap_or("").to_string();
     ApiResponse::success(HostCreatedResponse { id, host })
 }
 

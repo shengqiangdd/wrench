@@ -1,5 +1,5 @@
-use axum::extract::State;
 use axum::extract::Path;
+use axum::extract::State;
 use std::sync::Arc;
 
 use crate::api_types::PluginInstallResponse;
@@ -9,9 +9,7 @@ use crate::models::PluginManifest;
 use crate::response::ApiResponse;
 
 /// List installed plugins (GET /api/plugins)
-pub async fn list_plugins(
-    State(state): State<Arc<AppState>>,
-) -> ApiResponse<Vec<PluginManifest>> {
+pub async fn list_plugins(State(state): State<Arc<AppState>>) -> ApiResponse<Vec<PluginManifest>> {
     let plugins_dir = &state.config.plugins_dir;
     let mut plugins = Vec::new();
 
@@ -43,18 +41,9 @@ pub async fn install_plugin(
     State(state): State<Arc<AppState>>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<ApiResponse<PluginInstallResponse>, AppError> {
-    let plugin_id = body
-        .get("pluginId")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let manifest_url = body
-        .get("manifestUrl")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let plugin_url = body
-        .get("pluginUrl")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let plugin_id = body.get("pluginId").and_then(|v| v.as_str()).unwrap_or("");
+    let manifest_url = body.get("manifestUrl").and_then(|v| v.as_str()).unwrap_or("");
+    let plugin_url = body.get("pluginUrl").and_then(|v| v.as_str()).unwrap_or("");
 
     if plugin_id.is_empty() {
         return Err(AppError::BadRequest("Missing pluginId".into()));
@@ -105,11 +94,15 @@ pub async fn install_plugin(
     // Invalidate marketplace cache
     *state.marketplace_cache.write() = None;
 
-    state.add_audit_log("plugin_install", serde_json::json!({
-        "pluginId": plugin_id,
-        "manifestUrl": manifest_url,
-        "pluginUrl": plugin_url
-    }), "api");
+    state.add_audit_log(
+        "plugin_install",
+        serde_json::json!({
+            "pluginId": plugin_id,
+            "manifestUrl": manifest_url,
+            "pluginUrl": plugin_url
+        }),
+        "api",
+    );
 
     Ok(ApiResponse::success(PluginInstallResponse {
         success: true,
@@ -123,11 +116,7 @@ pub async fn uninstall_plugin(
     State(state): State<Arc<AppState>>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<ApiResponse<PluginInstallResponse>, AppError> {
-    let plugin_id = body
-        .get("plugin_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let plugin_id = body.get("plugin_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
     if plugin_id.is_empty() {
         return Err(AppError::BadRequest("Missing plugin_id".into()));
@@ -138,17 +127,18 @@ pub async fn uninstall_plugin(
         .ok_or_else(|| AppError::BadRequest("Invalid plugin ID".into()))?;
 
     if !target.exists() {
-        return Err(AppError::NotFound(format!(
-            "Plugin '{}' not found",
-            plugin_id
-        )));
+        return Err(AppError::NotFound(format!("Plugin '{}' not found", plugin_id)));
     }
 
     std::fs::remove_dir_all(&target)?;
 
-    state.add_audit_log("plugin_uninstall", serde_json::json!({
-        "pluginId": plugin_id
-    }), "api");
+    state.add_audit_log(
+        "plugin_uninstall",
+        serde_json::json!({
+            "pluginId": plugin_id
+        }),
+        "api",
+    );
 
     Ok(ApiResponse::success(PluginInstallResponse {
         success: true,
@@ -175,10 +165,7 @@ pub async fn get_plugin_js(
 
     Ok(axum::response::Response::builder()
         .header("Content-Type", "application/javascript; charset=utf-8")
-        .header(
-            "Cache-Control",
-            "no-store, no-cache, must-revalidate, proxy-revalidate",
-        )
+        .header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
         .body(axum::body::Body::from(content))
         .unwrap())
 }
@@ -194,20 +181,14 @@ pub async fn get_plugin_manifest(
 
     let manifest_path = target.join("manifest.json");
     if !manifest_path.exists() {
-        return Err(AppError::NotFound(format!(
-            "Plugin '{}' manifest not found",
-            id
-        )));
+        return Err(AppError::NotFound(format!("Plugin '{}' manifest not found", id)));
     }
 
     let content = tokio::fs::read_to_string(&manifest_path).await?;
 
     Ok(axum::response::Response::builder()
         .header("Content-Type", "application/json; charset=utf-8")
-        .header(
-            "Cache-Control",
-            "no-store, no-cache, must-revalidate, proxy-revalidate",
-        )
+        .header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
         .body(axum::body::Body::from(content))
         .unwrap())
 }

@@ -6,9 +6,7 @@ use crate::app_state::AppState;
 use crate::response::ApiResponse;
 
 /// List available scripts (GET /api/scripts)
-pub async fn list_scripts(
-    State(_state): State<Arc<AppState>>,
-) -> ApiResponse<Vec<ScriptEntry>> {
+pub async fn list_scripts(State(_state): State<Arc<AppState>>) -> ApiResponse<Vec<ScriptEntry>> {
     ApiResponse::success(vec![
         ScriptEntry {
             id: "disk-usage".into(),

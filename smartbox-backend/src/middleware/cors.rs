@@ -7,10 +7,7 @@ pub fn create_cors_layer(origins: &[String]) -> CorsLayer {
     if origins.is_empty() {
         CorsLayer::permissive()
     } else {
-        let origins: Vec<HeaderValue> = origins
-            .iter()
-            .filter_map(|o| o.parse::<HeaderValue>().ok())
-            .collect();
+        let origins: Vec<HeaderValue> = origins.iter().filter_map(|o| o.parse::<HeaderValue>().ok()).collect();
         CorsLayer::new().allow_origin(origins)
     }
 }
