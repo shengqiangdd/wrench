@@ -138,3 +138,15 @@ async fn notifications_require_auth() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
+
+/// System backup endpoint requires auth.
+#[tokio::test]
+async fn system_backup_requires_auth() {
+    let app = build_test_app().await;
+    let req = Request::builder()
+        .uri("/api/system/backup")
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
