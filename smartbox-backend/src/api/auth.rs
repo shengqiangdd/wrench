@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::extract::State;
 use std::sync::Arc;
 
 use crate::app_state::AppState;
@@ -11,7 +11,6 @@ use crate::utils::jwt::{Claims, JwtService};
 /// that is valid for 24 hours, reducing the need for frequent refreshes.
 pub async fn issue_jwt_token(
     State(state): State<Arc<AppState>>,
-    Json(_body): Json<serde_json::Value>,
 ) -> Result<ApiResponse<serde_json::Value>, ApiResponse<serde_json::Value>> {
     let secret = state.config.jwt_secret.clone();
     let jwt_service = JwtService::from_secret(&secret)

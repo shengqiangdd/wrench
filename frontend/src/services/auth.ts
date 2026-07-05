@@ -40,7 +40,11 @@ export async function refreshToken(): Promise<string> {
     const host = window.location.host
     const resp = await fetch(`${protocol}//${host}/api/ws-token`, {
       method: 'POST',
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
     })
 
     if (!resp.ok) {
