@@ -1,9 +1,13 @@
 /// Integration tests for SmartBox backend.
 ///
 /// Verifies core infrastructure (AppState, JWT, router construction).
-/// HTTP request tests are gradually enabled after the base is green.
+/// HTTP request tests are gradually added here.
 use std::sync::Arc;
 use std::path::PathBuf;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use axum::Router;
+use tower::ServiceExt;
 
 use smartbox_backend::app_state::AppState;
 use smartbox_backend::config::AppConfig;
@@ -22,6 +26,12 @@ fn test_config() -> AppConfig {
         database_url: None,
         log_level: "error".to_string(),
     }
+}
+
+async fn build_test_app() -> Router {
+    let config = test_config();
+    let state = AppState::new(config).await.expect("Failed to create AppState");
+    smartbox_backend::build_app(Arc::new(state)).await
 }
 
 /// Verify that `AppState` can be constructed with a test config.
@@ -52,8 +62,18 @@ fn test_jwt_roundtrip() {
 /// Verify that `build_app` creates a router successfully.
 #[tokio::test]
 async fn test_build_app_creates_router() {
-    let config = test_config();
-    let state = AppState::new(config).await.expect("Failed to create AppState");
-    let app = smartbox_backend::build_app(Arc::new(state)).await;
+    let app = build_test_app().await;
     let _ = app;
+}
+
+/// Health endpoint returns 200 OK.
+#[tokio::test]
+async fn health_check_returns_200() {
+    let app = build_test_app().await;
+    let req = Request::builder()
+        .uri("/api/health")
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
 }
