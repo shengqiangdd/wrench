@@ -14,7 +14,7 @@
  * - clipboard 兜底方案（fallbackCopy）
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useEffect, useCallback, useRef, useReducer } from 'react'
 import { FileCode2, X, PanelLeftClose, PanelLeft, Loader2 } from 'lucide-react'
 import { useSshStore, decryptConnection } from '../../stores/ssh-store'
 import { useAppStore } from '../../stores/app-store'
@@ -190,8 +190,10 @@ export default function FileManager() {
   const sessions = useSshStore((s) => s.sessions)
   const addSession = useSshStore((s) => s.addSession)
   const removeSession = useSshStore((s) => s.removeSession)
-  const [connecting, setConnecting] = useState(false)
-  const [statusMsg, setStatusMsg] = useState('')
+  const [{ connecting, statusMsg }, dispatch] = useReducer(
+    (state: { connecting: boolean; statusMsg: string }, action: Partial<{ connecting: boolean; statusMsg: string }>) => ({ ...state, ...action }),
+    { connecting: false, statusMsg: '' },
+  )
   const wsClient = getWsClientSync()
   const fileStore = useFileStore()
   const connectingRef = useRef(false)
@@ -232,7 +234,7 @@ export default function FileManager() {
 
     // 尝试新建连接
     connectingRef.current = true
-    setConnecting(true)
+    dispatch({ connecting: true })
 
     // 清理旧的 sftp session
     for (const sess of sessArr) {
@@ -243,7 +245,7 @@ export default function FileManager() {
     }
 
     const sid = await ensureSftpSession(cached.connId, sessArr, addSession, wsClient, (msg) => {
-      if (msg) setStatusMsg(msg)
+      if (msg) dispatch({ statusMsg: msg })
     })
 
     if (sid) {
@@ -253,15 +255,13 @@ export default function FileManager() {
         pathCache: cached.pathCache,
       })
       connectingRef.current = false
-      setConnecting(false)
-      setStatusMsg('')
+      dispatch({ connecting: false, statusMsg: '' })
       return true
     }
 
     setFmState({ connId: null, sessionId: null, pathCache: cached.pathCache })
     connectingRef.current = false
-    setConnecting(false)
-    setStatusMsg('')
+    dispatch({ connecting: false, statusMsg: '' })
     return false
   }, [addSession, removeSession, wsClient, setFmState])
 
@@ -305,7 +305,7 @@ export default function FileManager() {
       if (!conn || connectingRef.current) return
 
       connectingRef.current = true
-      setConnecting(true)
+      dispatch({ connecting: true })
 
       // 清除旧 session
       const storeSessions = useSshStore.getState().sessions
@@ -316,7 +316,9 @@ export default function FileManager() {
         }
       }
 
-      const sid = await ensureSftpSession(connId, sessions, addSession, wsClient, setStatusMsg)
+      const sid = await ensureSftpSession(connId, sessions, addSession, wsClient, (msg) => {
+        if (msg) dispatch({ statusMsg: msg })
+      })
 
       if (sid) {
         const currentCache = useAppStore.getState().fmSftpState.pathCache
@@ -326,12 +328,12 @@ export default function FileManager() {
           pathCache: currentCache,
         })
         connectingRef.current = false
-        setConnecting(false)
+        dispatch({ connecting: false })
         return currentCache[connId] || '/'
       }
 
       connectingRef.current = false
-      setConnecting(false)
+      dispatch({ connecting: false })
       return
     },
     [sessions, addSession, removeSession, wsClient, setFmState],

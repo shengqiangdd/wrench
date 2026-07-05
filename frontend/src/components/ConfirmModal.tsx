@@ -1,4 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useReducer, useRef } from 'react'
+
+type OverlayState = 'hidden' | 'visible' | 'closing'
+
+function overlayReducer(_state: OverlayState, action: OverlayState): OverlayState {
+  return action
+}
 
 interface ConfirmModalProps {
   open: boolean
@@ -21,18 +27,24 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
-  const [visible, setVisible] = useState(false)
+  const [overlayState, dispatch] = useReducer(overlayReducer, 'hidden' as OverlayState)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const wasOpenRef = useRef(false)
 
   useEffect(() => {
+    clearTimeout(timerRef.current)
     if (open) {
-      setVisible(true)
+      wasOpenRef.current = true
+      dispatch('visible')
       return
     }
-    const timer = setTimeout(() => setVisible(false), 200)
-    return () => clearTimeout(timer)
+    if (!wasOpenRef.current) return
+    dispatch('closing')
+    timerRef.current = setTimeout(() => dispatch('hidden'), 200)
+    return () => clearTimeout(timerRef.current)
   }, [open])
 
-  if (!visible && !open) return null
+  if (overlayState === 'hidden' && !open) return null
 
   return (
     <div
@@ -82,18 +94,24 @@ interface AlertModalProps {
 }
 
 export function AlertModal({ open, title, message, onClose }: AlertModalProps) {
-  const [visible, setVisible] = useState(false)
+  const [overlayState, dispatch] = useReducer(overlayReducer, 'hidden' as OverlayState)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const wasOpenRef = useRef(false)
 
   useEffect(() => {
+    clearTimeout(timerRef.current)
     if (open) {
-      setVisible(true)
+      wasOpenRef.current = true
+      dispatch('visible')
       return
     }
-    const timer = setTimeout(() => setVisible(false), 200)
-    return () => clearTimeout(timer)
+    if (!wasOpenRef.current) return
+    dispatch('closing')
+    timerRef.current = setTimeout(() => dispatch('hidden'), 200)
+    return () => clearTimeout(timerRef.current)
   }, [open])
 
-  if (!visible && !open) return null
+  if (overlayState === 'hidden' && !open) return null
 
   return (
     <div

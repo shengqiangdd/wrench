@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useReducer, useRef, useCallback, useState, useEffect } from 'react'
 import { X, Loader2, Download } from 'lucide-react'
 
 interface Props {
@@ -7,17 +7,24 @@ interface Props {
   onClose: () => void
 }
 
+type LogsState = {
+  status: 'loading' | 'idle' | 'error'
+  data: string
+  error: string | null
+}
+
+function logsReducer(_s: LogsState, a: LogsState): LogsState {
+  return a
+}
+
 export default function DockerContainerLogs({ connectionId, containerName, onClose }: Props) {
-  const [logs, setLogs] = useState<string>('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [logsState, dispatch] = useReducer(logsReducer, { status: 'loading', data: '', error: null } as LogsState)
   const [tail, setTail] = useState(200)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const fetchLogs = useCallback(
     async (n: number) => {
-      setLoading(true)
-      setError(null)
+      dispatch({ status: 'loading', data: '', error: null })
       try {
         const res = await fetch('/api/docker/logs', {
           method: 'POST',
@@ -26,15 +33,13 @@ export default function DockerContainerLogs({ connectionId, containerName, onClo
         })
         const json = await res.json()
         if (json.success) {
-          setLogs(json.data || '(无日志输出)')
+          dispatch({ status: 'idle', data: json.data || '(无日志输出)', error: null })
         } else {
-          setError(json.error || '获取日志失败')
+          dispatch({ status: 'error', data: '', error: json.error || '获取日志失败' })
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '请求失败'
-        setError(msg)
-      } finally {
-        setLoading(false)
+        dispatch({ status: 'error', data: '', error: msg })
       }
     },
     [connectionId, containerName],
@@ -46,13 +51,13 @@ export default function DockerContainerLogs({ connectionId, containerName, onClo
 
   // 自动滚到底部
   useEffect(() => {
-    if (scrollRef.current && logs) {
+    if (scrollRef.current && logsState.data) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [logs])
+  }, [logsState.data])
 
   const handleDownload = () => {
-    const blob = new Blob([logs], { type: 'text/plain' })
+    const blob = new Blob([logsState.data], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -78,7 +83,7 @@ export default function DockerContainerLogs({ connectionId, containerName, onClo
             </button>
             <button
               onClick={() => fetchLogs(tail)}
-              disabled={loading}
+              disabled={logsState.status === 'loading'}
               className="rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 disabled:opacity-50"
             >
               刷新
@@ -108,15 +113,15 @@ export default function DockerContainerLogs({ connectionId, containerName, onClo
           ref={scrollRef}
           className="flex-1 overflow-auto p-4 font-mono text-[12px] leading-relaxed"
         >
-          {loading ? (
+          {logsState.status === 'loading' ? (
             <div className="flex h-full items-center justify-center gap-2 text-slate-500">
               <Loader2 size={16} className="animate-spin" />
               加载中...
             </div>
-          ) : error ? (
-            <div className="flex h-full items-center justify-center text-red-400">{error}</div>
+          ) : logsState.error ? (
+            <div className="flex h-full items-center justify-center text-red-400">{logsState.error}</div>
           ) : (
-            <pre className="whitespace-pre-wrap text-slate-300">{logs || '(无日志输出)'}</pre>
+            <pre className="whitespace-pre-wrap text-slate-300">{logsState.data || '(无日志输出)'}</pre>
           )}
         </div>
       </div>

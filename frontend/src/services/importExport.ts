@@ -349,7 +349,7 @@ export async function importConfig(file: File, password?: string): Promise<void>
       throw err
     }
     const msg = err instanceof Error ? err.message : '格式错误'
-    throw new Error('解析文件失败：' + msg)
+    throw new Error('解析文件失败：' + msg, { cause: err })
   }
 
   // 验证

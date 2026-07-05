@@ -359,7 +359,6 @@ export default function CodeMirrorEditor() {
             <div className="relative">
               <button
                 onClick={openAiMenu}
-                disabled={!getSelectedText()?.trim()}
                 className="btn-icon text-smartbox-400 hover:text-smartbox-300 disabled:opacity-30"
                 title="AI 代码操作"
               >

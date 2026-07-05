@@ -4,7 +4,7 @@
  * 展示最近的告警事件记录，支持清空、折叠和导出（CSV / JSON）。
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   History,
   ChevronDown,
@@ -153,8 +153,14 @@ function exportToJson(history: AlertEvent[]) {
 export default function AlertHistory() {
   const { history, clearHistory } = useAlertStore()
   const [expanded, setExpanded] = useState(false)
+  const [now, setNow] = useState(Date.now)
 
-  const recentCount = history.filter((e) => Date.now() - e.timestamp < 3_600_000).length
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const recentCount = history.filter((e) => now - e.timestamp < 3_600_000).length
 
   return (
     <div className="rounded-lg border border-slate-700/50 bg-slate-800/60">

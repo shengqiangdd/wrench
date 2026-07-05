@@ -5,7 +5,7 @@
  * indicators and optional AI-powered diagnosis.
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useReducer } from 'react'
 import {
   Server,
   Cpu,
@@ -67,9 +67,15 @@ export default function HostHealthOverview({
 }: {
   onSelectHost?: (hostId: string) => void
 }) {
-  const [hosts, setHosts] = useState<HostHealth[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  type HealthState = {
+    hosts: HostHealth[]
+    status: 'loading' | 'idle' | 'error'
+    errorMsg: string | null
+  }
+  const [healthState, dispatch] = useReducer(
+    (s: HealthState, a: Partial<HealthState>) => ({ ...s, ...a }),
+    { hosts: [], status: 'loading', errorMsg: null } as HealthState,
+  )
   const [collapsed, setCollapsed] = useState(false)
   const [diagnosing, setDiagnosing] = useState<string | null>(null)
   const [diagnosis, setDiagnosis] = useState<Record<string, string>>({})
@@ -78,13 +84,10 @@ export default function HostHealthOverview({
     try {
       const res = await authedFetch('/api/hosts/health')
       const data = await res.json()
-      setHosts(data.data || [])
-      setError(null)
+      dispatch({ hosts: data.data || [], status: 'idle', errorMsg: null })
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to load'
-      setError(msg)
-    } finally {
-      setLoading(false)
+      dispatch({ status: 'error', errorMsg: msg })
     }
   }, [])
 
@@ -113,8 +116,8 @@ export default function HostHealthOverview({
     }
   }
 
-  const critical = hosts.filter((h) => h.connected && (h.mem_percent ?? 0) > 90)
-  const warning = hosts.filter(
+  const critical = healthState.hosts.filter((h) => h.connected && (h.mem_percent ?? 0) > 90)
+  const warning = healthState.hosts.filter(
     (h) => h.connected && (h.mem_percent ?? 0) > 70 && (h.mem_percent ?? 0) <= 90,
   )
 
@@ -127,12 +130,12 @@ export default function HostHealthOverview({
       >
         <Server size={14} />
         <span className="font-medium">主机健康概览</span>
-        {loading ? (
+        {healthState.status === 'loading' ? (
           <Loader2 size={12} className="ml-1 animate-spin" />
         ) : (
           <>
             <span className="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[10px]">
-              {hosts.length} 台
+              {healthState.hosts.length} 台
             </span>
             {critical.length > 0 && (
               <span className="rounded bg-red-900/30 px-1.5 py-0.5 text-[10px] text-red-400">
@@ -154,23 +157,23 @@ export default function HostHealthOverview({
       {/* Content */}
       {!collapsed && (
         <div className="space-y-2 px-4 pb-3">
-          {error && (
+          {healthState.errorMsg && (
             <div className="rounded-lg bg-red-900/20 px-3 py-2 text-xs text-red-400">
-              加载失败: {error}
+              加载失败: {healthState.errorMsg}
               <button onClick={loadHealth} className="ml-2 underline">
                 重试
               </button>
             </div>
           )}
 
-          {!loading && hosts.length === 0 && (
+          {healthState.status !== 'loading' && healthState.hosts.length === 0 && (
             <div className="rounded-lg bg-slate-800/30 px-3 py-4 text-center text-xs text-slate-500">
               暂无已连接的主机
             </div>
           )}
 
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {hosts.map((h) => {
+            {healthState.hosts.map((h) => {
               const memColor = healthColor(h.mem_percent)
               const cpuColor = healthColor(
                 h.cpu_load != null && h.cpu_cores != null ? (h.cpu_load / h.cpu_cores) * 100 : null,

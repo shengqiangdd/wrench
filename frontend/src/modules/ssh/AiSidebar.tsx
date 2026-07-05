@@ -193,7 +193,7 @@ export default function AiSidebar({ sessionId, connectionId, onClose }: Props) {
   const executeCommand = async (cmd: string) => {
     if (!connectionId) return
     // 添加占位消息表示正在执行
-    const execId = `exec_${Date.now()}`
+    const execId = `exec_${crypto.randomUUID()}`
     setMessages((prev) => [
       ...prev,
       {

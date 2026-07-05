@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo, useMemo } from 'react'
+import { useState, useEffect, useCallback, memo, useMemo, useReducer } from 'react'
 import {
   RefreshCw,
   Search,
@@ -104,25 +104,28 @@ const LogRow = memo(function LogRow({ entry }: { entry: AuditEntry }) {
 })
 
 export default function AuditLogPage() {
-  const [logs, setLogs] = useState<AuditEntry[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<string>('all')
 
+  type FetchState = { status: 'loading' | 'idle'; data: AuditEntry[]; total: number }
+  const [fetchState, dispatch] = useReducer(
+    (_s: FetchState, a: FetchState): FetchState => a,
+    { status: 'loading', data: [], total: 0 },
+  )
+
   const fetchLogs = useCallback(async () => {
-    setLoading(true)
+    dispatch({ status: 'loading', data: [], total: 0 })
     try {
       const res = await fetch('/api/audit-logs')
       const json = await res.json()
       if (json.success) {
-        setLogs(json.data.logs)
-        setTotal(json.data.total)
+        dispatch({ status: 'idle', data: json.data.logs, total: json.data.total })
+      } else {
+        dispatch({ status: 'idle', data: [], total: 0 })
       }
     } catch (err) {
       console.error('Failed to fetch audit logs:', err)
-    } finally {
-      setLoading(false)
+      dispatch({ status: 'idle', data: [], total: 0 })
     }
   }, [])
 
@@ -132,9 +135,9 @@ export default function AuditLogPage() {
     return () => clearInterval(timer)
   }, [fetchLogs])
 
-  const actionTypes = [...new Set(logs.map((l) => l.action))].sort()
+  const actionTypes = [...new Set(fetchState.data.map((l) => l.action))].sort()
 
-  const filtered = logs.filter((entry) => {
+  const filtered = fetchState.data.filter((entry) => {
     if (filter !== 'all' && entry.action !== filter) return false
     if (search) {
       const q = search.toLowerCase()
@@ -162,15 +165,15 @@ export default function AuditLogPage() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         >
-          <option value="all">全部 ({total})</option>
+          <option value="all">全部 ({fetchState.total})</option>
           {actionTypes.map((a) => (
             <option key={a} value={a}>
-              {formatAction(a)} ({logs.filter((l) => l.action === a).length})
+              {formatAction(a)} ({fetchState.data.filter((l) => l.action === a).length})
             </option>
           ))}
         </select>
-        <button onClick={fetchLogs} disabled={loading} className="btn btn-ghost p-2" title="刷新">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+        <button onClick={fetchLogs} disabled={fetchState.status === 'loading'} className="btn btn-ghost p-2" title="刷新">
+          <RefreshCw size={14} className={fetchState.status === 'loading' ? 'animate-spin' : ''} />
         </button>
       </div>
 
@@ -178,7 +181,7 @@ export default function AuditLogPage() {
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
           <div className="flex h-full items-center justify-center text-xs text-slate-600">
-            {loading ? '加载中...' : '暂无操作记录'}
+            {fetchState.status === 'loading' ? '加载中...' : '暂无操作记录'}
           </div>
         ) : (
           <div className="divide-y divide-slate-800/30">

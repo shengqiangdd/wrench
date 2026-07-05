@@ -48,6 +48,10 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
   const [log, setLog] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const addLog = (msg: string) => {
+    setLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`])
+  }
+
   // 初始化：加载当前已连接的 sessions
   const loadConnectedSessions = useCallback(() => {
     const available = sessions.map((sess) => {
@@ -69,10 +73,6 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
       addLog('⚠️ 没有已连接的 SSH 会话，请先建立连接')
     }
   }, [sessions, destPath])
-
-  const addLog = (msg: string) => {
-    setLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`])
-  }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const toggleTarget = (idx: number) => {
@@ -104,6 +104,76 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
     if (file) {
       setSelectedFile(file)
       addLog(`已选择文件: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`)
+    }
+  }
+
+  // 分块上传
+  const chunkedUpload = async (
+    wsClient: WsClient,
+    connId: string,
+    content: string,
+    path: string,
+    totalSize: number,
+    targetIdx: number,
+  ): Promise<void> => {
+    // 启动分块会话
+    const startResult = await wsClient.request({
+      type: 'sftp',
+      connectionId: connId,
+      operation: 'chunk_start',
+      path,
+    })
+
+    if (!startResult.success) {
+      throw new Error(String(startResult.error || '分块上传启动失败'))
+    }
+
+    const chunkId = startResult.chunkId
+    const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB
+    const rawBytes = Math.floor(content.length * 0.75) // base64 → 实际字节
+    const totalChunks = Math.ceil(rawBytes / CHUNK_SIZE)
+
+    for (let c = 0; c < totalChunks; c++) {
+      const start = c * CHUNK_SIZE
+      const end = Math.min(start + CHUNK_SIZE, content.length)
+      const chunkContent = content.slice(start, end)
+
+      const appendResult = await wsClient.request({
+        type: 'sftp',
+        connectionId: connId,
+        operation: 'chunk_append',
+        chunkId,
+        content: chunkContent,
+      })
+
+      if (!appendResult.success) {
+        throw new Error(String(appendResult.error || '分块写入失败'))
+      }
+
+      const progress = Math.round(((c + 1) / totalChunks) * 90) + 10
+      setTargets((prev) => {
+        const next = [...prev]
+        const entry = next[targetIdx]!
+        next[targetIdx] = {
+          ...entry,
+          progress,
+          size: Math.round(((c + 1) / totalChunks) * totalSize),
+        }
+        return next
+      })
+    }
+
+    // 完成
+    const finishResult = await wsClient.request({
+      type: 'sftp',
+      connectionId: connId,
+      operation: 'chunk_finish',
+      chunkId,
+      targetPath: path,
+    })
+
+    if (!finishResult.success) {
+      throw new Error(String(finishResult.error || '分块上传完成失败'))
     }
   }
 
@@ -199,76 +269,6 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
 
     reader.readAsDataURL(file)
   }, [selectedFile, targets])
-
-  // 分块上传
-  const chunkedUpload = async (
-    wsClient: WsClient,
-    connId: string,
-    content: string,
-    path: string,
-    totalSize: number,
-    targetIdx: number,
-  ): Promise<void> => {
-    // 启动分块会话
-    const startResult = await wsClient.request({
-      type: 'sftp',
-      connectionId: connId,
-      operation: 'chunk_start',
-      path,
-    })
-
-    if (!startResult.success) {
-      throw new Error(String(startResult.error || '分块上传启动失败'))
-    }
-
-    const chunkId = startResult.chunkId
-    const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB
-    const rawBytes = Math.floor(content.length * 0.75) // base64 → 实际字节
-    const totalChunks = Math.ceil(rawBytes / CHUNK_SIZE)
-
-    for (let c = 0; c < totalChunks; c++) {
-      const start = c * CHUNK_SIZE
-      const end = Math.min(start + CHUNK_SIZE, content.length)
-      const chunkContent = content.slice(start, end)
-
-      const appendResult = await wsClient.request({
-        type: 'sftp',
-        connectionId: connId,
-        operation: 'chunk_append',
-        chunkId,
-        content: chunkContent,
-      })
-
-      if (!appendResult.success) {
-        throw new Error(String(appendResult.error || '分块写入失败'))
-      }
-
-      const progress = Math.round(((c + 1) / totalChunks) * 90) + 10
-      setTargets((prev) => {
-        const next = [...prev]
-        const entry = next[targetIdx]!
-        next[targetIdx] = {
-          ...entry,
-          progress,
-          size: Math.round(((c + 1) / totalChunks) * totalSize),
-        }
-        return next
-      })
-    }
-
-    // 完成
-    const finishResult = await wsClient.request({
-      type: 'sftp',
-      connectionId: connId,
-      operation: 'chunk_finish',
-      chunkId,
-      targetPath: path,
-    })
-
-    if (!finishResult.success) {
-      throw new Error(String(finishResult.error || '分块上传完成失败'))
-    }
-  }
 
   // 执行远程命令
   const startCommand = useCallback(async () => {

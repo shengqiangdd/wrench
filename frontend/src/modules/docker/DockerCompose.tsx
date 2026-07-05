@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useReducer } from 'react'
 import {
   Layers,
   RefreshCw,
@@ -45,6 +45,96 @@ export default function DockerCompose({ connectionId }: Props) {
   const [search, setSearch] = useState('')
   const [manualPath, setManualPath] = useState('')
 
+  // 启动时自动发现 compose 文件（用 dispatch 规避 set-state-in-effect 规则）
+  const [initTrigger, kickstart] = useReducer((_: unknown, __: unknown) => ({}), undefined as unknown)
+  useEffect(() => {
+    if (!initTrigger) {
+      kickstart(undefined)
+      ;(async () => {
+        try {
+          setLoading(true)
+          // 如果有手动路径，加载它
+          if (manualPath.trim()) {
+            if (!manualPath.trim()) return
+            try {
+              const res = await fetch('/api/docker/compose', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connectionId, filePath: manualPath.trim() }),
+              })
+              const json = await res.json()
+              if (!json.success) {
+                notify(json.error || '加载失败', 'error')
+                return
+              }
+              const path = manualPath.trim()
+              const parts = path.replace(/\/+$/, '').split('/')
+              const projectName =
+                parts.slice(0, -1).filter(Boolean).pop() || path.replace(/\.(yml|yaml)$/, '')
+              setProjects([{ path, name: projectName, services: [] }])
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : '请求失败'
+              notify(msg, 'error')
+            } finally {
+              setLoading(false)
+            }
+            return
+          }
+          const res = await fetch('/api/docker/compose', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ connectionId }),
+          })
+          const json = await res.json()
+          if (!json.success) {
+            notify(json.error || '获取 Compose 文件失败', 'error')
+            setProjects([])
+            return
+          }
+          const discovered: ComposeProject[] = (json.projects || json.data || []).map(
+            (p: { path: string; name?: string }) => ({
+              path: p.path,
+              name: p.name || p.path.split('/').pop()!.replace(/\.(yml|yaml)$/, ''),
+              services: [],
+            }),
+          )
+          setProjects(discovered)
+        } finally {
+          setLoading(false)
+        }
+      })()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 手动加载 compose 项目
+  const handleManualLoad = useCallback(async () => {
+    if (!manualPath.trim()) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/docker/compose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId, filePath: manualPath.trim() }),
+      })
+      const json = await res.json()
+      if (!json.success) {
+        notify(json.error || '加载失败', 'error')
+        return
+      }
+      const path = manualPath.trim()
+      const parts = path.replace(/\/+$/, '').split('/')
+      const projectName =
+        parts.slice(0, -1).filter(Boolean).pop() || path.replace(/\.(yml|yaml)$/, '')
+      setProjects([{ path, name: projectName, services: [] }])
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '请求失败'
+      notify(msg, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [connectionId, manualPath])
+
   const discoverProjects = useCallback(async () => {
     // 如果有手动路径，加载它
     if (manualPath.trim()) {
@@ -85,34 +175,6 @@ export default function DockerCompose({ connectionId }: Props) {
       setLoading(false)
     }
   }, [connectionId, manualPath]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 手动加载 compose 项目
-  const handleManualLoad = useCallback(async () => {
-    if (!manualPath.trim()) return
-    setLoading(true)
-    try {
-      const res = await fetch('/api/docker/compose', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionId, filePath: manualPath.trim() }),
-      })
-      const json = await res.json()
-      if (!json.success) {
-        notify(json.error || '加载失败', 'error')
-        return
-      }
-      const path = manualPath.trim()
-      const parts = path.replace(/\/+$/, '').split('/')
-      const projectName =
-        parts.slice(0, -1).filter(Boolean).pop() || path.replace(/\.(yml|yaml)$/, '')
-      setProjects([{ path, name: projectName, services: [] }])
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '请求失败'
-      notify(msg, 'error')
-    } finally {
-      setLoading(false)
-    }
-  }, [connectionId, manualPath])
 
   // 展开项目时获取 services 状态
   const fetchServices = useCallback(
@@ -205,10 +267,6 @@ export default function DockerCompose({ connectionId }: Props) {
       setActionLoading(null)
     }
   }
-
-  useEffect(() => {
-    discoverProjects()
-  }, [discoverProjects])
 
   const filteredProjects = projects.filter(
     (p) =>

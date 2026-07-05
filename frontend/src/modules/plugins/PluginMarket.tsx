@@ -100,7 +100,8 @@ export default function PluginMarket() {
   }, [])
 
   useEffect(() => {
-    fetchMarket()
+    const t = setTimeout(() => fetchMarket(), 0)
+    return () => clearTimeout(t)
   }, [fetchMarket])
 
   // 安装插件

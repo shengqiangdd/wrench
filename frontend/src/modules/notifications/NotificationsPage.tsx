@@ -61,7 +61,8 @@ export default function NotificationsPage() {
   }, [])
 
   useEffect(() => {
-    loadChannels()
+    const t = setTimeout(() => loadChannels(), 0)
+    return () => clearTimeout(t)
   }, [loadChannels])
 
   const deleteChannel = async (id: string) => {

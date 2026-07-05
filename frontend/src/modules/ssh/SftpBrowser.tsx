@@ -329,7 +329,8 @@ function FilePreviewModal({
   }, [sessionId, entry.path, wsClient])
 
   useEffect(() => {
-    loadFile()
+    const t = setTimeout(() => loadFile(), 0)
+    return () => clearTimeout(t)
   }, [entry.path, loadFile])
 
   const handleSave = async () => {
@@ -528,7 +529,7 @@ export default function SftpBrowser({
 
   const wsClient = getWsClientSync()
   const wsRef = useRef(wsClient)
-  wsRef.current = wsClient
+  useEffect(() => { wsRef.current = wsClient }, [wsClient])
   const retryCountRef = useRef(0)
   const fileStore = useFileStore()
   const setActiveNav = useAppStore((s) => s.setActiveNav)
@@ -538,19 +539,22 @@ export default function SftpBrowser({
   // 监听 sftp-ready 事件
   useEffect(() => {
     if (!sessionId) {
-      setSftpReady(false)
-      return
+      const t = setTimeout(() => setSftpReady(false), 0)
+      return () => { clearTimeout(t) }
     }
-    setSftpReady(false)
+    const t = setTimeout(() => setSftpReady(false), 0)
     const unsub = wsClient.on('sftp-ready', (data) => {
       if (data.connectionId === sessionId) setSftpReady(true)
     })
-    return () => unsub()
+    return () => {
+      clearTimeout(t)
+      unsub()
+    }
   }, [sessionId, wsClient])
 
   // 读取目录
   const listDir = useCallback(
-    async (dirPath: string, retryOnNotReady = true) => {
+    async function listDir(dirPath: string, retryOnNotReady = true) {
       if (!sessionId) return
       setLoading(true)
       setError(null)
@@ -590,26 +594,32 @@ export default function SftpBrowser({
   // sessionId 变化时加载
   useEffect(() => {
     if (sessionId) {
-      setCurrentPath('/')
-      setEntries([])
-      setError(null)
-      setSftpReady(false)
+      const t1 = setTimeout(() => {
+        setCurrentPath('/')
+        setEntries([])
+        setError(null)
+        setSftpReady(false)
+      }, 0)
       retryCountRef.current = 0
-      const timer = setTimeout(() => listDir('/', true), 300)
-      return () => clearTimeout(timer)
+      const t2 = setTimeout(() => listDir('/', true), 300)
+      return () => { clearTimeout(t1); clearTimeout(t2) }
     }
-    setEntries([])
-    setCurrentPath('/')
-    setSftpReady(false)
-    return
+    const t3 = setTimeout(() => {
+      setEntries([])
+      setCurrentPath('/')
+      setSftpReady(false)
+    }, 0)
+    return () => clearTimeout(t3)
   }, [sessionId, listDir])
 
   // sftp-ready 后自动刷新（故意限制 deps：只应在 sftpReady 翻转时触发）
   useEffect(() => {
     if (sftpReady && sessionId) {
       retryCountRef.current = 0
-      listDir(currentPath, false)
+      const t = setTimeout(() => listDir(currentPath, false), 0)
+      return () => clearTimeout(t)
     }
+    return undefined
   }, [sftpReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 关闭右键菜单
@@ -630,7 +640,7 @@ export default function SftpBrowser({
   // ─── 递归搜索 ───
 
   const recursiveSearch = useCallback(
-    async (dir: string, query: string, depth: number = 0): Promise<SftpEntry[]> => {
+    async function recursiveSearch(dir: string, query: string, depth: number = 0): Promise<SftpEntry[]> {
       if (!sessionId) return []
       // 限制最大递归深度为 5 层，防止遍历整个文件系统
       if (depth > 5) return []

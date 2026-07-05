@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useActionState } from 'react'
+import { useState, useCallback, useActionState } from 'react'
 import { X, CheckCircle2, AlertCircle, Loader2, PlugZap, Eye, EyeOff } from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import { getWsClientSync } from '../../services/websocket'
@@ -38,6 +38,26 @@ export default function ConnectionForm({ onClose, editId }: Props) {
   const [showSudoPassword, setShowSudoPassword] = useState(false)
   const [testStatus, setTestStatus] = useState<TestStatus>('idle')
   const [testMessage, setTestMessage] = useState('')
+
+  const wsClient = getWsClientSync()
+
+  // 构建连接配置对象
+  const getConnectionData = useCallback(
+    (): SshConnection => ({
+      id: existing?.id || `ssh_${Date.now()}`,
+      name,
+      host,
+      port: parseInt(port) || 22,
+      username,
+      authType,
+      ...(authType === 'password' ? { password } : { privateKey }),
+      sudoPassword: sudoPassword || password || undefined,
+      group: group || undefined,
+      createdAt: existing?.createdAt || Date.now(),
+      lastConnectedAt: existing?.lastConnectedAt,
+    }),
+    [existing, name, host, port, username, authType, password, privateKey, sudoPassword, group],
+  )
 
   // ── useActionState: 表单提交异步状态 ──
   const [saveError, saveAction, isSaving] = useActionState(
@@ -79,33 +99,6 @@ export default function ConnectionForm({ onClose, editId }: Props) {
       return null
     },
     null,
-  )
-
-  // 同步：当密码变更时，若 sudo 密码未独立修改过，则同步更新
-  useEffect(() => {
-    if (!existing?.sudoPassword || existing.sudoPassword === existing.password) {
-      setSudoPassword(password)
-    }
-  }, [password, existing])
-
-  const wsClient = getWsClientSync()
-
-  // 构建连接配置对象
-  const getConnectionData = useCallback(
-    (): SshConnection => ({
-      id: existing?.id || `ssh_${Date.now()}`,
-      name,
-      host,
-      port: parseInt(port) || 22,
-      username,
-      authType,
-      ...(authType === 'password' ? { password } : { privateKey }),
-      sudoPassword: sudoPassword || password || undefined,
-      group: group || undefined,
-      createdAt: existing?.createdAt || Date.now(),
-      lastConnectedAt: existing?.lastConnectedAt,
-    }),
-    [existing, name, host, port, username, authType, password, privateKey, sudoPassword, group],
   )
 
   // 测试连接

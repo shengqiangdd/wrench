@@ -8,7 +8,7 @@
  * 只在 manifest.id 或 pluginCode 变化时重建。
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useReducer } from 'react'
 import type { PluginManifest } from '../types/plugin'
 
 // ── 消息类型定义 ──
@@ -57,9 +57,11 @@ export default function PluginSandbox({
   editorLanguage: _editorLanguage,
 }: PluginSandboxProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const [_ready, setReady] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const [sandboxState, dispatch] = useReducer(
+    (_s: { status: string; message?: string }, a: { status: string; message?: string }) => a,
+    { status: 'loading' },
+  )
+  const readyRef = useRef(false)
 
   const handleRef = useRef<PluginSandboxHandle | null>(null)
   const handlersRegisteredRef = useRef(false)
@@ -243,9 +245,7 @@ export default function PluginSandbox({
     const iframe = iframeRef.current
     if (!iframe) return
 
-    setLoading(true)
-    setLoadError(null)
-    setReady(false)
+    dispatch({ status: 'loading' })
 
     try {
       const html = generateSandboxHTML()
@@ -256,8 +256,7 @@ export default function PluginSandbox({
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to create sandbox'
-      setLoadError(msg)
-      setLoading(false)
+      dispatch({ status: 'error', message: msg })
       onError?.(msg)
     }
     return
@@ -280,8 +279,8 @@ export default function PluginSandbox({
 
       switch (data.type) {
         case 'sandboxReady': {
-          setReady(true)
-          setLoading(false)
+          readyRef.current = true
+          dispatch({ status: 'ready' })
           onReady?.(handleRef.current!)
           break
         }
@@ -302,8 +301,7 @@ export default function PluginSandbox({
         }
         case 'pluginError': {
           const error = data.payload.error as string
-          setLoadError(error)
-          setLoading(false)
+          dispatch({ status: 'error', message: error })
           onError?.(error)
           break
         }
@@ -392,7 +390,7 @@ export default function PluginSandbox({
   // ── 渲染 ──
   return (
     <div className="relative h-full w-full overflow-hidden rounded-lg bg-slate-900/50">
-      {loading && !loadError && (
+      {sandboxState.status === 'loading' && (
         <div className="absolute inset-0 z-10 flex items-center justify-center">
           <div className="text-center">
             <div className="mx-auto mb-2 h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-blue-400" />
@@ -401,11 +399,11 @@ export default function PluginSandbox({
         </div>
       )}
 
-      {loadError && (
+      {sandboxState.status === 'error' && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/80 p-4">
           <div className="max-w-xs text-center">
             <p className="mb-1 text-sm text-red-400">沙箱加载失败</p>
-            <p className="text-xs text-slate-500">{loadError}</p>
+            <p className="text-xs text-slate-500">{sandboxState.message}</p>
           </div>
         </div>
       )}

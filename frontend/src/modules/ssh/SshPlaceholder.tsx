@@ -257,21 +257,24 @@ export default function SshPlaceholder() {
 
   // 当 splits 变化时重新计算 syncGroups
   useEffect(() => {
-    setSyncGroups((prev) => {
-      const newGroups: Record<string, string[]> = {}
-      for (const split of splits) {
-        if (split.syncGroup) {
-          if (!newGroups[split.syncGroup]) newGroups[split.syncGroup] = []
-          newGroups[split.syncGroup]!.push(split.id)
+    const t = setTimeout(() => {
+      setSyncGroups((prev) => {
+        const newGroups: Record<string, string[]> = {}
+        for (const split of splits) {
+          if (split.syncGroup) {
+            if (!newGroups[split.syncGroup]) newGroups[split.syncGroup] = []
+            newGroups[split.syncGroup]!.push(split.id)
+          }
         }
-      }
-      // 只保留有效组
-      const pruned: Record<string, string[]> = {}
-      for (const [g, members] of Object.entries(newGroups)) {
-        if (prev[g] && members.length >= 1) pruned[g] = members
-      }
-      return pruned
-    })
+        // 只保留有效组
+        const pruned: Record<string, string[]> = {}
+        for (const [g, members] of Object.entries(newGroups)) {
+          if (prev[g] && members.length >= 1) pruned[g] = members
+        }
+        return pruned
+      })
+    }, 0)
+    return () => clearTimeout(t)
   }, [splits])
 
   // ─── 拖拽合并 ───
@@ -321,7 +324,9 @@ export default function SshPlaceholder() {
   // ─── 命令同步广播 ───
   // 用 ref 跟踪最新的 splits，避免 useCallback 闭包过期
   const splitsRef = useRef(splits)
-  splitsRef.current = splits
+  useEffect(() => {
+    splitsRef.current = splits
+  }, [splits])
 
   const handleTerminalData = useCallback((sessionId: string, data: string) => {
     // 查找这个 session 所在的分屏和同步组
@@ -351,7 +356,7 @@ export default function SshPlaceholder() {
     (s) => s.id === selectedConnectionId && s.status === 'connected',
   )
 
-  const WsIndicator = () => (
+  const showWsIndicator = () => (
     <button
       onClick={() => wsClientRef.current?.connect()}
       className="flex min-h-[36px] items-center gap-1.5 px-2 py-1.5"
@@ -395,7 +400,7 @@ export default function SshPlaceholder() {
       >
         <div className="flex h-full flex-col">
           <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">
-            <WsIndicator />
+            {showWsIndicator()}
             <button
               onClick={() => setSidebarOpen(false)}
               className="btn-icon text-slate-500 hover:text-slate-300 md:hidden"
@@ -451,7 +456,7 @@ export default function SshPlaceholder() {
               </div>
 
               <div className="ml-auto hidden items-center md:flex">
-                <WsIndicator />
+                {showWsIndicator()}
               </div>
 
               {/* 工具栏按钮组 */}

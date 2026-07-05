@@ -49,7 +49,7 @@ export default function ResizablePanel({
   handleClassName = '',
 }: Props) {
   const [internalSize, setInternalSize] = useState(defaultSize)
-  const isDragging = useRef(false)
+  const [isDragging, setIsDragging] = useState(false)
   const startPos = useRef(0)
   const startSize = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -64,7 +64,7 @@ export default function ResizablePanel({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
-      isDragging.current = true
+      setIsDragging(true)
       startPos.current = isHorizontal ? e.clientX : e.clientY
       startSize.current = actualSize
       document.body.style.cursor = isHorizontal ? 'col-resize' : 'row-resize'
@@ -75,22 +75,22 @@ export default function ResizablePanel({
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (!isDragging.current) return
+      if (!isDragging) return
       const delta = (isHorizontal ? e.clientX : e.clientY) - startPos.current
       // 面板在分隔线之前（left/top），delta 直接加；之后（right/bottom）要反向
       const newSize = isBefore ? startSize.current + delta : startSize.current - delta
       setInternalSize(Math.max(minSize, Math.min(maxSize, newSize)))
     },
-    [isHorizontal, isBefore, minSize, maxSize],
+    [isHorizontal, isBefore, minSize, maxSize, isDragging],
   )
 
   const handleMouseUp = useCallback(() => {
-    if (!isDragging.current) return
-    isDragging.current = false
+    if (!isDragging) return
+    setIsDragging(false)
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
     onResize?.(internalSize)
-  }, [internalSize, onResize])
+  }, [internalSize, onResize, isDragging])
 
   // 全局 mousemove / mouseup
   useEffect(() => {
@@ -106,7 +106,7 @@ export default function ResizablePanel({
 
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
-      isDragging.current = true
+      setIsDragging(true)
       const touch = e.touches[0]
       if (!touch) return
       startPos.current = isHorizontal ? touch.clientX : touch.clientY
@@ -117,18 +117,18 @@ export default function ResizablePanel({
 
   const handleTouchMove = useCallback(
     (e: TouchEvent) => {
-      if (!isDragging.current) return
+      if (!isDragging) return
       const touch = e.touches[0]
       if (!touch) return
       const delta = (isHorizontal ? touch.clientX : touch.clientY) - startPos.current
       const newSize = isBefore ? startSize.current + delta : startSize.current - delta
       setInternalSize(Math.max(minSize, Math.min(maxSize, newSize)))
     },
-    [isHorizontal, isBefore, minSize, maxSize],
+    [isHorizontal, isBefore, minSize, maxSize, isDragging],
   )
 
   const handleTouchEnd = useCallback(() => {
-    isDragging.current = false
+    setIsDragging(false)
     onResize?.(internalSize)
   }, [internalSize, onResize])
 
@@ -176,7 +176,7 @@ export default function ResizablePanel({
       </div>
 
       {/* 拖拽时的覆盖层 */}
-      {isDragging.current && (
+      {isDragging && (
         <div
           className="fixed inset-0 z-50"
           style={{ cursor: isHorizontal ? 'col-resize' : 'row-resize' }}

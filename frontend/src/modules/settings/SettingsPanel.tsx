@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useActionState, useRef } from 'react'
+import { useState, useCallback, useEffect, useActionState } from 'react'
 import {
   Settings,
   Moon,
@@ -65,12 +65,12 @@ export default function SettingsPanel() {
 
   // ── useActionState: 导入操作异步状态 ──
   const [importState, importAction, isImporting] = useActionState(
-    async (_prev: string | null, _formData: FormData): Promise<string | null> => {
-      const file = pendingImportFileRef.current
-      const pwd = pendingImportPasswordRef.current
+    async (_prev: string | null, formData: FormData): Promise<string | null> => {
+      const file = formData.get('file') as File | null
+      const pwd = (formData.get('password') as string) || ''
       if (!file) return '未选择文件'
       try {
-        await importEncryptedFile(file, pwd || '')
+        await importEncryptedFile(file, pwd)
         setShowImportDialog(false)
         setImportingFile(null)
         setImportPassword('')
@@ -86,9 +86,6 @@ export default function SettingsPanel() {
     },
     null,
   )
-  // 暂存导入文件和密码，供 useActionState action 读取
-  const pendingImportFileRef = useRef<File | null>(null)
-  const pendingImportPasswordRef = useRef('')
 
   const themeOptions = [
     { value: 'dark' as const, label: '深色', icon: Moon },
@@ -213,9 +210,10 @@ export default function SettingsPanel() {
 
   const handleConfirmImport = useCallback(() => {
     if (!importingFile) return
-    pendingImportFileRef.current = importingFile
-    pendingImportPasswordRef.current = importPassword
-    importAction(new FormData())
+    const fd = new FormData()
+    fd.append('file', importingFile)
+    fd.append('password', importPassword || '')
+    importAction(fd)
   }, [importingFile, importPassword, importAction])
 
   const handleExportWithoutPassword = useCallback(() => {

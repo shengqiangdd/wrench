@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { QuickCommand, CommandVariable } from './index'
 import { resolveCommandTemplate, extractVariables } from './index'
@@ -10,29 +10,22 @@ interface VariableModalProps {
 }
 
 export default function VariableModal({ cmd, onConfirm, onCancel }: VariableModalProps) {
-  const [values, setValues] = useState<Record<string, string>>({})
-  const [resolved, setResolved] = useState('')
-
-  // 初始化变量默认值
-  useEffect(() => {
+  // 从 cmd 初始化变量默认值（组件每次 mount 时重新初始化）
+  const [values, setValues] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {}
     if (cmd.variables) {
       cmd.variables.forEach((v) => {
         initial[v.name] = v.defaultValue || ''
       })
     } else {
-      // 没定义 variables 字段，从命令中自动提取
       const vars = extractVariables(cmd.command)
       vars.forEach((v) => {
         initial[v] = ''
       })
     }
-    setValues(initial)
-  }, [cmd])
-
-  useEffect(() => {
-    setResolved(resolveCommandTemplate(cmd.command, values))
-  }, [cmd.command, values])
+    return initial
+  })
+  const resolved = resolveCommandTemplate(cmd.command, values)
 
   const allFilled = Object.values(values).every((v) => v.trim() !== '')
   const hasVariables = Object.keys(values).length > 0

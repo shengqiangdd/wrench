@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { QuickCommand } from './index'
 import { COMMAND_GROUPS } from './index'
@@ -10,19 +10,10 @@ interface CommandFormModalProps {
 }
 
 export default function CommandFormModal({ editCmd, onSave, onClose }: CommandFormModalProps) {
-  const [name, setName] = useState('')
-  const [command, setCommand] = useState('')
-  const [description, setDescription] = useState('')
-  const [groupId, setGroupId] = useState('custom')
-
-  useEffect(() => {
-    if (editCmd) {
-      setName(editCmd.name)
-      setCommand(editCmd.command)
-      setDescription(editCmd.description || '')
-      setGroupId(editCmd.groupId)
-    }
-  }, [editCmd])
+  const [name, setName] = useState(editCmd?.name ?? '')
+  const [command, setCommand] = useState(editCmd?.command ?? '')
+  const [description, setDescription] = useState(editCmd?.description ?? '')
+  const [groupId, setGroupId] = useState(editCmd?.groupId ?? 'custom')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

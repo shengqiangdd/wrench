@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useReducer } from 'react'
 import { Download, Search, X, ArrowUpDown, Radio, Activity, AlertTriangle } from 'lucide-react'
 
 /** 将常见 SSH/系统错误转为友好提示 */
@@ -26,9 +26,11 @@ interface LogViewerProps {
 }
 
 export default function LogViewer({ connectionId, logPath, onClose }: LogViewerProps) {
-  const [content, setContent] = useState<string>('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  type LogsFetchState = { status: 'loading' | 'idle' | 'error'; data: string; errorMsg: string | null }
+  const [{ status, data: content, errorMsg }, dispatch] = useReducer(
+    (s: LogsFetchState, a: Partial<LogsFetchState>) => ({ ...s, ...a }),
+    { status: 'loading', data: '', errorMsg: null } as LogsFetchState,
+  )
   const [lineCount, setLineCount] = useState(200)
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResult, setSearchResult] = useState<string>('')
@@ -37,12 +39,17 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
   const [followMode, setFollowMode] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
-  const requestIdRef = useRef(`logtail-${Date.now()}`)
+  const requestIdRef = useRef<string | undefined>(undefined)
+  const contentRef = useRef(content)
+  useEffect(() => { contentRef.current = content }, [content])
+
+  useEffect(() => {
+    requestIdRef.current = `logtail-${Date.now()}`
+  }, [])
 
   // ─── 获取初始日志（REST） ───
   const fetchLogs = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+    dispatch({ status: 'loading' })
     try {
       const { authedFetch } = await import('../../services/auth')
       const res = await authedFetch('/api/logs/tail', {
@@ -52,15 +59,13 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
       })
       const json = await res.json()
       if (json.success) {
-        setContent(json.data)
+        dispatch({ status: 'idle', data: json.data, errorMsg: null })
       } else {
-        setError(json.error || '获取日志失败')
+        dispatch({ status: 'error', errorMsg: json.error || '获取日志失败' })
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '请求失败'
-      setError(msg)
-    } finally {
-      setLoading(false)
+      dispatch({ status: 'error', errorMsg: msg })
     }
   }, [connectionId, logPath, lineCount])
 
@@ -77,7 +82,7 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
 
   // ─── WebSocket 实时跟踪 ───
   const startFollow = useCallback(async () => {
-    setError(null)
+    dispatch({ errorMsg: null })
     try {
       const { buildWsUrl } = await import('../../services/auth')
       const wsUrl = await buildWsUrl('/ws')
@@ -103,18 +108,15 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
           if (msg.type === 'logtail_started') {
             setFollowMode(true)
           } else if (msg.type === 'logtail_data' && msg.lines) {
-            setContent((prev) => {
-              const combined = prev + (prev.endsWith('\n') ? '' : '\n') + msg.lines.join('\n')
-              const lineArr = combined.split('\n')
-              if (lineArr.length > 50000) {
-                return lineArr.slice(lineArr.length - 50000).join('\n')
-              }
-              return combined
-            })
+            const prev = contentRef.current
+            const combined = prev + (prev.endsWith('\n') ? '' : '\n') + msg.lines.join('\n')
+            const lineArr = combined.split('\n')
+            const newData = lineArr.length > 50000 ? lineArr.slice(lineArr.length - 50000).join('\n') : combined
+            dispatch({ data: newData })
           } else if (msg.type === 'logtail_stopped') {
             setFollowMode(false)
           } else if (msg.type === 'error') {
-            setError(msg.message)
+            dispatch({ errorMsg: msg.message })
             setFollowMode(false)
           }
         } catch {
@@ -123,7 +125,7 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
       }
 
       ws.onerror = () => {
-        setError('WebSocket 连接失败')
+        dispatch({ errorMsg: 'WebSocket 连接失败' })
         setFollowMode(false)
       }
 
@@ -132,7 +134,7 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
         wsRef.current = null
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '无法获取认证令牌')
+      dispatch({ errorMsg: err instanceof Error ? err.message : '无法获取认证令牌' })
     }
   }, [connectionId, logPath, lineCount])
 
@@ -241,10 +243,10 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
 
         <button
           onClick={fetchLogs}
-          disabled={loading || followMode}
+          disabled={status === 'loading' || followMode}
           className="rounded px-2 py-0.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 disabled:opacity-50"
         >
-          {loading ? '加载中...' : '刷新'}
+          {status === 'loading' ? '加载中...' : '刷新'}
         </button>
 
         {/* 实时跟踪按钮 */}
@@ -345,14 +347,14 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
       )}
 
       {/* 错误提示 */}
-      {error &&
+      {errorMsg &&
         (() => {
-          const friendly = friendlyError(error, logPath)
+          const friendly = friendlyError(errorMsg, logPath)
           return (
             <div className="shrink-0 border-b border-red-900/30 bg-red-950/20 px-3 py-2 text-xs">
               <div className="flex items-center gap-2 text-red-400">
                 <AlertTriangle size={14} className="shrink-0" />
-                <span className="font-medium">{friendly ? friendly.title : error}</span>
+                <span className="font-medium">{friendly ? friendly.title : errorMsg}</span>
               </div>
               {friendly && <p className="mt-1 pl-5 text-[11px] text-red-400/70">{friendly.hint}</p>}
             </div>
@@ -361,7 +363,7 @@ export default function LogViewer({ connectionId, logPath, onClose }: LogViewerP
 
       {/* 日志内容 */}
       <div ref={scrollRef} className="flex-1 overflow-auto bg-slate-950/80">
-        {loading && !content ? (
+        {status === 'loading' && !content ? (
           <div className="flex h-full items-center justify-center">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
           </div>

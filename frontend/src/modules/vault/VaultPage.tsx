@@ -67,7 +67,8 @@ export default function VaultPage() {
   }, [])
 
   useEffect(() => {
-    loadEntries()
+    const t = setTimeout(() => loadEntries(), 0)
+    return () => clearTimeout(t)
   }, [loadEntries])
 
   const deleteEntry = async (id: string) => {

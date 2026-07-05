@@ -28,9 +28,9 @@ export default function PluginsPage() {
   const [error, setError] = useState<string | null>(null)
 
   // 用 ref 存储沙箱状态，避免 state 更新引发循环
-  const sandboxCodesRef = useRef<Record<string, string>>({})
-  const sandboxReadyRef = useRef<Record<string, boolean>>({})
-  const sandboxKeysRef = useRef<Record<string, number>>({})
+  const [sandboxCodes, setSandboxCodes] = useState<Record<string, string>>({})
+  const [sandboxReady, setSandboxReady] = useState<Record<string, boolean>>({})
+  const [sandboxKeys, setSandboxKeys] = useState<Record<string, number>>({})
   const loadedRef = useRef(false)
   // 用 ref 存储 catalog，避免 useCallback 闭包过期问题
   const catalogRef = useRef<PluginCatalogItem[]>([])
@@ -64,9 +64,9 @@ export default function PluginsPage() {
         keys[plugin.id] = Date.now() + Math.random()
       }
 
-      sandboxCodesRef.current = codes
-      sandboxKeysRef.current = keys
-      sandboxReadyRef.current = {}
+      setSandboxCodes(codes)
+      setSandboxKeys(keys)
+      setSandboxReady({})
 
       // 在 Store 中注册
       const store = usePluginStore.getState()
@@ -108,16 +108,6 @@ export default function PluginsPage() {
     }
   }, [])
 
-  // 加载插件
-  useEffect(() => {
-    loadPlugins()
-
-    // 监听插件热加载通知（开发模式）
-    const unsub = getWsClientSync().on('plugins-changed', () => {
-      handleReloadRef.current()
-    })
-    return unsub
-  }, [loadPlugins])
 
   const isPluginEnabled = (pluginId: string) => {
     return storePlugins.some((p) => p.manifest.id === pluginId && p.enabled)
@@ -131,25 +121,35 @@ export default function PluginsPage() {
     }
   }
 
-  const handleReload = () => {
+  const handleReload = useCallback(() => {
     // 清理
     for (const plugin of catalog) {
       unloadPlugin(plugin.id)
     }
-    sandboxCodesRef.current = {}
-    sandboxReadyRef.current = {}
-    sandboxKeysRef.current = {}
+    setSandboxCodes({})
+    setSandboxReady({})
+    setSandboxKeys({})
     loadedRef.current = false
     setCatalog([])
     setRenderTick(0)
     loadPlugins()
-  }
+  }, [catalog, loadPlugins])
+  // 加载插件
+  useEffect(() => {
+    const t = setTimeout(() => loadPlugins(), 0)
 
-  const handleReloadRef = useRef(handleReload)
-  handleReloadRef.current = handleReload
+    // 监听插件热加载通知（开发模式）
+    const unsub = getWsClientSync().on('plugins-changed', () => {
+      handleReload()
+    })
+    return () => {
+      clearTimeout(t)
+      unsub()
+    }
+  }, [loadPlugins, handleReload])
 
   const handleSandboxReady = useCallback((pluginId: string, handle: PluginSandboxHandle) => {
-    sandboxReadyRef.current = { ...sandboxReadyRef.current, [pluginId]: true }
+    setSandboxReady((prev) => ({ ...prev, [pluginId]: true }))
     setRenderTick((t) => t + 1)
     // 注册到 sandbox manager，使 pluginSandboxManager.executeCommand() 可工作
     const plugin = catalogRef.current.find((p) => p.id === pluginId)
@@ -184,10 +184,6 @@ export default function PluginsPage() {
       )
     }
   }, [])
-
-  const sandboxCodes = sandboxCodesRef.current
-  const sandboxReady = sandboxReadyRef.current
-  const sandboxKeys = sandboxKeysRef.current
 
   return (
     <div className="flex h-full flex-col p-4 sm:p-6">

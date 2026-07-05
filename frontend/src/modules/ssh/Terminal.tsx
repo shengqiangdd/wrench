@@ -72,11 +72,13 @@ export default function TerminalView({
   const searchInputRef = useRef<HTMLInputElement>(null)
   // 用 ref 避免 event handler 中的闭包过期
   const onConnectedRef = useRef(onConnected)
-  onConnectedRef.current = onConnected
   const onDisconnectedRef = useRef(onDisconnected)
-  onDisconnectedRef.current = onDisconnected
   const showSearchRef = useRef(showSearch)
-  showSearchRef.current = showSearch
+  useEffect(() => {
+    onConnectedRef.current = onConnected
+    onDisconnectedRef.current = onDisconnected
+    showSearchRef.current = showSearch
+  }, [onConnected, onDisconnected, showSearch])
   /** generation ID：每次 mount 递增，防止旧实例的异步回调污染新实例 */
   const genRef = useRef(0)
   // 用 ref 持有 wsClient，避免 effect 依赖数组问题
@@ -732,7 +734,7 @@ function SplitPane({
     const y = e.clientY - rect.top
     const threshold = 0.25
 
-    let pos: 'left' | 'right' | 'top' | 'bottom' = 'left'
+    let pos: 'left' | 'right' | 'top' | 'bottom'
     if (x / rect.width < threshold) {
       pos = 'left'
     } else if (x / rect.width > 1 - threshold) {

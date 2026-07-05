@@ -120,9 +120,10 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
   const dataRef = useRef<MonitorState[]>([])
   const selectedRef = useRef<Set<string>>(new Set())
 
-  // 更新 ref 保持闭包最新
-  dataRef.current = monitors
-  selectedRef.current = selectedIds
+  useEffect(() => {
+    dataRef.current = monitors
+    selectedRef.current = selectedIds
+  }, [monitors, selectedIds])
 
   // 选择/取消选择容器
   const toggleSelect = useCallback((id: string) => {
@@ -145,6 +146,30 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
   }, [])
 
   // 获取 stats
+  function parseSize(s: string): number {
+    s = s.trim()
+    const match = s.match(/^([\d.]+)\s*([KMGTPE]i?B?|B)?$/i)
+    if (!match) return 0
+    const num = parseFloat(match[1]!)
+    const unit = (match[2] || 'B').toUpperCase()
+    const units: Record<string, number> = {
+      B: 1,
+      KB: 1024,
+      KIB: 1024,
+      K: 1024,
+      MB: 1024 * 1024,
+      MIB: 1024 * 1024,
+      M: 1024 * 1024,
+      GB: 1024 ** 3,
+      GIB: 1024 ** 3,
+      G: 1024 ** 3,
+      TB: 1024 ** 4,
+      TIB: 1024 ** 4,
+      T: 1024 ** 4,
+    }
+    return num * (units[unit] || 1)
+  }
+
   const fetchStats = useCallback(async () => {
     if (!connectionId) return
     setLoading(true)
@@ -227,29 +252,6 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
   }, [connectionId])
 
   // 解析大小字符串
-  function parseSize(s: string): number {
-    s = s.trim()
-    const match = s.match(/^([\d.]+)\s*([KMGTPE]i?B?|B)?$/i)
-    if (!match) return 0
-    const num = parseFloat(match[1]!)
-    const unit = (match[2] || 'B').toUpperCase()
-    const units: Record<string, number> = {
-      B: 1,
-      KB: 1024,
-      KIB: 1024,
-      K: 1024,
-      MB: 1024 * 1024,
-      MIB: 1024 * 1024,
-      M: 1024 * 1024,
-      GB: 1024 ** 3,
-      GIB: 1024 ** 3,
-      G: 1024 ** 3,
-      TB: 1024 ** 4,
-      TIB: 1024 ** 4,
-      T: 1024 ** 4,
-    }
-    return num * (units[unit] || 1)
-  }
 
   // 自动轮询
   useEffect(() => {
@@ -261,9 +263,10 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
       return
     }
 
-    fetchStats()
+    const t = setTimeout(() => fetchStats(), 0)
     timerRef.current = setInterval(fetchStats, INTERVAL_MS)
     return () => {
+      clearTimeout(t)
       if (timerRef.current) {
         clearInterval(timerRef.current)
         timerRef.current = null

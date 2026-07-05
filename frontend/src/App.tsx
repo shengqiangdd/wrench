@@ -51,22 +51,20 @@ function AppContent() {
 
   // activeNav → URL 推送（初始不推）
   const initializedRef = useRef(false)
-  const pathnameRef = useRef(location.pathname)
-  pathnameRef.current = location.pathname
   useEffect(() => {
     if (!initializedRef.current) {
       // 首次加载：如果当前 path 不是有效 nav，推到当前 nav
       initializedRef.current = true
-      if (!PATH_TO_NAV[pathnameRef.current]) {
+      if (!PATH_TO_NAV[location.pathname]) {
         navigate(NAV_PATH[activeNav], { replace: true })
       }
       return
     }
     const expectedPath = NAV_PATH[activeNav]
-    if (pathnameRef.current !== expectedPath) {
+    if (location.pathname !== expectedPath) {
       navigate(expectedPath, { replace: true })
     }
-  }, [activeNav, navigate])
+  }, [activeNav, navigate, location.pathname])
 
   // 注册快捷键列表命令到命令面板
   useEffect(() => {

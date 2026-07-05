@@ -19,6 +19,9 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // preserve-manual-memoization is React Compiler-specific; we only enable
+      // the compiler in production, so manual memoization is required in dev.
+      'react-hooks/preserve-manual-memoization': 'off',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',

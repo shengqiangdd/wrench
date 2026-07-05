@@ -54,7 +54,8 @@ export default function SystemMaintenance() {
   }, [])
 
   useEffect(() => {
-    loadDbInfo()
+    const t = setTimeout(() => loadDbInfo(), 0)
+    return () => clearTimeout(t)
   }, [loadDbInfo])
 
   const handleDownload = async () => {

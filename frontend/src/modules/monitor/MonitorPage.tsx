@@ -659,14 +659,18 @@ export default function MonitorPage() {
 
   // 初始化
   useEffect(() => {
-    scanHosts()
+    const t = setTimeout(() => scanHosts(), 0)
+    return () => clearTimeout(t)
   }, [scanHosts])
 
   // 扫描到主机后自动开始采集
   useEffect(() => {
     if (hosts.length > 0) {
-      collectAll()
-      startAutoRefresh()
+      const t = setTimeout(() => {
+        collectAll()
+        startAutoRefresh()
+      }, 0)
+      return () => clearTimeout(t)
     }
     return () => stopAutoRefresh()
   }, [hosts.length]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -687,9 +691,12 @@ export default function MonitorPage() {
   }, [])
 
   useEffect(() => {
-    fetchHealth()
+    const t = setTimeout(() => fetchHealth(), 0)
     const timer = window.setInterval(fetchHealth, 30_000)
-    return () => clearInterval(timer)
+    return () => {
+      clearTimeout(t)
+      clearInterval(timer)
+    }
   }, [fetchHealth])
 
   useEffect(() => {

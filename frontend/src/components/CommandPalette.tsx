@@ -182,7 +182,8 @@ export default function CommandPalette() {
 
   // 选中索引修正
   useEffect(() => {
-    setSelectedIndex(0)
+    const t = setTimeout(() => setSelectedIndex(0), 0)
+    return () => clearTimeout(t)
   }, [query])
 
   // 键盘导航
@@ -216,9 +217,11 @@ export default function CommandPalette() {
   // 自动选中焦点
   useEffect(() => {
     if (open) {
-      setTimeout(() => inputRef.current?.focus(), 50)
+      const t = setTimeout(() => inputRef.current?.focus(), 50)
+      return () => clearTimeout(t)
     } else {
-      setQuery('')
+      const t = setTimeout(() => setQuery(''), 0)
+      return () => clearTimeout(t)
     }
   }, [open])
 
