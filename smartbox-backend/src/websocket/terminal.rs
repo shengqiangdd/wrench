@@ -11,6 +11,7 @@ use base64::Engine as _;
 use tracing::{info, warn};
 
 use crate::app_state::AppState;
+use crate::models::{SftpRequest, SftpResponse};
 
 /// Helper to convert string to Utf8Bytes
 fn txt(s: String) -> axum::extract::ws::Utf8Bytes {
@@ -316,32 +317,29 @@ async fn handle_terminal_connect(
 
 // ========== SFTP Operations ==========
 
+/// Handle an SFTP operation via WebSocket.
+///
+/// Parses the incoming message as a typed `SftpRequest`, looks up the
+/// SSH session, delegates to the type-safe `ssh::sftp` functions, and
+/// sends a typed `SftpResponse` — entirely eliminating raw `serde_json::Value`.
 async fn handle_sftp_operation(
     socket: &mut WebSocket,
     state: &Arc<AppState>,
     msg: &serde_json::Value,
 ) {
-    let connection_id = match msg.get("connectionId").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => {
-            let err = serde_json::json!({"type":"error","message":"Missing connectionId"});
+    // ── 1. 解析为强类型请求（消除 .get("field") 模式） ──
+    let req: SftpRequest = match serde_json::from_value(msg.clone()) {
+        Ok(r) => r,
+        Err(_) => {
+            let err = serde_json::json!({"type":"error","message":"Invalid SFTP request"});
             let _ = socket.send(Message::Text(txt(err.to_string()))).await;
             return;
         }
     };
 
-    let operation = match msg.get("operation").and_then(|v| v.as_str()) {
-        Some(op) => op,
-        None => {
-            let err = serde_json::json!({"type":"error","message":"Missing operation"});
-            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
-            return;
-        }
-    };
-
-    // Get the SSH session
+    // ── 2. 查找 SSH 会话 ──
     let session = {
-        let entry = state.connections.get(connection_id);
+        let entry = state.connections.get(&req.connection_id);
         entry.and_then(|c| c.session.clone())
     };
 
@@ -350,7 +348,7 @@ async fn handle_sftp_operation(
         None => {
             let err = serde_json::json!({
                 "type": "error",
-                "connectionId": connection_id,
+                "connectionId": req.connection_id,
                 "message": "SSH session not found"
             });
             let _ = socket.send(Message::Text(txt(err.to_string()))).await;
@@ -358,343 +356,146 @@ async fn handle_sftp_operation(
         }
     };
 
-    // Open a temporary SFTP channel
-    let sftp_result = async {
-        let mut lock = session.get_handle().await;
-        let handle = lock.as_mut().ok_or("SSH not connected")?;
-
-        let channel = handle.channel_open_session().await?;
-        channel.request_subsystem(true, "sftp").await?;
-        let stream = channel.into_stream();
-        let sftp = russh_sftp::client::SftpSession::new(stream).await?;
-        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(sftp)
-    }.await;
-
-    let mut sftp = match sftp_result {
-        Ok(s) => s,
-        Err(e) => {
-            let err = serde_json::json!({
-                "type": "sftp-result",
-                "operation": operation,
-                "success": false,
-                "error": format!("SFTP open failed: {}", e)
-            });
-            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
-            return;
-        }
+    // ── 3. 分派到 ssh/sftp.rs 中的类型化函数 ──
+    let response: SftpResponse = match req.operation.as_str() {
+        "list" => handle_sftp_list(&session, &req).await,
+        "readfile" => handle_sftp_readfile(&session, &req).await,
+        "writefile" => handle_sftp_writefile(&session, &req).await,
+        "mkdir" => handle_sftp_mkdir(&session, &req).await,
+        "rmdir" => handle_sftp_rmdir(&session, &req).await,
+        "unlink" => handle_sftp_unlink(&session, &req).await,
+        "rename" => handle_sftp_rename(&session, &req).await,
+        "stat" => handle_sftp_stat(&session, &req).await,
+        other => SftpResponse::error(other, format!("Unknown SFTP operation: {}", other)),
     };
 
-    // Dispatch to specific operation
-    let result = match operation {
-        "list" => handle_sftp_list(&mut sftp, msg).await,
-        "readfile" => handle_sftp_readfile(&mut sftp, msg).await,
-        "writefile" => handle_sftp_writefile(&mut sftp, msg).await,
-        "mkdir" => handle_sftp_mkdir(&mut sftp, msg).await,
-        "rmdir" => handle_sftp_rmdir(&mut sftp, msg).await,
-        "unlink" => handle_sftp_unlink(&mut sftp, msg).await,
-        "rename" => handle_sftp_rename(&mut sftp, msg).await,
-        "stat" => handle_sftp_stat(&mut sftp, msg).await,
-        other => {
-            serde_json::json!({
-                "type": "sftp-result",
-                "operation": other,
-                "success": false,
-                "error": format!("Unknown SFTP operation: {}", other)
-            })
-        }
-    };
-
-    let _ = socket.send(Message::Text(txt(result.to_string()))).await;
+    let _ = socket
+        .send(Message::Text(txt(
+            serde_json::to_string(&response).unwrap_or_default(),
+        )))
+        .await;
 }
 
 async fn handle_sftp_list(
-    sftp: &mut russh_sftp::client::SftpSession,
-    msg: &serde_json::Value,
-) -> serde_json::Value {
-    let path = msg.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-    match sftp.read_dir(path).await {
-        Ok(entries) => {
-            let files: Vec<serde_json::Value> = entries
-                .map(|e| {
-                    let metadata = e.metadata();
-                    serde_json::json!({
-                        "name": e.file_name(),
-                        "path": format!("{}/{}", path.trim_end_matches('/'), e.file_name()),
-                        "is_dir": metadata.is_dir(),
-                        "size": metadata.len(),
-                        "permissions": metadata.permissions().to_string(),
-                        "modified": metadata.modified()
-                            .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
-                            .unwrap_or_default(),
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "type": "sftp-result",
-                "operation": "list",
-                "success": true,
-                "files": files
-            })
-        }
-        Err(e) => {
-            serde_json::json!({
-                "type": "sftp-result",
-                "operation": "list",
-                "success": false,
-                "error": format!("SFTP list failed: {}", e)
-            })
-        }
+    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
+    req: &SftpRequest,
+) -> SftpResponse {
+    let path = req.path.as_deref().unwrap_or(".");
+    match crate::ssh::sftp::list_directory(session, path).await {
+        Ok(files) => SftpResponse::success("list").with_files(files),
+        Err(e) => SftpResponse::error("list", format!("SFTP list failed: {}", e)),
     }
 }
 
 async fn handle_sftp_readfile(
-    sftp: &mut russh_sftp::client::SftpSession,
-    msg: &serde_json::Value,
-) -> serde_json::Value {
-    let path = match msg.get("path").and_then(|v| v.as_str()) {
+    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
+    req: &SftpRequest,
+) -> SftpResponse {
+    let path = match req.path.as_deref() {
         Some(p) => p,
-        None => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "readfile",
-                "success": false, "error": "Missing path"
-            });
-        }
+        None => return SftpResponse::error("readfile", "Missing path"),
     };
-
-    let mut file = match sftp.open(path).await {
-        Ok(f) => f,
-        Err(e) => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "readfile",
-                "success": false, "error": format!("Open failed: {}", e)
-            });
+    match crate::ssh::sftp::download_file(session, path).await {
+        Ok(data) => {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
+            SftpResponse::success("readfile").with_content(encoded, data.len() as u64)
         }
-    };
-
-    use tokio::io::AsyncReadExt;
-    let mut buf = Vec::new();
-    match file.read_to_end(&mut buf).await {
-        Ok(_) => {
-            let encoded = base64::engine::general_purpose::STANDARD.encode(&buf);
-            serde_json::json!({
-                "type": "sftp-result",
-                "operation": "readfile",
-                "success": true,
-                "content": encoded,
-                "size": buf.len()
-            })
-        }
-        Err(e) => {
-            serde_json::json!({
-                "type": "sftp-result", "operation": "readfile",
-                "success": false, "error": format!("Read failed: {}", e)
-            })
-        }
+        Err(e) => SftpResponse::error("readfile", format!("Read failed: {}", e)),
     }
 }
 
 async fn handle_sftp_writefile(
-    sftp: &mut russh_sftp::client::SftpSession,
-    msg: &serde_json::Value,
-) -> serde_json::Value {
-    let path = match msg.get("path").and_then(|v| v.as_str()) {
+    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
+    req: &SftpRequest,
+) -> SftpResponse {
+    let path = match req.path.as_deref() {
         Some(p) => p,
-        None => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "writefile",
-                "success": false, "error": "Missing path"
-            });
-        }
+        None => return SftpResponse::error("writefile", "Missing path"),
     };
-
-    let content_b64 = match msg.get("content").and_then(|v| v.as_str()) {
+    let content_b64 = match req.content.as_deref() {
         Some(c) => c,
-        None => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "writefile",
-                "success": false, "error": "Missing content"
-            });
-        }
+        None => return SftpResponse::error("writefile", "Missing content"),
     };
-
-    let data = match base64::engine::general_purpose::STANDARD.decode(content_b64) {
-        Ok(d) => d,
-        Err(_) => content_b64.as_bytes().to_vec(),
-    };
-
-    let mut file = match sftp
-        .open_with_flags(
-            path,
-            russh_sftp::protocol::OpenFlags::CREATE
-                | russh_sftp::protocol::OpenFlags::TRUNCATE
-                | russh_sftp::protocol::OpenFlags::WRITE,
-        )
-        .await
-    {
-        Ok(f) => f,
-        Err(e) => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "writefile",
-                "success": false, "error": format!("Open failed: {}", e)
-            });
-        }
-    };
-
-    use tokio::io::AsyncWriteExt;
-    match file.write_all(&data).await {
-        Ok(_) => {
-            serde_json::json!({
-                "type": "sftp-result",
-                "operation": "writefile",
-                "success": true,
-                "size": data.len()
-            })
-        }
-        Err(e) => {
-            serde_json::json!({
-                "type": "sftp-result", "operation": "writefile",
-                "success": false, "error": format!("Write failed: {}", e)
-            })
-        }
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(content_b64)
+        .unwrap_or_else(|_| content_b64.as_bytes().to_vec());
+    match crate::ssh::sftp::upload_file(session, path, data).await {
+        Ok(_) => SftpResponse::success("writefile"),
+        Err(e) => SftpResponse::error("writefile", format!("Write failed: {}", e)),
     }
 }
 
 async fn handle_sftp_mkdir(
-    sftp: &mut russh_sftp::client::SftpSession,
-    msg: &serde_json::Value,
-) -> serde_json::Value {
-    let path = match msg.get("path").and_then(|v| v.as_str()) {
+    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
+    req: &SftpRequest,
+) -> SftpResponse {
+    let path = match req.path.as_deref() {
         Some(p) => p,
-        None => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "mkdir",
-                "success": false, "error": "Missing path"
-            });
-        }
+        None => return SftpResponse::error("mkdir", "Missing path"),
     };
-
-    match sftp.create_dir(path).await {
-        Ok(_) => serde_json::json!({ "type": "sftp-result", "operation": "mkdir", "success": true }),
-        Err(e) => serde_json::json!({
-            "type": "sftp-result", "operation": "mkdir",
-            "success": false, "error": format!("Mkdir failed: {}", e)
-        }),
+    match crate::ssh::sftp::create_dir(session, path).await {
+        Ok(_) => SftpResponse::success("mkdir"),
+        Err(e) => SftpResponse::error("mkdir", format!("Mkdir failed: {}", e)),
     }
 }
 
 async fn handle_sftp_rmdir(
-    sftp: &mut russh_sftp::client::SftpSession,
-    msg: &serde_json::Value,
-) -> serde_json::Value {
-    let path = match msg.get("path").and_then(|v| v.as_str()) {
+    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
+    req: &SftpRequest,
+) -> SftpResponse {
+    let path = match req.path.as_deref() {
         Some(p) => p,
-        None => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "rmdir",
-                "success": false, "error": "Missing path"
-            });
-        }
+        None => return SftpResponse::error("rmdir", "Missing path"),
     };
-
-    match sftp.remove_dir(path).await {
-        Ok(_) => serde_json::json!({ "type": "sftp-result", "operation": "rmdir", "success": true }),
-        Err(e) => serde_json::json!({
-            "type": "sftp-result", "operation": "rmdir",
-            "success": false, "error": format!("Rmdir failed: {}", e)
-        }),
+    match crate::ssh::sftp::delete_file(session, path, true).await {
+        Ok(_) => SftpResponse::success("rmdir"),
+        Err(e) => SftpResponse::error("rmdir", format!("Rmdir failed: {}", e)),
     }
 }
 
 async fn handle_sftp_unlink(
-    sftp: &mut russh_sftp::client::SftpSession,
-    msg: &serde_json::Value,
-) -> serde_json::Value {
-    let path = match msg.get("path").and_then(|v| v.as_str()) {
+    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
+    req: &SftpRequest,
+) -> SftpResponse {
+    let path = match req.path.as_deref() {
         Some(p) => p,
-        None => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "unlink",
-                "success": false, "error": "Missing path"
-            });
-        }
+        None => return SftpResponse::error("unlink", "Missing path"),
     };
-
-    match sftp.remove_file(path).await {
-        Ok(_) => serde_json::json!({ "type": "sftp-result", "operation": "unlink", "success": true }),
-        Err(e) => serde_json::json!({
-            "type": "sftp-result", "operation": "unlink",
-            "success": false, "error": format!("Unlink failed: {}", e)
-        }),
+    match crate::ssh::sftp::delete_file(session, path, false).await {
+        Ok(_) => SftpResponse::success("unlink"),
+        Err(e) => SftpResponse::error("unlink", format!("Unlink failed: {}", e)),
     }
 }
 
 async fn handle_sftp_rename(
-    sftp: &mut russh_sftp::client::SftpSession,
-    msg: &serde_json::Value,
-) -> serde_json::Value {
-    let path = match msg.get("path").and_then(|v| v.as_str()) {
+    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
+    req: &SftpRequest,
+) -> SftpResponse {
+    let path = match req.path.as_deref() {
         Some(p) => p,
-        None => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "rename",
-                "success": false, "error": "Missing path"
-            });
-        }
+        None => return SftpResponse::error("rename", "Missing path"),
     };
-
-    let target = match msg.get("target").and_then(|v| v.as_str()) {
+    let target = match req.target.as_deref() {
         Some(t) => t,
-        None => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "rename",
-                "success": false, "error": "Missing target"
-            });
-        }
+        None => return SftpResponse::error("rename", "Missing target"),
     };
-
-    match sftp.rename(path, target).await {
-        Ok(_) => serde_json::json!({ "type": "sftp-result", "operation": "rename", "success": true }),
-        Err(e) => serde_json::json!({
-            "type": "sftp-result", "operation": "rename",
-            "success": false, "error": format!("Rename failed: {}", e)
-        }),
+    match crate::ssh::sftp::rename(session, path, target).await {
+        Ok(_) => SftpResponse::success("rename"),
+        Err(e) => SftpResponse::error("rename", format!("Rename failed: {}", e)),
     }
 }
 
 async fn handle_sftp_stat(
-    sftp: &mut russh_sftp::client::SftpSession,
-    msg: &serde_json::Value,
-) -> serde_json::Value {
-    let path = match msg.get("path").and_then(|v| v.as_str()) {
+    session: &std::sync::Arc<crate::ssh::pool::SshSession>,
+    req: &SftpRequest,
+) -> SftpResponse {
+    let path = match req.path.as_deref() {
         Some(p) => p,
-        None => {
-            return serde_json::json!({
-                "type": "sftp-result", "operation": "stat",
-                "success": false, "error": "Missing path"
-            });
-        }
+        None => return SftpResponse::error("stat", "Missing path"),
     };
-
-    match sftp.metadata(path).await {
-        Ok(meta) => {
-            serde_json::json!({
-                "type": "sftp-result",
-                "operation": "stat",
-                "success": true,
-                "size": meta.len(),
-                "is_dir": meta.is_dir(),
-                "permissions": meta.permissions().to_string(),
-                "modified": meta.modified()
-                    .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
-                    .unwrap_or_default(),
-            })
-        }
-        Err(e) => {
-            serde_json::json!({
-                "type": "sftp-result", "operation": "stat",
-                "success": false, "error": format!("Stat failed: {}", e)
-            })
-        }
+    match crate::ssh::sftp::stat(session, path).await {
+        Ok(entry) => SftpResponse::success("stat").with_stat(&entry),
+        Err(e) => SftpResponse::error("stat", format!("Stat failed: {}", e)),
     }
 }
 
