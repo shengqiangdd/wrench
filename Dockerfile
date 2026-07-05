@@ -95,22 +95,26 @@ COPY --from=frontend-builder /app/frontend/dist/ /app/frontend/dist/
 # Copy plugins
 COPY plugins/ ./plugins/
 
+# Copy entrypoint wrapper script.
+# The script exec's directly into the Rust binary so that tini (PID 1)
+# sends signals straight to the app, which already has proper
+# SIGINT/SIGTERM handlers installed. This avoids the shell-in-the-middle
+# signal forwarding that caused the exit-code-0 restart loop.
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 # Copy default env config
 COPY smartbox-backend/.env.example /app/.env.example
 
-# Set ownership
+# Set ownership — must include all copied files
 RUN chown -R smartbox:smartbox /app
-
-# Copy entrypoint wrapper script (logs all signals before forwarding to app)
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
 
 USER smartbox
 
 EXPOSE 3001
 
 # Use tini as PID 1 (proper signal forwarding + zombie reaping).
-# The entrypoint wrapper logs every signal BEFORE forwarding to the app,
-# providing full signal traceability in docker logs.
+# tini → docker-entrypoint.sh (exec) → smartbox-backend
+# Signals (SIGTERM/SIGINT) go directly to the Rust binary.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/app/docker-entrypoint.sh"]

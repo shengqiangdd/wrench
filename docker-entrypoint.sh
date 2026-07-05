@@ -2,40 +2,28 @@
 # ============================================================
 # SmartBox Docker Entrypoint
 #
-# Acts as a lightweight signal tracer between tini and the
-# application. Every signal received is logged to stderr (which
-# Docker captures) BEFORE being forwarded to the Rust binary.
+# Strategy: exec directly into the Rust binary so that tini (PID 1)
+# sends signals straight to the Rust process, which already has
+# proper SIGINT/SIGTERM handlers installed (install_shutdown_signal).
+#
+# This avoids the fragile shell-in-the-middle signal forwarding that
+# was causing the exit-code-0 restart loop: when a signal arrives
+# during shell setup (before the Rust binary is even started), the
+# shell's default behaviour terminates the whole process group with
+# exit 0, and because `restart: unless-stopped` is set, Docker
+# restarts the container — creating an infinite loop.
+#
+# For debugging, the log line below still appears in `docker logs`.
 # ============================================================
-set -e
 
-APP="/app/smartbox-backend"
-SIGNAL_LOG="/proc/self/fd/2"  # stderr → docker logs
+LOG_PREFIX="[entrypoint]"
+log() { printf '%s %s %s\n' "$LOG_PREFIX" "$(date -Iseconds 2>/dev/null || date)" "$*" >&2; }
 
-log() {
-    echo "[entrypoint] $(date -Iseconds) $*" >&2
-}
+log "Starting SmartBox backend (exec mode, signals go straight to app)..."
+log "Entrypoint PID=$$, about to exec /app/smartbox-backend $*"
 
-log "Starting SmartBox backend..."
-
-# ── Trap common signals and log them ──
-trap 'log "Received SIGINT (Ctrl+C) — forwarding to app"; kill -INT "$APP_PID"; wait "$APP_PID"; exit $?' INT
-trap 'log "Received SIGTERM (docker stop) — forwarding to app"; kill -TERM "$APP_PID"; wait "$APP_PID"; exit $?' TERM
-trap 'log "Received SIGQUIT — forwarding to app"; kill -QUIT "$APP_PID"; wait "$APP_PID"; exit $?' QUIT
-trap 'log "Received SIGHUP — ignoring (not forwarded)"' HUP
-trap 'log "Received SIGUSR1 — ignoring"' USR1
-trap 'log "Received SIGUSR2 — ignoring"' USR2
-
-# ── Start the backend in background ──
-"$APP" "$@" &
-APP_PID=$!
-log "Backend started (PID ${APP_PID})"
-
-# ── Wait for app to exit ──
-if wait "$APP_PID"; then
-    EXIT_CODE=$?
-else
-    EXIT_CODE=$?
-fi
-
-log "Backend exited with code ${EXIT_CODE}"
-exit "${EXIT_CODE}"
+# ── exec replaces this shell with the Rust binary ──
+# tini → smartbox-backend (no shell in between)
+# Signals (SIGTERM/SIGINT) are delivered directly to the Rust process,
+# which handles them via tokio::signal + graceful shutdown.
+exec /app/smartbox-backend "$@"

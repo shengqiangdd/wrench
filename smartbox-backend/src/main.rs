@@ -15,20 +15,43 @@ fn print_usage() {
     eprintln!("  --help                      Show this help");
 }
 
+/// Install a panic hook that logs the panic to stderr (visible in docker logs)
+/// BEFORE the default abort/backtrace behaviour kicks in.
+///
+/// This is installed as a *permanent* hook (not replaced afterwards),
+/// so any panic anywhere in the process is captured.
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!();
+        eprintln!("========================================");
+        eprintln!("APPLICATION PANIC");
+        eprintln!("========================================");
+        eprintln!("{panic_info}");
+        if let Some(location) = panic_info.location() {
+            eprintln!("  at {}:{}:{}", location.file(), location.line(), location.column());
+        }
+        eprintln!("========================================");
+        eprintln!();
+
+        // Also try tracing (may or may not be initialised yet)
+        tracing::error!(target: "panic", "APPLICATION PANIC: {panic_info}");
+    }));
+}
+
 /// Set up OS signal handlers for graceful shutdown.
 ///
-/// Returns a future that resolves when a shutdown signal is received.
+/// Returns a `Notify` that is signalled when SIGINT or SIGTERM is received.
 ///
 /// IMPORTANT: Signal handlers must be installed BEFORE `axum::serve` starts,
 /// because signals sent early (before the handler is registered) will be
 /// marked as "pending" by the kernel and delivered immediately upon
-/// registration. This would cause an immediate exit with code 0 and create
+/// registration.  This would cause an immediate exit with code 0 and create
 /// a Docker restart loop.
 ///
 /// The handlers are installed once here, and a `Notify` is used to
-/// communicate the signal to the graceful shutdown future.
-fn install_shutdown_signal() -> std::sync::Arc<tokio::sync::Notify> {
-    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+/// communicate the signal to the graceful-shutdown future.
+fn install_shutdown_signal() -> Arc<tokio::sync::Notify> {
+    let notify = Arc::new(tokio::sync::Notify::new());
 
     // ── SIGINT (Ctrl+C) ──
     {
@@ -40,7 +63,7 @@ fn install_shutdown_signal() -> std::sync::Arc<tokio::sync::Notify> {
                     n.notify_one();
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to install SIGINT handler ({}), graceful Ctrl+C will not work", e);
+                    tracing::warn!("Failed to install SIGINT handler ({e}), graceful Ctrl+C will not work");
                 }
             }
         });
@@ -58,7 +81,7 @@ fn install_shutdown_signal() -> std::sync::Arc<tokio::sync::Notify> {
                     n.notify_one();
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to install SIGTERM handler ({}), graceful docker stop will not work", e);
+                    tracing::warn!("Failed to install SIGTERM handler ({e}), graceful docker stop will not work");
                 }
             }
         });
@@ -69,15 +92,29 @@ fn install_shutdown_signal() -> std::sync::Arc<tokio::sync::Notify> {
 
 /// Wait for a shutdown signal. Must only be called after
 /// `install_shutdown_signal()` has been invoked.
-async fn wait_for_shutdown(notify: std::sync::Arc<tokio::sync::Notify>) {
+async fn wait_for_shutdown(notify: Arc<tokio::sync::Notify>) {
     notify.notified().await;
     tracing::info!("Shutdown signal received — initiating graceful shutdown");
     // Small delay to let the logger flush before the process exits
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // ── Earliest possible diagnostics (before tracing / env load) ──
+    // These go straight to stderr so they appear in `docker logs` even if
+    // everything else fails.  This is our lifeline for diagnosing the
+    // exit-code-0 restart loop.
+    eprintln!("[smartbox] === SmartBox backend starting ===");
+    eprintln!(
+        "[smartbox] PID={}, argv0={}",
+        std::process::id(),
+        std::env::args().next().unwrap_or_default()
+    );
+
+    // Install the panic hook as early as possible
+    install_panic_hook();
+
     // Load .env if present
     dotenvy::dotenv().ok();
 
@@ -123,19 +160,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Install panic hook to log panics before exit (helps diagnose Docker restart loops)
-    let prev_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        tracing::error!(
-            target: "panic",
-            "APPLICATION PANIC: {}",
-            panic_info
-        );
-        // Also eprint for docker logs visibility
-        eprintln!("PANIC: {}", panic_info);
-    }));
-    // Re-arm the original hook so default behavior (abort/backtrace) still happens
-    std::panic::set_hook(prev_hook);
+    eprintln!("[smartbox] Tracing initialised, loading config...");
 
     // Load config
     let config = AppConfig::from_env()?;
@@ -149,9 +174,13 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Database: {:?}", config.database_url);
     tracing::info!("Plugins dir: {:?}", config.plugins_dir);
 
+    eprintln!("[smartbox] Config loaded, building app state...");
+
     // Build app state
     let state = Arc::new(AppState::new(config.clone()).await?);
     tracing::info!("App state initialized");
+
+    eprintln!("[smartbox] App state ready, building router...");
 
     // Build router
     let app = build_app(state.clone()).await;
@@ -160,7 +189,7 @@ async fn main() -> anyhow::Result<()> {
     // ─── Idle SSH session cleanup (every 5 minutes) ───
     let cleanup_state = state.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300));
+        let mut interval = tokio::time::interval(Duration::from_secs(300));
         loop {
             interval.tick().await;
             let mut disconnected = 0usize;
@@ -190,7 +219,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             if disconnected > 0 {
-                tracing::info!("Cleaned up {} idle/disconnected SSH sessions", disconnected);
+                tracing::info!("Cleaned up {disconnected} idle/disconnected SSH sessions");
             }
         }
     });
@@ -203,16 +232,19 @@ async fn main() -> anyhow::Result<()> {
 
     // Start server
     let addr = format!("{}:{}", config.host, config.port);
+    eprintln!("[smartbox] Binding TCP listener on {addr} ...");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("Listening on http://{}/", addr);
+    tracing::info!("Listening on http://{addr}/");
 
     // Run server with graceful shutdown on SIGTERM/SIGINT
     tracing::info!("Server started. Use Ctrl+C or 'docker stop' to gracefully shut down.");
+    eprintln!("[smartbox] Server is now accepting connections.");
     axum::serve(listener, app)
         .with_graceful_shutdown(wait_for_shutdown(shutdown_notify))
         .await?;
 
     tracing::info!("Server has shut down gracefully.");
+    eprintln!("[smartbox] Graceful shutdown complete, exiting.");
     Ok(())
 }
 
