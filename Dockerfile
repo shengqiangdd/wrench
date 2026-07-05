@@ -101,9 +101,16 @@ COPY smartbox-backend/.env.example /app/.env.example
 # Set ownership
 RUN chown -R smartbox:smartbox /app
 
+# Copy entrypoint wrapper script (logs all signals before forwarding to app)
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 USER smartbox
 
 EXPOSE 3001
 
+# Use tini as PID 1 (proper signal forwarding + zombie reaping).
+# The entrypoint wrapper logs every signal BEFORE forwarding to the app,
+# providing full signal traceability in docker logs.
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/app/smartbox-backend"]
+CMD ["/app/docker-entrypoint.sh"]
