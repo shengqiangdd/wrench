@@ -58,7 +58,7 @@ export default function VaultPage() {
     try {
       const res = await authedFetch('/api/vault')
       const data = await res.json()
-      setEntries(data.data || [])
+      setEntries(data.data?.entries || [])
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load vault entries')
     } finally {

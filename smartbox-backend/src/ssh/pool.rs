@@ -27,6 +27,22 @@ pub struct SshHandler;
 
 impl client::Handler for SshHandler {
     type Error = russh::Error;
+
+    fn check_server_key(
+        &mut self,
+        _server_public_key: &russh_keys::PublicKey,
+    ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
+        async { Ok(true) }
+    }
+
+    fn auth_banner(
+        &mut self,
+        banner: &str,
+        _session: &mut client::Session,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
+        tracing::debug!("SSH auth banner: {}", banner);
+        async { Ok(()) }
+    }
 }
 
 impl SshSession {
@@ -75,7 +91,18 @@ impl SshSession {
             self.touch_async().await;
             Ok(())
         } else {
-            Err("Password authentication rejected by server".into())
+            let remaining = match &auth_result {
+                russh::client::AuthResult::Failure { remaining_methods } => {
+                    format!("{:?}", remaining_methods)
+                }
+                _ => "unknown".to_string(),
+            };
+            tracing::error!(
+                "Password auth rejected by {}@{}:{}. Remaining methods: {}",
+                self.username, self.host, self.port,
+                remaining,
+            );
+            Err(format!("Password authentication rejected by server (remaining methods: {})", remaining).into())
         }
     }
 
@@ -163,7 +190,7 @@ impl SshSession {
 
     /// Execute a command and return (stdout, stderr, exit_code).
     pub async fn exec(&self, command: &str) -> Result<(String, String, u32), Box<dyn std::error::Error + Send + Sync>> {
-        self.touch();
+        self.touch_async().await;
         let mut lock = self.handle.lock().await;
         let handle = lock.as_mut().ok_or("SSH not connected")?;
 
@@ -212,7 +239,14 @@ impl SshSession {
         rows: u32,
     ) -> Result<russh::Channel<client::Msg>, Box<dyn std::error::Error + Send + Sync>> {
         let mut lock = self.handle.lock().await;
-        let handle = lock.as_mut().ok_or("SSH not connected")?;
+        let handle = lock.as_mut().ok_or_else(|| {
+            let msg = format!(
+                "SSH not connected: handle is None for {}@{}:{} (conn_id={})",
+                self.username, self.host, self.port, self.connection_id
+            );
+            tracing::error!("{}", msg);
+            msg
+        })?;
 
         let channel = handle.channel_open_session().await?;
 

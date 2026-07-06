@@ -91,7 +91,7 @@ export default function SshPlaceholder() {
           password: decryptedConn.password,
           privateKey: decryptedConn.privateKey,
           sudoPassword: decryptedConn.sudoPassword || decryptedConn.password,
-        })
+        }, 30000)
 
         const session: SshSession = {
           id: sessionId,

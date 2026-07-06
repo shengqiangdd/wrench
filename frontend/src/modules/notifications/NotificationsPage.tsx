@@ -52,7 +52,7 @@ export default function NotificationsPage() {
     try {
       const res = await authedFetch('/api/notifications')
       const data = await res.json()
-      setChannels(data.data || [])
+      setChannels(data.data?.channels || [])
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load channels')
     } finally {

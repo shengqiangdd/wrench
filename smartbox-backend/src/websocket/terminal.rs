@@ -8,12 +8,16 @@ use axum::{
     response::IntoResponse,
 };
 use base64::Engine as _;
+use tokio::time::{timeout, Duration};
 use tracing::{info, warn};
 
 use crate::app_state::AppState;
 use crate::models::{SftpRequest, SftpResponse};
 use crate::ssh::client::SshConnection;
 use crate::ssh::SshSession;
+
+/// Timeout for SSH connect + auth operations (15 seconds)
+const SSH_CONNECT_TIMEOUT_SECS: u64 = 15;
 
 /// Helper to convert string to Utf8Bytes
 fn txt(s: String) -> axum::extract::ws::Utf8Bytes {
@@ -125,6 +129,16 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
     let cols = msg.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as u32;
     let rows = msg.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as u32;
 
+    // Debug: log message fields (redact password)
+    let has_password = msg.get("password").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+    let has_key = msg.get("privateKey").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+    let msg_host = msg.get("host").and_then(|v| v.as_str()).unwrap_or("");
+    let msg_user = msg.get("username").and_then(|v| v.as_str()).unwrap_or("");
+    tracing::info!(
+        "WS connect msg: conn_id={}, host={}, user={}, has_password={}, has_key={}, cols={}, rows={}",
+        connection_id, msg_host, msg_user, has_password, has_key, cols, rows
+    );
+
     // ─── Resolve or create SSH session ───
     let session = if let Some(s) = {
         let entry = state.connections.get(&connection_id);
@@ -151,45 +165,84 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
             return;
         }
 
+        tracing::info!("Creating new SshSession: {}@{}:{} (password_len={}, key_len={})", username, host, port, password.len(), private_key.len());
+
         let new_session = SshSession::new(connection_id.clone(), host.to_string(), port, username.to_string());
 
         if !password.is_empty() {
-            if let Err(e) = new_session.connect_password(password).await {
-                let err = serde_json::json!({
-                    "type": "error",
-                    "connectionId": connection_id,
-                    "message": format!("SSH auth failed: {}", e),
-                    "error": true,
-                    "requestId": request_id,
-                });
-                let _ = socket.send(Message::Text(txt(err.to_string()))).await;
-                return;
+            match timeout(
+                Duration::from_secs(SSH_CONNECT_TIMEOUT_SECS),
+                new_session.connect_password(password),
+            )
+            .await
+            {
+                Ok(Ok(())) => {
+                    tracing::info!("connect_password succeeded for {}@{}:{}", username, host, port);
+                    // Verify handle was set
+                    tracing::info!("handle after connect: {}", if new_session.is_connected().await { "SOME" } else { "NONE" });
+                } // success
+                Ok(Err(e)) => {
+                    let err = serde_json::json!({
+                        "type": "error",
+                        "connectionId": connection_id,
+                        "message": format!("SSH auth failed: {}", e),
+                        "error": true,
+                        "requestId": request_id,
+                    });
+                    let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+                    return;
+                }
+                Err(_) => {
+                    let err = serde_json::json!({
+                        "type": "error",
+                        "connectionId": connection_id,
+                        "message": format!("SSH connect timeout after {} seconds (host unreachable or auth handshake stalled)", SSH_CONNECT_TIMEOUT_SECS),
+                        "error": true,
+                        "requestId": request_id,
+                    });
+                    let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+                    return;
+                }
             }
         } else if !private_key.is_empty() {
-            if let Err(e) = new_session.connect_key(private_key, None).await {
-                let err = serde_json::json!({
-                    "type": "error",
-                    "connectionId": connection_id,
-                    "message": format!("SSH key auth failed: {}", e),
-                    "error": true,
-                    "requestId": request_id,
-                });
-                let _ = socket.send(Message::Text(txt(err.to_string()))).await;
-                return;
+            match timeout(
+                Duration::from_secs(SSH_CONNECT_TIMEOUT_SECS),
+                new_session.connect_key(private_key, None),
+            )
+            .await
+            {
+                Ok(Ok(())) => {
+                    tracing::info!("connect_password succeeded for {}@{}:{}", username, host, port);
+                    // Verify handle was set
+                    tracing::info!("handle after connect: {}", if new_session.is_connected().await { "SOME" } else { "NONE" });
+                } // success
+                Ok(Err(e)) => {
+                    let err = serde_json::json!({
+                        "type": "error",
+                        "connectionId": connection_id,
+                        "message": format!("SSH auth failed: {}", e),
+                        "error": true,
+                        "requestId": request_id,
+                    });
+                    let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+                    return;
+                }
+                Err(_) => {
+                    let err = serde_json::json!({
+                        "type": "error",
+                        "connectionId": connection_id,
+                        "message": format!("SSH connect timeout after {} seconds (host unreachable or auth handshake stalled)", SSH_CONNECT_TIMEOUT_SECS),
+                        "error": true,
+                        "requestId": request_id,
+                    });
+                    let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+                    return;
+                }
             }
-        } else {
-            let err = serde_json::json!({
-                "type": "error",
-                "connectionId": connection_id,
-                "message": "No password or private key provided for SSH connection",
-                "error": true,
-                "requestId": request_id,
-            });
-            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
-            return;
         }
 
         let session_arc = Arc::new(new_session);
+        tracing::info!("session_arc handle: {}", if session_arc.is_connected().await { "SOME" } else { "NONE" });
         let mut conn = SshConnection::new(
             connection_id.clone(),
             host.to_string(),
@@ -204,6 +257,7 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
     };
 
     // Open interactive shell
+    tracing::debug!("Opening shell for connection_id={}, cols={}, rows={}", connection_id, cols, rows);
     let mut channel = match session.open_shell(cols, rows).await {
         Ok(ch) => ch,
         Err(e) => {

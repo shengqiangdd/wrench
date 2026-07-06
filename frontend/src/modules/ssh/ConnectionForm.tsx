@@ -124,7 +124,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
           privateKey: authType === 'key' ? privateKey : undefined,
           sudoPassword: sudoPassword || password || undefined,
         },
-        12000,
+        30000,
       )
 
       const result = msg as Record<string, unknown>

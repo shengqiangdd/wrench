@@ -35,11 +35,8 @@ function getDeviceFingerprint(): string {
     nav.userAgent,
     nav.language,
     nav.platform,
-    // screen 特性
-    `${screen.width}x${screen.height}x${screen.colorDepth}`,
-    // 硬件并发数
+    // 排除 screen.width/height — Playwright 不同会话可能切换视口大小，破坏一致性
     nav.hardwareConcurrency || '',
-    // 时间戳偏移（时区）
     new Date().getTimezoneOffset(),
   ]
   return parts.join('||')
