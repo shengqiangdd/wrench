@@ -12,6 +12,8 @@ use tracing::{info, warn};
 
 use crate::app_state::AppState;
 use crate::models::{SftpRequest, SftpResponse};
+use crate::ssh::client::SshConnection;
+use crate::ssh::SshSession;
 
 /// Helper to convert string to Utf8Bytes
 fn txt(s: String) -> axum::extract::ws::Utf8Bytes {
@@ -110,33 +112,95 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 // ========== Terminal (interactive shell) ==========
 
 /// Handle "connect" message — open an interactive SSH shell and enter I/O loop.
+/// If no SSH session exists for `connectionId`, creates one from the message
+/// credentials (host, port, username, password/privateKey).
 async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
     let connection_id = msg
         .get("connectionId")
         .and_then(|v| v.as_str())
         .unwrap_or("default")
         .to_string();
+    let request_id = msg.get("requestId").and_then(|v| v.as_str()).unwrap_or("");
 
     let cols = msg.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as u32;
     let rows = msg.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as u32;
 
-    // Look up SSH session from the connection pool
-    let session = {
+    // ─── Resolve or create SSH session ───
+    let session = if let Some(s) = {
         let entry = state.connections.get(&connection_id);
         entry.and_then(|c| c.session.clone())
-    };
+    } {
+        s
+    } else {
+        // No existing session — create one from the message details
+        let host = msg.get("host").and_then(|v| v.as_str()).unwrap_or("");
+        let port = msg.get("port").and_then(|v| v.as_u64()).unwrap_or(22) as u16;
+        let username = msg.get("username").and_then(|v| v.as_str()).unwrap_or("");
+        let password = msg.get("password").and_then(|v| v.as_str()).unwrap_or("");
+        let private_key = msg.get("privateKey").and_then(|v| v.as_str()).unwrap_or("");
 
-    let session = match session {
-        Some(s) => s,
-        None => {
+        if host.is_empty() || username.is_empty() {
             let err = serde_json::json!({
                 "type": "error",
                 "connectionId": connection_id,
-                "message": "SSH session not found or not connected"
+                "message": "Missing host or username for SSH connection",
+                "error": true,
+                "requestId": request_id,
             });
             let _ = socket.send(Message::Text(txt(err.to_string()))).await;
             return;
         }
+
+        let new_session = SshSession::new(connection_id.clone(), host.to_string(), port, username.to_string());
+
+        if !password.is_empty() {
+            if let Err(e) = new_session.connect_password(password).await {
+                let err = serde_json::json!({
+                    "type": "error",
+                    "connectionId": connection_id,
+                    "message": format!("SSH auth failed: {}", e),
+                    "error": true,
+                    "requestId": request_id,
+                });
+                let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+                return;
+            }
+        } else if !private_key.is_empty() {
+            if let Err(e) = new_session.connect_key(private_key, None).await {
+                let err = serde_json::json!({
+                    "type": "error",
+                    "connectionId": connection_id,
+                    "message": format!("SSH key auth failed: {}", e),
+                    "error": true,
+                    "requestId": request_id,
+                });
+                let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+                return;
+            }
+        } else {
+            let err = serde_json::json!({
+                "type": "error",
+                "connectionId": connection_id,
+                "message": "No password or private key provided for SSH connection",
+                "error": true,
+                "requestId": request_id,
+            });
+            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+            return;
+        }
+
+        let session_arc = Arc::new(new_session);
+        let mut conn = SshConnection::new(
+            connection_id.clone(),
+            host.to_string(),
+            port,
+            username.to_string(),
+            if !password.is_empty() { "password".into() } else { "key".into() },
+        );
+        conn.set_session(session_arc.clone());
+        state.connections.insert(connection_id.clone(), conn);
+        info!("SSH session created via WebSocket: {}@{}:{}", username, host, port);
+        session_arc
     };
 
     // Open interactive shell
@@ -146,7 +210,9 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
             let err = serde_json::json!({
                 "type": "error",
                 "connectionId": connection_id,
-                "message": format!("Shell open failed: {}", e)
+                "message": format!("Shell open failed: {}", e),
+                "error": true,
+                "requestId": request_id,
             });
             let _ = socket.send(Message::Text(txt(err.to_string()))).await;
             return;
@@ -156,7 +222,8 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
     // Send connected acknowledgment
     let ack = serde_json::json!({
         "type": "connected",
-        "connectionId": connection_id
+        "connectionId": connection_id,
+        "requestId": request_id,
     });
     if socket.send(Message::Text(txt(ack.to_string()))).await.is_err() {
         return;

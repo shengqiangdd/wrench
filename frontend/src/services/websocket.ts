@@ -237,6 +237,8 @@ export class WsClient {
 
   private dispatch(data: Record<string, unknown>) {
     // 请求-响应匹配
+    // 先匹配 requestId 以兑现 pending promise，然后继续按类型分发，
+    // 使得 TerminalView 等组件的 on('connected', handler) 也能收到消息。
     const requestId = data.requestId as string | undefined
     if (requestId && this.pendingRequests.has(requestId)) {
       const pending = this.pendingRequests.get(requestId)!
@@ -247,7 +249,7 @@ export class WsClient {
       } else {
         pending.resolve(data)
       }
-      return
+      // 不 return → 继续按类型分发
     }
 
     // 按类型分发
