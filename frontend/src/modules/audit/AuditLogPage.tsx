@@ -15,10 +15,12 @@ import {
   KeyRound,
 } from 'lucide-react'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 interface AuditEntry {
   timestamp: string
   action: string
-  detail: string
+  detail: string | Record<string, any>
   ip: string
 }
 
@@ -142,7 +144,8 @@ export default function AuditLogPage() {
     if (filter !== 'all' && entry.action !== filter) return false
     if (search) {
       const q = search.toLowerCase()
-      const text = `${entry.action} ${entry.detail} ${entry.timestamp}`.toLowerCase()
+      const detailStr = typeof entry.detail === 'string' ? entry.detail : JSON.stringify(entry.detail)
+      const text = `${entry.action} ${detailStr} ${entry.timestamp}`.toLowerCase()
       if (!text.includes(q)) return false
     }
     return true
@@ -201,9 +204,11 @@ export default function AuditLogPage() {
   )
 }
 
-function formatDetail(action: string, detailStr: string): string {
+function formatDetail(action: string, detailStr: string | Record<string, unknown>): string {
+  // detail from backend can be an object (serde_json::Value), not always a string
+  const raw = typeof detailStr === 'string' ? detailStr : JSON.stringify(detailStr)
   try {
-    const detail = JSON.parse(detailStr)
+    const detail = JSON.parse(raw)
     if (action.startsWith('ssh_') && detail.command) {
       return `$ ${detail.command}`
     }
@@ -218,6 +223,6 @@ function formatDetail(action: string, detailStr: string): string {
     }
     return JSON.stringify(detail)
   } catch {
-    return detailStr
+    return typeof detailStr === 'string' ? detailStr : JSON.stringify(detailStr)
   }
 }
