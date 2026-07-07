@@ -7,8 +7,13 @@ log() {
 
 # ── 1. 首次启动：复制默认配置文件 ──
 if [ ! -f /app/.env ]; then
-  cp /app/.env.example /app/.env
-  log "Created default .env from example"
+  if [ -f /app/.env.example ]; then
+    cp /app/.env.example /app/.env
+    log "Created default .env from example"
+  else
+    touch /app/.env
+    log "Created empty .env (no example file found)"
+  fi
 fi
 
 # ── 2. 显示关键配置（脱敏） ──

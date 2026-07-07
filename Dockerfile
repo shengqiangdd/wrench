@@ -90,6 +90,9 @@ COPY --from=frontend-builder /app/frontend/dist/ /app/frontend/dist/
 # Copy plugins
 COPY plugins/ ./plugins
 
+# Copy .env.example for entrypoint
+COPY backend/.env.example /app/.env.example
+
 # Copy entrypoint
 COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
