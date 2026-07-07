@@ -10,7 +10,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 pub fn encrypt(plaintext: &str, key: &[u8; 32]) -> Result<String, String> {
     let key = Key::<Aes256Gcm>::try_from(key.as_slice())
         .map_err(|e| format!("Invalid key: {:?}", e))?;
-    let cipher = Aes256Gcm::new(key);
+    let cipher = Aes256Gcm::new(&key);
     
     // Generate random 12-byte nonce
     let mut nonce_bytes = [0u8; 12];
@@ -47,7 +47,7 @@ pub fn decrypt(encrypted: &str, key: &[u8; 32]) -> Result<String, String> {
     let key = Key::<Aes256Gcm>::try_from(key.as_slice())
         .map_err(|e| format!("Invalid key: {:?}", e))?;
 
-    let cipher = Aes256Gcm::new(key);
+    let cipher = Aes256Gcm::new(&key);
     let plaintext = cipher
         .decrypt(&nonce, ciphertext)
         .map_err(|e| format!("Decryption failed: {:?}", e))?;
