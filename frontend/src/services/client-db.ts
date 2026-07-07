@@ -333,7 +333,7 @@ export async function initClientDb(): Promise<Database> {
 
   initPromise = (async () => {
     const SQL = await initSqlJs({
-      locateFile: (file: string) => `https://sql.js.org/dist/${file}`,
+      locateFile: (file: string) => `/${file}`,
     })
 
     // 尝试从 IndexedDB 加载已有数据
