@@ -360,10 +360,7 @@ export async function importConfig(content: string): Promise<void> {
   if (data.aiConfig) {
     const aiStore = getStore('smartbox-ai') as { config?: Record<string, unknown> } | null
     const merged = { ...((aiStore?.config as Record<string, unknown>) || {}), ...data.aiConfig }
-    localStorage.setItem(
-      'smartbox-ai',
-      JSON.stringify({ state: { config: merged } }),
-    )
+    localStorage.setItem('smartbox-ai', JSON.stringify({ state: { config: merged } }))
   }
 
   // 导入插件状态

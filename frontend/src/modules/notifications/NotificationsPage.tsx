@@ -132,9 +132,7 @@ export default function NotificationsPage() {
         <div className="flex items-center gap-3">
           <Bell size={22} className="text-smartbox-400" />
           <h1 className="text-lg font-semibold text-slate-200">通知渠道</h1>
-          <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-            本地配置
-          </span>
+          <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">本地配置</span>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
@@ -176,7 +174,11 @@ export default function NotificationsPage() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {channels.map((ch) => {
-              const meta = CHANNEL_META[ch.type] ?? { label: ch.type, icon: Globe, color: 'text-slate-400' }
+              const meta = CHANNEL_META[ch.type] ?? {
+                label: ch.type,
+                icon: Globe,
+                color: 'text-slate-400',
+              }
               const Icon = meta.icon
               return (
                 <div
@@ -185,7 +187,9 @@ export default function NotificationsPage() {
                 >
                   <div className="mb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className={meta.color}><Icon size={18} /></span>
+                      <span className={meta.color}>
+                        <Icon size={18} />
+                      </span>
                       <div>
                         <div className="text-sm font-medium text-slate-200">{ch.name}</div>
                         <div className="text-xs text-slate-500">{meta.label}</div>
@@ -207,7 +211,8 @@ export default function NotificationsPage() {
                       {(() => {
                         const cfg = ch.config as Record<string, unknown>
                         if (ch.type === 'email') return String(cfg.to || '未配置')
-                        if (ch.type === 'webhook') return String(cfg.url || '未配置').slice(0, 40) + '...'
+                        if (ch.type === 'webhook')
+                          return String(cfg.url || '未配置').slice(0, 40) + '...'
                         return `#${String(cfg.channel || '未配置')}`
                       })()}
                     </div>
@@ -228,7 +233,7 @@ export default function NotificationsPage() {
                     </button>
                     <button
                       onClick={() => deleteChannel(ch.id)}
-                      className="flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-400 opacity-0 transition-all hover:border-red-600 hover:text-red-400 group-hover:opacity-100"
+                      className="flex items-center justify-center rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-400 opacity-0 transition-all group-hover:opacity-100 hover:border-red-600 hover:text-red-400"
                     >
                       <Trash2 size={12} />
                     </button>
@@ -331,9 +336,7 @@ function AddChannelModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">
-              配置（JSON）
-            </label>
+            <label className="mb-1 block text-xs font-medium text-slate-400">配置（JSON）</label>
             <textarea
               value={configStr}
               onChange={(e) => setConfigStr(e.target.value)}

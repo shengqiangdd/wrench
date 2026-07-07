@@ -145,9 +145,7 @@ export default function VaultPage() {
         <div className="flex items-center gap-3">
           <KeyRound size={22} className="text-smartbox-400" />
           <h1 className="text-lg font-semibold text-slate-200">凭据保险箱</h1>
-          <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-            本地存储
-          </span>
+          <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">本地存储</span>
         </div>
         <button
           onClick={() => setShowAddModal(true)}

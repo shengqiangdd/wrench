@@ -99,9 +99,7 @@ export default function SystemMaintenance() {
             </button>
           </div>
 
-          {!dbReady && (
-            <p className="mt-2 text-[11px] text-amber-400">数据库初始化中...</p>
-          )}
+          {!dbReady && <p className="mt-2 text-[11px] text-amber-400">数据库初始化中...</p>}
 
           {dbInfo && (
             <div className="mt-3 grid grid-cols-2 gap-3">
@@ -144,8 +142,8 @@ export default function SystemMaintenance() {
         {/* 说明 */}
         <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-4 py-3">
           <p className="text-[11px] text-slate-500">
-            数据存储在浏览器本地 IndexedDB 中，每个用户独立隔离。
-            使用「设置 → 导入/导出」功能备份或迁移数据。
+            数据存储在浏览器本地 IndexedDB 中，每个用户独立隔离。 使用「设置 →
+            导入/导出」功能备份或迁移数据。
           </p>
         </div>
       </div>

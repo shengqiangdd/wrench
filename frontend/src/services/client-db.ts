@@ -306,8 +306,16 @@ function migrateFromLocalStorage(database: Database): void {
         )
         for (const h of history) {
           stmt.run([
-            h.id, h.ruleId, h.hostId, h.hostName, h.metric,
-            h.value, h.threshold, h.severity, h.timestamp, h.notified ? 1 : 0,
+            h.id,
+            h.ruleId,
+            h.hostId,
+            h.hostName,
+            h.metric,
+            h.value,
+            h.threshold,
+            h.severity,
+            h.timestamp,
+            h.notified ? 1 : 0,
           ])
         }
         stmt.free()
@@ -442,7 +450,18 @@ export function connectionsUpsert(row: ConnectionRow): void {
   db.run(
     `INSERT OR REPLACE INTO connections (id, name, host, port, username, auth_type, config, sort_order, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [row.id, row.name, row.host, row.port, row.username, row.auth_type, row.config, row.sort_order, row.created_at, row.updated_at],
+    [
+      row.id,
+      row.name,
+      row.host,
+      row.port,
+      row.username,
+      row.auth_type,
+      row.config,
+      row.sort_order,
+      row.created_at,
+      row.updated_at,
+    ],
   )
   scheduleSave()
 }
@@ -516,7 +535,18 @@ export function alertHistoryInsert(row: AlertEventRow): void {
   db.run(
     `INSERT OR IGNORE INTO alert_history (id, ruleId, hostId, hostName, metric, value, threshold, severity, timestamp, notified)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [row.id, row.ruleId, row.hostId, row.hostName, row.metric, row.value, row.threshold, row.severity, row.timestamp, row.notified],
+    [
+      row.id,
+      row.ruleId,
+      row.hostId,
+      row.hostName,
+      row.metric,
+      row.value,
+      row.threshold,
+      row.severity,
+      row.timestamp,
+      row.notified,
+    ],
   )
   scheduleSave()
 }

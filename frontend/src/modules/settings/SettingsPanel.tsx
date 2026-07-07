@@ -27,10 +27,7 @@ import { useAiStore } from '../../stores/ai-store'
 import { AI_PROVIDERS } from '../../types/ai'
 import type { AiProvider } from '../../types/ai'
 import SystemMaintenance from './SystemMaintenance'
-import {
-  exportConfig,
-  importConfigFromFile,
-} from '../../services/importExport'
+import { exportConfig, importConfigFromFile } from '../../services/importExport'
 import { ConfirmModal } from '../../components/ConfirmModal'
 
 export default function SettingsPanel() {
@@ -830,9 +827,7 @@ export default function SettingsPanel() {
               placeholder="输入解密密码"
               autoFocus
             />
-            {importError && (
-              <p className="mt-2 text-xs text-red-400">{importError}</p>
-            )}
+            {importError && <p className="mt-2 text-xs text-red-400">{importError}</p>}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => {

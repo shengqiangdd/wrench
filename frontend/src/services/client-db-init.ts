@@ -45,7 +45,9 @@ export function useClientDbReady(): boolean {
     _listeners.add(listener)
     // 确保初始化已启动
     initClientDb().then(() => notifyReady())
-    return () => { _listeners.delete(listener) }
+    return () => {
+      _listeners.delete(listener)
+    }
   }, [])
   /* eslint-enable react-hooks/set-state-in-effect */
 

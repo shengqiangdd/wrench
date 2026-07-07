@@ -71,12 +71,54 @@ interface AlertState {
 // ─── 默认规则 ───
 
 const DEFAULT_RULES: AlertRule[] = [
-  { id: 'cpu-warning', metric: 'cpu', threshold: 80, severity: 'warning', enabled: true, consecutive: 3 },
-  { id: 'cpu-critical', metric: 'cpu', threshold: 95, severity: 'critical', enabled: true, consecutive: 2 },
-  { id: 'mem-warning', metric: 'memory', threshold: 85, severity: 'warning', enabled: true, consecutive: 3 },
-  { id: 'mem-critical', metric: 'memory', threshold: 95, severity: 'critical', enabled: true, consecutive: 2 },
-  { id: 'disk-warning', metric: 'disk', threshold: 85, severity: 'warning', enabled: true, consecutive: 5 },
-  { id: 'disk-critical', metric: 'disk', threshold: 95, severity: 'critical', enabled: true, consecutive: 3 },
+  {
+    id: 'cpu-warning',
+    metric: 'cpu',
+    threshold: 80,
+    severity: 'warning',
+    enabled: true,
+    consecutive: 3,
+  },
+  {
+    id: 'cpu-critical',
+    metric: 'cpu',
+    threshold: 95,
+    severity: 'critical',
+    enabled: true,
+    consecutive: 2,
+  },
+  {
+    id: 'mem-warning',
+    metric: 'memory',
+    threshold: 85,
+    severity: 'warning',
+    enabled: true,
+    consecutive: 3,
+  },
+  {
+    id: 'mem-critical',
+    metric: 'memory',
+    threshold: 95,
+    severity: 'critical',
+    enabled: true,
+    consecutive: 2,
+  },
+  {
+    id: 'disk-warning',
+    metric: 'disk',
+    threshold: 85,
+    severity: 'warning',
+    enabled: true,
+    consecutive: 5,
+  },
+  {
+    id: 'disk-critical',
+    metric: 'disk',
+    threshold: 95,
+    severity: 'critical',
+    enabled: true,
+    consecutive: 3,
+  },
 ]
 
 let eventIdCounter = 0
@@ -120,9 +162,7 @@ function playAlertSound(severity: AlertSeverity, enabled: boolean) {
 // ─── Toast 通知辅助 ───
 
 function notify(message: string, type: 'error' | 'info') {
-  window.dispatchEvent(
-    new CustomEvent('smartbox-notification', { detail: { message, type } }),
-  )
+  window.dispatchEvent(new CustomEvent('smartbox-notification', { detail: { message, type } }))
 }
 
 const METRIC_LABELS: Record<AlertMetric, string> = {
