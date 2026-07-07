@@ -41,6 +41,7 @@ export default function SshPlaceholder() {
   const setActiveSplitId = useAppStore((s) => s.setSshActiveSplitId)
   const [aiOpen, setAiOpen] = useState(false)
   const aiEnabled = useAiStore((s) => s.config.enabled)
+  const [connectError, setConnectError] = useState<string | null>(null)
 
   // 用 ref 追踪连接状态，防止闭包过期
   const wsClientRef = useRef<WsClient | null>(null)
@@ -85,6 +86,15 @@ export default function SshPlaceholder() {
         // 🔐 解密存储的密码/私钥后再发送
         const decryptedConn = await decryptConnection(conn)
         const ws = wsClientRef.current || (await getWsClient())
+
+        // 检查 WebSocket 是否已连接
+        if (ws.status !== 'connected') {
+          setConnectError('WebSocket 未连接，请检查网络连接')
+          setSidebarOpen(false)
+          return null
+        }
+
+        setConnectError(null) // 清除之前的错误
         await ws.request(
           {
             type: 'connect',
@@ -113,11 +123,16 @@ export default function SshPlaceholder() {
         // 仅非分屏连接时切换 selectedConnectionId（分屏自动建连不抢焦点）
         if (!targetSessionId) {
           store.selectConnection(sessionId)
-          setSidebarOpen(false)
         }
+        // 移动端连接成功后关闭侧边栏
+        setSidebarOpen(false)
         return sessionId
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : '连接失败'
         console.error('SSH 连接失败:', err)
+        setConnectError(errorMsg)
+        // 移动端连接失败后也关闭侧边栏，让用户看到错误提示
+        setSidebarOpen(false)
         return null
       } finally {
         connectingRefs.current.delete(sessionId)
@@ -465,11 +480,24 @@ export default function SshPlaceholder() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {allSessions.length > 0 ? (
           <>
+            {/* 连接错误提示 */}
+            {connectError && (
+              <div className="flex items-center gap-2 border-b border-red-500/30 bg-red-500/10 px-3 py-2">
+                <span className="text-xs text-red-400">{connectError}</span>
+                <button
+                  onClick={() => setConnectError(null)}
+                  className="ml-auto text-xs text-red-500 underline hover:text-red-400"
+                >
+                  关闭
+                </button>
+              </div>
+            )}
             {/* 标签栏 */}
             <div className="flex items-center border-b border-slate-700/50 bg-slate-900/50">
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="btn-icon text-slate-500 hover:text-slate-300 md:hidden"
+                title="打开连接列表"
               >
                 <Menu size={16} />
               </button>
@@ -614,6 +642,18 @@ export default function SshPlaceholder() {
                   ? '选择一个连接或新建连接'
                   : 'WebSocket 未连接，请稍候...'}
               </p>
+              {/* 显示连接错误信息 */}
+              {connectError && (
+                <div className="mx-auto mt-3 max-w-sm rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2">
+                  <p className="text-xs text-red-400">{connectError}</p>
+                  <button
+                    onClick={() => setConnectError(null)}
+                    className="mt-1 text-xs text-red-500 underline hover:text-red-400"
+                  >
+                    关闭
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="btn btn-primary mt-4 min-h-[44px] px-4 md:hidden"
