@@ -17,6 +17,7 @@ on:
 jobs:
   npm-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -32,6 +33,7 @@ jobs:
 
   cargo-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -47,6 +49,7 @@ jobs:
 
   bundle-size:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 

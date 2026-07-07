@@ -24,6 +24,7 @@ jobs:
   cleanup-actions:
     name: Cleanup Actions Runs
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       actions: write
       contents: read
