@@ -34,24 +34,23 @@ dotenvy = "0.15"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Crypto
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 base64 = "0.22"
-sha2 = "0.10"
-rand = "0.8"
+sha2 = "0.11"
+rand = "0.9"
 
 # SSH client
-russh = "0.50.4"
-russh-keys = "0.50.0-beta.7"
+russh = "0.50"
 russh-sftp = "2"
 
 # Docker
 bollard = "0.18"
 
 # Validation
-regex = "1.11"
+regex = "1.12"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
@@ -68,5 +67,5 @@ jsonwebtoken = "9"
 # Helpers
 bytes = "1.0"
 futures-util = "0.3"
-dashmap = "6.1"
+dashmap = "6"
 parking_lot = "0.12"
