@@ -1,5 +1,14 @@
-name: CI
-on: [push, pull_request]
+name: CI Frontend
+on:
+  push:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/ci-frontend.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/ci-frontend.yml'
+
 jobs:
   frontend:
     runs-on: ubuntu-latest
@@ -22,21 +31,3 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-
-  rust-backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: backend
-      - run: cargo check
-        working-directory: backend
-      - run: cargo clippy -- -D warnings
-        working-directory: backend
-      - run: cargo test
-        working-directory: backend
