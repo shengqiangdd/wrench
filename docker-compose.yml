@@ -24,7 +24,7 @@ services:
       DATABASE_URL: /data/wrench.db
       # JWT 密钥（必填，用于认证令牌签发和 Vault 加密密钥派生）
       # ⚠️ 生产环境必须替换！生成方法： openssl rand -hex 32
-      JWT_SECRET: "${JWT_SECRET:?请设置 JWT_SECRET 环境变量，例如: export JWT_SECRET=$(openssl rand -hex 32)}"
+      JWT_SECRET: "9c42491a5e21e47ab4b46c5b81096b058882248d98b51095e7285358e53d8258"
       # 可选：Vault 加密专用密钥（不设置则从 JWT_SECRET 派生）
       # VAULT_KEY: "${VAULT_KEY:-}"
     healthcheck:
