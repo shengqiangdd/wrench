@@ -16,7 +16,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ── Job 1: 构建 amd64 镜像（快速，约 3-5 分钟）──
+  # ── Job 1: 构建并推送 amd64（~3-5 分钟，立刻可用）──
   build-amd64:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -34,19 +34,22 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build amd64 image
+      - name: Build and push amd64 → latest
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           platforms: linux/amd64
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64
+          # 直接推到 latest，amd64 用户立刻可拉取测试
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-amd64
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-amd64,mode=max
           build-args: |
             BUILD_HASH=${{ github.sha }}
 
-  # ── Job 2: 构建 arm64 镜像（需要 QEMU，约 10-15 分钟）──
+  # ── Job 2: 构建 arm64（~10-15 分钟，后台运行）──
   build-arm64:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -66,7 +69,7 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build arm64 image
+      - name: Build and push arm64
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -78,7 +81,7 @@ jobs:
           build-args: |
             BUILD_HASH=${{ github.sha }}
 
-  # ── Job 3: 合并 manifest（等两个架构都完成后）──
+  # ── Job 3: 更新 latest 为 multi-arch（arm64 完成后）──
   merge-manifest:
     needs: [build-amd64, build-arm64]
     runs-on: ubuntu-latest
@@ -95,16 +98,12 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create and push multi-arch manifest
+      - name: Update latest to multi-arch
         run: |
-          # 使用 buildx imagetools 创建 multi-arch manifest
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
 
-          echo "✅ Multi-arch Docker image built and pushed successfully!"
-          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-          echo "Tags: latest, ${{ github.sha }}"
-          echo "Architectures: linux/amd64, linux/arm64"
+          echo "✅ latest updated to multi-arch (amd64 + arm64)"
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
