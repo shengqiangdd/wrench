@@ -35,22 +35,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install cargo-chef for better dependency caching
-RUN cargo install cargo-chef
-
 WORKDIR /app
 
-# ── Step 1: Create recipe (analyze dependencies) ──
+# ── Step 1: Copy manifests for dependency caching ──
 COPY backend/Cargo.toml backend/Cargo.lock* ./
+
+# Create dummy source files so cargo can cache dependencies
 RUN mkdir -p src && cat > src/main.rs << 'EOF'
 fn main() {}
 EOF
 RUN echo "" > src/lib.rs
+
+# Ensure Cargo.lock exists (for reproducible builds)
 RUN if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
-RUN cargo chef prepare --recipe-path recipe.json
 
 # ── Step 2: Build dependencies (cached) ──
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo build --release
 
 # ── Step 3: Build actual application ──
 COPY backend/src/ ./src/
