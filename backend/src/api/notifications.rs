@@ -180,8 +180,8 @@ async fn send_discord_test(config: &serde_json::Value) -> Result<String, String>
     let resp = client
         .post(webhook)
         .json(&serde_json::json!({
-            "content": "✅ **SmartBox Test Alert**\nNotification channel is working correctly!",
-            "username": "SmartBox",
+            "content": "✅ **Wrench Test Alert**\nNotification channel is working correctly!",
+            "username": "Wrench",
         }))
         .send()
         .await
@@ -203,7 +203,7 @@ async fn send_slack_test(config: &serde_json::Value) -> Result<String, String> {
     let resp = client
         .post(webhook)
         .json(&serde_json::json!({
-            "text": "✅ *SmartBox Test Alert*\nNotification channel is working correctly!"
+            "text": "✅ *Wrench Test Alert*\nNotification channel is working correctly!"
         }))
         .send()
         .await
@@ -228,7 +228,7 @@ async fn send_telegram_test(config: &serde_json::Value) -> Result<String, String
         .post(&url)
         .json(&serde_json::json!({
             "chat_id": chat_id,
-            "text": "✅ *SmartBox Test Alert*\nNotification channel is working correctly!",
+            "text": "✅ *Wrench Test Alert*\nNotification channel is working correctly!",
             "parse_mode": "Markdown",
         }))
         .send()

@@ -95,7 +95,7 @@ fn format_alert_message(level: &AlertLevel, metric: &str, host: &str, message: &
         AlertLevel::Info => "🔵",
     };
     format!(
-        "{} **SmartBox Alert**\n**Level**: {}\n**Host**: {}\n**Metric**: {}\n**Message**: {}",
+        "{} **Wrench Alert**\n**Level**: {}\n**Host**: {}\n**Metric**: {}\n**Message**: {}",
         emoji,
         level.as_str().to_uppercase(),
         host,

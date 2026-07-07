@@ -1,6 +1,6 @@
 //! SQLite persistence layer.
 //!
-//! SmartBox uses SQLite (via `rusqlite` with `bundled` feature) for
+//! Wrench uses SQLite (via `rusqlite` with `bundled` feature) for
 //! lightweight, zero-dependency persistence of audit logs and alerts.
 //!
 //! All database operations are dispatched via `tokio::task::spawn_blocking`
