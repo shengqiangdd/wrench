@@ -4,12 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - 'backend/**'
-      - 'frontend/**'
       - 'Dockerfile'
       - 'Dockerfile.nodocker'
       - 'docker-entrypoint.sh'
-      - 'plugins/**'
       - '.github/workflows/docker-build.yml'
   workflow_dispatch:
 
@@ -20,7 +17,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
