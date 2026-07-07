@@ -33,7 +33,7 @@ pub struct MarketIndex {
 /// Fetch marketplace index from remote source
 async fn fetch_marketplace_index_inner() -> Result<Vec<MarketPluginListing>, String> {
     // Default marketplace index URL — replace with actual marketplace URL
-    let index_url = "https://smartbox-market.example.com/index.json";
+    let index_url = "https://wrench-market.example.com/index.json";
 
     let resp = reqwest::get(index_url)
         .await

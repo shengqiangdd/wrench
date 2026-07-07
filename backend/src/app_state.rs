@@ -207,7 +207,7 @@ mod tests {
             host: "0.0.0.0".into(),
             port: 3001,
             frontend_dist: PathBuf::from("./frontend/dist"),
-            plugins_dir: PathBuf::from("/tmp/smartbox/plugins"),
+            plugins_dir: PathBuf::from("/tmp/wrench/plugins"),
             cors_origins: vec!["*".into()],
             openrouter_api_key: None,
             jwt_secret: "test-jwt-secret".into(),

@@ -2,16 +2,16 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
 use std::path::PathBuf;
-/// Integration tests for SmartBox backend.
+/// Integration tests for Wrench backend.
 ///
 /// Uses in-process request/response via `tower::ServiceExt::oneshot`
 /// to exercise the full router stack without spawning an HTTP server.
 use std::sync::Arc;
 use tower::ServiceExt;
 
-use smartbox_backend::app_state::AppState;
-use smartbox_backend::config::AppConfig;
-use smartbox_backend::utils::jwt::{Claims, JwtService};
+use wrench_backend::app_state::AppState;
+use wrench_backend::config::AppConfig;
+use wrench_backend::utils::jwt::{Claims, JwtService};
 
 fn test_config() -> AppConfig {
     AppConfig {
@@ -31,7 +31,7 @@ fn test_config() -> AppConfig {
 async fn build_test_app() -> Router {
     let config = test_config();
     let state = AppState::new(config).await.expect("Failed to create AppState");
-    smartbox_backend::build_app(Arc::new(state)).await
+    wrench_backend::build_app(Arc::new(state)).await
 }
 
 /// Verify that `AppState` can be constructed with a test config.
@@ -109,7 +109,7 @@ async fn invalid_jwt_is_rejected() {
 async fn authenticated_request_passes_auth() {
     let config = test_config();
     let state = AppState::new(config.clone()).await.expect("AppState");
-    let app = smartbox_backend::build_app(Arc::new(state)).await;
+    let app = wrench_backend::build_app(Arc::new(state)).await;
 
     let jwt = JwtService::from_secret(&config.jwt_secret).unwrap();
     let claims = Claims::new("test".into(), "api+ws", 86400);

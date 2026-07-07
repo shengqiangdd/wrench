@@ -69,25 +69,25 @@ FROM debian:12-slim
 # 显式设置运行时路径和环境
 ENV FRONTEND_DIST=/app/frontend/dist \
     RUST_LOG=backend=info,tower_http=info \
-    DATABASE_URL=/data/cloudhub.db
+    DATABASE_URL=/data/wrench.db
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates tzdata openssl curl tini && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN groupadd -r cloudhub && useradd -r -g cloudhub -m -d /app cloudhub
+RUN groupadd -r wrench && useradd -r -g wrench -m -d /app wrench
 
 WORKDIR /app
 
 # ── 创建运行时数据目录 ──
 # Docker compose 的 data 卷挂载到 /data，
-# 必须确保 cloudhub 用户有写权限（否则 SQLite 无法写入）
+# 必须确保 wrench 用户有写权限（否则 SQLite 无法写入）
 RUN mkdir -p /data plugins && \
-    chown cloudhub:cloudhub /app /app/plugins /data
+    chown wrench:wrench /app /app/plugins /data
 
 # Copy Rust binary
-COPY --from=rust-builder /app/target/release/cloudhub-backend /app/cloudhub
+COPY --from=rust-builder /app/target/release/wrench-backend /app/wrench
 
 # Copy frontend dist
 COPY --from=frontend-builder /app/frontend/dist/ /app/frontend/dist/
@@ -107,14 +107,14 @@ RUN chmod +x /app/docker-entrypoint.sh
 COPY backend/.env.example /app/.env.example
 
 # Set ownership — must include all copied files
-RUN chown -R cloudhub:cloudhub /app
+RUN chown -R wrench:wrench /app
 
-USER cloudhub
+USER wrench
 
 EXPOSE 3001
 
 # Use tini as PID 1 (proper signal forwarding + zombie reaping).
-# tini → docker-entrypoint.sh (exec) → cloudhub
+# tini → docker-entrypoint.sh (exec) → wrench
 # Signals (SIGTERM/SIGINT) go directly to the Rust binary.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/app/docker-entrypoint.sh"]

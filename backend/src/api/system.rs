@@ -76,7 +76,7 @@ pub async fn db_download(State(state): State<Arc<AppState>>) -> Result<impl Into
         .await
         .map_err(|e| AppError::Internal(format!("Failed to read database: {}", e)))?;
 
-    let filename = format!("smartbox-{}.db", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+    let filename = format!("wrench-{}.db", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
     let content_type = "application/x-sqlite3".to_string();
 
     let headers = [

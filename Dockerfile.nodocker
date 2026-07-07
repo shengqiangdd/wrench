@@ -1,4 +1,4 @@
-# Minimal image: only cloudhub + static files (no Docker socket)
+# Minimal image: only wrench + static files (no Docker socket)
 FROM debian:12-slim
 
 ENV FRONTEND_DIST=/app/frontend/dist \
@@ -8,19 +8,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates tzdata openssl curl tini && \
     rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -r cloudhub && useradd -r -g cloudhub -m -d /app cloudhub
+RUN groupadd -r wrench && useradd -r -g wrench -m -d /app wrench
 
 WORKDIR /app
 
-COPY backend/target/release/smartbox-backend /app/cloudhub
+COPY backend/target/release/smartbox-backend /app/wrench
 COPY frontend/dist/ ./frontend/dist/
 COPY backend/.env.example /app/.env.example
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/cloudhub /app/docker-entrypoint.sh
+RUN chmod +x /app/wrench /app/docker-entrypoint.sh
 
-RUN mkdir -p /data && chown -R cloudhub:cloudhub /app /data
+RUN mkdir -p /data && chown -R wrench:wrench /app /data
 
-USER cloudhub
+USER wrench
 
 EXPOSE 3001
 

@@ -45,11 +45,11 @@ impl AppConfig {
         let vault_key = std::env::var("VAULT_KEY").ok();
 
         let database_url = std::env::var("DATABASE_URL").ok().or_else(|| {
-            // Default to /data/smartbox.db when running in Docker
+            // Default to /data/wrench.db when running in Docker
             let in_container =
                 std::path::Path::new("/.dockerenv").exists() || std::env::var("DOCKER_CONTAINER").is_ok();
             if in_container {
-                Some("/data/smartbox.db".into())
+                Some("/data/wrench.db".into())
             } else {
                 None
             }

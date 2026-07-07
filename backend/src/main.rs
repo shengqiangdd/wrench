@@ -1,13 +1,13 @@
-use smartbox_backend::build_app;
-use smartbox_backend::config::AppConfig;
-use smartbox_backend::AppState;
+use wrench_backend::build_app;
+use wrench_backend::config::AppConfig;
+use wrench_backend::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 fn print_usage() {
-    eprintln!("Usage: smartbox-backend [OPTIONS]");
+    eprintln!("Usage: wrench-backend [OPTIONS]");
     eprintln!();
     eprintln!("Options:");
     eprintln!("  --db-backup <output-path>   Backup SQLite database to a file");
@@ -105,9 +105,9 @@ async fn main() -> anyhow::Result<()> {
     // These go straight to stderr so they appear in `docker logs` even if
     // everything else fails.  This is our lifeline for diagnosing the
     // exit-code-0 restart loop.
-    eprintln!("[smartbox] === SmartBox backend starting ===");
+    eprintln!("[wrench] === Wrench backend starting ===");
     eprintln!(
-        "[smartbox] PID={}, argv0={}",
+        "[wrench] PID={}, argv0={}",
         std::process::id(),
         std::env::args().next().unwrap_or_default()
     );
@@ -155,17 +155,17 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "smartbox_backend=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "wrench_backend=info,tower_http=info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    eprintln!("[smartbox] Tracing initialised, loading config...");
+    eprintln!("[wrench] Tracing initialised, loading config...");
 
     // Load config
     let config = AppConfig::from_env()?;
     tracing::info!(
-        "Starting SmartBox Backend PID={} on {}:{}",
+        "Starting Wrench Backend PID={} on {}:{}",
         std::process::id(),
         config.host,
         config.port
@@ -174,13 +174,13 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Database: {:?}", config.database_url);
     tracing::info!("Plugins dir: {:?}", config.plugins_dir);
 
-    eprintln!("[smartbox] Config loaded, building app state...");
+    eprintln!("[wrench] Config loaded, building app state...");
 
     // Build app state
     let state = Arc::new(AppState::new(config.clone()).await?);
     tracing::info!("App state initialized");
 
-    eprintln!("[smartbox] App state ready, building router...");
+    eprintln!("[wrench] App state ready, building router...");
 
     // Build router
     let app = build_app(state.clone()).await;
@@ -232,19 +232,19 @@ async fn main() -> anyhow::Result<()> {
 
     // Start server
     let addr = format!("{}:{}", config.host, config.port);
-    eprintln!("[smartbox] Binding TCP listener on {addr} ...");
+    eprintln!("[wrench] Binding TCP listener on {addr} ...");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("Listening on http://{addr}/");
 
     // Run server with graceful shutdown on SIGTERM/SIGINT
     tracing::info!("Server started. Use Ctrl+C or 'docker stop' to gracefully shut down.");
-    eprintln!("[smartbox] Server is now accepting connections.");
+    eprintln!("[wrench] Server is now accepting connections.");
     axum::serve(listener, app)
         .with_graceful_shutdown(wait_for_shutdown(shutdown_notify))
         .await?;
 
     tracing::info!("Server has shut down gracefully.");
-    eprintln!("[smartbox] Graceful shutdown complete, exiting.");
+    eprintln!("[wrench] Graceful shutdown complete, exiting.");
     Ok(())
 }
 
