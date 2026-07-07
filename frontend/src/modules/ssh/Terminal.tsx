@@ -421,7 +421,7 @@ export default function TerminalView({
           style={{ maxHeight: '60vh', overflowY: 'auto' }}
         >
           <div className="flex items-center justify-between border-b border-slate-700/30 pb-2">
-            <span className="text-xs font-medium text-slate-300">快捷键</span>
+            <span className="text-xs font-medium text-slate-300">快捷键（点击发送）</span>
             <button
               onClick={() => setShowShortcuts(false)}
               className="btn-icon text-slate-500 hover:text-slate-300"
@@ -429,24 +429,37 @@ export default function TerminalView({
               <X size={14} />
             </button>
           </div>
-          <div className="mt-2 grid grid-cols-2 gap-1.5 text-[11px]">
+          <div className="mt-2 grid grid-cols-3 gap-1.5 text-[11px]">
             {[
-              { key: 'Ctrl+Shift+F', label: '搜索' },
-              { key: 'Esc', label: '关闭搜索' },
-              { key: '↑/↓', label: '滚动历史' },
-              { key: '←/→', label: '光标移动' },
-              { key: 'Home/End', label: '行首/行尾' },
-              { key: 'PgUp/PgDn', label: '翻页' },
-              { key: 'Tab', label: '自动补全' },
-              { key: 'Ctrl+C', label: '中断' },
+              { key: 'Tab', label: '补全', seq: '\t' },
+              { key: 'Esc', label: '取消', seq: '\x1b' },
+              { key: 'Ctrl+C', label: '中断', seq: '\x03' },
+              { key: 'Ctrl+D', label: 'EOF', seq: '\x04' },
+              { key: 'Ctrl+Z', label: '挂起', seq: '\x1a' },
+              { key: 'Ctrl+L', label: '清屏', seq: '\x0c' },
+              { key: '↑', label: '上', seq: '\x1b[A' },
+              { key: '↓', label: '下', seq: '\x1b[B' },
+              { key: '→', label: '右', seq: '\x1b[C' },
+              { key: '←', label: '左', seq: '\x1b[D' },
+              { key: 'Home', label: '行首', seq: '\x1b[H' },
+              { key: 'End', label: '行尾', seq: '\x1b[F' },
+              { key: 'PgUp', label: '上翻', seq: '\x1b[5~' },
+              { key: 'PgDn', label: '下翻', seq: '\x1b[6~' },
+              { key: 'Del', label: '删除', seq: '\x1b[3~' },
             ].map((s) => (
-              <div
+              <button
                 key={s.key}
-                className="flex items-center justify-between rounded bg-slate-800/60 px-2 py-1"
+                onClick={() => {
+                  // 发送按键序列到后端
+                  const encoded = btoa(unescape(encodeURIComponent(s.seq)))
+                  wsClientRef.current.send({ type: 'exec', connectionId, data: encoded })
+                  onTerminalData?.(encoded)
+                }}
+                className="flex items-center justify-between rounded bg-slate-800/60 px-2 py-1.5 transition-colors active:bg-slate-700"
               >
-                <kbd className="font-mono text-slate-400">{s.key}</kbd>
+                <kbd className="font-mono text-slate-300">{s.key}</kbd>
                 <span className="text-slate-500">{s.label}</span>
-              </div>
+              </button>
             ))}
           </div>
           <div className="mt-2 border-t border-slate-700/30 pt-2">

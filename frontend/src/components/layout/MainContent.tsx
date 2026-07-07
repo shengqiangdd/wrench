@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useAppStore } from '../../stores/app-store'
 
 const SshPlaceholder = lazy(() => import('../../modules/ssh/SshPlaceholder'))
@@ -69,8 +69,20 @@ function Loading() {
   )
 }
 
+/** 需要保持活跃的页面（切换标签后不卸载，保持终端连接等状态） */
+const KEEP_ALIVE_PAGES = new Set(['ssh'])
+
 export default function MainContent() {
   const activeNav = useAppStore((s) => s.activeNav)
+  // 记录已访问过的页面，用于 keep-alive
+  const [visitedPages, setVisitedPages] = useState<Set<string>>(new Set([activeNav]))
+
+  // 当切换页面时，如果是 keep-alive 页面，添加到已访问集合
+  useEffect(() => {
+    if (KEEP_ALIVE_PAGES.has(activeNav)) {
+      setVisitedPages((prev) => new Set([...prev, activeNav]))
+    }
+  }, [activeNav])
 
   // Preload adjacent pages after mount for instant navigation
   useEffect(() => {
@@ -103,11 +115,43 @@ export default function MainContent() {
     }
   }, [activeNav])
 
-  const PageComponent = PAGES[activeNav]
-
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <Suspense fallback={<Loading />}>{PageComponent ? <PageComponent /> : null}</Suspense>
+      {/* 渲染所有 keep-alive 页面，使用 display 控制可见性 */}
+      {Array.from(visitedPages).map((pageId) => {
+        const PageComponent = PAGES[pageId]
+        if (!PageComponent) return null
+        const isActive = pageId === activeNav
+        const isKeepAlive = KEEP_ALIVE_PAGES.has(pageId)
+
+        // 非 keep-alive 页面只在活跃时渲染
+        if (!isKeepAlive && !isActive) return null
+
+        return (
+          <div
+            key={pageId}
+            className="flex h-full flex-1 flex-col overflow-hidden"
+            style={{
+              display: isActive ? 'flex' : 'none',
+            }}
+          >
+            <Suspense fallback={<Loading />}>
+              <PageComponent />
+            </Suspense>
+          </div>
+        )
+      })}
+      {/* 当前活跃页面如果不是 keep-alive 且未访问过，直接渲染 */}
+      {!visitedPages.has(activeNav) && PAGES[activeNav] && (
+        <div className="flex h-full flex-1 flex-col overflow-hidden">
+          <Suspense fallback={<Loading />}>
+            {(() => {
+              const PageComponent = PAGES[activeNav]
+              return PageComponent ? <PageComponent /> : null
+            })()}
+          </Suspense>
+        </div>
+      )}
     </main>
   )
 }

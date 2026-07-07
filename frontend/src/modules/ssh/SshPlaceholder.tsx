@@ -74,7 +74,10 @@ export default function SshPlaceholder() {
       if (connectingRefs.current.has(sessionId)) return null
       connectingRefs.current.add(sessionId)
 
-      setConnecting(true)
+      // 只在非批量连接时显示 loading 状态
+      if (!targetSessionId) {
+        setConnecting(true)
+      }
 
       const store = useSshStore.getState()
 
@@ -118,10 +121,41 @@ export default function SshPlaceholder() {
         return null
       } finally {
         connectingRefs.current.delete(sessionId)
-        setConnecting(false)
+        if (!targetSessionId) {
+          setConnecting(false)
+        }
       }
     },
     [setSidebarOpen],
+  )
+
+  // ─── 批量并行连接多个 SSH 主机 ───
+  const handleBatchConnect = useCallback(
+    async (connectionIds: string[]) => {
+      if (connectionIds.length === 0) return
+
+      setConnecting(true)
+      try {
+        // 并行建立所有连接
+        const results = await Promise.allSettled(
+          connectionIds.map((connId) => handleConnect(connId)),
+        )
+
+        // 返回成功连接的 sessionId 列表
+        const successIds = results
+          .filter((r): r is PromiseFulfilledResult<string | null> => r.status === 'fulfilled')
+          .map((r) => r.value)
+          .filter((id): id is string => id !== null)
+
+        if (successIds.length > 0) {
+          setSplits([])
+        }
+        return successIds
+      } finally {
+        setConnecting(false)
+      }
+    },
+    [handleConnect, setSplits],
   )
 
   // ─── 断开连接 ───

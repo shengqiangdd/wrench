@@ -36,31 +36,40 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="relative z-10 flex items-center justify-evenly border-t border-slate-700/50 bg-slate-900 lg:hidden"
-      style={{ minHeight: '48px' }}
+      className="relative z-10 flex items-center border-t border-slate-700/50 bg-slate-900 lg:hidden"
+      style={{
+        minHeight: '48px',
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+      }}
     >
-      {navItems.map((item) => {
-        const Icon = item.icon
-        return (
-          <button
-            key={item.id}
-            onClick={() => setActiveNav(item.id)}
-            className="flex shrink-0 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-1 text-[10px] transition-colors"
-            style={{ minWidth: '44px', minHeight: '44px' }}
-          >
-            <Icon
-              size={20}
-              className={activeNav === item.id ? 'text-wrench-400' : 'text-slate-500'}
-            />
-            <span
-              className={activeNav === item.id ? 'text-wrench-400' : 'text-slate-500'}
-              style={{ fontSize: '9px', lineHeight: '1' }}
+      <style>{`nav::-webkit-scrollbar { display: none; }`}</style>
+      <div className="flex items-center justify-evenly" style={{ minWidth: 'max-content' }}>
+        {navItems.map((item) => {
+          const Icon = item.icon
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveNav(item.id)}
+              className="flex shrink-0 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-1 text-[10px] transition-colors"
+              style={{ minWidth: '44px', minHeight: '44px' }}
             >
-              {item.label}
-            </span>
-          </button>
-        )
-      })}
+              <Icon
+                size={20}
+                className={activeNav === item.id ? 'text-wrench-400' : 'text-slate-500'}
+              />
+              <span
+                className={activeNav === item.id ? 'text-wrench-400' : 'text-slate-500'}
+                style={{ fontSize: '9px', lineHeight: '1' }}
+              >
+                {item.label}
+              </span>
+            </button>
+          )
+        })}
+      </div>
     </nav>
   )
 }
