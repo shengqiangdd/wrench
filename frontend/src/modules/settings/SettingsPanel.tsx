@@ -347,9 +347,7 @@ export default function SettingsPanel() {
               <button
                 onClick={() => setAiConfig({ customBaseUrl: !aiConfig.customBaseUrl })}
                 className={`ml-2 inline-flex items-center gap-1 text-[10px] transition-colors ${
-                  aiConfig.customBaseUrl
-                    ? 'text-wrench-400'
-                    : 'text-slate-600 hover:text-slate-400'
+                  aiConfig.customBaseUrl ? 'text-wrench-400' : 'text-slate-600 hover:text-slate-400'
                 }`}
               >
                 <Pencil size={10} />

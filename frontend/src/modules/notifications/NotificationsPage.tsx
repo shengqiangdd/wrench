@@ -153,10 +153,7 @@ export default function NotificationsPage() {
           <div className="flex flex-col items-center gap-2 py-20 text-slate-500">
             <Bell size={40} className="text-red-400" />
             <p className="text-sm">加载失败：{error}</p>
-            <button
-              onClick={loadChannels}
-              className="text-wrench-400 mt-2 text-sm hover:underline"
-            >
+            <button onClick={loadChannels} className="text-wrench-400 mt-2 text-sm hover:underline">
               重试
             </button>
           </div>

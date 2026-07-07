@@ -113,9 +113,7 @@ export default function SystemMaintenance() {
               </div>
               <div className="col-span-2 rounded bg-slate-800/60 px-3 py-2">
                 <p className="text-[10px] text-slate-500">存储位置</p>
-                <p className="font-mono text-[10px] text-slate-500">
-                  IndexedDB → wrench_client_db
-                </p>
+                <p className="font-mono text-[10px] text-slate-500">IndexedDB → wrench_client_db</p>
               </div>
             </div>
           )}
