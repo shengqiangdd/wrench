@@ -7,11 +7,11 @@ services:
       - wrench-data:/data
     restart: "no"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=/data/wrench.db
-      - JWT_SECRET=${JWT_SECRET:?请设置 JWT_SECRET 环境变量}
-      - FRONTEND_DIST=/app/working/workspaces/default/wrench/frontend/dist
-      - PLUGINS_DIR=/app/working/workspaces/default/wrench/plugins
+      NODE_ENV: production
+      DATABASE_URL: /data/wrench.db
+      JWT_SECRET: "${JWT_SECRET:?请设置 JWT_SECRET 环境变量}"
+      FRONTEND_DIST: /app/working/workspaces/default/wrench/frontend/dist
+      PLUGINS_DIR: /app/working/workspaces/default/wrench/plugins
 
 volumes:
   wrench-data:
