@@ -37,7 +37,7 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # Crypto
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 base64 = "0.22"
 sha2 = "0.10"
 rand = "0.8"
