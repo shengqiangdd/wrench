@@ -34,7 +34,7 @@ dotenvy = "0.15"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Crypto
 aes-gcm = "0.10"
