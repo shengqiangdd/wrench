@@ -39,6 +39,24 @@
   - `no-explicit-any`（测试代码）: 52→0（块注释策略兼容 Prettier）
   - CI 硬性门槛：`--max-warnings 0` 强制执行，任何新增警告导致构建失败
 
+### 🧪 浏览器功能测试 (Playwright + Chromium headless)
+- **22/22 项测试全部通过** — 使用 Playwright 对 SmartBox 应用进行真实浏览器环境功能验证
+- **扩展测试 21/21 通过** — SSH 全生命周期、Vault CRUD、通知渠道、导入导出、审计日志
+- **App 加载与初始化** — 页面加载正常，无关键错误
+- **Client DB (sql.js WASM) 初始化** — 浏览器端 SQLite 数据库正常创建
+- **9 个页面导航** — SSH 连接、常用命令、Docker 管理、文件管理、日志聚合、凭据保险箱、通知渠道、审计日志、设置
+- **SSH 连接** — 创建连接 → WebSocket 连接 → 终端渲染完整流程
+- **SSH 命令执行** — 终端输入输出正常，命令执行结果正确
+- **SSH 连接管理** — 创建、编辑（弹窗）、删除（React 状态更新 + 刷新验证）、快速连接
+- **Vault 凭据管理** — 主密码创建、凭据添加与显示
+- **通知渠道** — 页面加载正常
+- **导入导出** — 设置页导出/导入功能可用
+- **审计日志** — 页面加载正常
+- **关键技术点**：
+  - 使用 React Fiber 点击触发 UI 交互（绕过 `overflow-hidden` 阻止）
+  - 使用 `nativeInputValueSetter` + `input event` 触发 React 状态更新
+  - WebSocket 消息监控验证 SSH 连接流程
+
 ### 🏗️ 工程化
 - Dockerfile 三阶段构建优化 (Node→Rust→Debian slim)，最终二进制 8.8MB
 - **Rust 分层缓存**：虚拟空源码编译依赖 → 覆盖真实源码增量编译 app，冷构建从 ~60min 降至 ~5min

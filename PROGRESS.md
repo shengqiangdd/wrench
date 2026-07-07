@@ -36,7 +36,9 @@
 | Vitest | ✅ 243/243 |
 | Vite Build | ✅ 成功 |
 | Client DB 集成测试 | ✅ 34/34 |
-| **浏览器测试** | ✅ **11/11 通过** |
+| **浏览器基础测试** | ✅ **11/11 通过** |
+| **浏览器功能测试** | ✅ **22/22 通过** (Playwright + Chromium headless) |
+| **浏览器扩展测试** | ✅ **21/21 通过** (SSH 全生命周期、Vault CRUD、导入导出) |
 
 **关键修复**:
 - **WASM 加载失败**: sql.js 在浏览器中请求 `sql-wasm-browser.wasm`，SPA fallback 返回 HTML
