@@ -622,14 +622,27 @@ export default function SettingsPanel() {
           {/* 启用 Agent */}
           <div className="mb-3">
             <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                checked={aiConfig.enabled}
-                onChange={(e) => {
-                  setAiConfig({ enabled: e.target.checked })
+              <div
+                role="checkbox"
+                aria-checked={aiConfig.enabled}
+                tabIndex={0}
+                onClick={() => setAiConfig({ enabled: !aiConfig.enabled })}
+                onKeyDown={(e) => {
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault()
+                    setAiConfig({ enabled: !aiConfig.enabled })
+                  }
                 }}
-                className="text-wrench-500 focus:ring-wrench-500 h-5 w-5 cursor-pointer rounded border-slate-600 bg-slate-700"
-              />
+                className={`relative h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors ${
+                  aiConfig.enabled ? 'bg-wrench-500' : 'bg-slate-600'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                    aiConfig.enabled ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </div>
               <div>
                 <span className="text-xs text-slate-400">启用 AI Agent 功能</span>
                 <p className="mt-0.5 text-[11px] text-slate-600">

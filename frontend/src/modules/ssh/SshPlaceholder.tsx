@@ -576,10 +576,10 @@ export default function SshPlaceholder() {
                         ? 'bg-wrench-600/20 text-wrench-400'
                         : 'text-slate-500 hover:text-slate-300'
                     }`}
-                    title={aiOpen ? '关闭 AI' : '打开 AI Agent'}
+                    title={aiOpen ? '关闭 AI' : 'AI 助手'}
                   >
                     <Brain size={14} />
-                    <span className="hidden md:inline">{aiOpen ? 'AI' : 'AI'}</span>
+                    <span className="hidden md:inline">AI</span>
                   </button>
                 )}
                 <button
@@ -633,7 +633,7 @@ export default function SshPlaceholder() {
               )}
 
               {/* AI 侧边栏（桌面端侧栏，移动端全屏覆盖） */}
-              {aiOpen && activeSession && (
+              {aiOpen && (
                 <div className="fixed inset-0 z-40 bg-slate-950 md:static md:z-auto md:shrink-0 md:border-l md:border-slate-700/50">
                   <div className="flex h-full flex-col">
                     <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-2 md:hidden">
@@ -646,11 +646,21 @@ export default function SshPlaceholder() {
                       </button>
                     </div>
                     <div className="mobile-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
-                      <AiSidebar
-                        sessionId={activeSession.id}
-                        connectionId={activeSession.id}
-                        onClose={() => setAiOpen(false)}
-                      />
+                      {activeSession ? (
+                        <AiSidebar
+                          sessionId={activeSession.id}
+                          connectionId={activeSession.id}
+                          onClose={() => setAiOpen(false)}
+                        />
+                      ) : (
+                        <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+                          <Brain size={32} className="mb-3 text-slate-600" />
+                          <p className="text-sm text-slate-400">请先连接服务器</p>
+                          <p className="mt-1 text-xs text-slate-600">
+                            AI Agent 需要 SSH 连接才能使用
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -84,6 +84,11 @@ export default function TerminalView({
   const [searchMatchIndex, _setSearchMatchIndex] = useState(0)
   const [searchMatchCount, _setSearchMatchCount] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // 复制模态框状态
+  const [showCopyModal, setShowCopyModal] = useState(false)
+  const [copyText, setCopyText] = useState('')
+  // 快捷键防抖 ref
+  const lastShortcutTime = useRef(0)
   // 用 ref 避免 event handler 中的闭包过期
   const onConnectedRef = useRef(onConnected)
   const onDisconnectedRef = useRef(onDisconnected)
@@ -271,6 +276,50 @@ export default function TerminalView({
     container.addEventListener('touchstart', handleTouchStart, { passive: true })
     container.addEventListener('touchmove', handleTouchMove, { passive: false })
     container.addEventListener('touchend', handleTouchEnd, { passive: true })
+
+    // ─── 长按检测：长按 500ms 弹出复制模态框 ───
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null
+    const handleLongPressStart = (e: TouchEvent) => {
+      const touch = e.touches[0]
+      if (!touch) return
+      longPressTimer = setTimeout(() => {
+        // 获取选中文本或剪贴板内容
+        const selection = term.getSelection()
+        if (selection && selection.trim()) {
+          setCopyText(selection)
+          setShowCopyModal(true)
+        } else {
+          // 没有选中文本时，读取剪贴板
+          navigator.clipboard
+            .readText()
+            .then((text) => {
+              if (text && text.trim()) {
+                setCopyText(text)
+                setShowCopyModal(true)
+              }
+            })
+            .catch(() => {})
+        }
+      }, 500)
+    }
+    const handleLongPressMove = (e: TouchEvent) => {
+      // 移动超过 10px 取消长按
+      if (longPressTimer && e.touches[0]) {
+        // 复用已有的 handleTouchStart 中的坐标判断
+        clearTimeout(longPressTimer)
+        longPressTimer = null
+      }
+    }
+    const handleLongPressEnd = () => {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer)
+        longPressTimer = null
+      }
+    }
+    container.addEventListener('touchstart', handleLongPressStart, { passive: true })
+    container.addEventListener('touchmove', handleLongPressMove, { passive: true })
+    container.addEventListener('touchend', handleLongPressEnd, { passive: true })
+    container.addEventListener('touchcancel', handleLongPressEnd, { passive: true })
 
     // 延迟执行 fit 确保容器已渲染
     const fitTimer = setTimeout(() => {
@@ -528,6 +577,10 @@ export default function TerminalView({
       container.removeEventListener('touchstart', handleTouchStart)
       container.removeEventListener('touchmove', handleTouchMove)
       container.removeEventListener('touchend', handleTouchEnd)
+      container.removeEventListener('touchstart', handleLongPressStart)
+      container.removeEventListener('touchmove', handleLongPressMove)
+      container.removeEventListener('touchend', handleLongPressEnd)
+      container.removeEventListener('touchcancel', handleLongPressEnd)
       // 断开并清理独立 WebSocket
       if (termWsRef.current) {
         termWsRef.current.disconnect()
@@ -624,7 +677,16 @@ export default function TerminalView({
       />
 
       {/* 移动端快捷键工具栏 — 三行紧凑布局 */}
-      <div className="flex shrink-0 flex-col border-t border-slate-700/30 bg-slate-900/95 md:hidden">
+      <div
+        className="flex shrink-0 flex-col border-t border-slate-700/30 bg-slate-900/95 md:hidden"
+        style={{
+          // 禁用长按选中复制（快捷键按钮不需要）
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          WebkitTouchCallout: 'none',
+          touchAction: 'manipulation',
+        }}
+      >
         {/* 第一行：控制键 */}
         <div className="flex gap-px px-0.5 pt-0.5">
           {(
@@ -640,6 +702,10 @@ export default function TerminalView({
               key={label}
               onPointerDown={(e) => {
                 e.preventDefault()
+                // 防抖：50ms 内不重复发送，防止快速连击导致 WS 断连
+                const now = Date.now()
+                if (now - lastShortcutTime.current < 50) return
+                lastShortcutTime.current = now
                 const encoded = btoa(unescape(encodeURIComponent(seq)))
                 termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
                 onTerminalData?.(encoded)
@@ -666,6 +732,9 @@ export default function TerminalView({
               key={label}
               onPointerDown={(e) => {
                 e.preventDefault()
+                const now = Date.now()
+                if (now - lastShortcutTime.current < 50) return
+                lastShortcutTime.current = now
                 const encoded = btoa(unescape(encodeURIComponent(seq)))
                 termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
                 onTerminalData?.(encoded)
@@ -691,6 +760,9 @@ export default function TerminalView({
               key={label}
               onPointerDown={(e) => {
                 e.preventDefault()
+                const now = Date.now()
+                if (now - lastShortcutTime.current < 50) return
+                lastShortcutTime.current = now
                 const encoded = btoa(unescape(encodeURIComponent(seq)))
                 termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
                 onTerminalData?.(encoded)
@@ -702,6 +774,39 @@ export default function TerminalView({
           ))}
         </div>
       </div>
+
+      {/* 终端长按复制模态框 */}
+      {showCopyModal && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-slate-700/50 bg-slate-900 p-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-medium text-slate-200">复制文本</span>
+              <button
+                onClick={() => setShowCopyModal(false)}
+                className="text-slate-500 hover:text-slate-300"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <textarea
+              readOnly
+              value={copyText}
+              className="mb-3 w-full rounded-lg border border-slate-700/50 bg-slate-800 p-2 font-mono text-xs text-slate-300"
+              rows={6}
+              onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+            />
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(copyText).catch(() => {})
+                setShowCopyModal(false)
+              }}
+              className="bg-wrench-600 hover:bg-wrench-500 active:bg-wrench-700 w-full rounded-lg px-4 py-2 text-sm font-medium text-white"
+            >
+              复制到剪贴板
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
