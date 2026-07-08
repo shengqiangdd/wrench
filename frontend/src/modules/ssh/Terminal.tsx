@@ -103,10 +103,9 @@ export default function TerminalView({
     credentialsRef.current = credentials
   }, [credentials])
 
-  // ─── 移动端快捷键工具栏 ──
-  // 已改为固定在终端底部的紧凑工具栏（像 Termux 一样），不再需要浮层状态
+  // ─── 移动端快捷键工具栏（固定在底部，不需要开关状态）──
 
-  // ─── 移动端键盘弹出时自动滚动到光标 ──
+  // ─── 移动端键盘弹出时自动滚动到光标 + 关闭快捷键面板 ──
   useEffect(() => {
     const vv = window.visualViewport
     const term = terminalRef.current
@@ -473,13 +472,19 @@ export default function TerminalView({
       onTerminalData?.(encoded)
     })
 
-    // Resize 监听 — 用 rAF 确保 DOM 就绪后再 fit
+    // Resize 监听 — 只有尺寸真正变化时才 fit，避免清空内容
+    let lastFitWidth = 0
+    let lastFitHeight = 0
     const observer = new ResizeObserver(() => {
       if (gen !== genRef.current) return
       requestAnimationFrame(() => {
         if (gen !== genRef.current) return
         const c = containerRef.current
         if (!c || c.offsetWidth === 0 || c.offsetHeight === 0) return
+        // 只有尺寸真正变化时才 fit
+        if (c.offsetWidth === lastFitWidth && c.offsetHeight === lastFitHeight) return
+        lastFitWidth = c.offsetWidth
+        lastFitHeight = c.offsetHeight
         try {
           fitAddon.fit()
         } catch {
@@ -618,20 +623,16 @@ export default function TerminalView({
         }}
       />
 
-      {/* 移动端快捷键工具栏 — 固定在终端底部，像 Termux 一样紧凑 */}
+      {/* 移动端快捷键工具栏 — 两行固定布局，像 Termux 一样 */}
       <div className="flex shrink-0 flex-col border-t border-slate-700/30 bg-slate-900/95 md:hidden">
-        {/* 第一行：常用键 */}
-        <div className="flex items-center gap-1 overflow-x-auto px-1 py-1">
+        {/* 第一行：常用功能键 */}
+        <div className="flex items-center justify-around gap-0.5 px-1 py-0.5">
           {[
             { key: 'ESC', seq: '\x1b' },
             { key: 'TAB', seq: '\t' },
             { key: 'Ctrl+C', seq: '\x03' },
             { key: 'Ctrl+D', seq: '\x04' },
             { key: 'Ctrl+L', seq: '\x0c' },
-            { key: '↑', seq: '\x1b[A' },
-            { key: '↓', seq: '\x1b[B' },
-            { key: '←', seq: '\x1b[D' },
-            { key: '→', seq: '\x1b[C' },
           ].map((s) => (
             <button
               key={s.key}
@@ -641,7 +642,31 @@ export default function TerminalView({
                 termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
                 onTerminalData?.(encoded)
               }}
-              className="flex h-8 min-w-[44px] shrink-0 items-center justify-center rounded bg-slate-800/80 px-2 text-xs font-mono text-slate-300 active:bg-slate-700"
+              className="flex h-7 flex-1 items-center justify-center rounded bg-slate-800/80 text-[11px] font-mono text-slate-300 active:bg-slate-700"
+            >
+              {s.key}
+            </button>
+          ))}
+        </div>
+        {/* 第二行：方向键和翻页 */}
+        <div className="flex items-center justify-around gap-0.5 px-1 py-0.5">
+          {[
+            { key: '↑', seq: '\x1b[A' },
+            { key: '↓', seq: '\x1b[B' },
+            { key: '←', seq: '\x1b[D' },
+            { key: '→', seq: '\x1b[C' },
+            { key: 'PGUP', seq: '\x1b[5~' },
+            { key: 'PGDN', seq: '\x1b[6~' },
+          ].map((s) => (
+            <button
+              key={s.key}
+              onPointerDown={(e) => {
+                e.preventDefault()
+                const encoded = btoa(unescape(encodeURIComponent(s.seq)))
+                termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+                onTerminalData?.(encoded)
+              }}
+              className="flex h-7 flex-1 items-center justify-center rounded bg-slate-800/80 text-[11px] font-mono text-slate-300 active:bg-slate-700"
             >
               {s.key}
             </button>
