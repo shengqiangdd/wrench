@@ -107,27 +107,27 @@ export default function TerminalView({
   const [showShortcuts, setShowShortcuts] = useState(false)
 
   // ─── 移动端虚拟键盘高度补偿 ──
-  // 使用 visualViewport.height 直接作为终端容器的最大高度参考
-  const [viewportHeight, setViewportHeight] = useState(0)
+  // 计算键盘高度，用于给终端容器添加 padding-bottom
+  const [keyboardHeight, setKeyboardHeight] = useState(0)
 
   useEffect(() => {
     if (!window.visualViewport) return
 
-    const updateViewportHeight = () => {
+    const updateKeyboardHeight = () => {
       const vv = window.visualViewport!
-      // 直接使用 visualViewport.height 作为可视区域高度
-      // 键盘弹出时，height 会自动缩小，反映实际可用空间
-      setViewportHeight(vv.height)
+      // 键盘高度 = 窗口高度 - viewport 高度
+      const kbHeight = window.innerHeight - vv.height
+      setKeyboardHeight(Math.max(0, kbHeight))
     }
 
     // 使用 requestAnimationFrame 确保在渲染后计算
     const handleResize = () => {
-      requestAnimationFrame(updateViewportHeight)
+      requestAnimationFrame(updateKeyboardHeight)
     }
 
     window.visualViewport.addEventListener('resize', handleResize)
     window.visualViewport.addEventListener('scroll', handleResize)
-    updateViewportHeight()
+    updateKeyboardHeight()
 
     return () => {
       window.visualViewport?.removeEventListener('resize', handleResize)
@@ -135,7 +135,7 @@ export default function TerminalView({
     }
   }, [])
 
-  // viewport 高度变化时重新计算终端尺寸
+  // 键盘高度变化时重新计算终端尺寸
   useEffect(() => {
     if (!fitAddonRef.current || !containerRef.current) return
     // 延迟执行确保 DOM 已更新
@@ -147,7 +147,7 @@ export default function TerminalView({
       }
     }, 100)
     return () => clearTimeout(timer)
-  }, [viewportHeight])
+  }, [keyboardHeight])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -560,14 +560,7 @@ export default function TerminalView({
   }, [])
 
   return (
-    <div
-      className={`relative flex flex-col ${className}`}
-      style={{
-        minHeight: 0,
-        // 确保父容器高度为 100%，让终端容器可以正确计算
-        height: '100%',
-      }}
-    >
+    <div className={`relative flex flex-col ${className}`} style={{ minHeight: 0 }}>
       {/* 搜索面板 */}
       {showSearch && (
         <div className="absolute right-0 bottom-0 left-0 z-20 flex items-center gap-1 border-t border-slate-700/50 bg-slate-900 px-2 py-1">
@@ -622,12 +615,11 @@ export default function TerminalView({
       )}
       <div
         ref={containerRef}
-        className="overflow-hidden bg-slate-950 px-1"
+        className="flex-1 overflow-hidden bg-slate-950 px-1"
         style={{
-          // 直接使用 visualViewport.height 设置终端容器高度
-          // 减去 48px 为顶部工具栏预留空间
-          // 键盘弹出时 viewportHeight 自动缩小，终端高度跟着缩小
-          height: viewportHeight > 0 ? `calc(${viewportHeight}px - 48px)` : '100%',
+          // 使用 padding-bottom 为键盘预留空间
+          // 键盘弹出时，终端内容会自动向上推，不会被遮挡
+          paddingBottom: keyboardHeight > 0 ? `${keyboardHeight}px` : undefined,
           // 阻止浏览器默认触摸行为，由自定义触摸滚动处理器接管
           touchAction: 'none',
         }}
@@ -650,9 +642,8 @@ export default function TerminalView({
         <div
           className="fixed inset-x-0 z-50 rounded-t-xl border-t border-slate-700/50 bg-slate-900/95 p-3 backdrop-blur-lg md:hidden"
           style={{
-            // 键盘高度 = 窗口高度 - viewport 高度
-            bottom: viewportHeight > 0 ? `${window.innerHeight - viewportHeight}px` : '0',
-            maxHeight: viewportHeight > 0 ? '40vh' : '60vh',
+            bottom: keyboardHeight > 0 ? `${keyboardHeight}px` : '0',
+            maxHeight: keyboardHeight > 0 ? '40vh' : '60vh',
             overflowY: 'auto',
             transition: 'bottom 0.2s ease-out',
           }}
