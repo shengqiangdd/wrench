@@ -129,6 +129,8 @@ export default function TerminalView({
       // 给予初始 cols/rows 防止 Viewport 在 DOM 渲染前访问 undefined dimensions
       cols: 80,
       rows: 24,
+      // 启用平滑滚动（移动端友好）
+      smoothScrollDuration: 100,
     })
 
     const fitAddon = new FitAddon()
@@ -464,7 +466,9 @@ export default function TerminalView({
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden bg-slate-950 px-1"
-        style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+        lang="en"
+        inputMode="none"
+        style={{ WebkitOverflowScrolling: 'touch' }}
       />
 
       {/* 移动端快捷键浮动按钮 */}
@@ -491,7 +495,7 @@ export default function TerminalView({
               <X size={14} />
             </button>
           </div>
-          <div className="mt-2 grid grid-cols-3 gap-1.5 text-[11px]">
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
             {[
               { key: 'Tab', label: '补全', seq: '\t' },
               { key: 'Esc', label: '取消', seq: '\x1b' },
@@ -517,15 +521,15 @@ export default function TerminalView({
                   termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
                   onTerminalData?.(encoded)
                 }}
-                className="flex items-center justify-between rounded bg-slate-800/60 px-2 py-1.5 transition-colors active:bg-slate-700"
+                className="flex min-h-[44px] items-center justify-between rounded-lg bg-slate-800/80 px-3 py-2 transition-colors active:bg-slate-700"
               >
-                <kbd className="font-mono text-slate-300">{s.key}</kbd>
-                <span className="text-slate-500">{s.label}</span>
+                <kbd className="font-mono text-sm text-slate-200">{s.key}</kbd>
+                <span className="text-[11px] text-slate-500">{s.label}</span>
               </button>
             ))}
           </div>
-          <div className="mt-2 border-t border-slate-700/30 pt-2">
-            <p className="text-[10px] text-slate-600">提示：双指上下滑动可滚动终端内容</p>
+          <div className="mt-3 border-t border-slate-700/30 pt-2">
+            <p className="text-center text-[11px] text-slate-500">💡 单指滑动可滚动终端内容</p>
           </div>
         </div>
       )}
