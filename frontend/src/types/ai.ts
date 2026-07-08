@@ -27,14 +27,19 @@ export interface AiProviderModel {
   description?: string
 }
 
-/** 预设服务商列表 — 所有平台均标注免费模型 */
+/**
+ * 预设服务商列表
+ * 数据来源：各平台 API 实时查询 (2026-07-08)
+ * API 拉取成功时会自动替换为最新数据，此处为离线兜底
+ */
 export const AI_PROVIDERS: AiProvider[] = [
-  // ─── OpenRouter（聚合平台，免费模型最多）───
+  // ─── OpenRouter ───
+  // 实时数据: GET /api/v1/models → 343 总模型, 31 免费
   {
     id: 'openrouter',
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
-    description: '聚合多个模型，31+ 免费模型可用',
+    description: '聚合 343 个模型，31 个免费可用',
     defaultModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',
     models: [
       {
@@ -48,18 +53,37 @@ export const AI_PROVIDERS: AiProvider[] = [
         free: true,
       },
       { value: 'nvidia/nemotron-3-nano-30b-a3b:free', label: 'Nemotron 3 Nano 30B', free: true },
+      {
+        value: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+        label: 'Nemotron 3 Nano Omni',
+        free: true,
+      },
       { value: 'nvidia/nemotron-nano-9b-v2:free', label: 'Nemotron Nano 9B V2', free: true },
       { value: 'nvidia/nemotron-nano-12b-v2-vl:free', label: 'Nemotron Nano 12B VL', free: true },
-      { value: 'qwen/qwen3-coder:free', label: 'Qwen3 Coder 480B', free: true },
-      { value: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B', free: true },
-      { value: 'google/gemma-4-26b-a4b-it:free', label: 'Gemma 4 26B A4B', free: true },
-      { value: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B', free: true },
-      { value: 'openai/gpt-oss-120b:free', label: 'GPT-OSS 120B', free: true },
-      { value: 'openai/gpt-oss-20b:free', label: 'GPT-OSS 20B', free: true },
-      { value: 'nousresearch/hermes-3-llama-3.1-405b:free', label: 'Hermes 3 405B', free: true },
+      { value: 'qwen/qwen3-coder:free', label: 'Qwen3 Coder 480B A35B', free: true },
+      { value: 'qwen/qwen3-next-80b-a3b-instruct:free', label: 'Qwen3 Next 80B', free: true },
+      { value: 'tencent/hy3:free', label: 'Tencent Hy3', free: true },
+      { value: 'google/gemma-4-31b-it:free', label: 'Google Gemma 4 31B', free: true },
+      { value: 'google/gemma-4-26b-a4b-it:free', label: 'Google Gemma 4 26B A4B', free: true },
+      { value: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Meta Llama 3.3 70B', free: true },
+      { value: 'meta-llama/llama-3.2-3b-instruct:free', label: 'Meta Llama 3.2 3B', free: true },
+      { value: 'openai/gpt-oss-120b:free', label: 'OpenAI GPT-OSS 120B', free: true },
+      { value: 'openai/gpt-oss-20b:free', label: 'OpenAI GPT-OSS 20B', free: true },
+      {
+        value: 'nousresearch/hermes-3-llama-3.1-405b:free',
+        label: 'Nous Hermes 3 405B',
+        free: true,
+      },
       { value: 'poolside/laguna-m.1:free', label: 'Poolside Laguna M.1', free: true },
       { value: 'poolside/laguna-xs-2.1:free', label: 'Poolside Laguna XS 2.1', free: true },
+      { value: 'poolside/laguna-xs.2:free', label: 'Poolside Laguna XS.2', free: true },
       { value: 'cohere/north-mini-code:free', label: 'Cohere North Mini Code', free: true },
+      {
+        value: 'cognitivecomputations/dolphin-mistral-24b-venice-edition:free',
+        label: 'Venice Uncensored 24B',
+        free: true,
+      },
+      { value: 'liquid/lfm-2.5-1.2b-instruct:free', label: 'LiquidAI LFM2.5 1.2B', free: true },
       { value: 'openrouter/free', label: 'Free Router (自动选免费模型)', free: true },
     ],
   },
@@ -94,7 +118,7 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'mimo/mimo-v2-free', label: 'Mimo V2 (免费)', free: true },
     ],
   },
-  // ─── SiliconFlow（国内免费额度）───
+  // ─── SiliconFlow ──
   {
     id: 'siliconflow',
     name: 'SiliconFlow (硅基流动)',
@@ -132,7 +156,7 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'THUDM/glm-4-9b-chat', label: 'GLM-4 9B', free: true, description: '智谱' },
     ],
   },
-  // ─── Groq（极速推理，免费额度）───
+  // ─── Groq ──
   {
     id: 'groq',
     name: 'Groq',
@@ -146,7 +170,7 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B', free: true, description: 'Mistral' },
     ],
   },
-  // ─── Cerebras（极速推理）───
+  // ─── Cerebras ──
   {
     id: 'cerebras',
     name: 'Cerebras',
@@ -158,7 +182,19 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'llama-3.1-8b', label: 'Llama 3.1 8B', free: true },
     ],
   },
-  // ─── Google Gemini（官方 API）───
+  // ─── DeepSeek ──
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    description: 'DeepSeek V4 系列模型',
+    defaultModel: 'deepseek-chat',
+    models: [
+      { value: 'deepseek-chat', label: 'DeepSeek V4', description: '最新旗舰' },
+      { value: 'deepseek-reasoner', label: 'DeepSeek R1', description: '推理增强' },
+    ],
+  },
+  // ─── Google Gemini ──
   {
     id: 'google',
     name: 'Google Gemini',
@@ -172,19 +208,7 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'gemma-4-27b-it', label: 'Gemma 4 27B', free: true, description: '开源' },
     ],
   },
-  // ─── DeepSeek（付费）───
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com/v1',
-    description: 'DeepSeek 系列模型',
-    defaultModel: 'deepseek-chat',
-    models: [
-      { value: 'deepseek-chat', label: 'DeepSeek V3' },
-      { value: 'deepseek-reasoner', label: 'DeepSeek R1', description: '推理增强' },
-    ],
-  },
-  // ─── OpenAI（付费）───
+  // ─── OpenAI ──
   {
     id: 'openai',
     name: 'OpenAI',
@@ -202,7 +226,7 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'o3-mini', label: 'o3-mini' },
     ],
   },
-  // ─── Anthropic（付费）───
+  // ─── Anthropic ──
   {
     id: 'anthropic',
     name: 'Anthropic (Claude)',
