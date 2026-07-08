@@ -106,45 +106,31 @@ export default function TerminalView({
   // ─── 移动端快捷键面板 ───
   const [showShortcuts, setShowShortcuts] = useState(false)
 
-  // ─── 移动端虚拟键盘高度补偿 ──
-  // 直接用 JS 强制设置终端容器高度，绕过所有 CSS 计算
-  const sshConnectedRef = useRef(false)
-
+  // ─── 移动端键盘弹出时自动滚动到光标 ──
   useEffect(() => {
     const vv = window.visualViewport
-    const container = containerRef.current
-    if (!vv || !container) return
+    const term = terminalRef.current
+    if (!vv || !term) return
 
-    const TOOLBAR_HEIGHT = 48 // 顶部标签栏高度
+    let prevHeight = vv.height
 
-    const update = () => {
-      const vvH = vv.height
-      if (vvH <= 0) return
-
-      // 直接设置容器高度为可视区域高度减去工具栏
-      const targetH = Math.floor(vvH - TOOLBAR_HEIGHT)
-      if (targetH > 0) {
-        container.style.height = `${targetH}px`
+    const handleResize = () => {
+      const newHeight = vv.height
+      // 键盘弹出时高度缩小 → 滚动到光标位置
+      if (newHeight < prevHeight - 50) {
+        setTimeout(() => {
+          try {
+            term.scrollToBottom()
+          } catch {
+            /* ignore */
+          }
+        }, 100)
       }
-
-      // 键盘变化时重新 fit
-      requestAnimationFrame(() => {
-        try {
-          fitAddonRef.current?.fit()
-        } catch {
-          /* ignore */
-        }
-      })
+      prevHeight = newHeight
     }
 
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
-    update()
-
-    return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
-    }
+    vv.addEventListener('resize', handleResize)
+    return () => vv.removeEventListener('resize', handleResize)
   }, [])
 
   useEffect(() => {
@@ -327,7 +313,6 @@ export default function TerminalView({
 
           // 处理 SSH 连接成功消息
           if (msg.type === 'connected') {
-            sshConnectedRef.current = true
             // SSH 连接成功后，执行 fit 调整终端尺寸
             setTimeout(() => {
               const c = containerRef.current
@@ -342,11 +327,8 @@ export default function TerminalView({
             return
           }
 
-          // 过滤后端错误响应（SSH 断开后前端消息被主循环拒绝）
-          if (msg.type === 'error') {
-            sshConnectedRef.current = false
-            return
-          }
+          // 过滤后端错误响应（静默忽略，不显示给用户）
+          if (msg.type === 'error') return
 
           const raw = msg.data as string
           try {
@@ -433,7 +415,7 @@ export default function TerminalView({
         navigator.clipboard
           .readText()
           .then((text) => {
-            if (text && sshConnectedRef.current) {
+            if (text) {
               const encoded = btoa(unescape(encodeURIComponent(text)))
               termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
               onTerminalData?.(encoded)
@@ -463,7 +445,7 @@ export default function TerminalView({
         navigator.clipboard
           .readText()
           .then((text) => {
-            if (text && sshConnectedRef.current) {
+            if (text) {
               const encoded = btoa(unescape(encodeURIComponent(text)))
               termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
               onTerminalData?.(encoded)
@@ -477,8 +459,6 @@ export default function TerminalView({
     })
 
     term.onData((data) => {
-      // 只有 SSH 连接建立后才发送数据
-      if (!sshConnectedRef.current) return
       // 将用户输入以 base64 编码发送
       const encoded = btoa(unescape(encodeURIComponent(data)))
       termWsRef.current?.send({
@@ -506,9 +486,8 @@ export default function TerminalView({
     })
     observer.observe(container)
 
-    // 发送 resize 到后端（只有 SSH 连接建立后才发送）
+    // 发送 resize 到后端
     term.onResize(({ cols, rows }) => {
-      if (!sshConnectedRef.current) return
       termWsRef.current?.send({
         type: 'resize',
         connectionId,
@@ -629,12 +608,10 @@ export default function TerminalView({
       )}
       <div
         ref={containerRef}
-        className="overflow-hidden bg-slate-950 px-1"
+        className="flex-1 overflow-hidden bg-slate-950 px-1"
         style={{
           // 阻止浏览器默认触摸行为，由自定义触摸滚动处理器接管
           touchAction: 'none',
-          // 初始高度，后续由 visualViewport 事件动态调整
-          height: '100%',
         }}
       />
 
@@ -694,7 +671,6 @@ export default function TerminalView({
                 onPointerDown={(e) => {
                   // 阻止默认行为：防止焦点从 textarea 转移到按钮（避免 IME 中断）
                   e.preventDefault()
-                  if (!sshConnectedRef.current) return
                   const encoded = btoa(unescape(encodeURIComponent(s.seq)))
                   termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
                   onTerminalData?.(encoded)
