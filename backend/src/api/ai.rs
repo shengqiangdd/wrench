@@ -47,23 +47,16 @@ pub async fn get_ai_config(State(state): State<Arc<AppState>>) -> ApiResponse<Ai
 pub async fn fetch_free_models(
     State(state): State<Arc<AppState>>,
 ) -> ApiResponse<ModelsListResponse> {
-    let api_key = match &state.config.openrouter_api_key {
-        Some(k) => k.clone(),
-        None => {
-            return ApiResponse::success(ModelsListResponse {
-                models: Vec::new(),
-                error: Some("OpenRouter API Key 未配置".into()),
-            });
-        }
-    };
+    let api_key = state.config.openrouter_api_key.clone();
 
     let client = reqwest::Client::new();
-    match client
-        .get("https://openrouter.ai/api/v1/models")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .send()
-        .await
-    {
+    let mut req_builder = client.get("https://openrouter.ai/api/v1/models");
+
+    if let Some(ref key) = api_key {
+        req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
+    }
+
+    match req_builder.send().await {
         Ok(resp) => {
             if resp.status().is_success() {
                 let data: serde_json::Value = resp.json().await.unwrap_or_default();
@@ -142,26 +135,19 @@ async fn fetch_openrouter_models(
     state: &AppState,
     api_key_override: Option<&str>,
 ) -> ModelsListResponse {
-    let api_key = match api_key_override {
-        Some(k) => k.to_string(),
-        None => match &state.config.openrouter_api_key {
-            Some(k) => k.clone(),
-            None => {
-                return ModelsListResponse {
-                    models: Vec::new(),
-                    error: Some("API key not configured".into()),
-                };
-            }
-        },
-    };
+    let api_key = api_key_override
+        .map(|k| k.to_string())
+        .or_else(|| state.config.openrouter_api_key.clone());
 
     let client = reqwest::Client::new();
-    match client
-        .get("https://openrouter.ai/api/v1/models")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .send()
-        .await
-    {
+    let mut req_builder = client.get("https://openrouter.ai/api/v1/models");
+
+    // Only add Authorization if we have a key
+    if let Some(ref key) = api_key {
+        req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
+    }
+
+    match req_builder.send().await {
         Ok(resp) if resp.status().is_success() => {
             let data: serde_json::Value = resp.json().await.unwrap_or_default();
             let models = data
@@ -317,24 +303,11 @@ pub async fn chat_proxy(
     State(state): State<Arc<AppState>>,
     axum::Json(req): axum::Json<ChatRequest>,
 ) -> Response<Body> {
-    // Resolve API key: frontend > server env
+    // Resolve API key: frontend > server env (optional — some platforms don't need one)
     let api_key = req
         .api_key
         .filter(|k| !k.is_empty())
         .or_else(|| state.config.openrouter_api_key.clone());
-
-    let api_key = match api_key {
-        Some(k) => k,
-        None => {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(
-                    serde_json::json!({ "error": "API Key 未配置，请在设置中填写或配置服务端 OPENROUTER_API_KEY" })
-                        .to_string(),
-                ))
-                .unwrap();
-        }
-    };
 
     let base_url = req
         .base_url
@@ -356,16 +329,19 @@ pub async fn chat_proxy(
     });
 
     let client = reqwest::Client::new();
-    let resp = match client
+    let mut req_builder = client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .header("HTTP-Referer", "https://wrench.app")
         .header("X-Title", "Wrench")
-        .body(body.to_string())
-        .send()
-        .await
-    {
+        .body(body.to_string());
+
+    // Only add Authorization if we have a key (some platforms don't need one)
+    if let Some(ref key) = api_key {
+        req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
+    }
+
+    let resp = match req_builder.send().await {
         Ok(r) => r,
         Err(e) => {
             return Response::builder()
