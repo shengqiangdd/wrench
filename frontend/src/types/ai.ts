@@ -137,7 +137,6 @@ export const AI_PROVIDERS: AiProvider[] = [
   },
   // ─── Google Gemini ───
   // 来源: https://ai.google.dev/gemini-api/docs/models (Playwright 抓取)
-  // Gemini 有免费额度: Flash 系列 $0, Pro 系列有免费 tier
   {
     id: 'google',
     name: 'Google Gemini',
@@ -162,7 +161,6 @@ export const AI_PROVIDERS: AiProvider[] = [
   },
   // ─── SiliconFlow (硅基流动) ──
   // 来源: SiliconFlow 官方文档 + API 查询
-  // 注册送免费额度，部分模型永久免费
   {
     id: 'siliconflow',
     name: 'SiliconFlow (硅基流动)',
