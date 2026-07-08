@@ -85,11 +85,8 @@ export default function SettingsPanel() {
     }
   }, [aiConfig.provider, aiConfig.apiKey])
 
-  // ── 从 API 获取的免费模型列表（在 allModels / selectedModelLabel 之前声明） ──
-  const allModels =
-    currentProvider.id === 'openrouter' && fetchedModels.length > 0
-      ? fetchedModels
-      : currentProvider.models
+  // ── 从 API 获取的模型列表（在 allModels / selectedModelLabel 之前声明） ──
+  const allModels = fetchedModels.length > 0 ? fetchedModels : currentProvider.models
 
   const formattedFetchTime = fetchedModelsAt
     ? new Date(fetchedModelsAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -154,6 +151,8 @@ export default function SettingsPanel() {
         if (providerId) params.set('provider', providerId)
         // 传入前端存储的 API Key，后端优先使用 query 参数中的 key
         if (aiConfig.apiKey) params.set('api_key', aiConfig.apiKey)
+        // 传入当前 provider 的 base_url，支持任意 OpenAI 兼容平台
+        params.set('base_url', currentProvider.baseUrl)
         const resp = await fetch(`/api/ai/fetch-all-models?${params.toString()}`)
         if (!resp.ok) throw new Error('API 请求失败: ' + resp.status)
         const data = await resp.json()
@@ -166,14 +165,12 @@ export default function SettingsPanel() {
         setIsFetchingModels(false)
       }
     },
-    [setFetchedModels, setIsFetchingModels, aiConfig.apiKey],
+    [setFetchedModels, setIsFetchingModels, aiConfig.apiKey, currentProvider.baseUrl],
   )
 
   // 当前 provider 切换时自动拉取模型
   useEffect(() => {
-    if (currentProvider.id === 'openrouter') {
-      fetchModels('openrouter')
-    }
+    fetchModels(currentProvider.id)
   }, [currentProvider.id, fetchModels])
 
   // ─── 导入导出处理函数 ───

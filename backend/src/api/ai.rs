@@ -23,6 +23,8 @@ pub struct ModelQuery {
     pub provider: Option<String>,
     /// Frontend-provided API key (fallback when server-side key is absent)
     pub api_key: Option<String>,
+    /// Base URL for the provider (e.g. https://api.agnes.dev/v1)
+    pub base_url: Option<String>,
 }
 
 /// Get AI config (GET /api/ai/config)
@@ -108,7 +110,7 @@ pub async fn fetch_free_models(
     }
 }
 
-/// Fetch models for any provider (GET /api/ai/fetch-all-models?provider=openrouter&api_key=xxx)
+/// Fetch models for any provider (GET /api/ai/fetch-all-models?provider=openrouter&api_key=xxx&base_url=xxx)
 pub async fn fetch_all_models(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ModelQuery>,
@@ -116,16 +118,21 @@ pub async fn fetch_all_models(
     let provider = params.provider.as_deref().unwrap_or("openrouter");
 
     // Resolve API key: query param > server env
-    let resolved_key = params.api_key.or_else(|| state.config.openrouter_api_key.clone());
+    let resolved_key = params.api_key.as_deref().or(state.config.openrouter_api_key.as_deref());
 
-    let result = match provider {
-        "openrouter" => fetch_openrouter_models(&state, resolved_key.as_deref()).await,
-        "openai" => fetch_openai_models().await,
-        "siliconflow" => fetch_siliconflow_models().await,
-        other => ModelsListResponse {
-            models: Vec::new(),
-            error: Some(format!("Unknown provider: {}", other)),
-        },
+    // If base_url is provided, use generic OpenAI-compatible fetch (works for any provider)
+    let result = if let Some(base_url) = &params.base_url {
+        fetch_models_from_url(base_url, resolved_key).await
+    } else {
+        match provider {
+            "openrouter" => fetch_openrouter_models(&state, resolved_key).await,
+            "openai" => fetch_openai_models().await,
+            "siliconflow" => fetch_siliconflow_models().await,
+            other => ModelsListResponse {
+                models: Vec::new(),
+                error: Some(format!("Unknown provider: {}", other)),
+            },
+        }
     };
 
     ApiResponse::success(result)
@@ -276,6 +283,66 @@ async fn fetch_siliconflow_models() -> ModelsListResponse {
         Err(e) => ModelsListResponse {
             models: Vec::new(),
             error: Some(e.to_string()),
+        },
+    }
+}
+
+/// Generic fetch models from any OpenAI-compatible `/v1/models` endpoint
+async fn fetch_models_from_url(base_url: &str, api_key: Option<&str>) -> ModelsListResponse {
+    let models_url = format!("{}/models", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let mut req_builder = client.get(&models_url);
+
+    if let Some(key) = api_key {
+        req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
+    }
+
+    match req_builder.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let data: serde_json::Value = resp.json().await.unwrap_or_default();
+            // OpenAI-compatible: { "data": [{ "id": "...", "name": "..." }] }
+            // Some APIs return flat array: [{ "id": "..." }]
+            let models = if let Some(arr) = data.get("data").and_then(|d| d.as_array()) {
+                arr.clone()
+            } else if let Some(arr) = data.as_array() {
+                arr.clone()
+            } else {
+                Vec::new()
+            };
+            let items: Vec<ModelListItem> = models
+                .into_iter()
+                .filter_map(|m| {
+                    let id = m.get("id").and_then(|v| v.as_str())?;
+                    Some(ModelListItem {
+                        value: id.to_string(),
+                        label: m
+                            .get("name")
+                            .or_else(|| m.get("id"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(id)
+                            .to_string(),
+                        free: m
+                            .get("pricing")
+                            .and_then(|p| p.get("request"))
+                            .and_then(|r| r.as_f64())
+                            .map(|v| v <= 0.0)
+                            .unwrap_or(true), // default to free if no pricing info
+                        description: None,
+                    })
+                })
+                .collect();
+            ModelsListResponse {
+                models: items,
+                error: None,
+            }
+        }
+        Ok(resp) => ModelsListResponse {
+            models: Vec::new(),
+            error: Some(format!("HTTP {}", resp.status())),
+        },
+        Err(e) => ModelsListResponse {
+            models: Vec::new(),
+            error: Some(format!("{} ({})", e, models_url)),
         },
     }
 }
