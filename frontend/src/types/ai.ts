@@ -245,22 +245,55 @@ export const AI_PROVIDERS: AiProvider[] = [
     ],
   },
   // ─── OpenCode ──
-  // 来源: https://opencode.ai/docs, https://github.com/opencode-ai/opencode
+  // 来源: https://opencode.ai/zen/v1/models (API 实查, 51 总模型, 5 免费)
+  // Zen 提供 51 个精选模型，最后 5 个带 -free 后缀的免费可用
   {
     id: 'opencode',
     name: 'OpenCode',
-    baseUrl: 'https://api.opencode.ai/v1',
-    description: 'OpenCode 开源模型平台',
-    defaultModel: 'opencode-m1',
+    baseUrl: 'https://opencode.ai/zen/v1',
+    description: 'OpenCode Zen 精选 51 个模型，5 个免费可用',
+    defaultModel: 'deepseek-v4-flash-free',
     models: [
-      { value: 'opencode-m1', label: 'OpenCode M1', free: true },
-      { value: 'opencode-m2', label: 'OpenCode M2' },
-      { value: 'opencode-code-v1', label: 'OpenCode Code V1' },
-      { value: 'deepseek/deepseek-v4-free', label: 'DeepSeek V4 (免费)', free: true },
-      { value: 'deepseek/deepseek-v3-free', label: 'DeepSeek V3 (免费)', free: true },
-      { value: 'deepseek/deepseek-r1-free', label: 'DeepSeek R1 (免费)', free: true },
-      { value: 'mimo/mimo-v1-free', label: 'Mimo V1 (免费)', free: true },
-      { value: 'mimo/mimo-v2-free', label: 'Mimo V2 (免费)', free: true },
+      // ── 免费模型 (-free 后缀) ──
+      {
+        value: 'deepseek-v4-flash-free',
+        label: 'DeepSeek V4 Flash',
+        free: true,
+        description: '深度求索旗舰 Flash',
+      },
+      { value: 'mimo-v2.5-free', label: 'Mimo V2.5', free: true, description: '小米代码模型' },
+      { value: 'hy3-free', label: 'Tencent Hy3', free: true, description: '腾讯混元' },
+      {
+        value: 'nemotron-3-ultra-free',
+        label: 'Nemotron 3 Ultra',
+        free: true,
+        description: 'NVIDIA 旗舰',
+      },
+      {
+        value: 'north-mini-code-free',
+        label: 'Cohere North Mini Code',
+        free: true,
+        description: '代码专用',
+      },
+      // ── 付费模型 ──
+      { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+      { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+      { value: 'glm-5.2', label: 'GLM 5.2' },
+      { value: 'glm-5.1', label: 'GLM 5.1' },
+      { value: 'minimax-m3', label: 'MiniMax M3' },
+      { value: 'kimi-k2.7-code', label: 'Kimi K2.7 Code' },
+      { value: 'qwen3.6-plus', label: 'Qwen 3.6 Plus' },
+      { value: 'qwen3.5-plus', label: 'Qwen 3.5 Plus' },
+      { value: 'gpt-5.5', label: 'GPT 5.5' },
+      { value: 'gpt-5.4', label: 'GPT 5.4' },
+      { value: 'gpt-5.4-mini', label: 'GPT 5.4 Mini' },
+      { value: 'gpt-5.2', label: 'GPT 5.2' },
+      { value: 'gpt-5.2-codex', label: 'GPT 5.2 Codex' },
+      { value: 'claude-opus-4-5', label: 'Claude Opus 4.5' },
+      { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+      { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+      { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+      { value: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
     ],
   },
   // ─── OpenAI ──
