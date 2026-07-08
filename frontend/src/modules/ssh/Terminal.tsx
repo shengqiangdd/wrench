@@ -106,7 +106,7 @@ export default function TerminalView({
   // ─── 移动端快捷键面板 ───
   const [showShortcuts, setShowShortcuts] = useState(false)
 
-  // ─── 移动端键盘弹出时自动滚动到光标 ──
+  // ─── 移动端键盘弹出时自动滚动到光标 + 关闭快捷键面板 ──
   useEffect(() => {
     const vv = window.visualViewport
     const term = terminalRef.current
@@ -116,8 +116,11 @@ export default function TerminalView({
 
     const handleResize = () => {
       const newHeight = vv.height
-      // 键盘弹出时高度缩小 → 滚动到光标位置
+      // 键盘弹出时高度缩小
       if (newHeight < prevHeight - 50) {
+        // 自动关闭快捷键面板，腾出空间给终端
+        setShowShortcuts(false)
+        // 滚动到光标位置
         setTimeout(() => {
           try {
             term.scrollToBottom()
@@ -354,8 +357,11 @@ export default function TerminalView({
         })
 
         termWs.on('error', (msg) => {
+          // 静默忽略 "Unknown message type" 错误（SSH 断开后后端主循环拒绝消息）
+          const errMsg = (msg.message as string) || ''
+          if (errMsg.includes('Unknown message type')) return
           if (!disposedRef.current) {
-            term.write(`\r\n\x1b[31m[错误] ${(msg.message as string) || '未知错误'}\x1b[0m\r\n`)
+            term.write(`\r\n\x1b[31m[错误] ${errMsg || '未知错误'}\x1b[0m\r\n`)
           }
         })
 
