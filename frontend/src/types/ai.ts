@@ -29,7 +29,7 @@ export interface AiProviderModel {
 
 /**
  * 预设服务商列表
- * 数据来源：各平台 API 实时查询 (2026-07-08)
+ * 数据来源：各平台 API/文档实时查询 (2026-07-08)
  * API 拉取成功时会自动替换为最新数据，此处为离线兜底
  */
 export const AI_PROVIDERS: AiProvider[] = [
@@ -87,6 +87,142 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'openrouter/free', label: 'Free Router (自动选免费模型)', free: true },
     ],
   },
+  // ─── Groq ───
+  // 来源: https://console.groq.com/docs/models (Playwright 抓取)
+  {
+    id: 'groq',
+    name: 'Groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    description: '超快推理速度，注册即送免费额度',
+    defaultModel: 'llama-3.3-70b-versatile',
+    models: [
+      {
+        value: 'llama-3.3-70b-versatile',
+        label: 'Llama 3.3 70B',
+        free: true,
+        description: '通用，推荐',
+      },
+      { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B', free: true, description: '极速' },
+      { value: 'gemma2-9b-it', label: 'Gemma 2 9B', free: true, description: 'Google' },
+      { value: 'llama-guard-3-8b', label: 'Llama Guard 3 8B', free: true, description: '安全过滤' },
+    ],
+  },
+  // ─── Cerebras ───
+  // 来源: https://inference-docs.cerebras.ai
+  {
+    id: 'cerebras',
+    name: 'Cerebras',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    description: '极速推理，注册送免费额度',
+    defaultModel: 'llama-3.3-70b',
+    models: [
+      { value: 'llama-3.3-70b', label: 'Llama 3.3 70B', free: true, description: '通用' },
+      { value: 'llama-3.1-8b', label: 'Llama 3.1 8B', free: true, description: '极速' },
+    ],
+  },
+  // ─── DeepSeek ───
+  // 来源: https://api-docs.deepseek.com/quick_start/pricing (Playwright 抓取)
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    description: 'DeepSeek V4 系列，R1 推理模型',
+    defaultModel: 'deepseek-chat',
+    models: [
+      { value: 'deepseek-chat', label: 'DeepSeek V4', description: '最新旗舰，对话/编程' },
+      { value: 'deepseek-reasoner', label: 'DeepSeek R1', description: '推理增强' },
+      { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', description: '轻量快速' },
+      { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', description: '专业版' },
+    ],
+  },
+  // ─── Google Gemini ───
+  // 来源: https://ai.google.dev/gemini-api/docs/models (Playwright 抓取)
+  // Gemini 有免费额度: Flash 系列 $0, Pro 系列有免费 tier
+  {
+    id: 'google',
+    name: 'Google Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    description: 'Gemini 系列，Flash 免费，Pro 有免费额度',
+    defaultModel: 'gemini-2.5-flash',
+    models: [
+      {
+        value: 'gemini-3.5-flash',
+        label: 'Gemini 3.5 Flash',
+        free: true,
+        description: '最新 Flash',
+      },
+      { value: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro', free: true, description: '最新 Pro' },
+      { value: 'gemini-3.1-flash', label: 'Gemini 3.1 Flash', free: true, description: '新一代' },
+      { value: 'gemini-3-flash', label: 'Gemini 3 Flash', free: true, description: '快速' },
+      { value: 'gemini-3-preview', label: 'Gemini 3 Preview', free: true, description: '预览' },
+      { value: 'gemini-3-stable', label: 'Gemini 3 Stable', free: true, description: '稳定' },
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', free: true, description: '经典快速' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', free: true, description: '经典最强' },
+    ],
+  },
+  // ─── SiliconFlow (硅基流动) ──
+  // 来源: SiliconFlow 官方文档 + API 查询
+  // 注册送免费额度，部分模型永久免费
+  {
+    id: 'siliconflow',
+    name: 'SiliconFlow (硅基流动)',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    description: '国内高速访问，注册送免费额度',
+    defaultModel: 'Qwen/Qwen3-235B-A22B',
+    models: [
+      {
+        value: 'Qwen/Qwen3-235B-A22B',
+        label: 'Qwen3 235B',
+        free: true,
+        description: '通义千问旗舰',
+      },
+      { value: 'Qwen/Qwen3-30B-A3B', label: 'Qwen3 30B', free: true, description: '轻量高效' },
+      {
+        value: 'Qwen/Qwen2.5-72B-Instruct',
+        label: 'Qwen2.5 72B',
+        free: true,
+        description: '通义千问',
+      },
+      {
+        value: 'Qwen/Qwen2.5-Coder-32B-Instruct',
+        label: 'Qwen2.5 Coder 32B',
+        free: true,
+        description: '代码专用',
+      },
+      {
+        value: 'deepseek-ai/DeepSeek-V3',
+        label: 'DeepSeek V3',
+        free: true,
+        description: '深度求索',
+      },
+      {
+        value: 'deepseek-ai/DeepSeek-R1',
+        label: 'DeepSeek R1',
+        free: true,
+        description: '推理模型',
+      },
+      {
+        value: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B',
+        label: 'DeepSeek R1 蒸馏 32B',
+        free: true,
+      },
+      {
+        value: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-14B',
+        label: 'DeepSeek R1 蒸馏 14B',
+        free: true,
+      },
+      { value: 'meta-llama/Llama-3.3-70B-Instruct', label: 'Llama 3.3 70B', free: true },
+      { value: 'meta-llama/Llama-3.1-8B-Instruct', label: 'Llama 3.1 8B', free: true },
+      { value: 'THUDM/glm-4-9b-chat', label: 'GLM-4 9B', free: true, description: '智谱' },
+      {
+        value: 'internlm/internlm2_5-20b-chat',
+        label: 'InternLM2.5 20B',
+        free: true,
+        description: '书生',
+      },
+      { value: '01-ai/Yi-1.5-34B-Chat', label: 'Yi 1.5 34B', free: true, description: '零一万物' },
+    ],
+  },
   // ─── Agnes (Sapiens AI) ──
   {
     id: 'agnes',
@@ -105,7 +241,7 @@ export const AI_PROVIDERS: AiProvider[] = [
     id: 'opencode',
     name: 'OpenCode',
     baseUrl: 'https://api.opencode.ai/v1',
-    description: 'OpenCode 开源模型平台，提供多种免费模型',
+    description: 'OpenCode 开源模型平台',
     defaultModel: 'opencode-m1',
     models: [
       { value: 'opencode-m1', label: 'OpenCode M1', free: true },
@@ -116,96 +252,6 @@ export const AI_PROVIDERS: AiProvider[] = [
       { value: 'deepseek/deepseek-r1-free', label: 'DeepSeek R1 (免费)', free: true },
       { value: 'mimo/mimo-v1-free', label: 'Mimo V1 (免费)', free: true },
       { value: 'mimo/mimo-v2-free', label: 'Mimo V2 (免费)', free: true },
-    ],
-  },
-  // ─── SiliconFlow ──
-  {
-    id: 'siliconflow',
-    name: 'SiliconFlow (硅基流动)',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    description: '国内高速访问，注册送免费额度',
-    defaultModel: 'Qwen/Qwen3-235B-A22B',
-    models: [
-      {
-        value: 'Qwen/Qwen3-235B-A22B',
-        label: 'Qwen3 235B',
-        free: true,
-        description: '通义千问旗舰',
-      },
-      {
-        value: 'Qwen/Qwen2.5-72B-Instruct',
-        label: 'Qwen2.5 72B',
-        free: true,
-        description: '通义千问',
-      },
-      {
-        value: 'Qwen/Qwen2.5-Coder-32B-Instruct',
-        label: 'Qwen2.5 Coder 32B',
-        free: true,
-        description: '代码专用',
-      },
-      { value: 'deepseek-ai/DeepSeek-V3', label: 'DeepSeek V3', free: true },
-      {
-        value: 'deepseek-ai/DeepSeek-R1',
-        label: 'DeepSeek R1',
-        free: true,
-        description: '推理模型',
-      },
-      { value: 'meta-llama/Llama-4-Scout-17B-16E', label: 'Llama 4 Scout 17B', free: true },
-      { value: 'meta-llama/Llama-3.3-70B-Instruct', label: 'Llama 3.3 70B', free: true },
-      { value: 'THUDM/glm-4-9b-chat', label: 'GLM-4 9B', free: true, description: '智谱' },
-    ],
-  },
-  // ─── Groq ──
-  {
-    id: 'groq',
-    name: 'Groq',
-    baseUrl: 'https://api.groq.com/openai/v1',
-    description: '超快推理速度，免费额度充足',
-    defaultModel: 'llama-3.3-70b-versatile',
-    models: [
-      { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', free: true, description: '通用' },
-      { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B', free: true, description: '极速' },
-      { value: 'gemma2-9b-it', label: 'Gemma 2 9B', free: true, description: 'Google' },
-      { value: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B', free: true, description: 'Mistral' },
-    ],
-  },
-  // ─── Cerebras ──
-  {
-    id: 'cerebras',
-    name: 'Cerebras',
-    baseUrl: 'https://api.cerebras.ai/v1',
-    description: '极速推理，免费试用',
-    defaultModel: 'llama-3.3-70b',
-    models: [
-      { value: 'llama-3.3-70b', label: 'Llama 3.3 70B', free: true },
-      { value: 'llama-3.1-8b', label: 'Llama 3.1 8B', free: true },
-    ],
-  },
-  // ─── DeepSeek ──
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com/v1',
-    description: 'DeepSeek V4 系列模型',
-    defaultModel: 'deepseek-chat',
-    models: [
-      { value: 'deepseek-chat', label: 'DeepSeek V4', description: '最新旗舰' },
-      { value: 'deepseek-reasoner', label: 'DeepSeek R1', description: '推理增强' },
-    ],
-  },
-  // ─── Google Gemini ──
-  {
-    id: 'google',
-    name: 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    description: 'Gemini 系列模型，有免费额度',
-    defaultModel: 'gemini-2.5-flash',
-    models: [
-      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', free: true, description: '快速' },
-      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', free: true, description: '最强' },
-      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', free: true },
-      { value: 'gemma-4-27b-it', label: 'Gemma 4 27B', free: true, description: '开源' },
     ],
   },
   // ─── OpenAI ──
