@@ -100,9 +100,7 @@ export default function SshPlaceholder() {
         if (ws.status !== 'connected') {
           const wsErr = ws.lastError
           setConnectError(
-            wsErr
-              ? `WebSocket 未连接: ${wsErr}`
-              : 'WebSocket 未连接，请检查后端服务是否正常运行',
+            wsErr ? `WebSocket 未连接: ${wsErr}` : 'WebSocket 未连接，请检查后端服务是否正常运行',
           )
           setSidebarOpen(false)
           return null
@@ -686,7 +684,11 @@ export default function SshPlaceholder() {
                           <li>• 确认 Wrench 后端服务正在运行</li>
                           <li>• 检查端口 3001 是否被防火墙拦截</li>
                           <li>• 查看浏览器控制台获取详细错误</li>
-                          <li>• 运行 <code className="rounded bg-slate-800 px-1">docker logs wrench</code> 检查容器日志</li>
+                          <li>
+                            • 运行{' '}
+                            <code className="rounded bg-slate-800 px-1">docker logs wrench</code>{' '}
+                            检查容器日志
+                          </li>
                         </ul>
                       </details>
                     </div>

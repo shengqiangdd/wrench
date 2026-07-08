@@ -96,7 +96,9 @@ export class WsClient {
     this.connectTimeoutTimer = setTimeout(() => {
       if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
         this.ws.close()
-        this.setError(`连接超时（${WS_CONNECT_TIMEOUT_MS / 1000}秒无响应），请检查后端服务是否正常运行`)
+        this.setError(
+          `连接超时（${WS_CONNECT_TIMEOUT_MS / 1000}秒无响应），请检查后端服务是否正常运行`,
+        )
         this.setStatus('disconnected')
         this.scheduleReconnect()
       }
