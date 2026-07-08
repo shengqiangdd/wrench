@@ -41,6 +41,7 @@ export default function SettingsPanel() {
   const isFetchingModels = useAiStore((s) => s.isFetchingModels)
   const setFetchedModels = useAiStore((s) => s.setFetchedModels)
   const setIsFetchingModels = useAiStore((s) => s.setIsFetchingModels)
+  const fetchModelsError = useAiStore((s) => s.fetchModelsError)
 
   const [showApiKey, setShowApiKey] = useState(false)
   const [showModelSelector, setShowModelSelector] = useState(false)
@@ -85,8 +86,9 @@ export default function SettingsPanel() {
     }
   }, [aiConfig.provider, aiConfig.apiKey])
 
-  // ── 从 API 获取的模型列表（在 allModels / selectedModelLabel 之前声明） ──
-  const allModels = fetchedModels.length > 0 ? fetchedModels : currentProvider.models
+  // ── 从 API 获取的模型列表 ──
+  // fetchedModels 为空时不再回退到硬编码列表，避免显示虚假模型
+  const allModels = fetchedModels
 
   const formattedFetchTime = fetchedModelsAt
     ? new Date(fetchedModelsAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -157,11 +159,17 @@ export default function SettingsPanel() {
         const resp = await fetch(`/api/ai/fetch-all-models?${params.toString()}`)
         if (!resp.ok) throw new Error('API 请求失败: ' + resp.status)
         const data = await resp.json()
-        if (data.models && Array.isArray(data.models)) {
+        if (data.models && Array.isArray(data.models) && data.models.length > 0) {
           setFetchedModels(data.models)
+        } else {
+          // API 返回空列表或无模型
+          const errMsg = data.error || '该平台未返回模型列表'
+          setFetchedModels([], errMsg)
         }
       } catch (err: unknown) {
-        console.error('获取模型失败:', err)
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error('获取模型失败:', msg)
+        setFetchedModels([], msg)
       } finally {
         setIsFetchingModels(false)
       }
@@ -497,126 +505,68 @@ export default function SettingsPanel() {
                       onClick={() => setShowModelSelector(false)}
                     />
                     <div className="absolute top-full right-0 left-0 z-50 mt-1 max-h-[300px] overflow-y-auto rounded-lg border border-slate-700 bg-slate-800 shadow-xl">
-                      {currentProvider.models.length === 0 && currentProvider.id === 'custom' ? (
+                      {/* 自定义 provider */}
+                      {currentProvider.id === 'custom' ? (
                         <button
                           onClick={() => handleSelectModel('__custom__')}
                           className="flex w-full items-center gap-2 px-3 py-2.5 text-xs text-slate-400 hover:bg-slate-700"
                         >
                           ✏️ 输入自定义模型名称...
                         </button>
-                      ) : (
+                      ) : fetchedModels.length > 0 ? (
+                        /* API 获取成功：显示模型列表 */
                         <>
-                          {/* 动态获取的模型（所有服务商） */}
-                          {fetchedModels.length > 0 && (
-                            <>
-                              <div className="border-b border-slate-700/50 px-3 py-1.5 text-[10px] tracking-wider text-blue-400/70 uppercase">
-                                🔄 API 获取（{fetchedModels.length} 个）
-                              </div>
-                              {fetchedModels.map((model) => (
-                                <button
-                                  key={model.value}
-                                  onClick={() => handleSelectModel(model.value)}
-                                  className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-700 ${
-                                    aiConfig.model === model.value
-                                      ? 'text-wrench-400 bg-slate-700/50'
-                                      : 'text-slate-300'
-                                  }`}
-                                >
-                                  <span className="flex-1 truncate">{model.label}</span>
-                                  {model.description && (
-                                    <span className="max-w-[180px] truncate text-[10px] text-slate-500">
-                                      {model.description}
-                                    </span>
-                                  )}
-                                  {model.free && (
-                                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-400">
-                                      免费
-                                    </span>
-                                  )}
-                                  {aiConfig.model === model.value && (
-                                    <Check size={12} className="shrink-0" />
-                                  )}
-                                </button>
-                              ))}
-                            </>
-                          )}
-
-                          {/* 内置模型（当无 API 动态获取时显示） */}
-                          {fetchedModels.length === 0 && (
-                            <>
-                              {allModels.filter((m) => m.free).length > 0 && (
-                                <>
-                                  <div className="border-b border-slate-700/50 px-3 py-1.5 text-[10px] tracking-wider text-emerald-400/70 uppercase">
-                                    🆓 免费模型
-                                  </div>
-                                  {allModels
-                                    .filter((m) => m.free)
-                                    .map((model) => (
-                                      <button
-                                        key={model.value}
-                                        onClick={() => handleSelectModel(model.value)}
-                                        className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-700 ${
-                                          aiConfig.model === model.value
-                                            ? 'text-wrench-400 bg-slate-700/50'
-                                            : 'text-slate-300'
-                                        }`}
-                                      >
-                                        <span className="flex-1">{model.label}</span>
-                                        {model.description && (
-                                          <span className="text-[10px] text-slate-500">
-                                            {model.description}
-                                          </span>
-                                        )}
-                                        {aiConfig.model === model.value && (
-                                          <Check size={12} className="shrink-0" />
-                                        )}
-                                      </button>
-                                    ))}
-                                </>
+                          <div className="border-b border-slate-700/50 px-3 py-1.5 text-[10px] tracking-wider text-blue-400/70 uppercase">
+                            🔄 API 获取（{fetchedModels.length} 个模型）
+                          </div>
+                          {fetchedModels.map((model) => (
+                            <button
+                              key={model.value}
+                              onClick={() => handleSelectModel(model.value)}
+                              className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-700 ${
+                                aiConfig.model === model.value
+                                  ? 'text-wrench-400 bg-slate-700/50'
+                                  : 'text-slate-300'
+                              }`}
+                            >
+                              <span className="flex-1 truncate">{model.label}</span>
+                              {model.description && (
+                                <span className="max-w-[180px] truncate text-[10px] text-slate-500">
+                                  {model.description}
+                                </span>
                               )}
-
-                              {/* 付费/其他模型 */}
-                              {allModels.filter((m) => !m.free).length > 0 && (
-                                <>
-                                  <div className="border-t border-b border-slate-700/50 px-3 py-1.5 text-[10px] tracking-wider text-slate-500 uppercase">
-                                    💰 其他模型
-                                  </div>
-                                  {allModels
-                                    .filter((m) => !m.free)
-                                    .map((model) => (
-                                      <button
-                                        key={model.value}
-                                        onClick={() => handleSelectModel(model.value)}
-                                        className={`flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-slate-700 ${
-                                          aiConfig.model === model.value
-                                            ? 'text-wrench-400 bg-slate-700/50'
-                                            : 'text-slate-300'
-                                        }`}
-                                      >
-                                        <span className="flex-1">{model.label}</span>
-                                        {model.description && (
-                                          <span className="text-[10px] text-slate-500">
-                                            {model.description}
-                                          </span>
-                                        )}
-                                        {aiConfig.model === model.value && (
-                                          <Check size={12} className="shrink-0" />
-                                        )}
-                                      </button>
-                                    ))}
-                                </>
+                              {model.free && (
+                                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-400">
+                                  免费
+                                </span>
                               )}
-                            </>
-                          )}
-
-                          {/* 自定义模型入口 */}
-                          <button
-                            onClick={() => handleSelectModel('__custom__')}
-                            className="flex w-full items-center gap-2 border-t border-slate-700/50 px-3 py-2 text-xs text-slate-400 hover:bg-slate-700"
-                          >
-                            ✏️ 输入自定义模型...
-                          </button>
+                              {aiConfig.model === model.value && (
+                                <Check size={12} className="shrink-0" />
+                              )}
+                            </button>
+                          ))}
                         </>
+                      ) : (
+                        /* 拉取失败或无模型：显示错误提示 */
+                        <div className="px-3 py-4 text-center">
+                          <p className="text-xs text-slate-500">
+                            {isFetchingModels
+                              ? '正在获取模型列表…'
+                              : fetchModelsError
+                                ? `获取失败：${fetchModelsError}`
+                                : '点击右上角「刷新模型」获取最新列表'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* 自定义模型入口 */}
+                      {currentProvider.id !== 'custom' && (
+                        <button
+                          onClick={() => handleSelectModel('__custom__')}
+                          className="flex w-full items-center gap-2 border-t border-slate-700/50 px-3 py-2 text-xs text-slate-400 hover:bg-slate-700"
+                        >
+                          ✏️ 输入自定义模型...
+                        </button>
                       )}
                     </div>
                   </>

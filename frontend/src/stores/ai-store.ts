@@ -8,12 +8,14 @@ interface AiState {
   suggestions: AiSuggestion[]
   isStreaming: boolean
   streamingContent: string
-  /** 从 API 动态获取的免费模型列表 */
+  /** 从 API 动态获取的模型列表 */
   fetchedModels: AiProviderModel[]
   /** 上次获取时间 */
   fetchedModelsAt: number | null
   /** 是否正在获取 */
   isFetchingModels: boolean
+  /** 获取模型列表时的错误信息 */
+  fetchModelsError: string | null
 
   // 配置操作
   setConfig: (config: Partial<AiConfig>) => void
@@ -31,7 +33,7 @@ interface AiState {
   removeSuggestion: (id: string) => void
 
   // 模型更新
-  setFetchedModels: (models: AiProviderModel[]) => void
+  setFetchedModels: (models: AiProviderModel[], error?: string | null) => void
   setIsFetchingModels: (v: boolean) => void
 
   // 默认配置
@@ -56,6 +58,7 @@ export const useAiStore = create<AiState>()(
       fetchedModels: [],
       fetchedModelsAt: null,
       isFetchingModels: false,
+      fetchModelsError: null,
 
       setConfig: (partial) => set((s) => ({ config: { ...s.config, ...partial } })),
 
@@ -91,7 +94,8 @@ export const useAiStore = create<AiState>()(
           suggestions: s.suggestions.filter((sg) => sg.id !== id),
         })),
 
-      setFetchedModels: (models) => set({ fetchedModels: models, fetchedModelsAt: Date.now() }),
+      setFetchedModels: (models, error = null) =>
+        set({ fetchedModels: models, fetchedModelsAt: Date.now(), fetchModelsError: error }),
 
       setIsFetchingModels: (v) => set({ isFetchingModels: v }),
 
