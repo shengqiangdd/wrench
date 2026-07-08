@@ -166,8 +166,8 @@ export default function TerminalView({
       // 给予初始 cols/rows 防止 Viewport 在 DOM 渲染前访问 undefined dimensions
       cols: 80,
       rows: 24,
-      // 启用平滑滚动（移动端友好）
-      smoothScrollDuration: 100,
+      // 禁用平滑滚动，触摸滚动由自定义处理器控制
+      smoothScrollDuration: 0,
     })
 
     const fitAddon = new FitAddon()
@@ -179,6 +179,109 @@ export default function TerminalView({
 
     const container = containerRef.current
     term.open(container)
+
+    // ─── 自定义触摸滚动处理器（含惯性滚动） ───
+    // xterm.js 的 .xterm-screen 覆盖在 .xterm-viewport 之上，
+    // 触摸事件被 screen 层拦截，无法到达 viewport 的滚动机制。
+    // 通过 JS 直接处理触摸事件并调用 term.scrollLines() 解决。
+    let touchLastY = 0
+    let touchStartY = 0
+    let touchAccumulator = 0
+    let touchVelocity = 0
+    let lastTouchTime = 0
+    let momentumRafId = 0
+    let isScrolling = false
+
+    /** 动态获取当前行高（像素） */
+    const getRowHeight = (): number => {
+      const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null
+      if (viewport && term.rows > 0) {
+        return viewport.clientHeight / term.rows
+      }
+      return 16 // fallback
+    }
+
+    /** 按像素滚动（支持亚行精度） */
+    const scrollByPixels = (px: number) => {
+      const rowHeight = getRowHeight()
+      touchAccumulator += px
+      const linesToScroll = Math.trunc(touchAccumulator / rowHeight)
+      if (linesToScroll !== 0) {
+        // 手指下滑 → px 正 → 查看历史 → scrollLines 负值
+        term.scrollLines(-linesToScroll)
+        touchAccumulator -= linesToScroll * rowHeight
+      }
+    }
+
+    /** 惯性滚动动画 */
+    const momentumScroll = () => {
+      if (Math.abs(touchVelocity) < 0.5) {
+        touchVelocity = 0
+        return
+      }
+      scrollByPixels(touchVelocity)
+      touchVelocity *= 0.92 // 摩擦系数
+      momentumRafId = requestAnimationFrame(momentumScroll)
+    }
+
+    const handleTouchStart = (e: TouchEvent) => {
+      // 停止惯性滚动
+      cancelAnimationFrame(momentumRafId)
+      touchVelocity = 0
+      isScrolling = false
+
+      const touch = e.touches[0]
+      if (touch) {
+        touchLastY = touch.clientY
+        touchStartY = touch.clientY
+      }
+      touchAccumulator = 0
+      lastTouchTime = Date.now()
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0]
+      if (!touch) return
+
+      const deltaY = touch.clientY - touchStartY
+
+      // 只有滑动超过阈值才认定为滚动（防止误判 tap 为 scroll）
+      if (!isScrolling && Math.abs(deltaY) > 8) {
+        isScrolling = true
+      }
+
+      if (isScrolling) {
+        e.preventDefault() // 仅在滚动时阻止默认行为（保留 tap 的 click 事件）
+
+        const moveDelta = touch.clientY - touchLastY
+        const now = Date.now()
+        const dt = Math.max(1, now - lastTouchTime)
+
+        // 计算瞬时速度（像素/帧，假设 60fps ≈ 16.7ms/帧）
+        touchVelocity = (moveDelta / dt) * 16.7
+
+        touchLastY = touch.clientY
+        lastTouchTime = now
+
+        scrollByPixels(moveDelta)
+      }
+    }
+
+    const handleTouchEnd = () => {
+      if (isScrolling) {
+        // 启动惯性滚动
+        if (Math.abs(touchVelocity) > 1) {
+          momentumRafId = requestAnimationFrame(momentumScroll)
+        }
+      }
+      isScrolling = false
+      touchAccumulator = 0
+    }
+
+    // 使用 { passive: false } 以允许 preventDefault
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchmove', handleTouchMove, { passive: false })
+    container.addEventListener('touchend', handleTouchEnd, { passive: true })
 
     // 延迟执行 fit 确保容器已渲染
     const fitTimer = setTimeout(() => {
@@ -414,6 +517,10 @@ export default function TerminalView({
       clearTimeout(fitTimer)
       observer.disconnect()
       window.removeEventListener('keydown', searchKeyHandler)
+      // 移除触摸事件监听器
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchmove', handleTouchMove)
+      container.removeEventListener('touchend', handleTouchEnd)
       // 断开并清理独立 WebSocket
       if (termWsRef.current) {
         termWsRef.current.disconnect()
@@ -503,13 +610,13 @@ export default function TerminalView({
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden bg-slate-950 px-1"
-        lang="en"
         style={{
-          WebkitOverflowScrolling: 'touch',
           // 移动端键盘弹出时，减少容器高度以补偿
           marginBottom: keyboardHeight > 0 ? `${keyboardHeight}px` : undefined,
           // 键盘弹出时缩短高度
           height: keyboardHeight > 0 ? `calc(100% - ${keyboardHeight}px)` : undefined,
+          // 阻止浏览器默认触摸行为，由自定义触摸滚动处理器接管
+          touchAction: 'none',
         }}
       />
 
@@ -562,8 +669,9 @@ export default function TerminalView({
             ].map((s) => (
               <button
                 key={s.key}
-                onClick={() => {
-                  // 发送按键序列到后端
+                onPointerDown={(e) => {
+                  // 阻止默认行为：防止焦点从 textarea 转移到按钮（避免 IME 中断）
+                  e.preventDefault()
                   const encoded = btoa(unescape(encodeURIComponent(s.seq)))
                   termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
                   onTerminalData?.(encoded)

@@ -661,28 +661,26 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
 /* ============================================
    xterm.js 移动端优化
    ============================================ */
-/* 终端容器触摸滚动支持 */
+/* 终端 viewport：真正的滚动容器 */
 .xterm .xterm-viewport {
-  -webkit-overflow-scrolling: touch !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   scrollbar-width: thin;
   /* 防止 overscroll 触发浏览器后退/刷新 */
   overscroll-behavior: contain;
-  /* 允许触摸滚动 */
-  touch-action: pan-y;
+  /* 关键：阻止浏览器接管触摸事件，由 JS 自定义处理滚动 */
+  touch-action: none;
 }
 
-/* 终端屏幕区域：允许垂直滚动，阻止水平滑动 */
+/* 终端屏幕区域：阻止所有浏览器默认触摸行为 */
 .xterm .xterm-screen {
-  touch-action: pan-y;
+  touch-action: none;
   position: relative;
 }
 
-/* 终端获得焦点时禁用输入法（强制英文输入） */
+/* 终端辅助输入区域：允许输入法 */
 .xterm .xterm-helper-textarea {
-  ime-mode: disabled;
-  -ms-ime-mode: disabled;
+  /* 不强制禁用输入法，允许中英文输入 */
 }
 
 /* 移动端终端字体优化 */
@@ -692,11 +690,17 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
     line-height: 1.3;
   }
 
+  /* 移动端显示细滚动条（方便拖拽） */
   .xterm .xterm-viewport {
-    scrollbar-width: none;
+    scrollbar-width: thin;
   }
 
   .xterm .xterm-viewport::-webkit-scrollbar {
-    display: none;
+    width: 4px;
+  }
+
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+    background-color: rgba(100, 116, 139, 0.5);
+    border-radius: 9999px;
   }
 }
