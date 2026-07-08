@@ -29,6 +29,7 @@ export default function SshPlaceholder() {
   const removeSshSession = useAppStore((s) => s.removeSshSession)
 
   const [wsStatus, setWsStatus] = useState<WsStatus>('disconnected')
+  const [wsError, setWsError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   // ─── 持久化状态（切换标签页后恢复） ───
   const sftpOpen = useAppStore((s) => s.sshSftpOpen)
@@ -53,8 +54,16 @@ export default function SshPlaceholder() {
       client.connect()
       // 立即同步当前状态（当 onStatus 注册时 WS 可能已连接）
       setWsStatus(client.status)
+      setWsError(client.lastError)
       client.onStatus((status) => {
         setWsStatus(status)
+        // 连接成功时清除错误
+        if (status === 'connected') {
+          setWsError(null)
+        }
+      })
+      client.onError((error) => {
+        setWsError(error)
       })
     })
   }, [])
@@ -89,7 +98,12 @@ export default function SshPlaceholder() {
 
         // 检查 WebSocket 是否已连接
         if (ws.status !== 'connected') {
-          setConnectError('WebSocket 未连接，请检查网络连接')
+          const wsErr = ws.lastError
+          setConnectError(
+            wsErr
+              ? `WebSocket 未连接: ${wsErr}`
+              : 'WebSocket 未连接，请检查后端服务是否正常运行',
+          )
           setSidebarOpen(false)
           return null
         }
@@ -420,16 +434,28 @@ export default function SshPlaceholder() {
 
   const showWsIndicator = () => (
     <button
-      onClick={() => wsClientRef.current?.connect()}
+      onClick={() => {
+        if (wsStatus === 'disconnected') {
+          wsClientRef.current?.reconnect()
+        }
+      }}
       className="flex min-h-[36px] items-center gap-1.5 px-2 py-1.5"
-      title={wsStatus === 'disconnected' ? '点击重连' : ''}
+      title={
+        wsStatus === 'disconnected'
+          ? wsError
+            ? `${wsError} — 点击重连`
+            : '点击重连'
+          : wsStatus === 'connected'
+            ? 'WebSocket 已连接'
+            : '正在连接...'
+      }
     >
       <span
         className={`inline-block h-2 w-2 shrink-0 rounded-full ${
           wsStatus === 'connected'
             ? 'bg-emerald-500'
             : wsStatus === 'connecting' || wsStatus === 'reconnecting'
-              ? 'bg-amber-500'
+              ? 'animate-pulse bg-amber-500'
               : 'bg-red-500'
         }`}
       />
@@ -440,7 +466,9 @@ export default function SshPlaceholder() {
             ? '连接中...'
             : wsStatus === 'reconnecting'
               ? '重连中...'
-              : '未连接'}
+              : wsError
+                ? '连接失败'
+                : '未连接'}
       </span>
     </button>
   )
@@ -637,12 +665,54 @@ export default function SshPlaceholder() {
           <div className="flex min-h-0 flex-1 items-center justify-center">
             <div className="max-w-full px-4 text-center">
               <Server size={48} className="mx-auto mb-3 text-slate-600" />
-              <p className="text-sm text-slate-500">
-                {wsStatus === 'connected'
-                  ? '选择一个连接或新建连接'
-                  : 'WebSocket 未连接，请稍候...'}
-              </p>
-              {/* 显示连接错误信息 */}
+              {/* WebSocket 未连接时显示详细错误和重连按钮 */}
+              {wsStatus !== 'connected' ? (
+                <>
+                  <p className="text-sm text-slate-500">
+                    {wsStatus === 'connecting' || wsStatus === 'reconnecting'
+                      ? '正在连接后端服务...'
+                      : wsError
+                        ? '无法连接到后端服务'
+                        : 'WebSocket 未连接'}
+                  </p>
+                  {wsError && (
+                    <div className="mx-auto mt-3 max-w-sm rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2">
+                      <p className="text-xs text-red-400">{wsError}</p>
+                      <details className="mt-2 text-left">
+                        <summary className="cursor-pointer text-xs text-red-500/70 hover:text-red-400">
+                          排查建议
+                        </summary>
+                        <ul className="mt-1 space-y-1 text-left text-xs text-slate-500">
+                          <li>• 确认 Wrench 后端服务正在运行</li>
+                          <li>• 检查端口 3001 是否被防火墙拦截</li>
+                          <li>• 查看浏览器控制台获取详细错误</li>
+                          <li>• 运行 <code className="rounded bg-slate-800 px-1">docker logs wrench</code> 检查容器日志</li>
+                        </ul>
+                      </details>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => wsClientRef.current?.reconnect()}
+                    disabled={wsStatus === 'connecting' || wsStatus === 'reconnecting'}
+                    className="btn btn-primary mt-4 min-h-[44px] px-4"
+                  >
+                    {wsStatus === 'connecting' || wsStatus === 'reconnecting' ? (
+                      <>
+                        <span className="animate-spin">⟳</span>
+                        <span>连接中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <PlugZap size={16} />
+                        <span>重新连接</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500">选择一个连接或新建连接</p>
+              )}
+              {/* 显示 SSH 连接错误信息 */}
               {connectError && (
                 <div className="mx-auto mt-3 max-w-sm rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2">
                   <p className="text-xs text-red-400">{connectError}</p>

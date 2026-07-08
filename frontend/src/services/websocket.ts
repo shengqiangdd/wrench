@@ -7,6 +7,7 @@
 
 type MessageHandler = (data: Record<string, unknown>) => void
 type StatusHandler = (status: WsStatus) => void
+type ErrorHandler = (error: string) => void
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
 
@@ -18,18 +19,24 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>
 }
 
+/** WebSocket 连接超时时间（毫秒） */
+const WS_CONNECT_TIMEOUT_MS = 10_000
+
 export class WsClient {
   private ws: WebSocket | null = null
   private url: string
   private handlers = new Map<string, MessageHandler[]>()
   private statusHandlers: StatusHandler[] = []
+  private errorHandlers: ErrorHandler[] = []
   private pendingRequests = new Map<string, PendingRequest>()
   private requestIdCounter = 0
   private _status: WsStatus = 'disconnected'
+  private _lastError: string | null = null
   private reconnectAttempts = 0
   private maxReconnectAttempts = 10
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(url: string) {
     this.url = url
@@ -39,9 +46,18 @@ export class WsClient {
     return this._status
   }
 
+  get lastError() {
+    return this._lastError
+  }
+
   private setStatus(status: WsStatus) {
     this._status = status
     this.statusHandlers.forEach((fn) => fn(status))
+  }
+
+  private setError(error: string) {
+    this._lastError = error
+    this.errorHandlers.forEach((fn) => fn(error))
   }
 
   // ─── 生命周期 ───
@@ -58,17 +74,42 @@ export class WsClient {
       if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return
     }
     this.setStatus('connecting')
+    this._lastError = null
+
+    // 清理之前的连接超时计时器
+    if (this.connectTimeoutTimer) {
+      clearTimeout(this.connectTimeoutTimer)
+      this.connectTimeoutTimer = null
+    }
 
     try {
       this.ws = new WebSocket(this.url)
-    } catch {
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : 'WebSocket 创建失败'
+      this.setError(errMsg)
       this.setStatus('disconnected')
       this.scheduleReconnect()
       return
     }
 
+    // 连接超时检测：如果在规定时间内未建立连接，视为超时
+    this.connectTimeoutTimer = setTimeout(() => {
+      if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+        this.ws.close()
+        this.setError(`连接超时（${WS_CONNECT_TIMEOUT_MS / 1000}秒无响应），请检查后端服务是否正常运行`)
+        this.setStatus('disconnected')
+        this.scheduleReconnect()
+      }
+    }, WS_CONNECT_TIMEOUT_MS)
+
     this.ws.onopen = () => {
+      // 清除连接超时计时器
+      if (this.connectTimeoutTimer) {
+        clearTimeout(this.connectTimeoutTimer)
+        this.connectTimeoutTimer = null
+      }
       this.reconnectAttempts = 0
+      this._lastError = null
       this.setStatus('connected')
       this.startHeartbeat()
     }
@@ -82,8 +123,24 @@ export class WsClient {
       }
     }
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
+      // 清除连接超时计时器
+      if (this.connectTimeoutTimer) {
+        clearTimeout(this.connectTimeoutTimer)
+        this.connectTimeoutTimer = null
+      }
       this.stopHeartbeat()
+
+      // 根据 close code 判断错误类型
+      if (this._status === 'connecting') {
+        // 在连接阶段就关闭了，说明连接失败
+        if (event.code === 1006) {
+          this.setError('连接被拒绝，请检查后端服务是否正常运行且端口可达')
+        } else if (event.code !== 1000) {
+          this.setError(`连接异常关闭 (code: ${event.code})`)
+        }
+      }
+
       this.setStatus('disconnected')
       this.rejectAllPending(new Error('连接已关闭'))
       this.ws = null
@@ -91,7 +148,11 @@ export class WsClient {
     }
 
     this.ws.onerror = () => {
-      // onclose 也会触发，这里不做重复处理
+      // onerror 本身不提供有用信息，但 onclose 会紧随其后触发
+      // 这里只标记可能有错误，具体信息由 onclose 处理
+      if (this._status === 'connecting') {
+        this.setError('连接错误：无法建立 WebSocket 连接，请检查网络和服务状态')
+      }
     }
   }
 
@@ -101,12 +162,31 @@ export class WsClient {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+    if (this.connectTimeoutTimer) {
+      clearTimeout(this.connectTimeoutTimer)
+      this.connectTimeoutTimer = null
+    }
     this.reconnectAttempts = this.maxReconnectAttempts // 禁止自动重连
     if (this.ws) {
       this.ws.close()
       this.ws = null
     }
     this.setStatus('disconnected')
+  }
+
+  /** 手动重连（用户触发） */
+  reconnect() {
+    this.reconnectAttempts = 0
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    if (this.ws) {
+      this.ws.close()
+      this.ws = null
+    }
+    this._lastError = null
+    this.connect()
   }
 
   // ─── 自动重连 ───
@@ -233,6 +313,18 @@ export class WsClient {
     handler(this._status)
     return () => {
       this.statusHandlers = this.statusHandlers.filter((h) => h !== handler)
+    }
+  }
+
+  /** 注册错误回调，当连接出错时触发 */
+  onError(handler: ErrorHandler) {
+    this.errorHandlers.push(handler)
+    // 如果有未清除的错误，立即通知
+    if (this._lastError) {
+      handler(this._lastError)
+    }
+    return () => {
+      this.errorHandlers = this.errorHandlers.filter((h) => h !== handler)
     }
   }
 
