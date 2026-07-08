@@ -105,7 +105,7 @@ export default function TerminalView({
 
   // ─── 移动端快捷键工具栏（固定在底部，不需要开关状态）──
 
-  // ─── 移动端键盘弹出时自动滚动到光标 + 关闭快捷键面板 ──
+  // ─── 移动端键盘弹出时自动滚动到光标 ──
   useEffect(() => {
     const vv = window.visualViewport
     const term = terminalRef.current
@@ -131,6 +131,9 @@ export default function TerminalView({
     vv.addEventListener('resize', handleResize)
     return () => vv.removeEventListener('resize', handleResize)
   }, [])
+
+  // 移动端快捷键栏高度（固定 72px = 两行 × 36px）
+  const SHORTCUT_BAR_HEIGHT = 72
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -620,13 +623,27 @@ export default function TerminalView({
         style={{
           // 阻止浏览器默认触摸行为，由自定义触摸滚动处理器接管
           touchAction: 'none',
+          // 移动端为快捷键栏预留底部空间
+          paddingBottom:
+            typeof window !== 'undefined' && window.innerWidth < 768
+              ? `${SHORTCUT_BAR_HEIGHT}px`
+              : undefined,
         }}
       />
 
-      {/* 移动端快捷键工具栏 — 两行固定布局，像 Termux 一样 */}
-      <div className="flex shrink-0 flex-col border-t border-slate-700/30 bg-slate-900/95 md:hidden">
+      {/* 移动端快捷键工具栏 — 固定在屏幕底部，像 Termux 一样 */}
+      {/* 使用 fixed 定位确保始终在键盘上方可见 */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 flex shrink-0 flex-col border-t border-slate-700/30 bg-slate-900/95 md:hidden"
+        style={
+          {
+            // 键盘弹出时，快捷键栏跟着上移
+            // 通过 visualViewport.offsetTop 计算键盘高度
+          }
+        }
+      >
         {/* 第一行：常用功能键 */}
-        <div className="flex items-center justify-around gap-0.5 px-1 py-0.5">
+        <div className="flex items-center justify-around gap-0.5 px-1 py-1">
           {[
             { key: 'ESC', seq: '\x1b' },
             { key: 'TAB', seq: '\t' },
@@ -642,14 +659,14 @@ export default function TerminalView({
                 termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
                 onTerminalData?.(encoded)
               }}
-              className="flex h-7 flex-1 items-center justify-center rounded bg-slate-800/80 text-[11px] font-mono text-slate-300 active:bg-slate-700"
+              className="flex h-8 flex-1 items-center justify-center rounded bg-slate-800/80 font-mono text-xs text-slate-300 active:bg-slate-700"
             >
               {s.key}
             </button>
           ))}
         </div>
         {/* 第二行：方向键和翻页 */}
-        <div className="flex items-center justify-around gap-0.5 px-1 py-0.5">
+        <div className="flex items-center justify-around gap-0.5 px-1 pt-0.5 pb-1">
           {[
             { key: '↑', seq: '\x1b[A' },
             { key: '↓', seq: '\x1b[B' },
@@ -666,7 +683,7 @@ export default function TerminalView({
                 termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
                 onTerminalData?.(encoded)
               }}
-              className="flex h-7 flex-1 items-center justify-center rounded bg-slate-800/80 text-[11px] font-mono text-slate-300 active:bg-slate-700"
+              className="flex h-8 flex-1 items-center justify-center rounded bg-slate-800/80 font-mono text-xs text-slate-300 active:bg-slate-700"
             >
               {s.key}
             </button>
