@@ -48,12 +48,15 @@ export default function DockerPage() {
   }, [sessions, connections])
 
   const [selectedHost, setSelectedHost] = useState<string | null>(null)
-  const currentConnId =
-    selectedHost && availableHosts.some((h) => h.id === selectedHost && h.connected)
-      ? selectedHost
-      : sessions.length > 0
-        ? sessions[0]!.id
-        : null
+  const currentConnId = useMemo(
+    () =>
+      selectedHost && availableHosts.some((h) => h.id === selectedHost && h.connected)
+        ? selectedHost
+        : sessions.length > 0
+          ? sessions[0]!.id
+          : null,
+    [selectedHost, availableHosts, sessions],
+  )
 
   const fetchContainers = useCallback(async () => {
     if (!currentConnId) return

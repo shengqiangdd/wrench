@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Zap, Terminal, Download, Upload, Tags } from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import { useCommands } from './useCommands'
@@ -145,6 +145,9 @@ export default function CommandsPage() {
   // 未连接 — 不拦截显示，命令列表可浏览但执行按钮禁用
   const hasConnection = !!connectionId
 
+  // 缓存命令分组数据，避免每次渲染重新调用 commandsByGroup()
+  const memoizedCommandsByGroup = useMemo(() => commandsByGroup(), [commandsByGroup])
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* 头部 */}
@@ -209,7 +212,7 @@ export default function CommandsPage() {
         {/* 左侧：命令列表 */}
         <div className="flex flex-1 flex-col overflow-hidden">
           <CommandsList
-            commandsByGroup={commandsByGroup()}
+            commandsByGroup={memoizedCommandsByGroup}
             executingId={executingId}
             connectionId={connectionId}
             onExecute={handleExecute}

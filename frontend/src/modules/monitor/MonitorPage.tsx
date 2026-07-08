@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, memo } from 'react'
 import {
   Activity,
   Cpu,
@@ -15,187 +15,20 @@ import { useAlertStore } from '../../stores/alert-store'
 import AlertSettings from './AlertSettings'
 import AlertHistory from './AlertHistory'
 import HostHealthOverview from './HostHealthOverview'
+import type { HealthData, HostStats, HistoryPoint } from './types'
+import {
+  parseCpuUsage,
+  parseMemory,
+  parseDisk,
+  parseUptime,
+  parseLoadAvg,
+  parseNetRxTx,
+  parseTopProcs,
+  parseDiskIo,
+  formatBytes,
+} from './monitor-utils'
 
-// ─── 类型定义 ───
-
-interface HealthData {
-  status: string
-  uptime: number
-  version: string
-  connections: { active: number }
-}
-
-interface HostStats {
-  host: string
-  name: string
-  cpu: number
-  memory: { total: number; used: number; pct: number }
-  disk: { total: number; used: number; pct: number }
-  uptime: string
-  loadAvg: string
-  netRx: number
-  netTx: number
-  /** Top 5 CPU 消耗进程 */
-  topProcs: Array<{ pid: number; user: string; cpu: number; mem: number; command: string }>
-  /** 磁盘 IO 统计 */
-  io: { readBps: number; writeBps: number }
-  timestamp: number
-}
-
-interface HistoryPoint {
-  time: number
-  cpu: number
-  mem: number
-  disk: number
-}
-
-// ─── 解析工具 ───
-
-function parseCpuUsage(stdout: string): number {
-  const lines = stdout.trim().split('\n')
-  for (const line of lines) {
-    const parts = line.trim().split(/\s+/)
-    if (parts.length >= 12 && parts[0] !== 'avg-cpu:') {
-      // 从 top -bn1 或 mpstat 解析
-      if (parts.length >= 12) {
-        const idle = parseFloat(parts[10] || parts[7] || '0')
-        if (!isNaN(idle) && idle >= 0 && idle <= 100) {
-          return Math.round((100 - idle) * 10) / 10
-        }
-      }
-    }
-    // sar -u 1 1 格式
-    if (line.includes('all')) {
-      const p = line.trim().split(/\s+/)
-      if (p.length >= 8) {
-        const idle = parseFloat(p[p.length - 1]!)
-        if (!isNaN(idle) && idle >= 0 && idle <= 100) {
-          return Math.round((100 - idle) * 10) / 10
-        }
-      }
-    }
-  }
-  return 0
-}
-
-function parseMemory(stdout: string): { total: number; used: number; pct: number } {
-  const lines = stdout.trim().split('\n')
-  let total = 0,
-    available = 0
-  for (const line of lines) {
-    if (line.startsWith('MemTotal:')) {
-      total = parseInt(line.split(/\s+/)[1]!) || 0
-    }
-    if (line.startsWith('MemAvailable:')) {
-      available = parseInt(line.split(/\s+/)[1]!) || 0
-    }
-  }
-  if (total === 0) return { total: 0, used: 0, pct: 0 }
-  const used = total - available
-  return { total, used, pct: Math.round((used / total) * 100) }
-}
-
-function parseDisk(stdout: string): { total: number; used: number; pct: number } {
-  const lines = stdout.trim().split('\n')
-  // 找根分区 /
-  for (const line of lines) {
-    const parts = line.trim().split(/\s+/)
-    if (parts.length >= 6 && parts[5] === '/') {
-      const total = parseInt(parts[1]!) || 0
-      const used = parseInt(parts[2]!) || 0
-      if (total === 0) continue
-      return { total, used, pct: Math.round((used / total) * 100) }
-    }
-  }
-  return { total: 0, used: 0, pct: 0 }
-}
-
-function parseUptime(stdout: string): string {
-  const m = stdout.match(/up\s+(.+?)(?:,\s+\d+ users|\s*$)/)
-  return m ? m[1]!.trim() : stdout.trim().slice(0, 40)
-}
-
-function parseLoadAvg(stdout: string): string {
-  const m = stdout.match(/load average:\s+(.+)/)
-  return m ? m[1]!.trim() : ''
-}
-
-function parseNetRxTx(stdout: string): { rx: number; tx: number } {
-  const lines = stdout.trim().split('\n')
-  let rxTotal = 0,
-    txTotal = 0
-  let ifaceCount = 0
-  for (const line of lines) {
-    const parts = line.trim().split(/\s+/)
-    if (parts.length >= 10 && parts[0] !== 'Inter-|' && parts[0] !== 'face') {
-      const name = parts[0]!
-      if (
-        name === 'lo' ||
-        name.startsWith('eth0') ||
-        name.startsWith('docker') ||
-        name.startsWith('br-') ||
-        name.startsWith('veth') ||
-        name.startsWith('virbr') ||
-        name.startsWith('cni')
-      )
-        continue
-      rxTotal += parseInt(parts[1]!) || 0
-      txTotal += parseInt(parts[9]!) || 0
-      ifaceCount++
-    }
-  }
-  return ifaceCount > 0 ? { rx: rxTotal, tx: txTotal } : { rx: 0, tx: 0 }
-}
-
-/** 解析 ps aux 输出的 Top 5 CPU 进程 */
-function parseTopProcs(
-  stdout: string,
-): Array<{ pid: number; user: string; cpu: number; mem: number; command: string }> {
-  const lines = stdout.trim().split('\n')
-  const procs: Array<{ pid: number; user: string; cpu: number; mem: number; command: string }> = []
-  for (const line of lines) {
-    const parts = line.trim().split(/\s+/)
-    if (parts.length >= 11 && parts[0] !== 'USER') {
-      procs.push({
-        user: parts[0]!,
-        pid: parseInt(parts[1]!) || 0,
-        cpu: parseFloat(parts[2]!) || 0,
-        mem: parseFloat(parts[3]!) || 0,
-        command: parts.slice(10).join(' ').slice(0, 50),
-      })
-    }
-  }
-  return procs.slice(0, 5)
-}
-
-/** 解析 /proc/diskstats 获取磁盘 IO（累计扇区数，512 字节/扇区） */
-function parseDiskIo(stdout: string): { readBps: number; writeBps: number } {
-  const lines = stdout.trim().split('\n')
-  let readSectors = 0
-  let writeSectors = 0
-  for (const line of lines) {
-    const parts = line.trim().split(/\s+/)
-    // 格式: major minor name reads_completed reads_merged sectors_read ... writes_completed writes_merged sectors_written
-    if (parts.length >= 14) {
-      const devName = parts[2]!
-      // 只统计主磁盘（sdX / vdX / nvmeXnY），跳过分区
-      if (/^(sd|vd|nvme\d+n\d+|xvd)[a-z]?$/.test(devName) || /^nvme\d+n\d+$/.test(devName)) {
-        readSectors += parseInt(parts[5]!) || 0
-        writeSectors += parseInt(parts[9]!) || 0
-      }
-    }
-  }
-  // 返回累计值，外部做差分计算
-  return { readBps: readSectors * 512, writeBps: writeSectors * 512 }
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
+// ─── 工具函数 ───
 
 function formatSpeed(bps: number): string {
   if (bps === 0) return '0 b/s'
@@ -207,7 +40,7 @@ function formatSpeed(bps: number): string {
 
 // ─── 渐变色进度条 ───
 
-function ProgressBar({
+const ProgressBar = memo(function ProgressBar({
   value,
   label,
   sub,
@@ -239,11 +72,11 @@ function ProgressBar({
       </div>
     </div>
   )
-}
+})
 
 // ─── Sparkline 迷你折线图 ───
 
-function Sparkline({
+const Sparkline = memo(function Sparkline({
   data,
   color,
   height = 32,
@@ -285,9 +118,7 @@ function Sparkline({
       />
     </svg>
   )
-}
-
-// ─── 主组件 ───
+})
 
 // ─── Mock 数据状态（随机漫步，更真实） ───
 const mockState = new Map<
@@ -344,7 +175,6 @@ function _mockStats(id: string, name: string, host: string): HostStats {
   s.diskPct = walk(s.diskPct, 0.5, 15, 65)
   s.netRx = walk(s.netRx, 500000, 100000, 8000000)
   s.netTx = walk(s.netTx, 300000, 50000, 4000000)
-  // 负载跟随 CPU 波动
   s.load1 = walk(s.load1, 0.4, 0.1, 4)
   s.load5 = walk(s.load5, 0.2, 0.1, 3)
   s.load15 = walk(s.load15, 0.1, 0.05, 2)
@@ -423,7 +253,6 @@ function _mockHistory(): HistoryPoint[] {
 export default function MonitorPage() {
   const sessions = useSshStore((s) => s.sessions)
   const connections = useSshStore((s) => s.connections)
-  // 仅当有已连接的 session 时才用真实数据
   const hasLiveSessions = sessions.some((s) => s.status === 'connected')
   const isMock = !hasLiveSessions
   const [hosts, setHosts] = useState<{ id: string; name: string }[]>([])
@@ -439,11 +268,10 @@ export default function MonitorPage() {
   const [healthError, setHealthError] = useState(false)
   const alertHistory = useAlertStore((s) => s.history)
 
-  // 扫描主机（已保存的连接 + 活跃 session）— 去重：按 host/IP 优先，session 优先于 connection
+  // 扫描主机（已保存的连接 + 活跃 session）— 去重
   const scanHosts = useCallback(() => {
     const seen = new Set<string>()
     const list: { id: string; name: string }[] = []
-    // 活跃 session 优先
     for (const sess of sessions) {
       if (sess.status !== 'connected') continue
       const hostKey = sess.host || sess.connectionId
@@ -452,14 +280,12 @@ export default function MonitorPage() {
       list.push({ id: sess.id, name })
       seen.add(hostKey)
     }
-    // 已保存但未连接的连接
     for (const conn of connections) {
       const hostKey = conn.host || conn.name
       if (seen.has(hostKey)) continue
       list.push({ id: conn.id, name: conn.name })
       seen.add(hostKey)
     }
-    // 同时按 IP/host 去重，避免同一主机出现在 sessions 和 connections 中
     const ipSeen = new Set<string>()
     const dedupedList: { id: string; name: string }[] = []
     for (const h of list) {
@@ -470,23 +296,20 @@ export default function MonitorPage() {
       }
     }
     setHosts(dedupedList)
-    if (dedupedList.length > 0 && selected.length === 0) {
-      setSelected([dedupedList[0]!.id])
+    if (dedupedList.length > 0) {
+      setSelected((prev) => (prev.length === 0 ? [dedupedList[0]!.id] : prev))
     }
-  }, [connections, sessions, selected.length])
+  }, [connections, sessions])
 
   // 采集单台主机数据
   const collectHostStats = useCallback(
     async (hostId: string): Promise<HostStats | null> => {
-      // 先查活跃 session
       const sess = sessions.find((s) => s.id === hostId && s.status === 'connected')
-      // 如果没有活跃 session，查已保存的连接
       const conn = connections.find((c) => c.id === hostId)
       if (!sess && !conn) return null
 
       try {
-        // 🚀 优化: 合并所有命令为一次 SSH exec，减少 7x 网络/SSH 开销
-        // 每个命令的输出用 ===XXX=== 标记分隔，后端顺序执行
+        // 合并所有命令为一次 SSH exec，减少 7x 网络/SSH 开销
         const combinedCmd = [
           "echo '===CPU_START==='",
           "(top -bn1 | head -5 | grep '%Cpu' || mpstat 2>/dev/null | tail -1 || sar -u 1 1 2>/dev/null | tail -1)",
@@ -523,7 +346,6 @@ export default function MonitorPage() {
           const idx = output.indexOf(marker)
           if (idx !== -1) {
             const start = idx + marker.length
-            // Find next marker or end
             let end = output.length
             for (const n of sectionNames) {
               const nextMarker = `===${n}_START===`
@@ -543,7 +365,6 @@ export default function MonitorPage() {
         const net = parseNetRxTx(sections.NET || '')
         const now = Date.now()
 
-        // 计算网速（差值 / 时间间隔）
         const prev = prevNetRef.current[hostId]
         let netRxSpeed = 0
         let netTxSpeed = 0
@@ -558,7 +379,6 @@ export default function MonitorPage() {
 
         const topProcs = parseTopProcs(sections.PROC || '')
         const ioRaw = parseDiskIo(sections.IO || '')
-        // 限制 IO 值在合理范围（最大 10 GB/s）
         if (ioRaw.readBps > 10e9) ioRaw.readBps = 0
         if (ioRaw.writeBps > 10e9) ioRaw.writeBps = 0
 
@@ -591,7 +411,6 @@ export default function MonitorPage() {
 
     try {
       if (isMock) {
-        // 无活跃连接时提示
         setError('请先连接 SSH 服务器以采集监控数据')
         setLoading(false)
         return
@@ -608,11 +427,9 @@ export default function MonitorPage() {
           const hostId = selected[i]!
           newStats[hostId] = s
 
-          // 更新历史
           setHistory((prev) => {
             const h = prev[hostId] || []
             h.push({ time: now, cpu: s.cpu, mem: s.memory.pct, disk: s.disk.pct })
-            // 保留最近 60 个点
             const trimmed = h.slice(-60)
             return { ...prev, [hostId]: trimmed }
           })
@@ -620,7 +437,6 @@ export default function MonitorPage() {
       }
 
       setStats((prev) => ({ ...prev, ...newStats }))
-      // 告警评估
       const evaluate = useAlertStore.getState().evaluate
       for (const id of selected) {
         const s = newStats[id]
@@ -677,7 +493,7 @@ export default function MonitorPage() {
         setHealthError(true)
       }
     } catch {
-      setHealthError(true) // Bridge 不可达时标记错误
+      setHealthError(true)
     }
   }, [])
 
@@ -694,16 +510,48 @@ export default function MonitorPage() {
     return () => stopAutoRefresh()
   }, [stopAutoRefresh])
 
-  const toggleHost = (id: string) => {
+  const toggleHost = useCallback((id: string) => {
     setSelected((prev) => (prev.includes(id) ? prev.filter((h) => h !== id) : [...prev, id]))
-  }
+  }, [])
 
   // 手动刷新
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     stopAutoRefresh()
     await collectAll()
     startAutoRefresh()
-  }
+  }, [stopAutoRefresh, collectAll, startAutoRefresh])
+
+  // 主机列表映射为 id → name 的缓存
+  const hostNameMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const h of hosts) {
+      map.set(h.id, h.name)
+    }
+    return map
+  }, [hosts])
+
+  // Bridge 健康信息格式化
+  const healthDisplay = useMemo(() => {
+    if (!health) return null
+    const d = Math.floor(health.uptime / 86400)
+    const h = Math.floor((health.uptime % 86400) / 3600)
+    const m = Math.floor((health.uptime % 3600) / 60)
+    return {
+      uptime: d > 0 ? `${d}d${h}h${m}m` : `${h}h${m}m`,
+      version: health.version,
+      connections: health.connections?.active ?? 'N/A',
+    }
+  }, [health])
+
+  // 选中的主机数据渲染列表
+  const selectedHostsData = useMemo(() => {
+    return selected.map((id) => ({
+      id,
+      name: hostNameMap.get(id) || id.slice(0, 8),
+      stats: stats[id],
+      history: history[id] || [],
+    }))
+  }, [selected, hostNameMap, stats, history])
 
   return (
     <div className="flex h-full flex-col">
@@ -713,7 +561,6 @@ export default function MonitorPage() {
         <h2 className="text-sm font-semibold text-slate-200">主机性能看板</h2>
 
         <div className="ml-auto flex items-center gap-3">
-          {/* 刷新间隔选择 */}
           <div className="flex items-center gap-1">
             <span className="text-[11px] text-slate-500">刷新</span>
             <select
@@ -729,7 +576,6 @@ export default function MonitorPage() {
             </select>
           </div>
 
-          {/* 刷新按钮 */}
           <button
             onClick={handleRefresh}
             disabled={loading || selected.length === 0}
@@ -739,7 +585,6 @@ export default function MonitorPage() {
             刷新
           </button>
 
-          {/* 扫描主机 */}
           <button
             onClick={scanHosts}
             className="flex items-center gap-1 rounded-md border border-slate-600/50 px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
@@ -760,36 +605,23 @@ export default function MonitorPage() {
       />
 
       {/* ─── 健康概览卡片 ─── */}
-      {health && !healthError && (
+      {healthDisplay && !healthError && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-700/30 px-3 py-2 md:gap-4 md:overflow-x-auto md:px-4">
-          {/* Bridge 运行时间 */}
           <div className="flex shrink-0 items-center gap-1.5">
             <Activity size={12} className="text-green-400" />
             <span className="text-[10px] text-slate-500">运行</span>
-            <span className="font-mono text-[11px] text-slate-300">
-              {(() => {
-                const d = Math.floor(health.uptime / 86400)
-                const h = Math.floor((health.uptime % 86400) / 3600)
-                const m = Math.floor((health.uptime % 3600) / 60)
-                return d > 0 ? `${d}d${h}h${m}m` : `${h}h${m}m`
-              })()}
-            </span>
+            <span className="font-mono text-[11px] text-slate-300">{healthDisplay.uptime}</span>
           </div>
-          {/* Node 版本 */}
           <div className="flex shrink-0 items-center gap-1.5">
             <Server size={12} className="text-cyan-400" />
             <span className="text-[10px] text-slate-500">Node</span>
-            <span className="font-mono text-[11px] text-slate-300">{health.version}</span>
+            <span className="font-mono text-[11px] text-slate-300">{healthDisplay.version}</span>
           </div>
-          {/* 活跃连接 */}
           <div className="flex shrink-0 items-center gap-1.5">
             <Network size={12} className="text-amber-400" />
             <span className="text-[10px] text-slate-500">连接</span>
-            <span className="font-mono text-[11px] text-slate-300">
-              {health.connections?.active ?? 'N/A'}
-            </span>
+            <span className="font-mono text-[11px] text-slate-300">{healthDisplay.connections}</span>
           </div>
-          {/* 最近告警 */}
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <Bell
               size={12}
@@ -853,163 +685,170 @@ export default function MonitorPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {selected.map((id) => {
-              const s = stats[id]
-              const h = history[id] || []
-
-              return (
-                <div key={id} className="rounded-lg border border-slate-700/50 bg-slate-800/60 p-4">
-                  {/* 主机头部 */}
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Server size={14} className="text-slate-400" />
-                      <span className="text-sm font-medium text-slate-200">
-                        {hosts.find((h) => h.id === id)?.name || id.slice(0, 8)}
-                      </span>
-                      <span className="text-[11px] text-slate-500">{s?.host || ''}</span>
-                      {s && (
-                        <span className="text-[10px] text-slate-600">
-                          {new Date(s.timestamp).toLocaleTimeString()}
-                        </span>
-                      )}
-                    </div>
+            {selectedHostsData.map(({ id, name, stats: s, history: h }) => (
+              <div key={id} className="rounded-lg border border-slate-700/50 bg-slate-800/60 p-4">
+                {/* 主机头部 */}
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Server size={14} className="text-slate-400" />
+                    <span className="text-sm font-medium text-slate-200">{name}</span>
+                    <span className="text-[11px] text-slate-500">{s?.host || ''}</span>
                     {s && (
-                      <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                        <span>运行 {s.uptime}</span>
-                        {s.loadAvg && <span className="ml-1">| 负载 {s.loadAvg}</span>}
-                      </div>
+                      <span className="text-[10px] text-slate-600">
+                        {new Date(s.timestamp).toLocaleTimeString()}
+                      </span>
                     )}
                   </div>
-
-                  {!s ? (
-                    <div className="flex items-center justify-center py-8 text-[12px] text-slate-600">
-                      <Loader2 size={16} className="mr-2 animate-spin" />
-                      正在采集数据...
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {/* CPU */}
-                      <div>
-                        <div className="mb-1 flex items-center gap-2">
-                          <Cpu size={12} className="text-cyan-500" />
-                          <ProgressBar
-                            value={s.cpu}
-                            label="CPU"
-                            color="from-cyan-500 to-cyan-400"
-                          />
-                        </div>
-                        <Sparkline data={h.map((p) => p.cpu)} color="#06b6d4" />
-                      </div>
-
-                      {/* 内存 */}
-                      <div>
-                        <div className="mb-1 flex items-center gap-2">
-                          <MemoryStick size={12} className="text-violet-500" />
-                          <ProgressBar
-                            value={s.memory.pct}
-                            label="内存"
-                            sub={`${formatBytes(s.memory.used * 1024)} / ${formatBytes(s.memory.total * 1024)}`}
-                            color="from-violet-500 to-violet-400"
-                          />
-                        </div>
-                        <Sparkline data={h.map((p) => p.mem)} color="#8b5cf6" />
-                      </div>
-
-                      {/* 磁盘 */}
-                      <div>
-                        <div className="mb-1 flex items-center gap-2">
-                          <HardDrive size={12} className="text-emerald-500" />
-                          <ProgressBar
-                            value={s.disk.pct}
-                            label="磁盘 /"
-                            sub={`${formatBytes(s.disk.used * 1024)} / ${formatBytes(s.disk.total * 1024)}`}
-                            color="from-emerald-500 to-emerald-400"
-                          />
-                        </div>
-                        <Sparkline data={h.map((p) => p.disk)} color="#10b981" />
-                      </div>
-
-                      {/* 网络 */}
-                      <div className="flex items-center gap-4 border-t border-slate-700/30 pt-1">
-                        <Network size={12} className="text-amber-500" />
-                        <div className="flex gap-4 text-[11px]">
-                          <span className="text-slate-400">
-                            ↓{' '}
-                            <span className="font-mono text-slate-300">{formatSpeed(s.netRx)}</span>
-                          </span>
-                          <span className="text-slate-400">
-                            ↑{' '}
-                            <span className="font-mono text-slate-300">{formatSpeed(s.netTx)}</span>
-                          </span>
-                        </div>
-                        {/* 磁盘 IO */}
-                        <HardDrive size={12} className="text-teal-500" />
-                        <div className="flex gap-4 text-[11px]">
-                          <span className="text-slate-400">
-                            R{' '}
-                            <span className="font-mono text-slate-300">
-                              {formatSpeed(s.io.readBps)}
-                            </span>
-                          </span>
-                          <span className="text-slate-400">
-                            W{' '}
-                            <span className="font-mono text-slate-300">
-                              {formatSpeed(s.io.writeBps)}
-                            </span>
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Top 5 进程 */}
-                      {s.topProcs.length > 0 && (
-                        <div className="border-t border-slate-700/30 pt-2">
-                          <div className="mb-1.5 flex items-center gap-1 text-[10px] text-slate-500">
-                            <Cpu size={10} className="text-cyan-500" />
-                            Top 5 进程
-                          </div>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-[10px]">
-                              <thead>
-                                <tr className="text-slate-600">
-                                  <th className="pr-2 text-left font-normal">PID</th>
-                                  <th className="pr-2 text-left font-normal">USER</th>
-                                  <th className="pr-2 text-right font-normal">CPU%</th>
-                                  <th className="pr-2 text-right font-normal">MEM%</th>
-                                  <th className="text-left font-normal">COMMAND</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {s.topProcs.map((p, i) => (
-                                  <tr
-                                    key={p.pid}
-                                    className={i % 2 === 0 ? 'text-slate-400' : 'text-slate-500'}
-                                  >
-                                    <td className="pr-2 font-mono">{p.pid}</td>
-                                    <td className="pr-2">{p.user}</td>
-                                    <td className="pr-2 text-right font-mono">{p.cpu}</td>
-                                    <td className="pr-2 text-right font-mono">{p.mem}</td>
-                                    <td className="max-w-[120px] truncate">{p.command}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
+                  {s && (
+                    <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                      <span>运行 {s.uptime}</span>
+                      {s.loadAvg && <span className="ml-1">| 负载 {s.loadAvg}</span>}
                     </div>
                   )}
                 </div>
-              )
-            })}
+
+                {!s ? (
+                  <div className="flex items-center justify-center py-8 text-[12px] text-slate-600">
+                    <Loader2 size={16} className="mr-2 animate-spin" />
+                    正在采集数据...
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* CPU */}
+                    <div>
+                      <div className="mb-1 flex items-center gap-2">
+                        <Cpu size={12} className="text-cyan-500" />
+                        <ProgressBar
+                          value={s.cpu}
+                          label="CPU"
+                          color="from-cyan-500 to-cyan-400"
+                        />
+                      </div>
+                      <Sparkline data={h.map((p) => p.cpu)} color="#06b6d4" />
+                    </div>
+
+                    {/* 内存 */}
+                    <div>
+                      <div className="mb-1 flex items-center gap-2">
+                        <MemoryStick size={12} className="text-violet-500" />
+                        <ProgressBar
+                          value={s.memory.pct}
+                          label="内存"
+                          sub={`${formatBytes(s.memory.used * 1024)} / ${formatBytes(s.memory.total * 1024)}`}
+                          color="from-violet-500 to-violet-400"
+                        />
+                      </div>
+                      <Sparkline data={h.map((p) => p.mem)} color="#8b5cf6" />
+                    </div>
+
+                    {/* 磁盘 */}
+                    <div>
+                      <div className="mb-1 flex items-center gap-2">
+                        <HardDrive size={12} className="text-emerald-500" />
+                        <ProgressBar
+                          value={s.disk.pct}
+                          label="磁盘 /"
+                          sub={`${formatBytes(s.disk.used * 1024)} / ${formatBytes(s.disk.total * 1024)}`}
+                          color="from-emerald-500 to-emerald-400"
+                        />
+                      </div>
+                      <Sparkline data={h.map((p) => p.disk)} color="#10b981" />
+                    </div>
+
+                    {/* 网络 */}
+                    <div className="flex items-center gap-4 border-t border-slate-700/30 pt-1">
+                      <Network size={12} className="text-amber-500" />
+                      <div className="flex gap-4 text-[11px]">
+                        <span className="text-slate-400">
+                          ↓{' '}
+                          <span className="font-mono text-slate-300">{formatSpeed(s.netRx)}</span>
+                        </span>
+                        <span className="text-slate-400">
+                          ↑{' '}
+                          <span className="font-mono text-slate-300">{formatSpeed(s.netTx)}</span>
+                        </span>
+                      </div>
+                      <HardDrive size={12} className="text-teal-500" />
+                      <div className="flex gap-4 text-[11px]">
+                        <span className="text-slate-400">
+                          R{' '}
+                          <span className="font-mono text-slate-300">
+                            {formatSpeed(s.io.readBps)}
+                          </span>
+                        </span>
+                        <span className="text-slate-400">
+                          W{' '}
+                          <span className="font-mono text-slate-300">
+                            {formatSpeed(s.io.writeBps)}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Top 5 进程 */}
+                    {s.topProcs.length > 0 && (
+                      <div className="border-t border-slate-700/30 pt-2">
+                        <div className="mb-1.5 flex items-center gap-1 text-[10px] text-slate-500">
+                          <Cpu size={10} className="text-cyan-500" />
+                          Top 5 进程
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-[10px]">
+                            <thead>
+                              <tr className="text-slate-600">
+                                <th className="pr-2 text-left font-normal">PID</th>
+                                <th className="pr-2 text-left font-normal">USER</th>
+                                <th className="pr-2 text-right font-normal">CPU%</th>
+                                <th className="pr-2 text-right font-normal">MEM%</th>
+                                <th className="text-left font-normal">COMMAND</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {s.topProcs.map((p, i) => (
+                                <tr key={`${i}-${p.pid}`} className="text-slate-400">
+                                  <td className="pr-2 font-mono text-slate-500">{p.pid}</td>
+                                  <td className="pr-2 text-slate-500">{p.user}</td>
+                                  <td className="pr-2 text-right font-mono">
+                                    <span
+                                      className={
+                                        p.cpu > 50
+                                          ? 'text-red-400'
+                                          : p.cpu > 20
+                                            ? 'text-amber-400'
+                                            : 'text-emerald-400'
+                                      }
+                                    >
+                                      {p.cpu.toFixed(1)}
+                                    </span>
+                                  </td>
+                                  <td className="pr-2 text-right font-mono">{p.mem.toFixed(1)}</td>
+                                  <td className="max-w-[160px] truncate text-slate-500">
+                                    {p.command}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
-        {/* ─── 告警面板 ─── */}
-        <div className="mt-4 space-y-3">
-          <AlertSettings />
-          <AlertHistory />
-        </div>
+        {/* 告警历史 */}
+        {selected.length > 0 && alertHistory.length > 0 && (
+          <div className="mt-4 rounded-lg border border-slate-700/50 bg-slate-800/60 p-4">
+            <AlertHistory />
+          </div>
+        )}
       </div>
+
+      {/* 告警设置侧边栏 */}
+      <AlertSettings />
     </div>
   )
 }
