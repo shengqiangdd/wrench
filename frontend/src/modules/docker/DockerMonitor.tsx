@@ -138,12 +138,18 @@ export default function DockerMonitor({ connectionId, containers: propContainers
         const lines = output.trim().split('\n').filter(Boolean)
         const list: DockerContainer[] = lines
           .map((line: string) => {
-            try { return JSON.parse(line) } catch { return null }
+            try {
+              return JSON.parse(line)
+            } catch {
+              return null
+            }
           })
           .filter(Boolean)
         setContainers(list)
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [connectionId])
 
   // 挂载时获取容器列表（用 ref 避免 lint 警告）
