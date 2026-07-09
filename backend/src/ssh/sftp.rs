@@ -29,7 +29,7 @@ fn attrs_to_entry(name: String, parent_path: &str, attrs: &FileAttributes) -> Fi
         format!("{}/{}", parent_path, name)
     };
 
-    let r#if = attrs.is_dir();
+    let is_dir = attrs.is_dir();
     let size = attrs.size.unwrap_or(0) as i64;
 
     let perm_str = attrs
