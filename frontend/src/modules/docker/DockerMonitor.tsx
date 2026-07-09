@@ -113,14 +113,47 @@ function MiniChart({
   )
 }
 
-export default function DockerMonitor({ connectionId, containers }: Props) {
+export default function DockerMonitor({ connectionId, containers: propContainers }: Props) {
   const [monitors, setMonitors] = useState<MonitorState[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [autoRefresh, setAutoRefresh] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const dataRef = useRef<MonitorState[]>([])
   const selectedRef = useRef<Set<string>>(new Set())
+
+  // 自己获取容器列表（不依赖父组件传递）
+  const [containers, setContainers] = useState<DockerContainer[]>(propContainers)
+  const fetchContainers = useCallback(async () => {
+    if (!connectionId) return
+    try {
+      const res = await fetch('/api/docker/ps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId, all: true }),
+      })
+      const json = (await res.json()) as ApiResponse
+      if (json.success) {
+        const output = (json.data?.data ?? json.data ?? '').toString()
+        const lines = output.trim().split('\n').filter(Boolean)
+        const list: DockerContainer[] = lines
+          .map((line: string) => {
+            try { return JSON.parse(line) } catch { return null }
+          })
+          .filter(Boolean)
+        setContainers(list)
+      }
+    } catch { /* ignore */ }
+  }, [connectionId])
+
+  // 挂载时获取容器列表（用 ref 避免 lint 警告）
+  const fetchedRef = useRef(false)
+  useEffect(() => {
+    if (!fetchedRef.current && connectionId) {
+      fetchedRef.current = true
+      void fetchContainers()
+    }
+  }, [connectionId, fetchContainers])
 
   useEffect(() => {
     dataRef.current = monitors

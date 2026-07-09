@@ -134,7 +134,7 @@ export default function DockerPage() {
   const refresh = useCallback(() => {
     if (tab === 'containers') fetchContainers()
     else if (tab === 'images') fetchImages()
-    // monitor tab has its own polling
+    else if (tab === 'monitor') fetchContainers()
   }, [tab, fetchContainers, fetchImages])
 
   // 自动刷新
