@@ -1323,7 +1323,8 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
 
       {/* 文件列表 */}
       <div
-        className="relative flex min-h-0 flex-1 flex-col"
+        className="relative grid min-h-0 flex-1"
+        style={{ gridTemplateRows: '1fr' }}
         onContextMenu={handleEmptyContextMenu}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}

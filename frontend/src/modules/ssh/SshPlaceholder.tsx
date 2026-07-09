@@ -671,34 +671,32 @@ export default function SshPlaceholder() {
 
               {/* AI 侧边栏（桌面端侧栏，移动端全屏覆盖） */}
               {aiOpen && (
-                <div className="fixed inset-0 z-40 bg-slate-950 md:static md:z-auto md:shrink-0 md:border-l md:border-slate-700/50">
-                  <div className="flex h-full flex-col">
-                    <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-2 md:hidden">
-                      <span className="text-xs font-medium text-slate-400">AI Agent</span>
-                      <button
-                        onClick={() => setAiOpen(false)}
-                        className="btn-icon text-slate-500 hover:text-slate-300"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <div className="mobile-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
-                      {activeSession ? (
-                        <AiSidebar
-                          sessionId={activeSession.id}
-                          connectionId={activeSession.id}
-                          onClose={() => setAiOpen(false)}
-                        />
-                      ) : (
-                        <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-                          <Brain size={32} className="mb-3 text-slate-600" />
-                          <p className="text-sm text-slate-400">请先连接服务器</p>
-                          <p className="mt-1 text-xs text-slate-600">
-                            AI Agent 需要 SSH 连接才能使用
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                <div className="fixed inset-0 z-40 flex flex-col bg-slate-950 md:static md:z-auto md:shrink-0 md:border-l md:border-slate-700/50">
+                  <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-2 md:hidden">
+                    <span className="text-xs font-medium text-slate-400">AI Agent</span>
+                    <button
+                      onClick={() => setAiOpen(false)}
+                      className="btn-icon text-slate-500 hover:text-slate-300"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                    {activeSession ? (
+                      <AiSidebar
+                        sessionId={activeSession.id}
+                        connectionId={activeSession.id}
+                        onClose={() => setAiOpen(false)}
+                      />
+                    ) : (
+                      <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+                        <Brain size={32} className="mb-3 text-slate-600" />
+                        <p className="text-sm text-slate-400">请先连接服务器</p>
+                        <p className="mt-1 text-xs text-slate-600">
+                          AI Agent 需要 SSH 连接才能使用
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

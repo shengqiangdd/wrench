@@ -93,6 +93,7 @@ export default function VirtualList<T>({
     minHeight: 0,
     overscrollBehavior: 'contain' as const,
     WebkitOverflowScrolling: 'touch' as const,
+    touchAction: 'pan-y' as const,
   }
 
   if (!useVirtual) {
