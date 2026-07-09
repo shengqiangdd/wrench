@@ -1,4 +1,4 @@
-import { memo, useCallback, useState, useEffect, useReducer } from 'react'
+import { memo, useCallback, useState } from 'react'
 import {
   Layers,
   RefreshCw,
@@ -44,19 +44,6 @@ function DockerComposeInner({ connectionId }: Props) {
   const [logData, setLogData] = useState<{ key: string; content: string } | null>(null)
   const [search, setSearch] = useState('')
   const [manualPath, setManualPath] = useState('')
-
-  // 启动时自动发现 compose 文件（用 dispatch 规避 set-state-in-effect 规则）
-  const [initTrigger, kickstart] = useReducer(
-    (_: unknown, __: unknown) => ({}),
-    undefined as unknown,
-  )
-  useEffect(() => {
-    if (!initTrigger) {
-      kickstart(undefined)
-      discoverProjects()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const handleManualLoad = useCallback(async () => {
     if (!manualPath.trim()) return
@@ -286,7 +273,7 @@ function DockerComposeInner({ connectionId }: Props) {
         <button
           onClick={() => handleManualLoad()}
           disabled={loading || !manualPath.trim()}
-          className="rounded-md bg-wrench-600 px-3 py-1.5 text-xs text-white transition-colors hover:bg-wrench-500 disabled:opacity-50"
+          className="bg-wrench-600 hover:bg-wrench-500 rounded-md px-3 py-1.5 text-xs text-white transition-colors disabled:opacity-50"
         >
           加载
         </button>
@@ -320,7 +307,7 @@ function DockerComposeInner({ connectionId }: Props) {
                   ) : (
                     <ChevronRight size={14} className="shrink-0 text-slate-500" />
                   )}
-                  <Layers size={14} className="shrink-0 text-wrench-400" />
+                  <Layers size={14} className="text-wrench-400 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-slate-200">
                       {project.name}

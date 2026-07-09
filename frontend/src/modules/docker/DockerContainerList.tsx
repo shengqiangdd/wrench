@@ -104,9 +104,7 @@ const ContainerRow = memo(function ContainerRow({
             )}
             {c.State === 'exited' && (
               <button
-                onClick={() =>
-                  onConfirmDelete(c.Names || shortId, c.Names || shortId)
-                }
+                onClick={() => onConfirmDelete(c.Names || shortId, c.Names || shortId)}
                 disabled={isLoading}
                 className="min-h-[44px] min-w-[44px] rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400 disabled:opacity-40"
                 title="删除"
@@ -179,14 +177,10 @@ function ConfirmDeleteModal({
           </div>
           <div>
             <h3 className="text-sm font-semibold text-slate-200">确认删除容器</h3>
-            <p className="mt-0.5 text-xs text-slate-400">
-              此操作不可恢复
-            </p>
+            <p className="mt-0.5 text-xs text-slate-400">此操作不可恢复</p>
           </div>
         </div>
-        <p className="mb-5 rounded-md bg-slate-800/60 px-3 py-2 text-xs text-slate-300">
-          {name}
-        </p>
+        <p className="mb-5 rounded-md bg-slate-800/60 px-3 py-2 text-xs text-slate-300">{name}</p>
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
