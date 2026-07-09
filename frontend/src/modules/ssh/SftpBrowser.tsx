@@ -12,7 +12,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
-import VirtualList from '../../components/VirtualList'
 import {
   Folder,
   File,
@@ -1323,8 +1322,12 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
 
       {/* 文件列表 */}
       <div
-        className="relative grid min-h-0 flex-1"
-        style={{ gridTemplateRows: '1fr' }}
+        className="relative min-h-0 flex-1 overflow-y-auto"
+        style={{
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',
+          overscrollBehavior: 'contain',
+        }}
         onContextMenu={handleEmptyContextMenu}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -1342,13 +1345,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             </p>
           </div>
         ) : (
-          <VirtualList
-            items={displayEntries}
-            itemHeight={28}
-            renderItem={renderFileItem}
-            paddingBottom={4}
-            getKey={(item: SftpEntry) => item.path}
-          />
+          displayEntries.map((entry, i) => renderFileItem(entry, i))
         )}
       </div>
 

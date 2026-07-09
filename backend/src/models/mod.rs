@@ -76,9 +76,12 @@ impl SftpResponse {
     /// 设置 stat 结果
     pub fn with_stat(mut self, entry: &crate::ssh::sftp::FileEntry) -> Self {
         self.size = Some(entry.size as u64);
-        self.is_dir = Some(entry.is_dir);
+        self.is_dir = Some(entry.r#type == "directory");
         self.permissions = Some(entry.permissions.clone());
-        self.modified = Some(entry.modified.clone());
+        self.modified = Some(chrono::DateTime::from_timestamp(entry.modify_time, 0)
+            .unwrap_or_default()
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string());
         self
     }
 }

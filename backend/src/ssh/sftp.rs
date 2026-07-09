@@ -13,10 +13,12 @@ use crate::ssh::pool::SshSession;
 pub struct FileEntry {
     pub name: String,
     pub path: String,
-    pub is_dir: bool,
+    #[serde(alias = "is_dir")]
+    pub r#type: String,
     pub size: i64,
     pub permissions: String,
-    pub modified: String,
+    #[serde(alias = "modified")]
+    pub modify_time: i64,
 }
 
 /// Convert a `Metadata` (which is `FileAttributes`) into our `FileEntry`.
@@ -27,7 +29,7 @@ fn attrs_to_entry(name: String, parent_path: &str, attrs: &FileAttributes) -> Fi
         format!("{}/{}", parent_path, name)
     };
 
-    let is_dir = attrs.is_dir();
+    let r#if = attrs.is_dir();
     let size = attrs.size.unwrap_or(0) as i64;
 
     let perm_str = attrs
@@ -35,9 +37,9 @@ fn attrs_to_entry(name: String, parent_path: &str, attrs: &FileAttributes) -> Fi
         .map(|p| format!("{:o}", p & 0o7777))
         .unwrap_or_else(|| "----".to_string());
 
-    let modified = attrs.mtime.map(|ts| format_timestamp(ts as u64)).unwrap_or_default();
+    let modify_time = attrs.mtime.unwrap_or(0) as i64;
 
-    FileEntry { name, path, is_dir, size, permissions: perm_str, modified }
+    FileEntry { name, path, r#type: if is_dir { "directory".to_string() } else { "file".to_string() }, size, permissions: perm_str, modify_time }
 }
 
 fn format_timestamp(secs: u64) -> String {
@@ -76,8 +78,10 @@ pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec
 
     // Sort: directories first, then by name
     entries.sort_by(|a, b| {
-        if a.is_dir != b.is_dir {
-            b.is_dir.cmp(&a.is_dir)
+        let a_is_dir = a.r#type == "directory";
+        let b_is_dir = b.r#type == "directory";
+        if a_is_dir != b_is_dir {
+            b_is_dir.cmp(&a_is_dir)
         } else {
             a.name.cmp(&b.name)
         }
@@ -224,19 +228,6 @@ mod tests {
     use russh_sftp::protocol::FileAttributes;
 
     #[test]
-    fn test_format_timestamp() {
-        // Unix timestamp for 2024-01-15 10:30:00 UTC
-        let ts = format_timestamp(1705314600);
-        assert_eq!(ts, "2024-01-15 10:30:00");
-    }
-
-    #[test]
-    fn test_format_timestamp_zero() {
-        let ts = format_timestamp(0);
-        assert_eq!(ts, "1970-01-01 00:00:00");
-    }
-
-    #[test]
     fn test_attrs_to_entry_regular_file() {
         let attrs = FileAttributes {
             permissions: Some(0o100644), // regular file, rw-r--r--
@@ -247,10 +238,10 @@ mod tests {
 
         let entry = attrs_to_entry("test.txt".into(), "/home/user", &attrs);
         assert_eq!(entry.name, "test.txt");
-        assert!(!entry.is_dir);
+        assert_eq!(entry.r#type, "file");
         assert_eq!(entry.size, 1024);
         assert_eq!(entry.permissions, "644");
-        assert_eq!(entry.modified, "2024-01-15 10:30:00");
+        assert_eq!(entry.modify_time, 1705314600);
     }
 
     #[test]
@@ -259,7 +250,7 @@ mod tests {
 
         let entry = attrs_to_entry("subdir".into(), "/home/user", &attrs);
         assert_eq!(entry.name, "subdir");
-        assert!(entry.is_dir);
+        assert_eq!(entry.r#type, "directory");
         assert_eq!(entry.permissions, "777");
     }
 
@@ -268,7 +259,7 @@ mod tests {
         let attrs = FileAttributes { permissions: Some(0), size: Some(0), ..FileAttributes::default() };
 
         let entry = attrs_to_entry("unknown".into(), "/tmp", &attrs);
-        assert!(!entry.is_dir);
+        assert_eq!(entry.r#type, "file");
         assert_eq!(entry.permissions, "0");
         assert_eq!(entry.size, 0);
     }
