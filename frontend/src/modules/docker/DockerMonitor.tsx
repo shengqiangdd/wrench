@@ -26,7 +26,6 @@ const MAX_POINTS = 120 // 2分钟数据（1秒1个点）
 const INTERVAL_MS = 2000 // 2秒轮询
 
 // SVG 图表尺寸
-const CHART_W = 300
 const CHART_H = 100
 
 function MiniChart({
@@ -34,46 +33,50 @@ function MiniChart({
   color,
   maxValue,
   unit,
+  valueAccessor,
 }: {
   data: DataPoint[]
   color: string
   maxValue: number
   unit: string
+  valueAccessor?: (d: DataPoint) => number
 }) {
   if (data.length < 2) {
     return (
-      <div
-        className="flex items-center justify-center text-[10px] text-slate-600"
-        style={{ width: CHART_W, height: CHART_H }}
-      >
-        等待数据...
-      </div>
+      <div className="flex items-center justify-center text-[10px] text-slate-600">等待数据...</div>
     )
   }
 
+  const getVal = valueAccessor || ((d: DataPoint) => d.cpu)
+
   const points = data
     .map((d, i) => {
-      const x = (i / (MAX_POINTS - 1)) * CHART_W
-      const y = CHART_H - (Math.min(d.cpu, maxValue) / maxValue) * (CHART_H - 8) - 4
+      const x = (i / (MAX_POINTS - 1)) * 100
+      const y = CHART_H - (Math.min(getVal(d), maxValue) / maxValue) * (CHART_H - 8) - 4
       return `${x},${y}`
     })
     .join(' ')
 
   const latest = data[data.length - 1]
   if (!latest) return null
-  const val = unit === '%' ? latest.cpu.toFixed(1) : latest.mem.toFixed(0)
+  const val = unit === '%' ? getVal(latest).toFixed(1) : latest.mem.toFixed(0)
   const displayVal = unit === '%' ? `${val}%` : `${val}MB`
 
   return (
-    <div className="relative" style={{ width: CHART_W, height: CHART_H }}>
-      <svg width={CHART_W} height={CHART_H} className="overflow-visible">
+    <div className="relative">
+      <svg
+        width="100%"
+        viewBox={`0 0 100 ${CHART_H}`}
+        preserveAspectRatio="none"
+        className="h-[100px] overflow-visible"
+      >
         {/* 网格线 */}
         {[0.25, 0.5, 0.75].map((f) => (
           <line
             key={f}
             x1={0}
             y1={CHART_H - f * (CHART_H - 8) - 4}
-            x2={CHART_W}
+            x2={100}
             y2={CHART_H - f * (CHART_H - 8) - 4}
             stroke="rgba(148,163,184,0.08)"
             strokeWidth={1}
@@ -87,10 +90,11 @@ function MiniChart({
           strokeWidth={1.5}
           strokeLinejoin="round"
           strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
         />
         {/* 面积填充 */}
         <polyline
-          points={`0,${CHART_H} ${points} ${CHART_W},${CHART_H}`}
+          points={`0,${CHART_H} ${points} 100,${CHART_H}`}
           fill={`${color}15`}
           stroke="none"
         />
@@ -139,6 +143,17 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
   const deselectAll = useCallback(() => {
     setSelectedIds(new Set())
   }, [])
+
+  // 初始化时自动选中所有运行中的容器
+  useEffect(() => {
+    if (containers.length > 0 && selectedIds.size === 0) {
+      const running = containers.filter((c) => c.State === 'running')
+      if (running.length > 0) {
+        setSelectedIds(new Set(running.map((c) => c.ID)))
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containers])
 
   // 获取 stats
   function parseSize(s: string): number {
@@ -429,10 +444,11 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
                       </div>
                       <div className="flex items-center gap-3">
                         <MiniChart
-                          data={m.data.map((d) => ({ ...d, cpu: d.memPct }))}
+                          data={m.data}
                           color="#a78bfa"
                           maxValue={100}
                           unit="%"
+                          valueAccessor={(d) => d.memPct}
                         />
                         {latest && (
                           <div className="shrink-0 space-y-0.5 text-[10px] text-slate-500">

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { X } from 'lucide-react'
+import { X, Maximize2 } from 'lucide-react'
 import { getWsClientSync } from '../../services/websocket'
 
 const TERMINAL_THEME = {
@@ -32,6 +32,7 @@ interface Props {
   connectionId: string
   containerId: string
   shell?: string
+  /** Called when user clicks X button or backdrop — parent decides what to do */
   onClose: () => void
 }
 
@@ -76,7 +77,6 @@ export default function DockerTerminal({
     const reqId = `docker-shell-${containerId}`
     let connected = false
 
-    // 消息订阅
     const unsubReady = wsClient.on('docker_shell_ready', (msg) => {
       if (msg.connectionId !== connectionId && msg.requestId !== reqId) return
       connected = true
@@ -96,7 +96,6 @@ export default function DockerTerminal({
       connected = false
     })
 
-    // 连接容器 shell
     wsClient.send({
       type: 'docker_shell',
       connectionId,
@@ -105,7 +104,6 @@ export default function DockerTerminal({
       shell,
     })
 
-    // 键盘输入 → WebSocket
     const disposeInput = term.onData((data) => {
       if (!connected) return
       wsClient.send({
@@ -116,7 +114,6 @@ export default function DockerTerminal({
       })
     })
 
-    // 终端大小变化 → resize
     const disposeResize = term.onResize(({ cols, rows }) => {
       if (!connected) return
       wsClient.send({
@@ -128,7 +125,6 @@ export default function DockerTerminal({
       })
     })
 
-    // 窗口 resize → fit
     const onWindowResize = () => {
       if (fitAddon && connected) {
         fitAddon.fit()
@@ -143,7 +139,6 @@ export default function DockerTerminal({
       unsubReady()
       unsubOutput()
       unsubClosed()
-      // 关闭容器 shell
       if (connected) {
         wsClient.send({
           type: 'docker_shell_data',
@@ -157,35 +152,31 @@ export default function DockerTerminal({
   }, [connectionId, containerId, shell])
 
   return (
-    <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60"
-      onClick={onClose}
-    >
-      <div
-        className="mx-2 flex h-[80vh] w-full max-w-5xl flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60">
+      <div className="mx-2 flex h-[80vh] w-full max-w-5xl flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-2xl">
         {/* 标题栏 */}
         <div className="flex shrink-0 items-center border-b border-slate-700/50 px-4 py-2.5">
           <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
           <span className="ml-2 font-mono text-sm text-slate-200">
             Docker: <span className="text-wrench-400">{containerId.slice(0, 12)}</span>
           </span>
-          <span className="ml-2 text-xs text-slate-500">
-            {shell} — {connectionId}
-          </span>
+          <span className="ml-2 text-xs text-slate-500">{shell}</span>
           <div className="ml-auto flex items-center gap-2">
             <button
               onClick={() => fitAddonRef.current?.fit()}
-              className="rounded px-2 py-0.5 text-xs text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+              title="适应窗口大小"
             >
+              <Maximize2 size={12} />
               适应
             </button>
             <button
               onClick={onClose}
-              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
+              className="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+              title="关闭终端"
             >
-              <X size={16} />
+              <X size={14} />
+              关闭
             </button>
           </div>
         </div>
