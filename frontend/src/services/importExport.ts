@@ -80,7 +80,7 @@ export interface ExportData {
 }
 
 const EXPORT_VERSION = 2
-const EXPORT_MAGIC = 'SMARTBOX_EXPORT'
+const EXPORT_MAGIC = 'WRENCH_EXPORT'
 const APP_VERSION = 'v0.3.0'
 
 export const EXPORT_EXTENSION = '.wrench'

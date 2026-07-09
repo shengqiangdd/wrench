@@ -1,6 +1,6 @@
 // 哈希生成器插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   /** 使用 Web Crypto API 计算哈希 */
   async function computeHash(algorithm, text) {

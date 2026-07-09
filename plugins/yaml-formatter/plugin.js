@@ -1,6 +1,6 @@
 // YAML 格式化插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   /**
    * 极简 YAML → JS 对象解析器

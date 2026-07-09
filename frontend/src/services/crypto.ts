@@ -101,7 +101,7 @@ export async function verifyPassword(password: string, testEncrypted: string): P
 export async function createMasterPassword(
   password: string,
 ): Promise<{ encrypted: string; verifyToken: string }> {
-  const verifyToken = 'SMARTBOX_MASTER_' + Date.now()
+  const verifyToken = 'WRENCH_MASTER_' + Date.now()
   const encrypted = await encrypt(verifyToken, password)
   return { encrypted, verifyToken }
 }

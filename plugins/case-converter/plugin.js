@@ -1,6 +1,6 @@
 // 命名风格转换插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   /**
    * 将任意命名风格拆分为单词数组

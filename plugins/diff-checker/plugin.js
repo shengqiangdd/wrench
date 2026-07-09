@@ -1,6 +1,6 @@
 // 文本对比工具插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   /**
    * 简单 LCS 差分算法：返回逐行 diff 结果

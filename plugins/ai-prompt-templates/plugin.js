@@ -1,6 +1,6 @@
 // AI 提示词模板库插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   // ── 命令: 代码审查 ──
   api.registerCommand('prompt-code-review', {

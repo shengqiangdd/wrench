@@ -1,6 +1,6 @@
 // AI Agent 技能生成器插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   // ── 命令: 生成 Shell 脚本 ──
   api.registerCommand('ai-skill-generate', {

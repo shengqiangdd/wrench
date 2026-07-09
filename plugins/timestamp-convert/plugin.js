@@ -1,6 +1,6 @@
 // 时间戳转换插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   api.registerCommand('ts-to-date', {
     label: '时间戳 → 日期',

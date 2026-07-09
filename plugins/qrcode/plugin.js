@@ -1,6 +1,6 @@
 // 二维码生成/解析插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   // 生成二维码（使用在线 API）
   function generateQRCode(text, size) {

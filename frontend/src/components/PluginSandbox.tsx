@@ -205,6 +205,9 @@ export default function PluginSandbox({
     getPluginAPI: function() { return pluginAPI; }
   });
 
+  // 兼容旧插件 - SmartBox 别名
+  window.SmartBox = window.Wrench;
+
   // ── 接受主应用消息 ──
   window.addEventListener('message', function(event) {
     if (event.data && event.data.source === 'wrench-host') {

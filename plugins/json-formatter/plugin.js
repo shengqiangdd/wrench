@@ -1,6 +1,6 @@
 // JSON 格式化插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   api.registerCommand('json-format', {
     label: '格式化 JSON',

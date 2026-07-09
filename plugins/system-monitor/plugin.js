@@ -1,6 +1,6 @@
 // 系统监控插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   // ── 命令: CPU 监控 ──
   api.registerCommand('monitor-cpu', {

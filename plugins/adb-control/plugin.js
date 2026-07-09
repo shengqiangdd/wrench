@@ -1,6 +1,6 @@
 // ADB 远程控制插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   // ── 命令: 列出 ADB 设备 ──
   api.registerCommand('adb-list-devices', {

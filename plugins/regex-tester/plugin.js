@@ -1,6 +1,6 @@
 // 正则表达式测试器插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   api.registerCommand('regex-test', {
     label: '测试正则表达式',

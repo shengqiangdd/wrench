@@ -1,4 +1,4 @@
-const { chromium } = require('/home/agent/cow/智盒-SmartBox/frontend/node_modules/playwright')
+const { chromium } = require('/home/agent/cow/wrench/frontend/node_modules/playwright')
 const PORT = parseInt(process.argv[2] || '24923')
 const BASE = 'http://localhost:' + PORT
 const CHROME = '/app/ms-playwright/chromium-1169/chrome-linux/chrome'
@@ -8,7 +8,7 @@ function pass(m) { console.log('  [PASS] ' + m); ok++ }
 function no(m) { console.log('  [FAIL] ' + m); fail++ }
 
 async function main() {
-  console.log('=== SmartBox UI Test ===\n')
+  console.log('=== Wrench UI Test ===\n')
   const browser = await chromium.launch({ headless: true, executablePath: CHROME, args: ['--no-sandbox'] })
 
   // PC 1280x720

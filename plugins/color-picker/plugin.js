@@ -1,6 +1,6 @@
 // 颜色转换工具插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   /** 解析 HEX 颜色为 RGB 分量 */
   function hexToRgb(hex) {

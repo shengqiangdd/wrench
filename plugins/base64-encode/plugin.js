@@ -1,6 +1,6 @@
 // Base64 编解码插件
 (function () {
-  const api = SmartBox.getPluginAPI()
+  const api = Wrench.getPluginAPI()
 
   api.registerCommand('base64-encode', {
     label: 'Base64 编码',
