@@ -4,14 +4,12 @@ import {
   RefreshCw,
   Play,
   Square,
-  StopCircle,
   FileText,
   Loader2,
   ChevronRight,
   ChevronDown,
   Search,
   RotateCcw,
-  Power,
 } from 'lucide-react'
 
 function notify(message: string, type: 'success' | 'error' | 'info' = 'info') {
