@@ -7,7 +7,6 @@ interface CommandOutputProps {
   onClose: (index: number) => void
   onClear: () => void
   onSendToTerminal: (cmd: string) => void
-  onPanelClose?: () => void
 }
 
 export default function CommandOutput({
@@ -15,9 +14,9 @@ export default function CommandOutput({
   onClose,
   onClear,
   onSendToTerminal,
-  onPanelClose,
 }: CommandOutputProps) {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
 
   const handleCopy = async (text: string, idx: number) => {
     try {
@@ -41,16 +40,11 @@ export default function CommandOutput({
     <div className="flex h-full flex-col overflow-hidden">
       {/* 头部 */}
       <div className="flex shrink-0 items-center justify-between border-b border-slate-700/30 px-3 py-1.5">
-        <span className="text-xs font-medium text-slate-400">执行记录</span>
+        <span className="text-xs font-medium text-slate-400">
+          执行记录
+          <span className="ml-1 text-[10px] text-slate-600">({results.length})</span>
+        </span>
         <div className="flex items-center gap-1">
-          {onPanelClose && (
-            <button
-              onClick={onPanelClose}
-              className="flex min-h-[44px] items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-500 transition-colors hover:text-slate-300 md:hidden"
-            >
-              <X size={12} /> 关闭
-            </button>
-          )}
           <button
             onClick={onClear}
             className="flex min-h-[44px] items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-slate-500 transition-colors hover:bg-red-900/20 hover:text-red-400"
@@ -62,58 +56,72 @@ export default function CommandOutput({
 
       {/* 结果列表 */}
       <div className="flex-1 overflow-y-auto">
-        {results.map((result, idx) => (
-          <div key={idx} className="border-b border-slate-800/50 px-3 py-2">
-            {/* 命令头 */}
-            <div className="mb-1 flex items-center gap-2">
-              <span
-                className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-                  result.exitCode === 0 ? 'bg-emerald-500' : 'bg-red-500'
-                }`}
-              />
-              <code className="truncate font-mono text-[11px] font-medium text-slate-300">
-                {result.command}
-              </code>
-              <span className="shrink-0 text-[9px] text-slate-600">
-                exit: {result.exitCode ?? '?'}
-              </span>
-              <button
-                onClick={() => handleCopy(result.stdout + result.stderr, idx)}
-                className="ml-auto shrink-0 rounded p-0.5 text-slate-600 transition-colors hover:bg-slate-700/50 hover:text-slate-300"
-                title="复制输出"
-              >
-                {copiedIdx === idx ? (
-                  <Check size={11} className="text-emerald-400" />
-                ) : (
-                  <Copy size={11} />
-                )}
-              </button>
-              <button
-                onClick={() => onSendToTerminal(result.command)}
-                className="shrink-0 rounded p-0.5 text-slate-600 transition-colors hover:bg-violet-600/20 hover:text-violet-400"
-                title="发送命令到终端"
-              >
-                <Terminal size={11} />
-              </button>
-              <button
-                onClick={() => onClose(idx)}
-                className="shrink-0 rounded p-0.5 text-slate-600 transition-colors hover:bg-red-900/20 hover:text-red-400"
-                title="关闭"
-              >
-                <X size={11} />
-              </button>
-            </div>
+        {results.map((result, idx) => {
+          const isExpanded = expandedIdx === idx
+          const hasOutput = result.stdout || result.stderr
 
-            {/* 输出内容 */}
-            <pre className="max-h-64 overflow-auto rounded bg-slate-900/80 p-2 font-mono text-[10px] leading-relaxed text-slate-400">
-              {result.stdout && <span className="text-slate-400">{result.stdout}</span>}
-              {result.stderr && <span className="text-red-400">{result.stderr}</span>}
-              {!result.stdout && !result.stderr && (
-                <span className="text-slate-600">（无输出）</span>
+          return (
+            <div key={idx} className="border-b border-slate-800/50 px-3 py-2">
+              {/* 命令头 */}
+              <div className="mb-1 flex items-center gap-2">
+                <span
+                  className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+                    result.exitCode === 0 ? 'bg-emerald-500' : 'bg-red-500'
+                  }`}
+                />
+                <button
+                  onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <code className="block truncate font-mono text-[11px] font-medium text-slate-300">
+                    {result.command}
+                  </code>
+                </button>
+                <span className="shrink-0 text-[9px] text-slate-600">
+                  exit: {result.exitCode ?? '?'}
+                </span>
+                <button
+                  onClick={() => handleCopy(result.stdout + result.stderr, idx)}
+                  className="shrink-0 rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
+                  title="复制输出"
+                >
+                  {copiedIdx === idx ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                </button>
+                <button
+                  onClick={() => onClose(idx)}
+                  className="shrink-0 rounded p-1 text-slate-500 transition-colors hover:bg-red-900/20 hover:text-red-400"
+                  title="删除记录"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+
+              {/* 输出内容（展开时显示） */}
+              {isExpanded && hasOutput && (
+                <div className="mt-2 rounded-md bg-slate-950/50 p-2">
+                  {result.stdout && (
+                    <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-slate-300">
+                      {result.stdout}
+                    </pre>
+                  )}
+                  {result.stderr && (
+                    <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-red-400/80">
+                      {result.stderr}
+                    </pre>
+                  )}
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={() => onSendToTerminal(result.command)}
+                      className="flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-[10px] text-slate-400 transition-colors hover:bg-slate-700 hover:text-slate-200"
+                    >
+                      <Terminal size={10} /> 再次执行
+                    </button>
+                  </div>
+                </div>
               )}
-            </pre>
-          </div>
-        ))}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

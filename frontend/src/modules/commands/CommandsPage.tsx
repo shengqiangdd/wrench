@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo } from 'react'
-import { Zap, Terminal, Download, Upload, Tags } from 'lucide-react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
+import { Zap, Terminal, Download, Upload, ArrowLeft, WifiOff } from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import { useCommands } from './useCommands'
 import CommandsList from './CommandsList'
@@ -35,29 +35,41 @@ export default function CommandsPage() {
     onResolved: (cmd: string) => void
   } | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
+  const [executionError, setExecutionError] = useState<string | null>(null)
+
+  // 执行出错时自动清除提示
+  useEffect(() => {
+    if (!executionError) return
+    const t = setTimeout(() => setExecutionError(null), 4000)
+    return () => clearTimeout(t)
+  }, [executionError])
 
   /** 执行命令（如果有变量则弹窗） */
   const handleExecute = useCallback(
     async (cmd: QuickCommand) => {
-      if (!connectionId) return
+      if (!connectionId) {
+        setExecutionError('请先连接 SSH 服务器')
+        return
+      }
       if (cmd.variables && cmd.variables.length > 0) {
         setVariableModal({
           cmd,
           onResolved: async (resolvedCommand) => {
             setVariableModal(null)
-            // 复制一份变量已填充的命令
             const resolvedCmd = { ...cmd, command: resolvedCommand, variables: undefined }
+            setOutputPanelOpen(true)
             await executeCommand(resolvedCmd, connectionId)
           },
         })
       } else {
+        setOutputPanelOpen(true)
         await executeCommand(cmd, connectionId)
       }
     },
     [connectionId, executeCommand],
   )
 
-  /** 复制命令到剪贴板（有变量则弹窗） */
+  /** 复制命令到剪贴板 */
   const handleCopyToClipboard = useCallback((cmdStr: string) => {
     navigator.clipboard.writeText(cmdStr).catch(() => {})
   }, [])
@@ -142,21 +154,22 @@ export default function CommandsPage() {
     input.click()
   }, [addCommand])
 
-  // 未连接 — 不拦截显示，命令列表可浏览但执行按钮禁用
   const hasConnection = !!connectionId
 
-  // 缓存命令分组数据，避免每次渲染重新调用 commandsByGroup()
+  // 缓存命令分组数据
   const memoizedCommandsByGroup = useMemo(() => commandsByGroup(), [commandsByGroup])
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full flex-1 flex-col overflow-hidden">
       {/* 头部 */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-700/50 bg-slate-900/80 px-4 py-2">
         <Zap size={18} className="text-amber-400" />
         <h1 className="text-sm font-semibold text-slate-200">脚本模板库</h1>
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">
-          {sessions.length > 1 ? `${sessions.length} 个连接可用` : '1 个连接'}
-        </span>
+        {!hasConnection && (
+          <span className="flex items-center gap-1 rounded bg-amber-900/30 px-1.5 py-0.5 text-[10px] text-amber-400">
+            <WifiOff size={10} /> 未连接
+          </span>
+        )}
 
         <div className="ml-auto flex items-center gap-1">
           <button
@@ -165,7 +178,7 @@ export default function CommandsPage() {
             title="导入命令"
           >
             <Download size={14} />
-            导入
+            <span className="hidden sm:inline">导入</span>
           </button>
           <button
             onClick={handleExport}
@@ -173,15 +186,7 @@ export default function CommandsPage() {
             title="导出命令"
           >
             <Upload size={14} />
-            导出
-          </button>
-          <button
-            onClick={() => setShowGroupManage(true)}
-            className="flex min-h-[44px] items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
-            title="管理分组"
-          >
-            <Tags size={14} />
-            分组
+            <span className="hidden sm:inline">导出</span>
           </button>
           <button
             onClick={() => setOutputPanelOpen(!outputPanelOpen)}
@@ -189,10 +194,28 @@ export default function CommandsPage() {
             title={outputPanelOpen ? '收起执行结果' : '展开执行结果'}
           >
             <Terminal size={14} />
-            {outputPanelOpen ? '' : '结果'}
+            <span className="hidden sm:inline">{outputPanelOpen ? '隐藏结果' : '显示结果'}</span>
+            {results.length > 0 && (
+              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600/30 px-1 text-[9px] text-amber-400">
+                {results.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
+
+      {/* 执行错误提示 */}
+      {executionError && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-red-900/30 bg-red-950/30 px-4 py-2 text-xs text-red-400">
+          <span>{executionError}</span>
+          <button
+            onClick={() => setExecutionError(null)}
+            className="ml-auto text-red-500 hover:text-red-300"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 导入错误提示 */}
       {importError && (
@@ -208,9 +231,9 @@ export default function CommandsPage() {
       )}
 
       {/* 主体：双栏布局 */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* 左侧：命令列表 */}
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <CommandsList
             commandsByGroup={memoizedCommandsByGroup}
             executingId={executingId}
@@ -227,14 +250,25 @@ export default function CommandsPage() {
 
         {/* 右侧：执行结果（桌面端侧栏，移动端全屏覆盖） */}
         {outputPanelOpen && (
-          <div className="fixed inset-0 z-40 bg-slate-950 md:static md:z-auto md:ml-0 md:w-96 md:shrink-0 md:border-l md:border-slate-700/30 md:bg-slate-900/40">
-            <CommandOutput
-              results={results}
-              onClose={removeResult}
-              onClear={clearResults}
-              onSendToTerminal={handleSendToTerminal}
-              onPanelClose={() => setOutputPanelOpen(false)}
-            />
+          <div className="fixed inset-0 z-40 flex flex-col bg-slate-950 md:static md:z-auto md:ml-0 md:w-96 md:shrink-0 md:border-l md:border-slate-700/30 md:bg-slate-900/40">
+            {/* 移动端返回按钮 */}
+            <div className="flex shrink-0 items-center border-b border-slate-700/30 px-3 py-2 md:hidden">
+              <button
+                onClick={() => setOutputPanelOpen(false)}
+                className="flex min-h-[44px] items-center gap-1.5 rounded-md px-2 py-1 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+              >
+                <ArrowLeft size={14} />
+                返回命令列表
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <CommandOutput
+                results={results}
+                onClose={removeResult}
+                onClear={clearResults}
+                onSendToTerminal={handleSendToTerminal}
+              />
+            </div>
           </div>
         )}
       </div>
