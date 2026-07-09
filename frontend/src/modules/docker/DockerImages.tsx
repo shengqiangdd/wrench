@@ -285,9 +285,9 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
                         </div>
                       </div>
 
-                      {/* 操作按钮 */}
+                      {/* 操作按钮（始终可见，兼容移动端） */}
                       <div
-                        className="hidden shrink-0 items-center gap-0.5 group-hover:flex"
+                        className="flex shrink-0 items-center gap-0.5"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
