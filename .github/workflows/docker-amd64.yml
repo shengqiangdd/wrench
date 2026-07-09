@@ -37,7 +37,6 @@ jobs:
         with:
           context: .
           push: true
-          no-cache: true
           platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest

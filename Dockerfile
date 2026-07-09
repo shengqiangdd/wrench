@@ -1,6 +1,5 @@
 # ============================================
 # Stage 1: Build React frontend
-# Version: 1.0.3 - Docker Compose & Monitor fixes
 # ============================================
 FROM node:22-alpine AS frontend-builder
 
@@ -10,9 +9,9 @@ WORKDIR /app
 
 # Cache npm dependencies
 COPY frontend/package.json frontend/package-lock.json ./frontend/
-RUN cd frontend && npm ci --prefer-offline
+RUN --mount=type=cache,target=/root/.npm cd frontend && npm ci
 
-# Inject build hash to bust cache
+# Inject build hash to bust cache when needed
 RUN echo "$BUILD_HASH" > /tmp/build-hash.txt
 
 # Copy and build frontend
@@ -35,18 +34,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# ── Step 1: Copy all source code ──
+# Copy all source code
 COPY backend/ ./
 
-# ── Step 2: Build release binary ──
-RUN cargo build --release
+# Build with cargo cache mount (reuses downloaded crates across builds)
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release && \
+    cp /app/target/release/wrench-backend /tmp/wrench-backend
 
-# ── 验证二进制不是 dummy ──
-RUN BINARY_SIZE=$(stat -c%s target/release/wrench-backend) && \
+# Verify binary
+RUN BINARY_SIZE=$(stat -c%s /tmp/wrench-backend) && \
     echo "Binary size: ${BINARY_SIZE} bytes" && \
     if [ "$BINARY_SIZE" -lt 1000000 ]; then \
-        echo "❌ Binary too small (${BINARY_SIZE} bytes), likely dummy build!" && \
-        exit 1; \
+        echo "❌ Binary too small (${BINARY_SIZE} bytes)" && exit 1; \
     fi && \
     echo "✅ Binary size OK"
 
@@ -63,7 +64,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates tzdata openssl curl tini && \
     rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
 RUN groupadd -r wrench && useradd -r -g wrench -m -d /app wrench
 
 WORKDIR /app
@@ -71,19 +71,10 @@ WORKDIR /app
 RUN mkdir -p /data plugins && \
     chown wrench:wrench /app /app/plugins /data
 
-# Copy Rust binary
-COPY --from=rust-builder /app/target/release/wrench-backend /app/wrench
-
-# Copy frontend dist
+COPY --from=rust-builder /tmp/wrench-backend /app/wrench
 COPY --from=frontend-builder /app/frontend/dist/ /app/frontend/dist/
-
-# Copy plugins
 COPY plugins/ ./plugins
-
-# Copy .env.example for entrypoint
 COPY backend/.env.example /app/.env.example
-
-# Copy entrypoint
 COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
