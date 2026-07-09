@@ -145,16 +145,18 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
   }, [])
 
   // 初始化时自动选中所有运行中的容器
-  /* eslint-disable react-hooks/exhaustive-deps */
+  const initRef = useRef(false)
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (containers.length > 0 && selectedIds.size === 0) {
+    if (!initRef.current && containers.length > 0) {
+      initRef.current = true
       const running = containers.filter((c) => c.State === 'running')
       if (running.length > 0) {
         setSelectedIds(new Set(running.map((c) => c.ID)))
       }
     }
   }, [containers])
-  /* eslint-enable react-hooks/exhaustive-deps */
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // 获取 stats
   function parseSize(s: string): number {
@@ -267,7 +269,6 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
   // 解析大小字符串
 
   // 自动轮询
-  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (!autoRefresh) {
       if (timerRef.current) {
@@ -287,7 +288,6 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
       }
     }
   }, [autoRefresh, fetchStats])
-  /* eslint-enable react-hooks/exhaustive-deps */
 
   // 选中容器对应的监控数据
   const selectedMonitors = monitors.filter((m) => selectedIds.has(m.id))

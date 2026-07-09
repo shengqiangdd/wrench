@@ -35,12 +35,17 @@ export default function DockerContainerLogs({ connectionId, containerName, onClo
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id: containerName, tail: n }),
         })
-        const json = await res.json()
+        const json = (await res.json()) as Record<string, unknown>
         if (json.success) {
-          const output = (json.data?.data ?? json.data ?? '').toString()
+          const data = json.data as Record<string, unknown> | undefined
+          const output = ((data?.data ?? json.data ?? '') as string).toString()
           dispatch({ status: 'idle', data: output || '(无日志输出)', error: null })
         } else {
-          dispatch({ status: 'error', data: '', error: json.error || json.msg || '获取日志失败' })
+          dispatch({
+            status: 'error',
+            data: '',
+            error: (json.error as string) || (json.msg as string) || '获取日志失败',
+          })
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '请求失败'
