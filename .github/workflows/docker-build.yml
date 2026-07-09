@@ -1,89 +1,16 @@
-name: Build and Push Docker Image
+name: Merge Multi-Arch Manifest
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - 'Dockerfile'
-      - 'docker-entrypoint.sh'
-      - '.github/workflows/docker-build.yml'
-  workflow_dispatch:
+  workflow_run:
+    workflows: ["Build arm64 Image"]
+    types: [completed]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # ── Job 1: 构建并推送 amd64（~3-5 分钟，立刻可用）──
-  build-amd64:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: docker/setup-buildx-action@v4
-
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push amd64 → latest
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64
-          # 直接推到 latest，amd64 用户立刻可拉取测试
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-amd64
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-amd64,mode=max
-          build-args: |
-            BUILD_HASH=${{ github.sha }}
-
-  # ── Job 2: 构建 arm64（~10-15 分钟，后台运行）──
-  build-arm64:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: docker/setup-qemu-action@v4
-
-      - uses: docker/setup-buildx-action@v4
-
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push arm64
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          platforms: linux/arm64
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-arm64
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-arm64,mode=max
-          build-args: |
-            BUILD_HASH=${{ github.sha }}
-
-  # ── Job 3: 更新 latest 为 multi-arch（arm64 完成后）──
   merge-manifest:
-    needs: [build-amd64, build-arm64]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -100,10 +27,14 @@ jobs:
 
       - name: Update latest to multi-arch
         run: |
+          # 拉取已有的 amd64 和 arm64 manifest
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
+
+          # 创建 multi-arch manifest
           docker buildx imagetools create \
-            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
 
-          echo "✅ latest updated to multi-arch (amd64 + arm64)"
-          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "✅ Updated latest to multi-arch"
