@@ -85,7 +85,11 @@ export default function CommandOutput({
                   className="shrink-0 rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
                   title="复制输出"
                 >
-                  {copiedIdx === idx ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                  {copiedIdx === idx ? (
+                    <Check size={12} className="text-emerald-400" />
+                  ) : (
+                    <Copy size={12} />
+                  )}
                 </button>
                 <button
                   onClick={() => onClose(idx)}
@@ -100,12 +104,12 @@ export default function CommandOutput({
               {isExpanded && hasOutput && (
                 <div className="mt-2 rounded-md bg-slate-950/50 p-2">
                   {result.stdout && (
-                    <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-slate-300">
+                    <pre className="max-h-60 overflow-auto font-mono text-[10px] leading-relaxed break-all whitespace-pre-wrap text-slate-300">
                       {result.stdout}
                     </pre>
                   )}
                   {result.stderr && (
-                    <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-relaxed text-red-400/80">
+                    <pre className="mt-1 max-h-40 overflow-auto font-mono text-[10px] leading-relaxed break-all whitespace-pre-wrap text-red-400/80">
                       {result.stderr}
                     </pre>
                   )}
