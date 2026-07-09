@@ -4,6 +4,9 @@ import { useAppStore } from '../../stores/app-store'
 import { useSshStore } from '../../stores/ssh-store'
 import type { DockerContainer, DockerImage } from './index'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiResponse = { success?: boolean; data?: any; error?: string; msg?: string }
+
 const DockerContainerList = lazy(() => import('./DockerContainerList'))
 const DockerImages = lazy(() => import('./DockerImages'))
 const DockerCompose = lazy(() => import('./DockerCompose'))
@@ -68,7 +71,7 @@ export default function DockerPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId: currentConnId, all: true }),
       })
-      const json = await res.json()
+      const json = (await res.json()) as ApiResponse
       if (json.success) {
         const output = (json.data?.data ?? json.data ?? '').toString()
         const lines = output.trim().split('\n').filter(Boolean)
@@ -103,7 +106,7 @@ export default function DockerPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId: currentConnId }),
       })
-      const json = await res.json()
+      const json = (await res.json()) as ApiResponse
       if (json.success) {
         const output = (json.data?.data ?? json.data ?? '').toString()
         const lines = output.trim().split('\n').filter(Boolean)

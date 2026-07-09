@@ -12,6 +12,9 @@ import {
 } from 'lucide-react'
 import type { DockerImage } from './index'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiResponse = { success?: boolean; data?: any; error?: string; msg?: string }
+
 function notify(message: string, type: 'success' | 'error' | 'info' = 'info') {
   const ev = new CustomEvent('wrench-toast', { detail: { message, type } })
   window.dispatchEvent(ev)
@@ -151,7 +154,7 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id }),
         })
-        const json = await res.json()
+        const json = (await res.json()) as ApiResponse
         if (!json.success) {
           notify(`删除失败: ${json.error || json.msg || '未知错误'}`, 'error')
         } else {
@@ -211,7 +214,7 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const json = await res.json()
+      const json = (await res.json()) as ApiResponse
       if (!json.success) {
         notify(
           `${getActionLabel(modal.type)}失败: ${json.error || json.msg || '未知错误'}`,
@@ -251,7 +254,7 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id: img.ID }),
         })
-        const json = await res.json()
+        const json = (await res.json()) as ApiResponse
         if (json.success) {
           const output = (json.data?.data ?? json.data ?? '').toString()
           const lines = output.trim().split('\n').filter(Boolean)
@@ -283,7 +286,7 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId, id: selectedImage.ID }),
       })
-      const json = await res.json()
+      const json = (await res.json()) as ApiResponse
       if (json.success) {
         const inner = json.data?.data ?? json.data
         if (typeof inner === 'string') {

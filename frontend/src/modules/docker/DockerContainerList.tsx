@@ -12,6 +12,9 @@ import { Play, Square, Trash2, FileText, Search, Eye } from 'lucide-react'
 import type { DockerContainer } from './index'
 import { STATUS_DOTS } from './index'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiResponse = { success?: boolean; data?: any; error?: string; msg?: string }
+
 const DockerContainerLogs = lazy(() => import('./DockerContainerLogs'))
 const DockerDetail = lazy(() => import('./DockerDetail'))
 
@@ -239,7 +242,7 @@ export default function DockerContainerList({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id }),
         })
-        const json = await res.json()
+        const json = (await res.json()) as ApiResponse
         if (!json.success) {
           notify(`${action} 失败: ${json.error || '未知错误'}`, 'error')
         } else {

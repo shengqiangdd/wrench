@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { RefreshCw, Cpu, MemoryStick, Activity } from 'lucide-react'
 import type { DockerContainer } from './index'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiResponse = { success?: boolean; data?: any; error?: string; msg?: string }
+
 interface Props {
   connectionId: string
   containers: DockerContainer[]
@@ -193,7 +196,7 @@ export default function DockerMonitor({ connectionId, containers }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId }),
       })
-      const json = await res.json()
+      const json = (await res.json()) as ApiResponse
       if (!json.success) {
         // If batch endpoint fails (e.g. docker stats not supported), silently skip
         return

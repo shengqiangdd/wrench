@@ -13,6 +13,9 @@ type LogsState = {
   error: string | null
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiResponse = { success?: boolean; data?: any; error?: string; msg?: string }
+
 function logsReducer(_s: LogsState, a: LogsState): LogsState {
   return a
 }
@@ -35,16 +38,15 @@ export default function DockerContainerLogs({ connectionId, containerName, onClo
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id: containerName, tail: n }),
         })
-        const json = (await res.json()) as Record<string, unknown>
+        const json = (await res.json()) as ApiResponse
         if (json.success) {
-          const data = json.data as Record<string, unknown> | undefined
-          const output = ((data?.data ?? json.data ?? '') as string).toString()
+          const output = (json.data?.data ?? json.data ?? '').toString()
           dispatch({ status: 'idle', data: output || '(无日志输出)', error: null })
         } else {
           dispatch({
             status: 'error',
             data: '',
-            error: (json.error as string) || (json.msg as string) || '获取日志失败',
+            error: json.error || json.msg || '获取日志失败',
           })
         }
       } catch (err: unknown) {

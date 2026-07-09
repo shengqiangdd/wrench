@@ -3,6 +3,9 @@ import { X, Loader2, Cpu, HardDrive, Network, Box, Terminal } from 'lucide-react
 import type { DockerInspectInfo } from './index'
 import DockerTerminal from './DockerTerminal'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiResponse = { success?: boolean; data?: any; error?: string; msg?: string }
+
 interface Props {
   connectionId: string
   containerId: string
@@ -70,7 +73,7 @@ export default function DockerDetail({ connectionId, containerId, onClose }: Pro
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id: containerId }),
         })
-        const json = await res.json()
+        const json = (await res.json()) as ApiResponse
         if (cancelled) return
         if (json.success) {
           const inner = json.data?.data ?? json.data

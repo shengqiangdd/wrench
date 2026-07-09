@@ -12,6 +12,9 @@ import {
   RotateCcw,
 } from 'lucide-react'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiResponse = { success?: boolean; data?: any; error?: string; msg?: string }
+
 function notify(message: string, type: 'success' | 'error' | 'info' = 'info') {
   const ev = new CustomEvent('wrench-toast', { detail: { message, type } })
   window.dispatchEvent(ev)
@@ -54,7 +57,7 @@ function DockerComposeInner({ connectionId }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId }),
       })
-      const json = await res.json()
+      const json = (await res.json()) as ApiResponse
       if (!json.success) {
         notify(json.error || json.msg || '获取 Compose 文件失败', 'error')
         setProjects([])
@@ -101,7 +104,7 @@ function DockerComposeInner({ connectionId }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId, filePath: manualPath.trim() }),
       })
-      const json = await res.json()
+      const json = (await res.json()) as ApiResponse
       if (!json.success) {
         notify(json.error || '加载失败', 'error')
         return
@@ -141,7 +144,7 @@ function DockerComposeInner({ connectionId }: Props) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, filePath: path, action: 'ps' }),
         })
-        const json = await res.json()
+        const json = (await res.json()) as ApiResponse
         if (json.success) {
           const output = (json.data?.data ?? json.data ?? '').toString()
           const lines = output.trim().split('\n').filter(Boolean)
@@ -207,7 +210,7 @@ function DockerComposeInner({ connectionId }: Props) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, filePath: path, action, service }),
         })
-        const json = await res.json()
+        const json = (await res.json()) as ApiResponse
         if (!json.success) {
           notify(`${action} 失败: ${json.error || json.msg || '未知错误'}`, 'error')
         } else if (action === 'logs') {
