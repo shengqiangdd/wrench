@@ -95,15 +95,51 @@ export function useCommands() {
   const executeCommand = useCallback(async (cmd: QuickCommand, connectionId: string) => {
     setExecutingId(cmd.id)
     try {
-      const resp = await fetch('/api/ssh/exec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionId, command: cmd.command }),
-      })
-      const data = await resp.json().catch(() => ({ success: false, error: `HTTP ${resp.status}` }))
+      // 带超时的 fetch（30s）
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 30000)
 
-      if (!data.success) {
-        const errMsg = data.error || data.msg || '执行失败'
+      let resp: Response
+      try {
+        resp = await fetch('/api/ssh/exec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connectionId, command: cmd.command }),
+          signal: controller.signal,
+        })
+      } catch (fetchErr: unknown) {
+        clearTimeout(timer)
+        const msg =
+          fetchErr instanceof DOMException && fetchErr.name === 'AbortError'
+            ? '请求超时（30秒）'
+            : fetchErr instanceof Error
+              ? fetchErr.message
+              : '网络错误'
+        const result: CommandResult = {
+          connectionId,
+          command: cmd.command,
+          stdout: '',
+          stderr: msg,
+          exitCode: null,
+          timestamp: Date.now(),
+        }
+        setResults((prev) => [result, ...prev].slice(0, 50))
+        return result
+      }
+      clearTimeout(timer)
+
+      let data: Record<string, unknown>
+      try {
+        data = await resp.json()
+      } catch {
+        data = { success: false, error: `HTTP ${resp.status}: 非JSON响应` }
+      }
+
+      // 兼容 ApiResponse { success, data: { stdout, stderr, exitCode } }
+      // 和直接返回 { stdout, stderr, exitCode } 两种格式
+      const ok = resp.ok && data.success !== false
+      if (!ok) {
+        const errMsg = (data.error || data.msg || '执行失败') as string
         const result: CommandResult = {
           connectionId,
           command: cmd.command,
@@ -116,12 +152,13 @@ export function useCommands() {
         return result
       }
 
+      const inner = (data.data || data) as Record<string, unknown>
       const result: CommandResult = {
         connectionId,
         command: cmd.command,
-        stdout: data.data?.stdout || '',
-        stderr: data.data?.stderr || '',
-        exitCode: data.data?.exitCode ?? null,
+        stdout: (inner.stdout as string) || '',
+        stderr: (inner.stderr as string) || '',
+        exitCode: inner.exitCode != null ? (inner.exitCode as number) : null,
         timestamp: Date.now(),
       }
       setResults((prev) => [result, ...prev].slice(0, 50))

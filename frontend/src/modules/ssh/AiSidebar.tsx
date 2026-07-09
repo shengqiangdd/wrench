@@ -339,23 +339,45 @@ export default function AiSidebar({ sessionId: _sessionId, connectionId, onClose
       )
 
       try {
-        const res = await fetch('/api/ssh/exec', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ connectionId, command: cmd }),
-        })
+        // 带超时的 fetch（30s）
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 30000)
+
+        let res: Response
+        try {
+          res = await fetch('/api/ssh/exec', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ connectionId, command: cmd }),
+            signal: controller.signal,
+          })
+        } catch (fetchErr) {
+          clearTimeout(timer)
+          const msg =
+            fetchErr instanceof DOMException && fetchErr.name === 'AbortError'
+              ? '请求超时（30秒）'
+              : fetchErr instanceof Error
+                ? fetchErr.message
+                : '网络错误'
+          throw new Error(msg, { cause: fetchErr })
+        }
+        clearTimeout(timer)
 
         const data = await res.json().catch(() => ({ error: `HTTP ${res.status}: 非JSON响应` }))
 
         if (res.ok) {
-          const resultText = data.stdout || data.stderr || '(无输出)'
+          // 后端返回 ApiResponse 格式: { success, data: { stdout, stderr, exitCode } }
+          const stdout = data.data?.stdout || data.stdout || ''
+          const stderr = data.data?.stderr || data.stderr || ''
+          const exitCode = data.data?.exitCode ?? data.exitCode
+          const exitInfo = exitCode != null ? ` (exit: ${exitCode})` : ''
           setMessages((prev) => {
             const newMessages = [
               ...prev.slice(0, -1),
               {
                 ...prev[prev.length - 1]!,
                 _executing: false,
-                _execResult: resultText,
+                _execResult: { command: cmd, stdout: (stdout || '(无输出)') + exitInfo, stderr },
               } as AiMessage,
             ]
             return newMessages
@@ -389,10 +411,30 @@ export default function AiSidebar({ sessionId: _sessionId, connectionId, onClose
     inputRef.current?.focus()
   }, [])
 
-  // 复制命令
+  // 复制命令（兼容 WebView 环境）
   const copyCommand = (cmd: string) => {
-    navigator.clipboard.writeText(cmd)
-    setCopiedCmd(cmd)
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(cmd).then(
+        () => {
+          setCopiedCmd(cmd)
+          setTimeout(() => setCopiedCmd(null), 2000)
+        },
+        () => fallbackCopy(cmd),
+      )
+    } else {
+      fallbackCopy(cmd)
+    }
+  }
+
+  const fallbackCopy = (text: string) => {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.cssText = 'position:fixed;left:-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+    setCopiedCmd(text)
     setTimeout(() => setCopiedCmd(null), 2000)
   }
 

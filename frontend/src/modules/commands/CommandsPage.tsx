@@ -51,19 +51,24 @@ export default function CommandsPage() {
         setExecutionError('请先连接 SSH 服务器')
         return
       }
-      if (cmd.variables && cmd.variables.length > 0) {
-        setVariableModal({
-          cmd,
-          onResolved: async (resolvedCommand) => {
-            setVariableModal(null)
-            const resolvedCmd = { ...cmd, command: resolvedCommand, variables: undefined }
-            setOutputPanelOpen(true)
-            await executeCommand(resolvedCmd, connectionId)
-          },
-        })
-      } else {
-        setOutputPanelOpen(true)
-        await executeCommand(cmd, connectionId)
+      try {
+        if (cmd.variables && cmd.variables.length > 0) {
+          setVariableModal({
+            cmd,
+            onResolved: async (resolvedCommand) => {
+              setVariableModal(null)
+              const resolvedCmd = { ...cmd, command: resolvedCommand, variables: undefined }
+              setOutputPanelOpen(true)
+              await executeCommand(resolvedCmd, connectionId)
+            },
+          })
+        } else {
+          setOutputPanelOpen(true)
+          await executeCommand(cmd, connectionId)
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '执行异常'
+        setExecutionError(msg)
       }
     },
     [connectionId, executeCommand],
