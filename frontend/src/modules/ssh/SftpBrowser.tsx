@@ -1137,7 +1137,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
 
   return (
     <div
-      className={`flex flex-col overflow-hidden rounded-lg border border-slate-700/50 bg-slate-900/80 ${widthClass ?? 'w-full'}`}
+      className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-700/50 bg-slate-900/80 ${widthClass ?? 'w-full'}`}
       onDrop={(e) => e.preventDefault()}
     >
       {/* 连接选择器 */}
@@ -1323,7 +1323,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
 
       {/* 文件列表 */}
       <div
-        className="mobile-scroll relative flex-1"
+        className="relative flex min-h-0 flex-1 flex-col"
         onContextMenu={handleEmptyContextMenu}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -1345,7 +1345,6 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             items={displayEntries}
             itemHeight={28}
             renderItem={renderFileItem}
-            className="h-full"
             paddingBottom={4}
             getKey={(item: SftpEntry) => item.path}
           />

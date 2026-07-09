@@ -99,7 +99,7 @@ export default function VirtualList<T>({
     return (
       <div
         ref={containerRef}
-        className={`overflow-y-auto ${className}`}
+        className={`min-h-0 flex-1 overflow-y-auto ${className}`}
         onKeyDown={handleKeyDown}
         tabIndex={-1}
         style={scrollStyle}
@@ -127,7 +127,7 @@ export default function VirtualList<T>({
   return (
     <div
       ref={containerRef}
-      className={`overflow-y-auto ${className}`}
+      className={`min-h-0 flex-1 overflow-y-auto ${className}`}
       onKeyDown={handleKeyDown}
       tabIndex={-1}
       style={scrollStyle}
