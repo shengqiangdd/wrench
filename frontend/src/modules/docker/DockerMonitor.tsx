@@ -5,6 +5,11 @@ import type { DockerContainer } from './index'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ApiResponse = { success?: boolean; data?: any; error?: string; msg?: string }
 
+function notify(message: string, type: 'success' | 'error' | 'info' = 'info') {
+  const ev = new CustomEvent('wrench-toast', { detail: { message, type } })
+  window.dispatchEvent(ev)
+}
+
 interface Props {
   connectionId: string
   containers: DockerContainer[]
@@ -146,9 +151,12 @@ export default function DockerMonitor({ connectionId, containers: propContainers
           })
           .filter(Boolean)
         setContainers(list)
+      } else {
+        notify(json.error || json.msg || '获取容器列表失败', 'error')
       }
-    } catch {
-      /* ignore */
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '请求失败'
+      notify(msg, 'error')
     }
   }, [connectionId])
 
@@ -237,7 +245,7 @@ export default function DockerMonitor({ connectionId, containers: propContainers
       })
       const json = (await res.json()) as ApiResponse
       if (!json.success) {
-        // If batch endpoint fails (e.g. docker stats not supported), silently skip
+        notify(json.error || json.msg || '获取监控数据失败', 'error')
         return
       }
 

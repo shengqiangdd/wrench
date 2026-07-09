@@ -157,8 +157,30 @@ async fn docker_exec(state: &Arc<AppState>, connection_id: &str, docker_args: &[
         stdout.len(),
         stderr.len()
     );
-    if exit_code != 0 && !stderr.is_empty() {
-        tracing::warn!("Docker exec stderr: {}", stderr.chars().take(500).collect::<String>());
+
+    // If docker command fails, try docker-compose fallback for compose subcommands
+    if exit_code != 0 && !docker_args.is_empty() && docker_args[0] == "compose" {
+        let mut fallback_args = Vec::with_capacity(docker_args.len());
+        fallback_args.push("compose");
+        for arg in &docker_args[1..] {
+            fallback_args.push(arg);
+        }
+        let fallback_cmd = {
+            let mut s = String::from("docker-compose");
+            for arg in &fallback_args {
+                s.push(' ');
+                s.push_str(&escape_sh_arg(arg));
+            }
+            s
+        };
+        tracing::info!("Trying fallback: '{}'", fallback_cmd);
+        if let Ok((out2, err2, code2)) = session.exec(&fallback_cmd).await {
+            if code2 == 0 {
+                tracing::info!("Fallback succeeded, stdout_len={}", out2.len());
+                return Ok(out2);
+            }
+            tracing::warn!("Fallback also failed: exit_code={} stderr={}", code2, err2.chars().take(300).collect::<String>());
+        }
     }
 
     if exit_code != 0 {

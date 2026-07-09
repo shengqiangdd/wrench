@@ -176,10 +176,12 @@ function DockerComposeInner({ connectionId }: Props) {
           }
           setProjects((prev) => prev.map((p) => (p.path === path ? { ...p, services } : p)))
         } else {
+          notify(json.error || json.msg || '获取服务列表失败', 'error')
           setProjects((prev) => prev.map((p) => (p.path === path ? { ...p, services: [] } : p)))
         }
-      } catch {
-        // ignore
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '请求失败'
+        notify(msg, 'error')
       } finally {
         setActionLoading(null)
       }
