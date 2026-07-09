@@ -1067,7 +1067,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
           key={entry.path}
           className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isDir ? 'text-sky-300' : 'text-slate-300'}`}
           style={{ height: 28 }}
-          onDoubleClick={() => handleFileDoubleClick(entry)}
+          onClick={() => handleFileDoubleClick(entry)}
           onContextMenu={(e) => handleEntryContextMenu(e, entry)}
         >
           {isDir ? <Folder size={14} className="shrink-0 text-sky-400" /> : getFileIcon(entry.name)}

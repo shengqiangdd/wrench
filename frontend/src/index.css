@@ -81,9 +81,6 @@ html:not(.dark) {
       'Noto Sans SC', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* 防止 iOS Safari 橡皮筋效果 */
-    position: fixed;
-    width: 100%;
     overflow: hidden;
   }
 
