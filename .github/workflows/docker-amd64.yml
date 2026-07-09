@@ -8,6 +8,7 @@ on:
       - 'frontend/**'
       - 'Dockerfile'
       - 'docker-entrypoint.sh'
+      - '.github/workflows/docker-amd64.yml'
   workflow_dispatch:
 
 env:
