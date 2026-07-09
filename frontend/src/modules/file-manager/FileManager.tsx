@@ -407,8 +407,14 @@ function FileManagerInner() {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* 左侧文件浏览器 */}
       {sidebarOpen && (
-        <div className="flex min-h-0 shrink-0 flex-col border-r border-slate-700/50">
-          <ResizablePanel side="right" defaultSize={260} minSize={200} maxSize={500}>
+        <div className="flex h-full min-h-0 flex-col border-r border-slate-700/50">
+          <ResizablePanel
+            side="right"
+            defaultSize={260}
+            minSize={200}
+            maxSize={500}
+            className="h-full"
+          >
             <div className="flex h-full min-h-0 flex-col">
               <div className="flex shrink-0 items-center justify-between border-b border-slate-700/30 px-2 py-1.5">
                 <span className="text-[11px] font-medium tracking-wider text-slate-500 uppercase">
