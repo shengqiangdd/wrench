@@ -2,7 +2,11 @@ use axum::{extract::State, Json};
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::api_types::DockerExecResponse;
+use crate::api_types::{
+    DockerComposeListResponse, DockerComposeProject, DockerComposePsResponse,
+    DockerComposeService, DockerContainerInfo, DockerContainerStats, DockerDiagnoseResponse,
+    DockerExecResponse, DockerPsResponse, DockerStatsResponse,
+};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
 use crate::utils::escape_sh_arg;
@@ -223,15 +227,122 @@ async fn docker_exec(state: &Arc<AppState>, connection_id: &str, docker_args: &[
 pub async fn docker_ps(
     State(state): State<Arc<AppState>>,
     Json(req): Json<PsRequest>,
-) -> ApiResponse<DockerExecResponse> {
+) -> ApiResponse<DockerPsResponse> {
     let mut args = vec!["ps", "--format", "json", "--no-trunc"];
     if req.all.unwrap_or(false) {
         args.push("-a");
     }
     match docker_exec(&state, &req.connection_id, &args).await {
-        Ok(data) => ApiResponse::success(DockerExecResponse { data }),
+        Ok(data) => {
+            let containers = parse_docker_ps(&data);
+            ApiResponse::success(DockerPsResponse { containers })
+        }
         Err(e) => ApiResponse::error(-1, &e),
     }
+}
+
+/// Parse `docker ps --format json` output into structured data
+fn parse_docker_ps(output: &str) -> Vec<DockerContainerInfo> {
+    output
+        .trim()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|line| {
+            let v: serde_json::Value = serde_json::from_str(line).ok()?;
+            Some(DockerContainerInfo {
+                id: extract_json_str(&v, &["ID", "Id", "id"]),
+                name: extract_json_str(&v, &["Names", "Name", "names", "name"]),
+                image: extract_json_str(&v, &["Image", "image"]),
+                state: extract_json_str(&v, &["State", "state"]),
+                status: extract_json_str(&v, &["Status", "status"]),
+                ports: extract_json_str(&v, &["Ports", "ports"]),
+                created: extract_json_str(&v, &["CreatedAt", "Created", "created_at"]),
+                command: extract_json_str(&v, &["Command", "command"]),
+            })
+        })
+        .collect()
+}
+
+/// Parse `docker stats --no-stream --format json` output into structured data
+fn parse_docker_stats(output: &str) -> Vec<DockerContainerStats> {
+    output
+        .trim()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|line| {
+            let v: serde_json::Value = serde_json::from_str(line).ok()?;
+            Some(DockerContainerStats {
+                id: extract_json_str(&v, &["ID", "Container", "id", "container"]),
+                name: extract_json_str(&v, &["Name", "name"]),
+                cpu_percent: extract_json_str(&v, &["CPUPerc", "cpu_percent"]),
+                mem_usage: extract_json_str(&v, &["MemUsage", "mem_usage"]),
+                mem_percent: extract_json_str(&v, &["MemPerc", "mem_percent"]),
+                net_io: extract_json_str(&v, &["NetIO", "net_io"]),
+                block_io: extract_json_str(&v, &["BlockIO", "block_io"]),
+                pids: extract_json_str(&v, &["PIDs", "pids"]),
+            })
+        })
+        .collect()
+}
+
+/// Parse `docker compose ls --format json` output into structured data
+fn parse_compose_ls(output: &str) -> Vec<DockerComposeProject> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return vec![];
+    }
+    let items: Vec<serde_json::Value> = if trimmed.starts_with('[') {
+        serde_json::from_str(trimmed).unwrap_or_default()
+    } else {
+        trimmed
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect()
+    };
+    items
+        .into_iter()
+        .map(|v| DockerComposeProject {
+            id: extract_json_str(&v, &["ID", "id"]),
+            name: extract_json_str(&v, &["Name", "name"]),
+            status: extract_json_str(&v, &["Status", "status"]),
+            config_files: extract_json_str(&v, &["ConfigFiles", "config_files"]),
+        })
+        .collect()
+}
+
+/// Parse `docker compose ps --format json` output into structured data
+fn parse_compose_ps(output: &str) -> Vec<DockerComposeService> {
+    output
+        .trim()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|line| {
+            let v: serde_json::Value = serde_json::from_str(line).ok()?;
+            Some(DockerComposeService {
+                name: extract_json_str(&v, &["Name", "Service", "name", "service"]),
+                image: extract_json_str(&v, &["Image", "image"]),
+                state: extract_json_str(&v, &["State", "state"]),
+                status: extract_json_str(&v, &["Status", "status"]),
+                ports: extract_json_str(&v, &["Publishers", "Ports", "ports"]),
+                command: extract_json_str(&v, &["Command", "command"]),
+            })
+        })
+        .collect()
+}
+
+/// Helper: extract a string from a JSON value by trying multiple field names
+fn extract_json_str(v: &serde_json::Value, keys: &[&str]) -> String {
+    for key in keys {
+        if let Some(val) = v.get(*key) {
+            match val {
+                serde_json::Value::String(s) => return s.clone(),
+                serde_json::Value::Null => continue,
+                other => return other.to_string(),
+            }
+        }
+    }
+    String::new()
 }
 
 /// POST /api/docker/images
@@ -470,7 +581,7 @@ pub struct BatchStatsRequest {
 pub async fn container_stats_all(
     State(state): State<Arc<AppState>>,
     Json(req): Json<BatchStatsRequest>,
-) -> ApiResponse<DockerExecResponse> {
+) -> ApiResponse<DockerStatsResponse> {
     match docker_exec(
         &state,
         &req.connection_id,
@@ -478,7 +589,10 @@ pub async fn container_stats_all(
     )
     .await
     {
-        Ok(data) => ApiResponse::success(DockerExecResponse { data }),
+        Ok(data) => {
+            let stats = parse_docker_stats(&data);
+            ApiResponse::success(DockerStatsResponse { stats })
+        }
         Err(e) => ApiResponse::error(-1, &e),
     }
 }
@@ -487,7 +601,7 @@ pub async fn container_stats_all(
 pub async fn compose_list(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ComposeRequest>,
-) -> ApiResponse<serde_json::Value> {
+) -> ApiResponse<DockerComposeListResponse> {
     // 如果有 filePath，直接返回该文件
     if let Some(file_path) = &req.file_path {
         let path = std::path::Path::new(file_path);
@@ -495,53 +609,20 @@ pub async fn compose_list(
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
-        return ApiResponse::success(serde_json::json!({
-            "projects": [{
-                "path": file_path,
-                "name": name,
-                "status": "",
-                "id": "",
-            }]
-        }));
+        return ApiResponse::success(DockerComposeListResponse {
+            projects: vec![DockerComposeProject {
+                id: String::new(),
+                name: name.to_string(),
+                status: String::new(),
+                config_files: file_path.clone(),
+            }],
+        });
     }
 
     match docker_exec(&state, &req.connection_id, &["compose", "ls", "--format", "json"]).await {
         Ok(data) => {
-            // docker compose ls --format json 输出一个 JSON 数组
-            // 格式: [{"ID":"xxx","Name":"project","Status":"Running(2)","ConfigFiles":"/path/to/docker-compose.yml"}]
-            let trimmed = data.trim();
-            if trimmed.is_empty() {
-                return ApiResponse::success(serde_json::json!({ "projects": [] }));
-            }
-
-            // 尝试整体解析为 JSON 数组
-            let items: Vec<serde_json::Value> = if trimmed.starts_with('[') {
-                serde_json::from_str(trimmed).unwrap_or_default()
-            } else {
-                // fallback: 逐行解析（兼容旧版本）
-                trimmed
-                    .lines()
-                    .filter(|line| !line.is_empty())
-                    .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-                    .collect()
-            };
-
-            let projects: Vec<serde_json::Value> = items
-                .iter()
-                .map(|item| {
-                    let config_files = item.get("ConfigFiles").and_then(|v| v.as_str()).unwrap_or("");
-                    let name = item.get("Name").and_then(|v| v.as_str()).unwrap_or("");
-                    let status = item.get("Status").and_then(|v| v.as_str()).unwrap_or("");
-                    let id = item.get("ID").and_then(|v| v.as_str()).unwrap_or("");
-                    serde_json::json!({
-                        "path": config_files,
-                        "name": name,
-                        "status": status,
-                        "id": id,
-                    })
-                })
-                .collect();
-            ApiResponse::success(serde_json::json!({ "projects": projects }))
+            let projects = parse_compose_ls(&data);
+            ApiResponse::success(DockerComposeListResponse { projects })
         }
         Err(e) => ApiResponse::error(-1, &e),
     }
@@ -551,7 +632,7 @@ pub async fn compose_list(
 pub async fn compose_action(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ComposeActionRequest>,
-) -> ApiResponse<DockerExecResponse> {
+) -> ApiResponse<DockerComposePsResponse> {
     let action_cmd: &str = &req.action;
 
     // Build args: docker compose -f <path> <action>
@@ -572,7 +653,74 @@ pub async fn compose_action(
     }
 
     match docker_exec(&state, &req.connection_id, &args).await {
-        Ok(data) => ApiResponse::success(DockerExecResponse { data }),
+        Ok(data) => {
+            if action_cmd == "ps" {
+                let services = parse_compose_ps(&data);
+                ApiResponse::success(DockerComposePsResponse { services })
+            } else {
+                // For non-ps actions (up, down, logs), return raw output wrapped
+                ApiResponse::success(DockerComposePsResponse { services: vec![] })
+            }
+        }
         Err(e) => ApiResponse::error(-1, &e),
     }
+}
+
+/// POST /api/docker/diagnose — Test Docker connectivity and environment
+pub async fn docker_diagnose(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ConnRequest>,
+) -> ApiResponse<DockerDiagnoseResponse> {
+    let conn_id = &req.connection_id;
+
+    // Test docker version
+    let docker_version = docker_exec(&state, conn_id, &["--version"])
+        .await
+        .unwrap_or_else(|e| format!("ERROR: {}", e));
+
+    // Test docker ps
+    let raw_ps = docker_exec(&state, conn_id, &["ps", "--format", "json", "-a"])
+        .await
+        .unwrap_or_else(|e| format!("ERROR: {}", e));
+    let containers = parse_docker_ps(&raw_ps);
+    let running = containers.iter().filter(|c| c.state == "running").count();
+
+    // Test docker stats
+    let raw_stats = docker_exec(
+        &state,
+        conn_id,
+        &["stats", "--no-stream", "--format", "json"],
+    )
+    .await
+    .unwrap_or_else(|e| format!("ERROR: {}", e));
+
+    // Test docker images
+    let raw_images = docker_exec(&state, conn_id, &["images", "--format", "json"])
+        .await
+        .unwrap_or_else(|_| String::new());
+    let images_count = raw_images.trim().lines().filter(|l| !l.is_empty()).count();
+
+    // Test docker compose
+    let compose_result = docker_exec(&state, conn_id, &["compose", "ls", "--format", "json"]).await;
+    let (compose_available, raw_compose_ls, projects_count) = match compose_result {
+        Ok(data) if !data.trim().is_empty() && !data.contains("ERROR") => {
+            let projects = parse_compose_ls(&data);
+            let count = projects.len();
+            (true, data, count)
+        }
+        Ok(data) => (false, data, 0),
+        Err(e) => (false, format!("ERROR: {}", e), 0),
+    };
+
+    ApiResponse::success(DockerDiagnoseResponse {
+        docker_version: docker_version.trim().to_string(),
+        compose_available,
+        containers_running: running as u32,
+        containers_total: containers.len() as u32,
+        images_count: images_count as u32,
+        projects_count: projects_count as u32,
+        raw_ps,
+        raw_stats,
+        raw_compose_ls,
+    })
 }

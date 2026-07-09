@@ -170,6 +170,90 @@ pub struct DockerExecResponse {
     pub data: String,
 }
 
+/// Structured container info from `docker ps --format json`
+#[derive(Serialize)]
+pub struct DockerContainerInfo {
+    pub id: String,
+    pub name: String,
+    pub image: String,
+    pub state: String,
+    pub status: String,
+    pub ports: String,
+    pub created: String,
+    pub command: String,
+}
+
+/// Structured container stats from `docker stats --no-stream --format json`
+#[derive(Serialize)]
+pub struct DockerContainerStats {
+    pub id: String,
+    pub name: String,
+    pub cpu_percent: String,
+    pub mem_usage: String,
+    pub mem_percent: String,
+    pub net_io: String,
+    pub block_io: String,
+    pub pids: String,
+}
+
+/// Structured compose project info
+#[derive(Serialize)]
+pub struct DockerComposeProject {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub config_files: String,
+}
+
+/// Structured compose service info from `docker compose ps --format json`
+#[derive(Serialize)]
+pub struct DockerComposeService {
+    pub name: String,
+    pub image: String,
+    pub state: String,
+    pub status: String,
+    pub ports: String,
+    pub command: String,
+}
+
+/// Response for `docker ps`
+#[derive(Serialize)]
+pub struct DockerPsResponse {
+    pub containers: Vec<DockerContainerInfo>,
+}
+
+/// Response for `docker stats`
+#[derive(Serialize)]
+pub struct DockerStatsResponse {
+    pub stats: Vec<DockerContainerStats>,
+}
+
+/// Response for `docker compose ls`
+#[derive(Serialize)]
+pub struct DockerComposeListResponse {
+    pub projects: Vec<DockerComposeProject>,
+}
+
+/// Response for `docker compose ps`
+#[derive(Serialize)]
+pub struct DockerComposePsResponse {
+    pub services: Vec<DockerComposeService>,
+}
+
+/// Response for `docker diagnose`
+#[derive(Serialize)]
+pub struct DockerDiagnoseResponse {
+    pub docker_version: String,
+    pub compose_available: bool,
+    pub containers_running: u32,
+    pub containers_total: u32,
+    pub images_count: u32,
+    pub projects_count: u32,
+    pub raw_ps: String,
+    pub raw_stats: String,
+    pub raw_compose_ls: String,
+}
+
 /// Docker inspect returns a parsed JSON value as data
 #[derive(Serialize)]
 pub struct DockerInspectResponse {

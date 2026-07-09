@@ -139,17 +139,7 @@ export default function DockerMonitor({ connectionId, containers: propContainers
       })
       const json = (await res.json()) as ApiResponse
       if (json.success) {
-        const output = (json.data?.data ?? json.data ?? '').toString()
-        const lines = output.trim().split('\n').filter(Boolean)
-        const list: DockerContainer[] = lines
-          .map((line: string) => {
-            try {
-              return JSON.parse(line)
-            } catch {
-              return null
-            }
-          })
-          .filter(Boolean)
+        const list: DockerContainer[] = json.data?.containers ?? []
         setContainers(list)
       } else {
         notify(json.error || json.msg || '获取容器列表失败', 'error')
@@ -249,54 +239,54 @@ export default function DockerMonitor({ connectionId, containers: propContainers
         return
       }
 
-      const output = (json.data?.data ?? json.data ?? '').toString()
-      const lines = output.trim().split('\n').filter(Boolean)
+      // 后端返回结构化数据: { stats: [...] }
+      const statsList: Array<{
+        id?: string
+        name?: string
+        cpu_percent?: string
+        mem_usage?: string
+        mem_percent?: string
+        pids?: string
+      }> = json.data?.stats ?? []
       const now = Date.now()
 
       setMonitors((prev) => {
         const prevMap = new Map(prev.map((m) => [m.id, m]))
         const newMonitors: MonitorState[] = []
 
-        for (const line of lines) {
-          try {
-            const s = JSON.parse(line)
-            const id = s.ID || s.Container || ''
-            const name = s.Name || id
+        for (const s of statsList) {
+          const id = s.id || ''
+          const name = s.name || id
 
-            // 解析 CPU（格式: "2.50%"）
-            const cpuPct = parseFloat(s.CPUPerc) || 0
+          const cpuPct = parseFloat(s.cpu_percent || '0') || 0
 
-            // 解析内存（格式: "123.4MiB / 1.945GiB"）
-            let memPct = 0
-            let memUsed = 0
-            let memTotal = 0
-            if (s.MemUsage) {
-              const parts = s.MemUsage.split('/')
-              memUsed = parseSize(parts[0].trim())
-              memTotal = parseSize(parts[1]?.trim() || '0B')
-              memPct = memTotal > 0 ? (memUsed / memTotal) * 100 : 0
-            }
+          let memPct = 0
+          let memUsed = 0
+          let memTotal = 0
+          if (s.mem_usage) {
+            const parts = s.mem_usage.split('/')
+            memUsed = parseSize(parts[0]?.trim() || '0B')
+            memTotal = parseSize(parts[1]?.trim() || '0B')
+            memPct = memTotal > 0 ? (memUsed / memTotal) * 100 : 0
+          }
 
-            const pids = parseInt(s.PIDs) || 0
-            const point: DataPoint = {
-              time: now,
-              cpu: cpuPct,
-              mem: memUsed / (1024 * 1024),
-              memPct,
-              memTotal,
-              pids,
-            }
+          const pids = parseInt(s.pids || '0') || 0
+          const point: DataPoint = {
+            time: now,
+            cpu: cpuPct,
+            mem: memUsed / (1024 * 1024),
+            memPct,
+            memTotal,
+            pids,
+          }
 
-            const existing = prevMap.get(id)
-            if (existing) {
-              const data = [...existing.data, point]
-              if (data.length > MAX_POINTS) data.splice(0, data.length - MAX_POINTS)
-              newMonitors.push({ id, name, data })
-            } else {
-              newMonitors.push({ id, name, data: [point] })
-            }
-          } catch {
-            /* skip parse errors */
+          const existing = prevMap.get(id)
+          if (existing) {
+            const data = [...existing.data, point]
+            if (data.length > MAX_POINTS) data.splice(0, data.length - MAX_POINTS)
+            newMonitors.push({ id, name, data })
+          } else {
+            newMonitors.push({ id, name, data: [point] })
           }
         }
 

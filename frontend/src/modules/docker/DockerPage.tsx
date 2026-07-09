@@ -73,17 +73,8 @@ export default function DockerPage() {
       })
       const json = (await res.json()) as ApiResponse
       if (json.success) {
-        const output = (json.data?.data ?? json.data ?? '').toString()
-        const lines = output.trim().split('\n').filter(Boolean)
-        const list: DockerContainer[] = lines
-          .map((line: string) => {
-            try {
-              return JSON.parse(line)
-            } catch {
-              return null
-            }
-          })
-          .filter(Boolean)
+        // 后端返回结构化数据: { containers: [...] }
+        const list: DockerContainer[] = json.data?.containers ?? []
         setContainers(list)
       } else {
         setError(json.error || json.msg || '获取容器列表失败')

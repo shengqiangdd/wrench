@@ -64,25 +64,18 @@ function DockerComposeInner({ connectionId }: Props) {
         return
       }
 
-      // 后端返回 { success, data: { projects: [...] } }
-      const projectsData = json.data?.projects ?? json.data ?? []
-      let parsed: ComposeProject[] = []
-
-      if (Array.isArray(projectsData)) {
-        parsed = projectsData.map(
-          (p: { path?: string; name?: string; ConfigFiles?: string; Name?: string }) => {
-            const filePath = p.path || p.ConfigFiles || ''
-            const projName =
-              p.name ||
-              p.Name ||
-              filePath
-                .split('/')
-                .pop()!
-                .replace(/\.(yml|yaml)$/, '')
-            return { path: filePath, name: projName, services: [] }
-          },
-        )
-      }
+      // 后端返回结构化数据: { projects: [{ id, name, status, config_files }] }
+      const projectsData: Array<{
+        id?: string
+        name?: string
+        status?: string
+        config_files?: string
+      }> = json.data?.projects ?? []
+      const parsed: ComposeProject[] = projectsData.map((p) => ({
+        path: p.config_files || '',
+        name: p.name || 'unknown',
+        services: [],
+      }))
 
       setProjects(parsed)
     } catch (err: unknown) {
@@ -146,34 +139,21 @@ function DockerComposeInner({ connectionId }: Props) {
         })
         const json = (await res.json()) as ApiResponse
         if (json.success) {
-          const output = (json.data?.data ?? json.data ?? '').toString()
-          const lines = output.trim().split('\n').filter(Boolean)
-          const services: ComposeService[] = []
-          for (const line of lines) {
-            // docker compose ps --format json 输出每行一个 JSON 对象
-            try {
-              const s = JSON.parse(line)
-              const state = (s.State || s.state || '').toLowerCase()
-              services.push({
-                name: s.Name || s.Service || s.name || '-',
-                status: s.Status || s.status || '-',
-                image: s.Image || s.image || '-',
-                ports: s.Ports || s.ports || '',
-                state,
-              })
-            } catch {
-              // plain text fallback: "name   running   ..."
-              const parts = line.split(/\s{2,}/)
-              const stateText = (parts[1] || '').toLowerCase()
-              services.push({
-                name: parts[0] || '-',
-                status: parts[1] || '-',
-                image: parts[2] || '-',
-                ports: parts[3] || '',
-                state: stateText.includes('running') ? 'running' : 'exited',
-              })
-            }
-          }
+          // 后端返回结构化数据: { services: [...] }
+          const servicesData: Array<{
+            name?: string
+            image?: string
+            state?: string
+            status?: string
+            ports?: string
+          }> = json.data?.services ?? []
+          const services: ComposeService[] = servicesData.map((s) => ({
+            name: s.name || '-',
+            status: s.status || '-',
+            image: s.image || '-',
+            ports: s.ports || '',
+            state: (s.state || '').toLowerCase(),
+          }))
           setProjects((prev) => prev.map((p) => (p.path === path ? { ...p, services } : p)))
         } else {
           notify(json.error || json.msg || '获取服务列表失败', 'error')
