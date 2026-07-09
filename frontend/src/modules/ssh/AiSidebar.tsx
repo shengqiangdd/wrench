@@ -458,7 +458,7 @@ export default function AiSidebar({ sessionId: _sessionId, connectionId, onClose
   // 如果 AI 未启用
   if (!aiConfig.enabled) {
     return (
-      <div className="flex h-full w-full flex-col border-l border-slate-700/50 bg-slate-900/80 md:w-96">
+      <div className="flex flex-1 flex-col border-l border-slate-700/50 bg-slate-900/80 md:w-96">
         <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-2">
           <span className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
             <Brain size={14} />
@@ -480,7 +480,7 @@ export default function AiSidebar({ sessionId: _sessionId, connectionId, onClose
   }
 
   return (
-    <div className="flex h-full w-full flex-col border-l border-slate-700/50 bg-slate-900/80 md:w-96">
+    <div className="flex flex-1 flex-col border-l border-slate-700/50 bg-slate-900/80 md:w-96">
       {/* 头部 */}
       <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-2">
         <span className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
