@@ -1,12 +1,8 @@
 name: Merge Multi-Arch Manifest
 
-# 暂时禁用 - 等arm64开启后再合并
-if: false
-
+# 手动触发，arm64 构建完成后手动合并
 on:
-  workflow_run:
-    workflows: ["Build arm64 Image"]
-    types: [completed]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -30,11 +26,6 @@ jobs:
 
       - name: Update latest to multi-arch
         run: |
-          # 拉取已有的 amd64 和 arm64 manifest
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
-
-          # 创建 multi-arch manifest
           docker buildx imagetools create \
             -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64 \

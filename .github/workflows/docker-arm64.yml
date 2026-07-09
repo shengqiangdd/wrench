@@ -1,16 +1,7 @@
 name: Build arm64 Image
 
-# 暂时禁用 - 等所有功能稳定后再开启
-if: false
-
+# 手动触发，不自动构建（等功能稳定后再开启 push 触发）
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - 'Dockerfile'
-      - 'docker-entrypoint.sh'
   workflow_dispatch:
 
 env:
