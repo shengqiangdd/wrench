@@ -128,6 +128,32 @@ pub struct PluginManifest {
     pub description: String,
     pub author: String,
     pub icon: String,
-    pub commands: Vec<String>,
-    pub panels: Vec<String>,
+    #[serde(default)]
+    pub commands: Vec<PluginCommand>,
+    #[serde(default)]
+    pub panels: Vec<PluginPanel>,
+}
+
+/// 插件命令定义
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginCommand {
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub icon: String,
+    #[serde(default)]
+    pub keywords: Vec<String>,
+}
+
+/// 插件面板定义
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginPanel {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub icon: String,
 }
