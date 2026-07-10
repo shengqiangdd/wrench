@@ -530,7 +530,7 @@ pub async fn prune_images(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ConnRequest>,
 ) -> ApiResponse<DockerExecResponse> {
-    match docker_exec(&state, &req.connection_id, &["image", "prune", "-f"]).await {
+    match docker_exec(&state, &req.connection_id, &["image", "prune", "-a", "-f"]).await {
         Ok(data) => ApiResponse::success(DockerExecResponse { data }),
         Err(e) => ApiResponse::error(-1, &e),
     }

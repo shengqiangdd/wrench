@@ -78,6 +78,49 @@ function DockerComposeInner({ connectionId }: Props) {
       }))
 
       setProjects(parsed)
+
+      // 并行预加载所有项目的 services（不阻塞 UI）
+      void Promise.all(
+        parsed.map(async (p) => {
+          try {
+            const r = await fetch('/api/docker/compose/action', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ connectionId, filePath: p.path, action: 'ps' }),
+            })
+            const j = (await r.json()) as ApiResponse
+            if (j.success) {
+              const sd: Array<{
+                Name?: string
+                Image?: string
+                State?: string
+                Status?: string
+                Publishers?: string
+              }> = j.data?.services ?? []
+              return {
+                path: p.path,
+                services: sd.map((s) => ({
+                  name: s.Name || '-',
+                  status: s.Status || '-',
+                  image: s.Image || '-',
+                  ports: s.Publishers || '',
+                  state: (s.State || '').toLowerCase(),
+                })),
+              }
+            }
+          } catch {
+            // ignore
+          }
+          return { path: p.path, services: [] as ComposeService[] }
+        }),
+      ).then((results) => {
+        setProjects((prev) =>
+          prev.map((p) => {
+            const r = results.find((x) => x.path === p.path)
+            return r && r.services.length > 0 ? { ...p, services: r.services } : p
+          }),
+        )
+      })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '请求失败'
       notify(msg, 'error')

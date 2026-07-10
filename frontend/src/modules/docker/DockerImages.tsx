@@ -529,8 +529,8 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
       {/* 清理确认弹窗 */}
       {pruneConfirm && (
         <ConfirmModal
-          title="确认清理悬空镜像"
-          message="将删除所有未被任何容器使用的悬空镜像（dangling images）"
+          title="确认清理未使用镜像"
+          message="将删除所有未被容器使用的镜像（包括悬空镜像和未引用镜像）"
           danger
           onConfirm={() => {
             setPruneConfirm(false)
