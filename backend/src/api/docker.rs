@@ -1,9 +1,9 @@
 use axum::{extract::State, Json};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::api_types::{
-    DockerComposeListResponse, DockerComposeProject, DockerComposePsResponse,
+    DockerComposeListResponse, DockerComposeProject,
     DockerComposeService, DockerContainerInfo, DockerContainerStats, DockerDiagnoseResponse,
     DockerExecResponse, DockerPsResponse, DockerStatsResponse,
 };
