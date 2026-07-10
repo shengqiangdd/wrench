@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense, useMemo } fro
 import { Container, RefreshCw, Activity, AlertCircle } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useSshStore, decryptConnection } from '../../stores/ssh-store'
-import { setSessionCredentials } from '../../services/session-credentials'
-import type { SshSession } from '../../types/ssh'
 import type { DockerContainer, DockerImage } from './index'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,24 +52,20 @@ export default function DockerPage() {
 
   const [selectedHost, setSelectedHost] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
-  const [connectedSessionId, setConnectedSessionId] = useState<string | null>(null)
-  // selectedHost 可能是 session id 或 connection id，currentConnId 始终是 session id
+  // 通过后端 REST API 建立的 SSH 连接 ID
+  const [restConnId, setRestConnId] = useState<string | null>(null)
+  // currentConnId: 优先用已有 session，其次用 REST API 建立的连接
   const currentConnId = useMemo(() => {
-    if (selectedHost) {
-      // 先检查是否已经是活跃 session
-      if (sessions.some((s) => s.id === selectedHost)) return selectedHost
-      // 检查刚自动连接创建的 session
-      if (connectedSessionId) return connectedSessionId
-      return null
-    }
+    if (selectedHost && sessions.some((s) => s.id === selectedHost)) return selectedHost
+    if (restConnId) return restConnId
     return sessions.length > 0 ? sessions[0]!.id : null
-  }, [selectedHost, sessions, connectedSessionId])
+  }, [selectedHost, sessions, restConnId])
 
-  // 选中未连接的主机时自动建立 SSH 连接
+  // 选中未连接的主机时，通过后端 /api/ssh/connect 建立真实 SSH 连接
   useEffect(() => {
     if (!selectedHost || connecting) return
-    if (sessions.some((s) => s.id === selectedHost)) return // 已连接
-    if (connectedSessionId) return // 已在连接中
+    if (sessions.some((s) => s.id === selectedHost)) return // 已有 session
+    if (restConnId) return // 已通过 REST 连接
     const conn = connections.find((c) => c.id === selectedHost)
     if (!conn) return
 
@@ -81,31 +75,42 @@ export default function DockerPage() {
       try {
         const decrypted = await decryptConnection(conn)
         if (cancelled) return
-        const sessionId = `sess_docker_${conn.id}_${Date.now()}`
-        setSessionCredentials(sessionId, {
-          host: conn.host,
-          port: conn.port,
-          username: conn.username,
-          password: decrypted.password,
-          privateKey: decrypted.privateKey,
-          sudoPassword: decrypted.sudoPassword || decrypted.password,
+
+        const res = await fetch('/api/ssh/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: conn.host,
+            port: conn.port,
+            username: conn.username,
+            password: decrypted.password || '',
+            privateKey: decrypted.privateKey || '',
+          }),
         })
-        const session: SshSession = {
-          id: sessionId,
-          connectionId: conn.id,
-          connectionName: conn.name,
-          host: conn.host,
-          status: 'connected',
-          terminalCols: 80,
-          terminalRows: 24,
+        const json = (await res.json()) as {
+          success?: boolean
+          data?: { connection_id?: string }
+          error?: string
         }
-        useSshStore.getState().addSession(session)
-        useAppStore.getState().addSshSession(sessionId)
-        // 先写 state，再更新 selectedHost，确保 currentConnId 立即可用
-        setConnectedSessionId(sessionId)
-        setSelectedHost(sessionId)
+        if (cancelled) return
+
+        if (json.success && json.data?.connection_id) {
+          setRestConnId(json.data.connection_id)
+          // 同时更新 SSH store，让其他页面也能看到这个连接
+          const session = {
+            id: json.data.connection_id,
+            connectionId: conn.id,
+            connectionName: conn.name,
+            host: conn.host,
+            status: 'connected' as const,
+            terminalCols: 80,
+            terminalRows: 24,
+          }
+          useSshStore.getState().addSession(session)
+          useAppStore.getState().addSshSession(json.data.connection_id)
+        }
       } catch {
-        // ignore - user will see empty state
+        // ignore
       } finally {
         if (!cancelled) setConnecting(false)
       }
@@ -113,7 +118,7 @@ export default function DockerPage() {
     return () => {
       cancelled = true
     }
-  }, [selectedHost, sessions, connections, connecting, connectedSessionId])
+  }, [selectedHost, sessions, connections, connecting, restConnId])
 
   const fetchContainers = useCallback(async () => {
     if (!currentConnId) return
@@ -182,6 +187,19 @@ export default function DockerPage() {
     else if (tab === 'monitor') fetchContainers()
   }, [tab, fetchContainers, fetchImages])
 
+  // 页面可见时始终同时拉取容器和镜像数量（确保 tab 上数字准确）
+  useEffect(() => {
+    if (isVisible && currentConnId) {
+      const t1 = setTimeout(() => fetchContainers(), 0)
+      const t2 = setTimeout(() => fetchImages(), 50)
+      return () => {
+        clearTimeout(t1)
+        clearTimeout(t2)
+      }
+    }
+    return undefined
+  }, [isVisible, currentConnId, fetchContainers, fetchImages])
+
   // 自动刷新
   useEffect(() => {
     if (autoRefresh && isVisible) {
@@ -203,15 +221,6 @@ export default function DockerPage() {
     }
     return undefined
   }, [tab, isVisible, refresh])
-
-  // 切回页面时刷新
-  useEffect(() => {
-    if (isVisible) {
-      const t = setTimeout(() => refresh(), 0)
-      return () => clearTimeout(t)
-    }
-    return undefined
-  }, [isVisible, refresh])
 
   if (!currentConnId) {
     return (
