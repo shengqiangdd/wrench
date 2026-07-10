@@ -146,8 +146,7 @@ pub async fn get_all_health(
 
     // 自动清理僵尸连接（已断开但仍留在 state.connections 中的）
     for h in &results {
-        if !h.connected && !h.error.as_deref().unwrap_or("").contains("Not connected") {
-            // 连接失败的清理掉
+        if !h.connected {
             state.connections.remove(&h.id);
             tracing::info!("Cleaned up zombie connection: {} ({})", h.host, h.id);
         }
@@ -361,7 +360,7 @@ async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData
         .await
         .map_err(|e| format!("SSH exec failed: {}", e))?;
 
-    if result.exit_code != 0 && result.stdout.trim().is_empty() {
+    if result.exit_code != 0 && result.stdout.is_empty() {
         return Err(format!(
             "Command failed with exit code {}: {}",
             result.exit_code, result.stderr
