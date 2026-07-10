@@ -13,7 +13,8 @@ const VaultPage = lazy(() => import('../../modules/vault/VaultPage'))
 const NotificationsPage = lazy(() => import('../../modules/notifications/NotificationsPage'))
 const AuditLogPage = lazy(() => import('../../modules/audit/AuditLogPage'))
 
-const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<unknown>>> = {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<any>>> = {
   ssh: SshPlaceholder,
   commands: CommandsPage,
   docker: DockerPage,
