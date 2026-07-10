@@ -50,28 +50,31 @@ export default function SourceConfig({
       })
       const json = await res.json()
       if (json.success) {
-        const lines = json.data.split('\n').filter(Boolean)
-        const common: LogSource[] = []
-        let inCommon = false
-        for (const line of lines) {
-          if (line === '---common---') {
-            inCommon = true
-            continue
-          }
-          if (inCommon) {
+        // 后端返回 LogSource[] 数组
+        const data = json.data
+        let sources: LogSource[] = []
+        if (Array.isArray(data)) {
+          sources = data.map((s) => ({
+            path: s.path || '',
+            label: s.label || s.path?.split('/').pop() || '',
+            size: s.size || '',
+          }))
+        } else if (typeof data === 'string') {
+          // 兼容旧格式
+          const lines = data.split('\n').filter(Boolean)
+          for (const line of lines) {
             const parts = line.trim().split(/\s+/)
             if (parts.length >= 2) {
-              const size = parts[0]
               const path = parts.slice(1).join(' ')
               const label =
                 PRESET_LOG_PATTERNS.find((p) => p.path === path)?.label ||
                 path.split('/').pop() ||
                 path
-              common.push({ size, path, label })
+              sources.push({ path, label })
             }
           }
         }
-        setDiscoveredSources(common)
+        setDiscoveredSources(sources)
       }
     } catch {
       // ignore

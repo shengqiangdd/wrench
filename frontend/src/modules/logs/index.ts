@@ -1,7 +1,7 @@
 /** 日志源定义 */
 export interface LogSource {
-  /** 文件大小，如 "4.2M" */
-  size: string
+  /** 文件大小，如 "4.2M"（可选） */
+  size?: string
   /** 完整路径 */
   path: string
   /** 友好名称（自动从路径推断） */
