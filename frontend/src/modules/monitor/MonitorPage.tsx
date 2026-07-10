@@ -114,29 +114,42 @@ const ProcessList = memo(function ProcessList({ procs }: { procs: HostStats['top
   if (!procs || procs.length === 0) {
     return <div className="text-[11px] text-slate-500">无数据</div>
   }
+
+  // 提取进程名：从完整路径/命令中提取可读名称
+  function extractProcName(cmd: string, pid: number): string {
+    if (!cmd) return `PID ${pid}`
+    // 去掉方括号（内核线程如 [kworker]）
+    let name = cmd.replace(/^\[|\]$/g, '')
+    // 取第一个参数之前的部分
+    const firstPart = name.split(/\s+/)[0]
+    if (firstPart) name = firstPart
+    // 取 basename
+    const parts = name.split('/')
+    const lastPart = parts[parts.length - 1]
+    if (lastPart) name = lastPart
+    // 截断过长的名字
+    if (name.length > 20) name = name.slice(0, 18) + '..'
+    return name || `PID ${pid}`
+  }
+
   return (
     <div className="space-y-0.5">
       {/* 表头 */}
       <div className="flex items-center gap-2 text-[10px] text-slate-500">
-        <span className="w-12 truncate">用户</span>
         <span className="w-10 text-right">CPU</span>
         <span className="w-10 text-right">MEM</span>
-        <span className="flex-1 truncate">进程</span>
+        <span className="min-w-0 flex-1 truncate">进程</span>
       </div>
       {procs.map((p, i) => {
-        // 提取进程名：取 command 的第一段 basename
-        const cmdParts = (p.command || '').split('/')
-        const procName = cmdParts[cmdParts.length - 1]?.split(' ')[0] || p.command || `PID ${p.pid}`
-        // 去掉方括号（如 [kworker]）
-        const displayName = procName.replace(/^\[|\]$/g, '')
+        const displayName = extractProcName(p.command, p.pid)
         return (
           <div key={`${p.pid}-${i}`} className="flex items-center gap-2 text-[11px]">
-            <span className="w-12 truncate text-slate-500" title={p.user}>
-              {p.user}
-            </span>
             <span className="w-10 text-right text-cyan-400 tabular-nums">{p.cpu.toFixed(1)}</span>
             <span className="w-10 text-right text-purple-400 tabular-nums">{p.mem.toFixed(1)}</span>
-            <span className="flex-1 truncate text-slate-300" title={p.command}>
+            <span
+              className="min-w-0 flex-1 truncate text-slate-300"
+              title={`${p.command} (${p.user}:${p.pid})`}
+            >
               {displayName}
             </span>
           </div>
@@ -292,7 +305,11 @@ export default function MonitorPage() {
       if (deduped.length > 0) {
         setSelected((prev) => {
           const valid = prev.filter((id) => newIds.has(id))
-          if (valid.length === 0) return [deduped[0]!.id]
+          // 自动选中所有已连接的主机（不只是第一台）
+          if (valid.length === 0) {
+            const connectedIds = deduped.filter((h) => h.connected).map((h) => h.id)
+            return connectedIds.length > 0 ? connectedIds : [deduped[0]!.id]
+          }
           return valid
         })
       }

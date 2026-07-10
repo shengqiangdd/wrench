@@ -219,17 +219,28 @@ const HostCard = memo(function HostCard({
         <div className="mt-3 rounded-lg bg-slate-800/80 p-2.5">
           <div className="mb-1.5 text-xs text-slate-400">Top 进程</div>
           <div className="space-y-1">
-            {host.top_procs.slice(0, 5).map((proc) => (
-              <div key={proc.pid} className="flex items-center justify-between text-[11px]">
-                <div className="min-w-0 flex-1 truncate text-slate-300">
-                  {proc.command || `PID ${proc.pid}`}
+            {host.top_procs.slice(0, 5).map((proc) => {
+              const cmd = proc.command || ''
+              let name = cmd.replace(/^\[|\]$/g, '').split(/\s+/)[0] || ''
+              const parts = name.split('/')
+              name = parts[parts.length - 1] || name
+              if (name.length > 20) name = name.slice(0, 18) + '..'
+              const displayName = name || `PID ${proc.pid}`
+              return (
+                <div key={proc.pid} className="flex items-center justify-between text-[11px]">
+                  <div
+                    className="min-w-0 flex-1 truncate text-slate-300"
+                    title={`${cmd} (${proc.user}:${proc.pid})`}
+                  >
+                    {displayName}
+                  </div>
+                  <div className="ml-2 flex shrink-0 gap-2">
+                    <span className="text-cyan-400 tabular-nums">{proc.cpu.toFixed(1)}%</span>
+                    <span className="text-purple-400 tabular-nums">{proc.mem.toFixed(1)}%</span>
+                  </div>
                 </div>
-                <div className="ml-2 flex shrink-0 gap-2">
-                  <span className="text-cyan-400 tabular-nums">{proc.cpu.toFixed(1)}%</span>
-                  <span className="text-purple-400 tabular-nums">{proc.mem.toFixed(1)}%</span>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
