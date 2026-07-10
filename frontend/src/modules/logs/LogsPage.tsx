@@ -93,7 +93,11 @@ export default function LogsPage() {
         {/* 左侧日志源面板 */}
         {sourcePanelOpen && (
           <div className="w-56 shrink-0 overflow-y-auto border-r border-slate-700/50 bg-slate-900/50">
-            <SourceConfig connectionId={effectiveConnId} onSelectPath={handleSelectPath} />
+            <SourceConfig
+              key={effectiveConnId}
+              connectionId={effectiveConnId}
+              onSelectPath={handleSelectPath}
+            />
           </div>
         )}
 

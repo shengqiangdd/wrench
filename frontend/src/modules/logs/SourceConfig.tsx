@@ -124,14 +124,16 @@ export default function SourceConfig({ connectionId, onSelectPath }: Props) {
       })
       const json = await res.json()
       if (json.success && Array.isArray(json.data)) {
-        const existing: LogSource[] = json.data.map((item: { path: string; size: string }) => {
-          const preset = LOG_CATEGORIES.flatMap((c) => c.paths).find((p) => p.path === item.path)
-          return {
-            path: item.path,
-            label: preset?.label || item.path.split('/').pop() || item.path,
-            size: item.size || '',
-          }
-        })
+        const existing: LogSource[] = json.data
+          .filter((item: { exists: boolean }) => item.exists)
+          .map((item: { path: string; size: string }) => {
+            const preset = LOG_CATEGORIES.flatMap((c) => c.paths).find((p) => p.path === item.path)
+            return {
+              path: item.path,
+              label: preset?.label || item.path.split('/').pop() || item.path,
+              size: item.size || '',
+            }
+          })
         setDiscoverResults(existing)
       }
     } catch {

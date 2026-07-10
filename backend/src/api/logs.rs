@@ -96,7 +96,12 @@ pub async fn tail_log(
 
     let content = match session {
         Some(s) => {
-            let cmd = format!("tail -n {} \"{}\" 2>/dev/null || echo 'File not found: {}'", lines, path, path);
+            // 先尝试直接读取，失败则用 sudo
+            let escaped_path = path.replace('\'', "'\\''");
+            let cmd = format!(
+                "tail -n {lines} '{path}' 2>/dev/null || sudo -n tail -n {lines} '{path}' 2>/dev/null || sudo tail -n {lines} '{path}' 2>&1 || echo 'Unable to read: {path}'",
+                lines = lines, path = escaped_path
+            );
             match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                 Ok(Ok((stdout, _, _))) => Some(stdout),
                 _ => None,
@@ -139,9 +144,12 @@ pub async fn grep_log(
 
     let content = match session {
         Some(s) => {
+            let escaped_pattern = pattern.replace('\'', "'\\''");
+            let escaped_path = path.replace('\'', "'\\''");
+            // 先尝试直接 grep，失败则用 sudo
             let cmd = format!(
-                "grep -i '{}' \"{}\" 2>/dev/null | tail -200 || echo 'No matches or file not found'",
-                pattern, path
+                "grep -i '{pat}' '{path}' 2>/dev/null | tail -200 || sudo -n grep -i '{pat}' '{path}' 2>/dev/null | tail -200 || sudo grep -i '{pat}' '{path}' 2>&1 | tail -200 || echo 'No matches or file not found'",
+                pat = escaped_pattern, path = escaped_path
             );
             match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                 Ok(Ok((stdout, _, _))) => Some(stdout),
@@ -183,11 +191,17 @@ pub async fn scan_log_sources(
 
     if let Some(s) = session {
         // 用一条命令检查所有文件：存在则输出 "path\tsize"，否则输出空
+        // 支持 sudo：先尝试直接访问，失败则用 sudo
         let checks: Vec<String> = paths.iter()
             .map(|p| {
+                let ep = p.replace('\'', "'\\''");
                 format!(
-                    "if [ -f '{p}' ]; then sz=$(du -sh '{p}' 2>/dev/null | cut -f1); echo \"{p}\\t${{sz:-?}}\"; fi",
-                    p = p.replace('\'', "'\\''")
+                    "sz=''; \
+                     if [ -r '{p}' ]; then sz=$(du -sh '{p}' 2>/dev/null | cut -f1); \
+                     elif sudo -n [ -r '{p}' ] 2>/dev/null; then sz=$(sudo -n du -sh '{p}' 2>/dev/null | cut -f1); \
+                     elif command -v sudo >/dev/null 2>&1; then sz=$(echo | sudo -S du -sh '{p}' 2>/dev/null | cut -f1); fi; \
+                     [ -n \"$sz\" ] && printf '{p}\\t%s\\n' \"$sz\"",
+                    p = ep
                 )
             })
             .collect();
