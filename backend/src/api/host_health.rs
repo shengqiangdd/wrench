@@ -40,14 +40,13 @@ pub struct HostHealth {
     pub processes: Option<u32>,
     // 磁盘（所有真实分区）
     pub disks: Vec<DiskInfo>,
-    // 网络速率
-    pub net_rx_bps: Option<f64>,
-    pub net_tx_bps: Option<f64>,
+    // 累计字节（前端用于计算速率）
+    pub net_rx_bytes: u64,
+    pub net_tx_bytes: u64,
+    pub io_read_sectors: u64,
+    pub io_write_sectors: u64,
     // Top 进程
     pub top_procs: Vec<ProcInfo>,
-    // 磁盘 IO 速率
-    pub disk_read_bps: Option<f64>,
-    pub disk_write_bps: Option<f64>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
@@ -126,29 +125,29 @@ pub async fn get_all_health(
                     };
                 }
                 match check_host_health(&state, &id).await {
-                    Ok(data) => {
-                        let h = HostHealth {
-                            id,
-                            host: info.host,
-                            port: info.port,
-                            username: info.username,
-                            connected: true,
-                            cpu_load: data.cpu_load,
-                            cpu_load_5: data.cpu_load_5,
-                            cpu_load_15: data.cpu_load_15,
-                            cpu_cores: data.cpu_cores,
-                            mem_total_mb: data.mem_total_mb,
-                            mem_used_mb: data.mem_used_mb,
-                            mem_percent: data.mem_percent,
-                            uptime: data.uptime,
-                            processes: data.processes,
-                            disks: data.disks,
-                            top_procs: data.top_procs,
-                            ..Default::default()
-                        };
-                        // 速率由前端用两次采样计算
-                        h
-                    }
+                    Ok(data) => HostHealth {
+                        id,
+                        host: info.host,
+                        port: info.port,
+                        username: info.username,
+                        connected: true,
+                        error: None,
+                        cpu_load: data.cpu_load,
+                        cpu_load_5: data.cpu_load_5,
+                        cpu_load_15: data.cpu_load_15,
+                        cpu_cores: data.cpu_cores,
+                        mem_total_mb: data.mem_total_mb,
+                        mem_used_mb: data.mem_used_mb,
+                        mem_percent: data.mem_percent,
+                        uptime: data.uptime,
+                        processes: data.processes,
+                        disks: data.disks,
+                        net_rx_bytes: data.net_rx_bytes,
+                        net_tx_bytes: data.net_tx_bytes,
+                        io_read_sectors: data.io_read_sectors,
+                        io_write_sectors: data.io_write_sectors,
+                        top_procs: data.top_procs,
+                    },
                     Err(e) => HostHealth {
                         id,
                         host: info.host,

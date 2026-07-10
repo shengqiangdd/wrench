@@ -148,11 +148,11 @@ interface BackendHealthHost {
   disks?: Array<{ mount: string; total: string; used: string; percent: string }>
   uptime?: string
   processes?: number
-  networkRx?: number
-  networkTx?: number
-  diskRead?: number
-  diskWrite?: number
-  topProcs?: Array<{ pid: number; user: string; cpu: number; mem: number; command: string }>
+  net_rx_bytes?: number
+  net_tx_bytes?: number
+  io_read_sectors?: number
+  io_write_sectors?: number
+  top_procs?: Array<{ pid: number; user: string; cpu: number; mem: number; command: string }>
 }
 
 // ─── 工具函数 ───
@@ -214,7 +214,7 @@ function _mockStats(id: string, name: string, host: string): HostStats {
 export default function MonitorPage() {
   const setActiveNav = useAppStore((s) => s.setActiveNav)
   const setSshSidebarOpen = useAppStore((s) => s.setSshSidebarOpen)
-  const [hosts, setHosts] = useState<{ id: string; name: string }[]>([])
+  const [hosts, setHosts] = useState<{ id: string; name: string; connected: boolean }[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [stats, setStats] = useState<Record<string, HostStats>>({})
   const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({})
@@ -230,16 +230,17 @@ export default function MonitorPage() {
   const [healthError, setHealthError] = useState(false)
   const alertHistory = useAlertStore((s) => s.history)
 
-  // 从后端 /api/hosts/health 获取已连接的主机列表
+  // 从后端 /api/hosts/health 获取所有主机列表（包括离线的）
   const scanHosts = useCallback(async () => {
     try {
       const res = await fetch('/api/hosts/health')
       const body = await res.json()
       const allHosts: BackendHealthHost[] = body.data || []
-      const connected = allHosts.filter((h) => h.connected)
-      const list = connected.map((h) => ({
+      // 显示所有主机，不只 connected 的
+      const list = allHosts.map((h) => ({
         id: h.id,
         name: h.host.length > 20 ? h.host.slice(0, 18) + '…' : h.host,
+        connected: h.connected,
       }))
       const seen = new Set<string>()
       const deduped = list.filter((h) => {
@@ -353,8 +354,8 @@ export default function MonitorPage() {
 
         // 网络速率：累计字节差 / 时间差
         const prevNet = prevNetRef.current[hostId]
-        const backendNetRx = h.networkRx ?? 0
-        const backendNetTx = h.networkTx ?? 0
+        const backendNetRx = h.net_rx_bytes ?? 0
+        const backendNetTx = h.net_tx_bytes ?? 0
         let netRxSpeed = 0
         let netTxSpeed = 0
         if (prevNet && prevNet.rx > 0) {
@@ -368,8 +369,8 @@ export default function MonitorPage() {
 
         // 磁盘 IO 速率：累计扇区差 × 512 / 时间差
         const prevIo = prevIoRef.current[hostId]
-        const backendIoRead = h.diskRead ?? 0
-        const backendIoWrite = h.diskWrite ?? 0
+        const backendIoRead = h.io_read_sectors ?? 0
+        const backendIoWrite = h.io_write_sectors ?? 0
         let readBps = 0
         let writeBps = 0
         if (prevIo && (prevIo.readSectors > 0 || prevIo.writeSectors > 0)) {
@@ -386,7 +387,7 @@ export default function MonitorPage() {
         }
 
         // Top 进程
-        const topProcs = h.topProcs || []
+        const topProcs = h.top_procs || []
 
         const s: HostStats = {
           host: hostName,
@@ -644,11 +645,11 @@ export default function MonitorPage() {
               >
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
-                    s ? (s.uptime === '离线' ? 'bg-slate-600' : 'bg-emerald-400') : 'bg-slate-600'
+                    h.connected ? 'bg-emerald-400' : 'bg-red-500'
                   }`}
                 />
                 {h.name}
-                {isActive && s && s.uptime !== '离线' && (
+                {isActive && s && h.connected && (
                   <span className="text-[10px] text-slate-500">{s.cpu}%</span>
                 )}
               </button>
