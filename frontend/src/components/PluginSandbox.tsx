@@ -2,18 +2,16 @@
  * PluginSandbox.tsx
  *
  * 插件沙箱容器 — 直接在主线程执行插件代码，通过受限 API 对象隔离。
- * 比 iframe 方案更可靠（无 postMessage 通信丢失问题）。
+ * 使用 useRef 保持回调稳定，避免 useEffect 频繁重建。
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import type { PluginManifest } from '../types/plugin'
 
 export interface PluginSandboxHandle {
   executeCommand: (commandId: string, args?: unknown[]) => void
   updateEditorContent: (content: string | null, language: string | null) => void
   destroy: () => void
-  iframe: null
-  reload: (manifest: PluginManifest, pluginCode: string) => void
 }
 
 interface PluginSandboxProps {
@@ -31,38 +29,43 @@ export default function PluginSandbox({
 }: PluginSandboxProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const handleRef = useRef<PluginSandboxHandle | null>(null)
-  const cleanupRef = useRef<(() => void) | null>(null)
+  const onReadyRef = useRef(onReady)
+  const onErrorRef = useRef(onError)
+  const initializedRef = useRef(false)
 
   useEffect(() => {
-    const container = containerRef.current
-    if (!container || !pluginCode) return
+    onReadyRef.current = onReady
+    onErrorRef.current = onError
+  })
 
-    // 清理旧实例
-    cleanupRef.current?.()
+  const initSandbox = useCallback(() => {
+    const container = containerRef.current
+    if (!container || !pluginCode || initializedRef.current) return
+
+    // 清理旧内容
+    container.innerHTML = ''
 
     const commandHandlers: Record<string, (args: unknown[]) => void> = {}
-    let destroyed = false
 
-    // 构建受限 API
+    // 创建插件根元素
     const rootEl = document.createElement('div')
     rootEl.id = 'plugin-root'
     rootEl.className = 'plugin-root'
-    rootEl.style.cssText = 'width:100%;height:100%;overflow:auto;'
+    rootEl.style.cssText = 'width:100%;height:100%;overflow:auto;padding:8px;'
     container.appendChild(rootEl)
 
+    // 构建受限 API
     const pluginAPI = {
       registerCommand: (
         idOrDef: string | { id: string; label?: string; description?: string },
         secondArg?: unknown,
       ) => {
-        let id: string, handler: (args: unknown[]) => void
+        let id: string
+        let handler: (args: unknown[]) => void
         if (typeof idOrDef === 'string') {
           id = idOrDef
           const def = secondArg as Record<string, unknown> | undefined
-          handler =
-            (def?.execute as (args: unknown[]) => void) ||
-            (def as unknown as (args: unknown[]) => void) ||
-            (() => {})
+          handler = (def?.execute as (args: unknown[]) => void) || (() => {})
         } else {
           id = idOrDef.id
           handler = (secondArg as (args: unknown[]) => void) || (() => {})
@@ -136,7 +139,7 @@ export default function PluginSandbox({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(`[PluginSandbox] ${manifest.name} error:`, msg)
-      onError?.(msg)
+      onErrorRef.current?.(msg)
       return
     }
 
@@ -154,33 +157,29 @@ export default function PluginSandbox({
       },
       updateEditorContent: () => {},
       destroy: () => {
-        destroyed = true
-        container.removeChild(rootEl)
-      },
-      iframe: null,
-      reload: () => {},
-    }
-    handleRef.current = handle
-
-    // 通知 ready
-    onReady?.(handle)
-
-    cleanupRef.current = () => {
-      if (!destroyed) {
-        destroyed = true
+        initializedRef.current = false
         try {
           container.removeChild(rootEl)
         } catch {
           /* */
         }
-      }
+      },
     }
+    handleRef.current = handle
+    initializedRef.current = true
 
+    // 通知 ready
+    onReadyRef.current?.(handle)
+  }, [manifest, pluginCode])
+
+  useEffect(() => {
+    initSandbox()
     return () => {
-      cleanupRef.current?.()
-      cleanupRef.current = null
+      handleRef.current?.destroy()
+      handleRef.current = null
+      initializedRef.current = false
     }
-  }, [manifest, pluginCode, onReady, onError])
+  }, [initSandbox])
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%', overflow: 'auto' }} />
 }

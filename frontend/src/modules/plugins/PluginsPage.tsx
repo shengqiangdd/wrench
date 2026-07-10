@@ -136,44 +136,38 @@ export default function PluginsPage() {
     }
   }, [loadPlugins, handleReload])
 
-  // 为每个插件创建稳定的 onReady 回调
-  const onReadyCallbacks = useMemo(() => {
-    const map: Record<string, (handle: PluginSandboxHandle) => void> = {}
-    for (const plugin of catalog) {
-      map[plugin.id] = (handle: PluginSandboxHandle) => {
-        setSandboxReady((prev) => ({ ...prev, [plugin.id]: true }))
-        const p = catalogRef.current.find((x) => x.id === plugin.id)
-        if (p) {
-          pluginSandboxManager.register(
-            {
-              id: p.id,
-              name: p.name,
-              version: p.version,
-              description: p.description,
-              author: p.author,
-              icon: p.icon,
-              entry: p.entry,
-              commands: (p.commands || []).map((c) => ({
-                id: c.id,
-                name: c.label || c.id,
-                label: c.label,
-                description: c.description,
-                icon: c.icon,
-              })),
-              panels: (p.panels || []).map((p2) => ({
-                id: p2.id,
-                name: p2.title || p2.id,
-                icon: p2.icon,
-                position: 'main' as const,
-              })),
-            },
-            handle,
-          )
-        }
-      }
+  // 稳定的 onReady 回调 — 使用 ref 避免重新创建
+  const handleSandboxReady = useCallback((pluginId: string, handle: PluginSandboxHandle) => {
+    setSandboxReady((prev) => ({ ...prev, [pluginId]: true }))
+    const plugin = catalogRef.current.find((p) => p.id === pluginId)
+    if (plugin) {
+      pluginSandboxManager.register(
+        {
+          id: plugin.id,
+          name: plugin.name,
+          version: plugin.version,
+          description: plugin.description,
+          author: plugin.author,
+          icon: plugin.icon,
+          entry: plugin.entry,
+          commands: (plugin.commands || []).map((c) => ({
+            id: c.id,
+            name: c.label || c.id,
+            label: c.label,
+            description: c.description,
+            icon: c.icon,
+          })),
+          panels: (plugin.panels || []).map((p2) => ({
+            id: p2.id,
+            name: p2.title || p2.id,
+            icon: p2.icon,
+            position: 'main' as const,
+          })),
+        },
+        handle,
+      )
     }
-    return map
-  }, [catalog])
+  }, [])
 
   const enabledMap = useMemo(() => {
     const map: Record<string, boolean> = {}
@@ -422,7 +416,7 @@ export default function PluginsPage() {
                                     entry: plugin.entry,
                                   }}
                                   pluginCode={sandboxCodes[plugin.id] || ''}
-                                  onReady={onReadyCallbacks[plugin.id]}
+                                  onReady={(handle) => handleSandboxReady(plugin.id, handle)}
                                   onError={(err) =>
                                     console.error(`[Plugins] ${plugin.name} error:`, err)
                                   }
