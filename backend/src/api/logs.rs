@@ -48,7 +48,13 @@ pub async fn scan_log_sources(
     };
 
     // 两条简单命令：1) find 发现 .log 文件（排除压缩/轮转）  2) 检查预定义路径
-    let find_cmd = "find /var/log -maxdepth 3 -type f -name '*.log' ! -name '*.gz' ! -name '*.bz2' ! -name '*.xz' ! -name '*.zst' ! -name '*.log.*' 2>/dev/null | head -50";
+    // find 发现 .log 文件和编号轮转文件（如 boot.log.3），排除压缩文件和二进制文件
+    let find_cmd = concat!(
+        "find /var/log -maxdepth 3 -type f \\( -name '*.log' -o -name '*.log.[0-9]' -o -name '*.log.[0-9][0-9]' \\) ",
+        "! -name '*.gz' ! -name '*.bz2' ! -name '*.xz' ! -name '*.zst' ! -name '*.Z' ! -name '*.zip' ",
+        "! -name 'btmp*' ! -name 'wtmp*' ! -name 'lastlog' ! -name 'faillog' ",
+        "2>/dev/null | head -50"
+    );
 
     let mut results: Vec<LogScanResult> = Vec::new();
 
@@ -154,23 +160,23 @@ pub async fn tail_log(
     let content = match get_session(&state, connection_id) {
         Some(s) => {
             let p = sq(path);
-            // 直接尝试 tail，失败则 sudo -n 降级
+            // -a 让 tail 把二进制文件当文本处理，避免 btmp 等出乱码
             let cmd = format!(
-                "tail -n {lines} {p} 2>&1; __rc=$?; \
-                 if [ $__rc -ne 0 ]; then sudo -n tail -n {lines} {p} 2>&1; __rc2=$?; \
-                   if [ $__rc2 -ne 0 ]; then echo '__ERR__FAILED'; fi; \
+                "tail -a -n {lines} {p} 2>&1; __rc=$?; \
+                 if [ $__rc -ne 0 ]; then sudo -n tail -a -n {lines} {p} 2>&1; __rc2=$?; \
+                   if [ $__rc2 -ne 0 ]; then echo ''; echo '--- 读取失败（文件不存在或无权限） ---'; fi; \
                  fi",
                 p = p, lines = lines
             );
             match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                 Ok(Ok((stdout, _, _))) => {
                     let trimmed = stdout.trim();
-                    if trimmed.ends_with("__ERR__FAILED") {
-                        let body = trimmed.strip_suffix("__ERR__FAILED").unwrap_or("").trim();
+                    if trimmed.ends_with("读取失败（文件不存在或无权限）") {
+                        let body = trimmed.strip_suffix("--- 读取失败（文件不存在或无权限） ---").unwrap_or("").trim();
                         if body.is_empty() {
-                            format!("无法读取: {path}")
+                            format!("无法读取: {path}\n\n可能原因：文件不存在或权限不足（无 sudo）")
                         } else {
-                            body.to_string()
+                            format!("{body}\n\n--- 读取失败（文件不存在或无权限） ---")
                         }
                     } else {
                         stdout
@@ -209,22 +215,17 @@ pub async fn grep_log(
             let pat = sq(pattern);
             let pth = sq(path);
             let cmd = format!(
-                "grep -i {pat} {pth} 2>&1 | tail -200; __rc=$?; \
-                 if [ $__rc -ne 0 ]; then sudo -n grep -i {pat} {pth} 2>&1 | tail -200; __rc2=$?; \
-                   if [ $__rc2 -ne 0 ]; then echo '__ERR__FAILED'; fi; \
+                "grep -a -i {pat} {pth} 2>&1 | tail -200; __rc=$?; \
+                 if [ $__rc -ne 0 ]; then sudo -n grep -a -i {pat} {pth} 2>&1 | tail -200; __rc2=$?; \
+                   if [ $__rc2 -ne 0 ]; then echo '--- 搜索失败（文件不存在或无权限） ---'; fi; \
                  fi",
                 pat = pat, pth = pth
             );
             match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                 Ok(Ok((stdout, _, _))) => {
                     let trimmed = stdout.trim();
-                    if trimmed.ends_with("__ERR__FAILED") {
-                        let body = trimmed.strip_suffix("__ERR__FAILED").unwrap_or("").trim();
-                        if body.is_empty() {
-                            format!("无法搜索: {path}")
-                        } else {
-                            body.to_string()
-                        }
+                    if trimmed == "--- 搜索失败（文件不存在或无权限） ---" {
+                        format!("无法搜索: {path}\n\n可能原因：文件不存在或权限不足（无 sudo）")
                     } else {
                         stdout
                     }
@@ -248,7 +249,12 @@ pub async fn list_sources(
     let mut sources: Vec<LogSource> = Vec::new();
 
     if let Some(s) = get_session(&state, connection_id) {
-        let cmd = "find /var/log -maxdepth 2 -type f -name '*.log' ! -name '*.gz' ! -name '*.bz2' ! -name '*.xz' ! -name '*.zst' ! -name '*.log.*' 2>/dev/null | head -30";
+        let cmd = concat!(
+            "find /var/log -maxdepth 2 -type f \\( -name '*.log' -o -name '*.log.[0-9]' -o -name '*.log.[0-9][0-9]' \\) ",
+            "! -name '*.gz' ! -name '*.bz2' ! -name '*.xz' ! -name '*.zst' ",
+            "! -name 'btmp*' ! -name 'wtmp*' ! -name 'lastlog' ",
+            "2>/dev/null | head -30"
+        );
         if let Ok(Ok((stdout, _, _))) = tokio::time::timeout(
             std::time::Duration::from_secs(10),
             s.exec(cmd),
@@ -261,15 +267,7 @@ pub async fn list_sources(
                 }
             }
         }
-    } else {
-        let common = ["/var/log/syslog", "/var/log/messages", "/var/log/auth.log"];
-        for p in common {
-            if std::path::Path::new(p).exists() {
-                sources.push(LogSource { path: p.to_string(), label: p.rsplit('/').next().unwrap().to_string() });
-            }
-        }
     }
-
     if sources.is_empty() {
         sources.push(LogSource { path: "/var/log/syslog".into(), label: "syslog".into() });
     }

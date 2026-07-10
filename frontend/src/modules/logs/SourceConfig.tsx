@@ -11,10 +11,9 @@ import {
 } from 'lucide-react'
 import type { LogSource } from './index'
 
-// 过滤掉压缩/轮转日志
+// 过滤掉压缩/加密日志，保留编号轮转（如 boot.log.3）
 function isReadableLogFile(path: string): boolean {
-  // 排除 .gz .bz2 .xz .zst .1 .2 .3 ... .99 等轮转/压缩文件
-  return !/\.(gz|bz2|xz|zst|Z|zip)$|\.log\.\d+$|\.log\.\d{4}/.test(path)
+  return !/\.(gz|bz2|xz|zst|Z|zip)$/.test(path)
 }
 
 // 按关键词分类
