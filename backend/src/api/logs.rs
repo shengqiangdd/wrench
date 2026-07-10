@@ -154,28 +154,29 @@ pub async fn tail_log(
     let content = match get_session(&state, connection_id) {
         Some(s) => {
             let p = sq(path);
-            // 分步执行：先检查文件，再尝试读取
+            // 直接尝试 tail，失败则 sudo -n 降级
             let cmd = format!(
-                concat!(
-                    "if [ ! -e {p} ]; then echo '__ERR__FILE_NOT_FOUND'; ",
-                    "elif [ ! -r {p} ]; then echo '__ERR__NO_PERM'; ",
-                    "else tail -n {lines} {p} 2>&1; ",
-                    "if [ $? -ne 0 ]; then sudo -n tail -n {lines} {p} 2>&1; fi; ",
-                    "fi"
-                ),
+                "tail -n {lines} {p} 2>&1; __rc=$?; \
+                 if [ $__rc -ne 0 ]; then sudo -n tail -n {lines} {p} 2>&1; __rc2=$?; \
+                   if [ $__rc2 -ne 0 ]; then echo '__ERR__FAILED'; fi; \
+                 fi",
                 p = p, lines = lines
             );
             match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                 Ok(Ok((stdout, _, _))) => {
-                    if stdout.contains("__ERR__FILE_NOT_FOUND") {
-                        format!("文件不存在: {path}")
-                    } else if stdout.contains("__ERR__NO_PERM") {
-                        format!("无权限读取: {path}（需要 sudo）")
+                    let trimmed = stdout.trim();
+                    if trimmed.ends_with("__ERR__FAILED") {
+                        let body = trimmed.strip_suffix("__ERR__FAILED").unwrap_or("").trim();
+                        if body.is_empty() {
+                            format!("无法读取: {path}")
+                        } else {
+                            body.to_string()
+                        }
                     } else {
                         stdout
                     }
                 }
-                _ => format!("连接超时或执行失败: {path}"),
+                _ => format!("连接超时: {path}"),
             }
         }
         None => "无 SSH 连接".to_string(),
@@ -208,26 +209,27 @@ pub async fn grep_log(
             let pat = sq(pattern);
             let pth = sq(path);
             let cmd = format!(
-                concat!(
-                    "if [ ! -e {pth} ]; then echo '__ERR__FILE_NOT_FOUND'; ",
-                    "elif [ ! -r {pth} ]; then echo '__ERR__NO_PERM'; ",
-                    "else grep -i {pat} {pth} 2>&1 | tail -200; ",
-                    "if [ $? -ne 0 ]; then sudo -n grep -i {pat} {pth} 2>&1 | tail -200; fi; ",
-                    "fi"
-                ),
+                "grep -i {pat} {pth} 2>&1 | tail -200; __rc=$?; \
+                 if [ $__rc -ne 0 ]; then sudo -n grep -i {pat} {pth} 2>&1 | tail -200; __rc2=$?; \
+                   if [ $__rc2 -ne 0 ]; then echo '__ERR__FAILED'; fi; \
+                 fi",
                 pat = pat, pth = pth
             );
             match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                 Ok(Ok((stdout, _, _))) => {
-                    if stdout.contains("__ERR__FILE_NOT_FOUND") {
-                        format!("文件不存在: {path}")
-                    } else if stdout.contains("__ERR__NO_PERM") {
-                        format!("无权限读取: {path}（需要 sudo）")
+                    let trimmed = stdout.trim();
+                    if trimmed.ends_with("__ERR__FAILED") {
+                        let body = trimmed.strip_suffix("__ERR__FAILED").unwrap_or("").trim();
+                        if body.is_empty() {
+                            format!("无法搜索: {path}")
+                        } else {
+                            body.to_string()
+                        }
                     } else {
                         stdout
                     }
                 }
-                _ => "搜索超时或连接失败".to_string(),
+                _ => "搜索超时".to_string(),
             }
         }
         None => "无 SSH 连接".to_string(),
