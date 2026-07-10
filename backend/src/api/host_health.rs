@@ -165,13 +165,8 @@ pub async fn get_all_health(
 
     let results = join_all(futures).await;
 
-    // 清理僵尸连接
-    for h in &results {
-        if !h.connected {
-            state.connections.remove(&h.id);
-            tracing::info!("Cleaned up zombie connection: {} ({})", h.host, h.id);
-        }
-    }
+    // 不自动清理离线连接 — 让用户手动管理
+    // 之前自动删除导致主机从列表消失，无法重新连接
 
     auto_alert_health_anomalies(&state, &results);
 
@@ -335,7 +330,7 @@ async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData
         "echo '===MEM==='; ",
         "free -m 2>/dev/null | awk 'NR==2{printf \"%d %d %.1f\", $2, $3, ($3/$2)*100}'; ",
         "echo '===DISK==='; ",
-        "df -h -T 2>/dev/null | awk 'NR>1 && $2!~/(tmpfs|devtmpfs|squashfs|overlay|none|fuse|squash)/ && $5+0>0{printf \"%s %s %s %s\\n\", $6, $3, $4, $5}'; ",
+        "df -h -T 2>/dev/null | awk 'NR>1 && $2!~/(tmpfs|devtmpfs|squashfs|overlay|none|fuse|squash)/ && $6+0>0{printf \"%s %s %s %s\\n\", $7, $3, $4, $6}'; ",
         "echo '===UPTIME==='; ",
         "uptime -p 2>/dev/null || uptime | sed 's/.*up //' | awk '{print $1, $2, $3, $4}'; ",
         "echo '===PROCS==='; ",
