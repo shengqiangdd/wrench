@@ -1,777 +1,790 @@
-/**
- * MonitorPage - 系统监控仪表盘
- *
- * 数据全部由后端一次性 SSH 采集，前端只做展示和速度计算（两次采样差值）。
- */
-
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, memo } from 'react'
 import {
   Activity,
   Cpu,
   MemoryStick,
   HardDrive,
-  Wifi,
-  Clock,
+  Network,
   RefreshCw,
   Server,
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
-  Zap,
+  Bell,
+  ExternalLink,
 } from 'lucide-react'
+import { useAppStore } from '../../stores/app-store'
+import { useAlertStore } from '../../stores/alert-store'
+import AlertSettings from './AlertSettings'
+import AlertHistory from './AlertHistory'
+import HostHealthOverview from './HostHealthOverview'
+import type { HealthData, HostStats, HistoryPoint } from './types'
 
-import { useSshStore } from '../../stores/ssh-store'
+// ─── 工具函数 ───
 
-// ─── Types ───
+function formatSpeed(bps: number): string {
+  if (bps === 0) return '0 b/s'
+  const k = 1000
+  const sizes = ['b/s', 'Kb/s', 'Mb/s', 'Gb/s']
+  const i = Math.floor(Math.log(bps) / Math.log(k))
+  return parseFloat((bps / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
 
-interface MonitorData {
-  connectionId: string
-  name: string
+// ─── 渐变色进度条 ───
+
+const ProgressBar = memo(function ProgressBar({
+  value,
+  label,
+  sub,
+  color,
+}: {
+  value: number
+  label: string
+  sub?: string
+  color: string
+}) {
+  const getColor = () => {
+    if (value > 90) return 'from-red-500 to-red-400'
+    if (value > 70) return 'from-amber-500 to-amber-400'
+    return color
+  }
+  return (
+    <div className="relative">
+      <div className="mb-1 flex items-center justify-between text-[11px]">
+        <span className="text-slate-400">{label}</span>
+        <span className="font-medium text-slate-300">
+          {value}%{sub && <span className="ml-1 font-normal text-slate-500">{sub}</span>}
+        </span>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-700/60">
+        <div
+          className={`h-full rounded-full bg-gradient-to-r ${getColor()} transition-all duration-500`}
+          style={{ width: `${Math.min(value, 100)}%` }}
+        />
+      </div>
+    </div>
+  )
+})
+
+// ─── 迷你折线图 ───
+
+const MiniChart = memo(function MiniChart({
+  points,
+  height = 40,
+  color = '#60a5fa',
+}: {
+  points: number[]
+  height?: number
+  color?: string
+}) {
+  if (points.length < 2) {
+    return (
+      <div
+        style={{ height }}
+        className="flex items-center justify-center text-[10px] text-slate-600"
+      >
+        等待数据...
+      </div>
+    )
+  }
+  const max = Math.max(...points, 1)
+  const w = 100
+  const d = points
+    .map((v, i) => {
+      const x = (i / (points.length - 1)) * w
+      const y = height - (v / max) * (height - 4)
+      return `${i === 0 ? 'M' : 'L'}${x},${y}`
+    })
+    .join(' ')
+
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" style={{ height }}>
+      <defs>
+        <linearGradient id={`g-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${d} L${w},${height} L0,${height} Z`} fill={`url(#g-${color.replace('#', '')})`} />
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+})
+
+// ─── 进程列表 ───
+
+const ProcessList = memo(function ProcessList({ procs }: { procs: HostStats['topProcs'] }) {
+  if (!procs || procs.length === 0) {
+    return <div className="text-[11px] text-slate-500">无数据</div>
+  }
+  return (
+    <div className="space-y-1">
+      {procs.map((p, i) => (
+        <div key={`${p.pid}-${i}`} className="flex items-center gap-2 text-[11px]">
+          <span className="w-10 text-right text-slate-500">{p.pid}</span>
+          <span className="w-12 truncate text-slate-400">{p.user}</span>
+          <span className="w-10 text-right text-cyan-400">{p.cpu.toFixed(1)}%</span>
+          <span className="w-10 text-right text-purple-400">{p.mem.toFixed(1)}%</span>
+          <span className="flex-1 truncate text-slate-300">{p.command}</span>
+        </div>
+      ))}
+    </div>
+  )
+})
+
+// ─── 后端健康数据类型 ───
+
+interface BackendHealthHost {
+  id: string
+  host: string
+  port: number
+  username: string
   connected: boolean
-  hostname?: string
-  username?: string
-  host?: string
-  port?: number
   error?: string
-  cpu?: number
-  cpuCores?: number
-  memoryTotal?: number
-  memoryUsed?: number
-  memoryPercent?: number
+  cpu_load?: number
+  cpu_load_5?: number
+  cpu_load_15?: number
+  cpu_cores?: number
+  mem_total_mb?: number
+  mem_used_mb?: number
+  mem_percent?: number
+  disks?: Array<{ mount: string; total: string; used: string; percent: string }>
   uptime?: string
   processes?: number
   networkRx?: number
   networkTx?: number
   diskRead?: number
   diskWrite?: number
-  topProcs?: Array<{
-    pid: number
-    user: string
-    cpu: number
-    mem: number
-    command: string
-  }>
-  disks?: Array<{
-    mount: string
-    total: string
-    used: string
-    percent: string
-  }>
+  topProcs?: Array<{ pid: number; user: string; cpu: number; mem: number; command: string }>
 }
 
-interface Alert {
-  id: string
-  timestamp: string
-  level: string
-  host: string
-  metric: string
-  message: string
-  value: number
-  threshold: number
+// ─── 工具函数 ───
+
+function parseDiskSize(s?: string): number {
+  if (!s) return 0
+  const m = s.match(/([\d.]+)\s*([KMGTP]?)/i)
+  if (!m || !m[1]) return parseInt(s) || 0
+  const val = parseFloat(m[1])
+  const unit = (m[2] || '').toUpperCase()
+  const units: Record<string, number> = {
+    K: 1024,
+    M: 1024 ** 2,
+    G: 1024 ** 3,
+    T: 1024 ** 4,
+    P: 1024 ** 5,
+  }
+  return Math.round(val * (units[unit] || 1))
 }
 
-interface ApiResponse<T> {
-  success: boolean
-  data?: T
-  error?: string
-}
-
-// ─── Helpers ───
-
-function formatBps(bps: number): string {
-  if (bps <= 0) return '0 B/s'
-  if (bps < 1024) return `${bps.toFixed(0)} B/s`
-  if (bps < 1048576) return `${(bps / 1024).toFixed(1)} KB/s`
-  return `${(bps / 1048576).toFixed(1)} MB/s`
-}
-
-function formatUptime(uptime: string): string {
-  if (!uptime) return 'N/A'
-  const m = uptime.match(/up\s+(.+)/)
-  return m && m[1] ? m[1].trim() : uptime
-}
-
-function parseDiskPercent(s: string): number {
+function parsePctStr(s?: string): number {
+  if (!s) return 0
   return parseFloat(s.replace('%', '')) || 0
 }
 
-// ─── Metric Card ───
+// ─── 模拟数据（测试用） ───
 
-function MetricCard({
-  icon,
-  iconColor,
-  label,
-  value,
-  sub,
-  percent,
-  percentColor,
-}: {
-  icon: React.ReactNode
-  iconColor: string
-  label: string
-  value: string
-  sub?: string
-  percent?: number
-  percentColor?: string
-}) {
-  return (
-    <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
-      <div className="mb-1 flex items-center gap-2">
-        <div className={`rounded-lg p-1.5 ${iconColor}`}>{icon}</div>
-        <span className="truncate text-xs text-gray-500">{label}</span>
-      </div>
-      <div className="text-lg font-bold text-gray-900">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-gray-400">{sub}</div>}
-      {percent !== undefined && (
-        <div className="mt-1.5">
-          <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${percentColor || 'bg-blue-500'}`}
-              style={{ width: `${Math.min(percent, 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  )
+function _mockStats(id: string, name: string, host: string): HostStats {
+  return {
+    host,
+    name,
+    cpu: Math.round(Math.random() * 80 + 5),
+    memory: {
+      total: 16384,
+      used: Math.round(Math.random() * 12000 + 2000),
+      pct: Math.round(Math.random() * 80 + 10),
+    },
+    disk: {
+      total: 512000,
+      used: Math.round(Math.random() * 300000 + 50000),
+      pct: Math.round(Math.random() * 60 + 20),
+    },
+    uptime: `${Math.floor(Math.random() * 30)}天 ${Math.floor(Math.random() * 24)}时`,
+    loadAvg: `${(Math.random() * 4).toFixed(2)}, ${(Math.random() * 3).toFixed(2)}, ${(Math.random() * 2).toFixed(2)}`,
+    netRx: Math.round(Math.random() * 5000000),
+    netTx: Math.round(Math.random() * 2000000),
+    topProcs: [
+      { pid: 1, user: 'root', cpu: 12.5, mem: 3.2, command: '/usr/sbin/sshd' },
+      { pid: 1234, user: 'www', cpu: 8.3, mem: 5.1, command: 'node server.js' },
+    ],
+    io: {
+      readBps: Math.round(Math.random() * 10000000),
+      writeBps: Math.round(Math.random() * 5000000),
+    },
+    timestamp: Date.now(),
+  }
 }
 
-// ─── Main ───
-
-interface MonitorPageProps {
-  onNavigateToSsh?: () => void
-}
-
-export default function MonitorPage({ onNavigateToSsh }: MonitorPageProps = {}) {
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [monitorData, setMonitorData] = useState<MonitorData[]>([])
-  const [selectedHost, setSelectedHost] = useState<string>('')
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
-  const [showAlerts, setShowAlerts] = useState(false)
-  const [alerts, setAlerts] = useState<Alert[]>([])
-
-  const { connections } = useSshStore()
-  const connectionList = connections
-
-  // 记录上次采样的累计值，用于计算速率
-  const prevSampleRef = useRef<
-    Record<
-      string,
-      {
-        netRx: number
-        netTx: number
-        ioRead: number
-        ioWrite: number
-        ts: number
-      }
-    >
+export default function MonitorPage() {
+  const setActiveNav = useAppStore((s) => s.setActiveNav)
+  const setSshSidebarOpen = useAppStore((s) => s.setSshSidebarOpen)
+  const [hosts, setHosts] = useState<{ id: string; name: string }[]>([])
+  const [selected, setSelected] = useState<string[]>([])
+  const [stats, setStats] = useState<Record<string, HostStats>>({})
+  const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({})
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [interval, setIntervalDuration] = useState(5)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const prevNetRef = useRef<Record<string, { rx: number; tx: number; time: number }>>({})
+  const prevIoRef = useRef<
+    Record<string, { readSectors: number; writeSectors: number; time: number }>
   >({})
+  const [health, setHealth] = useState<HealthData | null>(null)
+  const [healthError, setHealthError] = useState(false)
+  const alertHistory = useAlertStore((s) => s.history)
 
-  // 刷新监控数据
-  const refreshDataFn = useCallback(async () => {
+  // 从后端 /api/hosts/health 获取已连接的主机列表
+  const scanHosts = useCallback(async () => {
     try {
-      const resp = await fetch('/api/hosts/health')
-      const result: ApiResponse<MonitorData[]> = await resp.json()
+      const res = await fetch('/api/hosts/health')
+      const body = await res.json()
+      const allHosts: BackendHealthHost[] = body.data || []
+      const connected = allHosts.filter((h) => h.connected)
+      const list = connected.map((h) => ({
+        id: h.id,
+        name: h.host.length > 20 ? h.host.slice(0, 18) + '…' : h.host,
+      }))
+      const seen = new Set<string>()
+      const deduped = list.filter((h) => {
+        if (seen.has(h.id)) return false
+        seen.add(h.id)
+        return true
+      })
 
-      if (result.success && result.data) {
-        const data = result.data
-        const now = Date.now()
-
-        // 计算网络和磁盘IO速率（两次采样差值 / 时间差）
-        const prev = prevSampleRef.current
-        const enriched = data.map((h: MonitorData) => {
-          const p = prev[h.connectionId]
-          const timeDelta = p ? (now - p.ts) / 1000 : 0
-          const netRxBps = p && timeDelta > 0 ? ((h.networkRx || 0) - p.netRx) / timeDelta : 0
-          const netTxBps = p && timeDelta > 0 ? ((h.networkTx || 0) - p.netTx) / timeDelta : 0
-          const ioReadBps =
-            p && timeDelta > 0 ? (((h.diskRead || 0) - p.ioRead) * 512) / timeDelta : 0
-          const ioWriteBps =
-            p && timeDelta > 0 ? (((h.diskWrite || 0) - p.ioWrite) * 512) / timeDelta : 0
-          return {
-            ...h,
-            networkRx: netRxBps > 0 ? netRxBps : 0,
-            networkTx: netTxBps > 0 ? netTxBps : 0,
-            diskRead: ioReadBps > 0 ? ioReadBps : 0,
-            diskWrite: ioWriteBps > 0 ? ioWriteBps : 0,
-          }
-        })
-
-        // 保存当前采样值
-        const newSample: Record<
-          string,
-          {
-            netRx: number
-            netTx: number
-            ioRead: number
-            ioWrite: number
-            ts: number
-          }
-        > = { ...prev }
-        data.forEach((h: MonitorData) => {
-          newSample[h.connectionId] = {
-            netRx: h.networkRx || 0,
-            netTx: h.networkTx || 0,
-            ioRead: h.diskRead || 0,
-            ioWrite: h.diskWrite || 0,
-            ts: now,
-          }
-        })
-        prevSampleRef.current = newSample
-
-        setMonitorData(enriched)
-        setLoading(false)
-
-        if (!selectedHost && enriched.length > 0 && enriched[0]) {
-          setSelectedHost(enriched[0].connectionId)
+      const newIds = new Set(deduped.map((h) => h.id))
+      setStats((prev) => {
+        const cleaned: Record<string, HostStats> = {}
+        for (const [k, v] of Object.entries(prev)) {
+          if (newIds.has(k)) cleaned[k] = v
         }
+        return cleaned
+      })
+      setHistory((prev) => {
+        const cleaned: Record<string, HistoryPoint[]> = {}
+        for (const [k, v] of Object.entries(prev)) {
+          if (newIds.has(k)) cleaned[k] = v
+        }
+        return cleaned
+      })
+      for (const k of Object.keys(prevNetRef.current)) {
+        if (!newIds.has(k)) delete prevNetRef.current[k]
       }
-    } catch (err) {
-      console.error('[Monitor] refresh failed:', err)
-      setLoading(false)
-    } finally {
-      setRefreshing(false)
-    }
-  }, [selectedHost])
+      for (const k of Object.keys(prevIoRef.current)) {
+        if (!newIds.has(k)) delete prevIoRef.current[k]
+      }
 
-  // 刷新告警数据
-  const refreshAlertsFn = useCallback(async () => {
-    try {
-      const resp = await fetch('/api/alerts')
-      const result: ApiResponse<Alert[]> = await resp.json()
-      if (result.success && result.data) {
-        setAlerts(Array.isArray(result.data) ? result.data : [])
+      setHosts(deduped)
+      if (deduped.length > 0) {
+        setSelected((prev) => {
+          const valid = prev.filter((id) => newIds.has(id))
+          if (valid.length === 0) return [deduped[0]!.id]
+          return valid
+        })
       }
     } catch {
-      // ignore
+      setHosts([])
+      setSelected([])
     }
   }, [])
 
-  // 手动刷新（按钮调用）
-  const handleRefresh = useCallback(() => {
-    if (refreshing) return
-    setRefreshing(true)
-    void refreshDataFn()
-  }, [refreshing, refreshDataFn])
+  // 采集所有选中主机 — 全部数据来自后端 /api/hosts/health（单条 SSH 命令）
+  const collectAll = useCallback(async () => {
+    if (selected.length === 0) return
+    setLoading(true)
+    setError('')
 
-  // 初始加载 + 定时刷新
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
-    void refreshDataFn()
-    void refreshAlertsFn()
-    const t = setInterval(() => {
-      void refreshDataFn()
-      void refreshAlertsFn()
-    }, 30000)
-    return () => clearInterval(t)
-    /* eslint-enable react-hooks/set-state-in-effect */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    try {
+      const healthResp = await fetch('/api/hosts/health')
+      const healthBody = await healthResp.json()
+      const allHealth: BackendHealthHost[] = healthBody.data || []
+      const healthMap = new Map(allHealth.map((h) => [h.id, h]))
 
-  const handleConnectHost = useCallback(
-    async (connId: string) => {
-      try {
-        const conn = connectionList.find((c) => c.id === connId)
-        if (!conn) return
+      const newStats: Record<string, HostStats> = {}
+      const now = Date.now()
 
-        const resp = await fetch('/api/ssh/connect', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            host: conn.host,
-            port: conn.port,
-            username: conn.username,
-            password: conn.password,
-            privateKey: conn.privateKey,
-          }),
-        })
-        const result: ApiResponse<{ connectionId: string }> = await resp.json()
+      for (const hostId of selected) {
+        const hostInfo = hosts.find((h) => h.id === hostId)
+        const hostName = hostInfo?.name || hostId.slice(0, 8)
+        const h = healthMap.get(hostId)
 
-        if (result.success && result.data) {
-          useSshStore.getState().updateConnection(connId, {
-            lastConnectedAt: Date.now(),
-          })
-          setSelectedHost(result.data.connectionId)
-          setTimeout(() => handleRefresh(), 1000)
-        } else {
-          alert(`连接失败: ${result.error || '未知错误'}`)
+        if (!h || !h.connected) {
+          newStats[hostId] = {
+            host: hostName,
+            name: hostName,
+            cpu: 0,
+            memory: { total: 0, used: 0, pct: 0 },
+            disk: { total: 0, used: 0, pct: 0 },
+            uptime: '离线',
+            loadAvg: '—',
+            netRx: 0,
+            netTx: 0,
+            topProcs: [],
+            io: { readBps: 0, writeBps: 0 },
+            timestamp: now,
+          }
+          continue
         }
-      } catch (err) {
-        console.error('[Monitor] connect failed:', err)
-      }
-    },
-    [connectionList, handleRefresh],
-  )
 
-  const handleSelectHost = useCallback(
-    (connectionId: string) => {
-      const host = monitorData.find((h) => h.connectionId === connectionId)
-      if (host && host.connected) {
-        setSelectedHost(connectionId)
-        return
-      }
-      // 尝试通过 SSH store 找到对应连接
-      const conn = connectionList.find(
-        (c) => c.host === host?.host && c.port === (host?.port || 22),
-      )
-      if (conn) {
-        handleConnectHost(conn.id)
-      } else if (onNavigateToSsh) {
-        onNavigateToSsh()
-      }
-    },
-    [monitorData, connectionList, handleConnectHost, onNavigateToSsh],
-  )
+        // CPU：load / cores → 百分比
+        const cpuCores = h.cpu_cores || 1
+        const cpuLoad = h.cpu_load ?? 0
+        const cpu = Math.min(100, Math.round((cpuLoad / cpuCores) * 1000) / 10)
 
-  const toggleSection = useCallback((key: string) => {
-    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }))
+        // 内存
+        const memTotalMb = h.mem_total_mb ?? 0
+        const memUsedMb = h.mem_used_mb ?? 0
+        const memPct = h.mem_percent ?? 0
+
+        // 磁盘：优先取 /，其次取使用率最高的
+        let diskTotalBytes = 0
+        let diskUsedBytes = 0
+        let diskPctVal = 0
+        if (h.disks && h.disks.length > 0) {
+          const rootDisk =
+            h.disks.find((d) => d.mount === '/') ||
+            h.disks.reduce((a, b) => (parsePctStr(a.percent) >= parsePctStr(b.percent) ? a : b))
+          diskTotalBytes = parseDiskSize(rootDisk.total)
+          diskUsedBytes = parseDiskSize(rootDisk.used)
+          diskPctVal = parsePctStr(rootDisk.percent)
+        }
+
+        // 运行时间
+        const uptime = h.uptime || '—'
+        const loadAvg = [h.cpu_load ?? 0, h.cpu_load_5 ?? 0, h.cpu_load_15 ?? 0]
+          .map((v) => v.toFixed(2))
+          .join(', ')
+
+        // 网络速率：累计字节差 / 时间差
+        const prevNet = prevNetRef.current[hostId]
+        const backendNetRx = h.networkRx ?? 0
+        const backendNetTx = h.networkTx ?? 0
+        let netRxSpeed = 0
+        let netTxSpeed = 0
+        if (prevNet && prevNet.rx > 0) {
+          const dt = (now - prevNet.time) / 1000
+          if (dt > 0) {
+            netRxSpeed = Math.max(0, (backendNetRx - prevNet.rx) / dt)
+            netTxSpeed = Math.max(0, (backendNetTx - prevNet.tx) / dt)
+          }
+        }
+        prevNetRef.current[hostId] = { rx: backendNetRx, tx: backendNetTx, time: now }
+
+        // 磁盘 IO 速率：累计扇区差 × 512 / 时间差
+        const prevIo = prevIoRef.current[hostId]
+        const backendIoRead = h.diskRead ?? 0
+        const backendIoWrite = h.diskWrite ?? 0
+        let readBps = 0
+        let writeBps = 0
+        if (prevIo && (prevIo.readSectors > 0 || prevIo.writeSectors > 0)) {
+          const dt = (now - prevIo.time) / 1000
+          if (dt > 0) {
+            readBps = Math.max(0, ((backendIoRead - prevIo.readSectors) * 512) / dt)
+            writeBps = Math.max(0, ((backendIoWrite - prevIo.writeSectors) * 512) / dt)
+          }
+        }
+        prevIoRef.current[hostId] = {
+          readSectors: backendIoRead,
+          writeSectors: backendIoWrite,
+          time: now,
+        }
+
+        // Top 进程
+        const topProcs = h.topProcs || []
+
+        const s: HostStats = {
+          host: hostName,
+          name: hostName,
+          cpu,
+          memory: { total: memTotalMb, used: memUsedMb, pct: memPct },
+          disk: { total: diskTotalBytes, used: diskUsedBytes, pct: diskPctVal },
+          uptime,
+          loadAvg,
+          netRx: netRxSpeed,
+          netTx: netTxSpeed,
+          topProcs,
+          io: { readBps, writeBps },
+          timestamp: now,
+        }
+
+        newStats[hostId] = s
+        setHistory((prev) => {
+          const hist = prev[hostId] || []
+          hist.push({ time: now, cpu: s.cpu, mem: s.memory.pct, disk: s.disk.pct })
+          return { ...prev, [hostId]: hist.slice(-60) }
+        })
+      }
+
+      setStats((prev) => ({ ...prev, ...newStats }))
+      const evaluate = useAlertStore.getState().evaluate
+      for (const id of selected) {
+        const s = newStats[id]
+        if (s) evaluate(id, s.name, { cpu: s.cpu, memory: s.memory.pct, disk: s.disk.pct })
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message || '未知错误' : '未知错误'
+      setError('采集失败: ' + msg)
+    } finally {
+      setLoading(false)
+    }
+  }, [selected, hosts])
+
+  // 自动刷新
+  const startAutoRefresh = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    timerRef.current = setInterval(collectAll, interval * 1000)
+  }, [collectAll, interval])
+
+  const stopAutoRefresh = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
   }, [])
 
-  const selectedData = monitorData.find((h) => h.connectionId === selectedHost)
+  // 初始化
+  useEffect(() => {
+    const t = setTimeout(() => scanHosts(), 0)
+    return () => clearTimeout(t)
+  }, [scanHosts])
 
-  // ─── Loading ───
-  if (loading) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
-        <span className="text-sm text-gray-500">正在检查主机状态...</span>
-      </div>
-    )
-  }
+  // 扫描到主机后自动开始采集
+  useEffect(() => {
+    if (hosts.length > 0) {
+      const t = setTimeout(() => {
+        collectAll()
+        startAutoRefresh()
+      }, 0)
+      return () => clearTimeout(t)
+    }
+    return () => stopAutoRefresh()
+  }, [hosts.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Render ───
+  // 拉取 Bridge 健康数据
+  const fetchHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/health')
+      if (res.ok) {
+        const body = await res.json()
+        setHealth(body.data ?? body)
+        setHealthError(false)
+      } else {
+        setHealthError(true)
+      }
+    } catch {
+      setHealthError(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    const t = setTimeout(() => fetchHealth(), 0)
+    const timer = window.setInterval(fetchHealth, 30_000)
+    return () => {
+      clearTimeout(t)
+      clearInterval(timer)
+    }
+  }, [fetchHealth])
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        scanHosts()
+        fetchHealth()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [scanHosts, fetchHealth])
+
+  useEffect(() => {
+    return () => stopAutoRefresh()
+  }, [stopAutoRefresh])
+
+  const toggleHost = useCallback((id: string) => {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((h) => h !== id) : [...prev, id]))
+  }, [])
+
+  const handleRefresh = useCallback(() => {
+    collectAll()
+    scanHosts()
+  }, [collectAll, scanHosts])
+
+  const handleIntervalChange = useCallback(
+    (v: number) => {
+      setIntervalDuration(v)
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = setInterval(collectAll, v * 1000)
+      }
+    },
+    [collectAll],
+  )
+
+  const selectedStats = useMemo(
+    () =>
+      selected
+        .map((id) => ({ id, stats: stats[id] }))
+        .filter((s): s is { id: string; stats: HostStats } => !!s.stats),
+    [selected, stats],
+  )
+
+  const [alertPanel, setAlertPanel] = useState<'none' | 'settings' | 'history'>('none')
+  const hasAlerts = alertHistory.length > 0
+
   return (
-    <div className="flex h-full flex-col bg-gray-50">
-      {/* Mobile Header */}
-      <div className="shrink-0 border-b border-gray-200 bg-white p-3 md:hidden">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">监控</h1>
-            <p className="text-xs text-gray-400">
-              {monitorData.filter((h) => h.connected).length}/{monitorData.length} 台主机在线
-            </p>
-          </div>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => setShowAlerts(!showAlerts)}
-              className={`rounded-lg p-2 transition-colors ${showAlerts ? 'bg-yellow-50 text-yellow-600' : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              <AlertTriangle className="h-5 w-5" />
-            </button>
-            <button
-              onClick={() => handleRefresh()}
-              disabled={refreshing}
-              className="rounded-lg p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
+    <div className="flex h-full flex-col overflow-hidden bg-slate-900">
+      {/* 顶栏 */}
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-700/50 px-4 py-2.5">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-semibold text-slate-200">系统监控</h1>
+          {health && (
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="text-slate-500">Bridge</span>
+              <span className={health.status === 'ok' ? 'text-emerald-400' : 'text-amber-400'}>
+                {health.status === 'ok' ? '正常' : health.status}
+              </span>
+              <span className="text-slate-600">|</span>
+              <span className="text-slate-500">连接 {health.connections.active}</span>
+            </div>
+          )}
+          {healthError && <span className="text-[11px] text-amber-500/80">Bridge 离线</span>}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {/* 告警按钮 */}
+          <button
+            onClick={() => setAlertPanel(alertPanel === 'none' ? 'settings' : 'none')}
+            className={`relative rounded-md px-2 py-1 text-[11px] transition-colors ${
+              alertPanel !== 'none'
+                ? 'bg-slate-700 text-slate-200'
+                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+            }`}
+          >
+            <Bell className="h-3.5 w-3.5" />
+            {hasAlerts && (
+              <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500" />
+            )}
+          </button>
+          <select
+            value={interval}
+            onChange={(e) => handleIntervalChange(Number(e.target.value))}
+            className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] text-slate-300 outline-none"
+          >
+            <option value={3}>3秒</option>
+            <option value={5}>5秒</option>
+            <option value={10}>10秒</option>
+            <option value={30}>30秒</option>
+          </select>
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
         </div>
       </div>
 
-      {/* Alert Panel */}
-      {showAlerts && (
-        <div className="mobile-scroll max-h-48 shrink-0 overflow-y-auto border-b border-gray-200 bg-white">
-          <div className="p-3">
-            <h3 className="mb-2 text-sm font-medium text-gray-700">告警记录</h3>
-            {alerts.length === 0 ? (
-              <p className="text-xs text-gray-400">暂无告警</p>
-            ) : (
-              <div className="space-y-1.5">
-                {alerts.slice(0, 20).map((a) => (
-                  <div
-                    key={a.id}
-                    className={`rounded p-2 text-xs ${
-                      a.level === 'critical'
-                        ? 'bg-red-50 text-red-700'
-                        : 'bg-yellow-50 text-yellow-700'
-                    }`}
-                  >
-                    <div className="flex justify-between">
-                      <span className="font-medium">{a.host}</span>
-                      <span className="text-[10px] opacity-75">
-                        {new Date(a.timestamp).toLocaleTimeString('zh-CN', {
-                          hour12: false,
-                        })}
-                      </span>
-                    </div>
-                    <div className="mt-0.5">{a.message}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+      {/* 告警面板 */}
+      {alertPanel !== 'none' && (
+        <div className="flex shrink-0 gap-1 border-b border-slate-700/50 px-4 py-2">
+          <button
+            onClick={() => setAlertPanel('settings')}
+            className={`rounded px-2 py-0.5 text-[11px] ${
+              alertPanel === 'settings' ? 'bg-slate-700 text-slate-200' : 'text-slate-400'
+            }`}
+          >
+            告警设置
+          </button>
+          <button
+            onClick={() => setAlertPanel('history')}
+            className={`rounded px-2 py-0.5 text-[11px] ${
+              alertPanel === 'history' ? 'bg-slate-700 text-slate-200' : 'text-slate-400'
+            }`}
+          >
+            告警历史 {hasAlerts && `(${alertHistory.length})`}
+          </button>
+          <div className="flex-1" />
+          <button
+            onClick={() => setAlertPanel('none')}
+            className="text-[11px] text-slate-500 hover:text-slate-300"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {alertPanel === 'settings' && <AlertSettings />}
+      {alertPanel === 'history' && <AlertHistory />}
+
+      {/* 主机列表 */}
+      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-700/50 px-4 py-2">
+        {hosts.length === 0 ? (
+          <div className="flex items-center gap-2 text-[11px] text-slate-500">
+            <Server className="h-3 w-3" />
+            <span>无已连接主机</span>
+            <button
+              onClick={() => {
+                setActiveNav('ssh')
+                setSshSidebarOpen(true)
+              }}
+              className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300"
+            >
+              去连接 <ExternalLink className="h-3 w-3" />
+            </button>
           </div>
+        ) : (
+          hosts.map((h) => {
+            const isActive = selected.includes(h.id)
+            const s = stats[h.id]
+            return (
+              <button
+                key={h.id}
+                onClick={() => toggleHost(h.id)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] transition-colors ${
+                  isActive
+                    ? 'bg-cyan-500/10 text-cyan-300 ring-1 ring-cyan-500/30'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    s ? (s.uptime === '离线' ? 'bg-slate-600' : 'bg-emerald-400') : 'bg-slate-600'
+                  }`}
+                />
+                {h.name}
+                {isActive && s && s.uptime !== '离线' && (
+                  <span className="text-[10px] text-slate-500">{s.cpu}%</span>
+                )}
+              </button>
+            )
+          })
+        )}
+      </div>
+
+      {/* 错误提示 */}
+      {error && (
+        <div className="mx-4 mt-2 rounded-md bg-red-500/10 px-3 py-1.5 text-[11px] text-red-400">
+          {error}
         </div>
       )}
 
-      {/* Content */}
-      <div className="mobile-scroll flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl space-y-3 p-3 md:space-y-4 md:p-6">
-          {/* Desktop Header */}
-          <div className="hidden items-center justify-between md:flex">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">系统监控</h1>
-              <p className="text-sm text-gray-500">
-                {monitorData.filter((h) => h.connected).length}/{monitorData.length} 台主机在线 ·
-                30秒自动刷新
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowAlerts(!showAlerts)}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                  showAlerts
-                    ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <AlertTriangle className="h-4 w-4" />
-                告警 {alerts.length > 0 ? `(${alerts.length})` : ''}
-              </button>
-              <button
-                onClick={() => handleRefresh()}
-                disabled={refreshing}
-                className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-              >
-                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                刷新
-              </button>
-            </div>
+      {/* 内容区 */}
+      <div className="flex-1 overflow-y-auto px-4 py-3">
+        {selectedStats.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center text-slate-500">
+            <Server className="mb-2 h-8 w-8 opacity-30" />
+            <span className="text-[11px]">选择主机查看监控数据</span>
           </div>
-
-          {/* Host Chips */}
-          <div className="mobile-scroll flex gap-2 overflow-x-auto pb-2">
-            {monitorData.map((h) => (
-              <button
-                key={h.connectionId}
-                onClick={() => handleSelectHost(h.connectionId)}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm whitespace-nowrap transition-all ${
-                  selectedHost === h.connectionId
-                    ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <div
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{
-                    backgroundColor: h.connected ? '#22c55e' : h.error ? '#ef4444' : '#9ca3af',
-                  }}
-                />
-                {h.name || h.hostname || h.connectionId}
-                {h.error && <span className="ml-0.5 text-[10px] text-red-400">⚠</span>}
-              </button>
-            ))}
-          </div>
-
-          {/* No Host */}
-          {monitorData.length === 0 && (
-            <div className="rounded-xl bg-white p-6 text-center">
-              <Server className="mx-auto mb-3 h-12 w-12 text-gray-300" />
-              <p className="mb-1 text-sm text-gray-500">暂无监控数据</p>
-              <p className="text-xs text-gray-400">请先连接SSH主机，连接后自动显示</p>
-              {connectionList.length === 0 && onNavigateToSsh && (
-                <button
-                  onClick={onNavigateToSsh}
-                  className="mt-3 rounded-lg bg-blue-500 px-4 py-2 text-sm text-white hover:bg-blue-600"
-                >
-                  去连接
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Selected Host Metrics */}
-          {selectedData && (
-            <div className="space-y-3">
-              {/* Host Info Bar */}
-              <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
-                <div className="rounded-lg bg-blue-50 p-2">
-                  <Server className="h-5 w-5 text-blue-500" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-gray-900">
-                    {selectedData.name || selectedData.connectionId}
-                  </div>
-                  <div className="truncate text-xs text-gray-400">
-                    {selectedData.username && selectedData.host
-                      ? `${selectedData.username}@${selectedData.host}`
-                      : selectedData.connectionId}
-                    {selectedData.host && selectedData.port ? `:${selectedData.port}` : ''}
-                  </div>
-                </div>
-                <div
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    selectedData.connected
-                      ? 'bg-green-50 text-green-600'
-                      : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  {selectedData.connected ? '在线' : '离线'}
-                </div>
-                {selectedData.error && (
-                  <div className="max-w-[100px] truncate text-[10px] text-red-400">
-                    {selectedData.error}
-                  </div>
-                )}
-              </div>
-
-              {!selectedData.connected ? (
-                <div className="rounded-xl bg-white p-6 text-center">
-                  <Wifi className="mx-auto mb-2 h-10 w-10 text-gray-300" />
-                  <p className="text-sm text-gray-500">主机离线</p>
-                  <p className="mt-1 text-xs text-gray-400">请前往SSH页面连接主机后自动更新</p>
-                  {onNavigateToSsh && (
-                    <button
-                      onClick={onNavigateToSsh}
-                      className="mt-3 rounded-lg bg-blue-500 px-4 py-2 text-sm text-white hover:bg-blue-600"
-                    >
-                      连接主机
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <>
-                  {/* Core Metrics */}
-                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
-                    <MetricCard
-                      icon={<Cpu className="h-4 w-4 text-blue-600" />}
-                      iconColor="bg-blue-50"
-                      label="CPU"
-                      value={
-                        selectedData.cpu !== undefined
-                          ? `${(selectedData.cpu * 100).toFixed(1)}%`
-                          : 'N/A'
-                      }
-                      sub={selectedData.cpuCores ? `${selectedData.cpuCores} 核` : undefined}
-                      percent={selectedData.cpu !== undefined ? selectedData.cpu * 100 : undefined}
-                      percentColor={
-                        (selectedData.cpu || 0) > 0.8
-                          ? 'bg-red-500'
-                          : (selectedData.cpu || 0) > 0.5
-                            ? 'bg-yellow-500'
-                            : 'bg-blue-500'
-                      }
-                    />
-
-                    <MetricCard
-                      icon={<MemoryStick className="h-4 w-4 text-purple-600" />}
-                      iconColor="bg-purple-50"
-                      label="内存"
-                      value={
-                        selectedData.memoryPercent !== undefined
-                          ? `${selectedData.memoryPercent.toFixed(1)}%`
-                          : 'N/A'
-                      }
-                      sub={
-                        selectedData.memoryTotal
-                          ? `${selectedData.memoryUsed || 0}/${selectedData.memoryTotal} MB`
-                          : undefined
-                      }
-                      percent={selectedData.memoryPercent}
-                      percentColor={
-                        (selectedData.memoryPercent || 0) > 90
-                          ? 'bg-red-500'
-                          : (selectedData.memoryPercent || 0) > 70
-                            ? 'bg-yellow-500'
-                            : 'bg-purple-500'
-                      }
-                    />
-
-                    {/* Disk: show primary disk (highest usage) */}
-                    {(() => {
-                      const disks = selectedData.disks
-                      if (!disks || disks.length === 0) {
-                        return (
-                          <MetricCard
-                            icon={<HardDrive className="h-4 w-4 text-green-600" />}
-                            iconColor="bg-green-50"
-                            label="磁盘"
-                            value="N/A"
-                          />
-                        )
-                      }
-                      const primary = disks.reduce((a, b) =>
-                        parseDiskPercent(a.percent) >= parseDiskPercent(b.percent) ? a : b,
-                      )
-                      return (
-                        <MetricCard
-                          icon={<HardDrive className="h-4 w-4 text-green-600" />}
-                          iconColor="bg-green-50"
-                          label={`磁盘 ${primary.mount}`}
-                          value={primary.percent}
-                          sub={`${primary.used}/${primary.total}`}
-                          percent={parseDiskPercent(primary.percent)}
-                          percentColor={
-                            parseDiskPercent(primary.percent) > 90
-                              ? 'bg-red-500'
-                              : parseDiskPercent(primary.percent) > 70
-                                ? 'bg-yellow-500'
-                                : 'bg-green-500'
-                          }
-                        />
-                      )
-                    })()}
-
-                    <MetricCard
-                      icon={<Clock className="h-4 w-4 text-orange-600" />}
-                      iconColor="bg-orange-50"
-                      label="运行时间"
-                      value={selectedData.uptime ? formatUptime(selectedData.uptime) : 'N/A'}
-                      sub={selectedData.processes ? `${selectedData.processes} 进程` : undefined}
-                    />
+        ) : (
+          <div className="space-y-4">
+            {selectedStats.map(({ id, stats: s }) => {
+              const hist = history[id] || []
+              return (
+                <div key={id} className="rounded-lg bg-slate-800/50 p-3">
+                  {/* 主机标题 */}
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Server className="h-3.5 w-3.5 text-cyan-400" />
+                      <span className="text-[12px] font-medium text-slate-200">{s.name}</span>
+                      <span className="text-[10px] text-slate-500">{s.host}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500">{s.uptime}</span>
                   </div>
 
-                  {/* Extra Disks (if > 1) */}
-                  {selectedData.disks && selectedData.disks.length > 1 && (
-                    <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
-                      <div className="mb-2 flex items-center gap-2">
-                        <HardDrive className="h-4 w-4 text-green-500" />
-                        <span className="text-sm font-medium text-gray-700">全部分区</span>
+                  {/* 核心指标 + 图表 */}
+                  <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                    {/* CPU */}
+                    <div className="rounded-md bg-slate-900/50 p-2">
+                      <div className="mb-1 flex items-center gap-1 text-[10px] text-slate-400">
+                        <Cpu className="h-3 w-3" /> CPU
                       </div>
-                      <div className="space-y-2">
-                        {selectedData.disks.map((d) => (
-                          <div key={d.mount} className="flex items-center gap-3">
-                            <span className="w-16 truncate text-xs text-gray-500">{d.mount}</span>
-                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
-                              <div
-                                className="h-full rounded-full bg-green-500 transition-all"
-                                style={{ width: d.percent }}
-                              />
-                            </div>
-                            <span className="w-16 text-right text-xs text-gray-500">
-                              {d.used}/{d.total}
-                            </span>
-                          </div>
-                        ))}
+                      <ProgressBar
+                        value={s.cpu}
+                        label=""
+                        sub={`负载 ${s.loadAvg.split(',')[0]?.trim() || '—'}`}
+                        color="from-cyan-500 to-cyan-400"
+                      />
+                      <MiniChart points={hist.map((h) => h.cpu)} color="#22d3ee" />
+                    </div>
+
+                    {/* 内存 */}
+                    <div className="rounded-md bg-slate-900/50 p-2">
+                      <div className="mb-1 flex items-center gap-1 text-[10px] text-slate-400">
+                        <MemoryStick className="h-3 w-3" /> 内存
+                      </div>
+                      <ProgressBar
+                        value={s.memory.pct}
+                        label=""
+                        sub={`${(s.memory.used / 1024).toFixed(1)}/${(s.memory.total / 1024).toFixed(1)} GB`}
+                        color="from-purple-500 to-purple-400"
+                      />
+                      <MiniChart points={hist.map((h) => h.mem)} color="#a855f7" />
+                    </div>
+
+                    {/* 磁盘 */}
+                    <div className="rounded-md bg-slate-900/50 p-2">
+                      <div className="mb-1 flex items-center gap-1 text-[10px] text-slate-400">
+                        <HardDrive className="h-3 w-3" /> 磁盘
+                      </div>
+                      <ProgressBar
+                        value={s.disk.pct}
+                        label=""
+                        sub={`${(s.disk.used / 1073741824).toFixed(1)}/${(s.disk.total / 1073741824).toFixed(1)} GB`}
+                        color="from-emerald-500 to-emerald-400"
+                      />
+                      <MiniChart points={hist.map((h) => h.disk)} color="#10b981" />
+                    </div>
+
+                    {/* 网络 */}
+                    <div className="rounded-md bg-slate-900/50 p-2">
+                      <div className="mb-1 flex items-center gap-1 text-[10px] text-slate-400">
+                        <Network className="h-3 w-3" /> 网络
+                      </div>
+                      <div className="text-[11px] text-slate-300">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">↓</span>
+                          <span className="text-emerald-400">{formatSpeed(s.netRx)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">↑</span>
+                          <span className="text-cyan-400">{formatSpeed(s.netTx)}</span>
+                        </div>
                       </div>
                     </div>
-                  )}
-
-                  {/* Network & IO Speed */}
-                  <div className="grid grid-cols-2 gap-2 md:gap-3">
-                    <button
-                      onClick={() => toggleSection('network')}
-                      className="rounded-xl border border-gray-100 bg-white p-3 text-left shadow-sm"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Zap className="h-4 w-4 text-cyan-500" />
-                          <span className="text-sm font-medium text-gray-700">网络</span>
-                        </div>
-                        {expandedSections.network ? (
-                          <ChevronUp className="h-4 w-4 text-gray-400" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-gray-400" />
-                        )}
-                      </div>
-                      <div className="mt-2 space-y-1 text-xs text-gray-500">
-                        <div className="flex justify-between">
-                          <span>↓ 接收</span>
-                          <span className="font-mono text-green-600">
-                            {formatBps(selectedData.networkRx || 0)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>↑ 发送</span>
-                          <span className="font-mono text-blue-600">
-                            {formatBps(selectedData.networkTx || 0)}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => toggleSection('diskio')}
-                      className="rounded-xl border border-gray-100 bg-white p-3 text-left shadow-sm"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Activity className="h-4 w-4 text-indigo-500" />
-                          <span className="text-sm font-medium text-gray-700">磁盘 IO</span>
-                        </div>
-                        {expandedSections.diskio ? (
-                          <ChevronUp className="h-4 w-4 text-gray-400" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-gray-400" />
-                        )}
-                      </div>
-                      <div className="mt-2 space-y-1 text-xs text-gray-500">
-                        <div className="flex justify-between">
-                          <span>读取</span>
-                          <span className="font-mono text-green-600">
-                            {formatBps(selectedData.diskRead || 0)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>写入</span>
-                          <span className="font-mono text-blue-600">
-                            {formatBps(selectedData.diskWrite || 0)}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
                   </div>
 
-                  {/* Top Processes */}
-                  {selectedData.topProcs && selectedData.topProcs.length > 0 && (
-                    <button
-                      onClick={() => toggleSection('procs')}
-                      className="w-full rounded-xl border border-gray-100 bg-white p-3 text-left shadow-sm"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Activity className="h-4 w-4 text-purple-500" />
-                          <span className="text-sm font-medium text-gray-700">Top 进程</span>
-                        </div>
-                        {expandedSections.procs ? (
-                          <ChevronUp className="h-4 w-4 text-gray-400" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-gray-400" />
-                        )}
+                  {/* 磁盘 IO + 进程 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* 磁盘 IO */}
+                    <div className="rounded-md bg-slate-900/50 p-2">
+                      <div className="mb-1 flex items-center gap-1 text-[10px] text-slate-400">
+                        <Activity className="h-3 w-3" /> 磁盘 IO
                       </div>
-                      {expandedSections.procs && (
-                        <div className="mt-2 overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="text-gray-400">
-                                <th className="py-1 text-left font-normal">PID</th>
-                                <th className="py-1 text-left font-normal">USER</th>
-                                <th className="py-1 text-right font-normal">CPU%</th>
-                                <th className="py-1 text-right font-normal">MEM%</th>
-                                <th className="max-w-[120px] truncate py-1 text-left font-normal">
-                                  CMD
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {selectedData.topProcs.map((p) => (
-                                <tr key={p.pid} className="text-gray-600">
-                                  <td className="py-0.5 font-mono">{p.pid}</td>
-                                  <td className="py-0.5">{p.user}</td>
-                                  <td className="py-0.5 text-right font-mono">
-                                    {p.cpu.toFixed(1)}
-                                  </td>
-                                  <td className="py-0.5 text-right font-mono">
-                                    {p.mem.toFixed(1)}
-                                  </td>
-                                  <td className="max-w-[120px] truncate py-0.5 text-gray-400">
-                                    {p.command}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                      <div className="text-[11px] text-slate-300">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">读取</span>
+                          <span className="text-emerald-400">{formatSpeed(s.io.readBps)}</span>
                         </div>
-                      )}
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">写入</span>
+                          <span className="text-cyan-400">{formatSpeed(s.io.writeBps)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Top 进程 */}
+                    <div className="rounded-md bg-slate-900/50 p-2">
+                      <div className="mb-1 flex items-center gap-1 text-[10px] text-slate-400">
+                        <Activity className="h-3 w-3" /> Top 进程
+                      </div>
+                      <ProcessList procs={s.topProcs} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
+
+      {/* 底部健康概览 */}
+      <HostHealthOverview />
     </div>
   )
 }
