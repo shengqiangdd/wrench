@@ -370,19 +370,18 @@ async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData
 
     // 按标记分割输出
     let stdout = &result.stdout;
-    let parse_section = |name: &str| -> Option<String> {
+    let get_section = |name: &str| -> Option<String> {
         let marker = format!("==={}===", name);
         let start = stdout.find(&marker)?;
         let s = start + marker.len();
-        // 找下一个标记或结尾
         let mut end = stdout.len();
         for other in &["LOAD", "MEM", "DISK", "UPTIME", "PROCS", "CORES"] {
             if *other == name {
                 continue;
             }
             let other_marker = format!("==={}===", other);
-            if let Some(e) = stdout[s..].find(&other_marker) {
-                let abs = s + e;
+            if let Some(offset) = stdout[s..].find(other_marker.as_str()) {
+                let abs = s + offset;
                 if abs < end {
                     end = abs;
                 }
@@ -407,7 +406,7 @@ async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData
     };
 
     // Parse load
-    if let Some(load_str) = parse_section("LOAD") {
+    if let Some(load_str) = get_section("LOAD") {
         let parts: Vec<&str> = load_str.split_whitespace().collect();
         if parts.len() >= 3 {
             data.cpu_load = parts[0].parse::<f64>().ok();
@@ -417,7 +416,7 @@ async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData
     }
 
     // Parse memory
-    if let Some(mem_str) = parse_section("MEM") {
+    if let Some(mem_str) = get_section("MEM") {
         let parts: Vec<&str> = mem_str.split_whitespace().collect();
         if parts.len() >= 3 {
             data.mem_total_mb = parts[0].parse::<u64>().ok();
@@ -427,7 +426,7 @@ async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData
     }
 
     // Parse disk
-    if let Some(disk_str) = parse_section("DISK") {
+    if let Some(disk_str) = get_section("DISK") {
         let parts: Vec<&str> = disk_str.split_whitespace().collect();
         if parts.len() >= 3 {
             data.disk_total = Some(parts[0].to_string());
@@ -437,7 +436,7 @@ async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData
     }
 
     // Parse uptime
-    if let Some(uptime_str) = parse_section("UPTIME") {
+    if let Some(uptime_str) = get_section("UPTIME") {
         let trimmed = uptime_str.trim().to_string();
         if !trimmed.is_empty() {
             data.uptime = Some(trimmed);
@@ -445,14 +444,14 @@ async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData
     }
 
     // Parse process count
-    if let Some(procs_str) = parse_section("PROCS") {
+    if let Some(procs_str) = get_section("PROCS") {
         if let Ok(n) = procs_str.trim().parse::<u32>() {
             data.processes = Some(n);
         }
     }
 
     // Parse CPU cores
-    if let Some(cores_str) = parse_section("CORES") {
+    if let Some(cores_str) = get_section("CORES") {
         if let Ok(n) = cores_str.trim().parse::<u32>() {
             data.cpu_cores = Some(n);
         }
