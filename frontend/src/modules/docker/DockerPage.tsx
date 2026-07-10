@@ -54,21 +54,24 @@ export default function DockerPage() {
 
   const [selectedHost, setSelectedHost] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
+  const [connectedSessionId, setConnectedSessionId] = useState<string | null>(null)
   // selectedHost 可能是 session id 或 connection id，currentConnId 始终是 session id
   const currentConnId = useMemo(() => {
     if (selectedHost) {
       // 先检查是否已经是活跃 session
       if (sessions.some((s) => s.id === selectedHost)) return selectedHost
-      // 否则返回 null，等自动连接完成后 sessions 更新
+      // 检查刚自动连接创建的 session
+      if (connectedSessionId) return connectedSessionId
       return null
     }
     return sessions.length > 0 ? sessions[0]!.id : null
-  }, [selectedHost, sessions])
+  }, [selectedHost, sessions, connectedSessionId])
 
   // 选中未连接的主机时自动建立 SSH 连接
   useEffect(() => {
     if (!selectedHost || connecting) return
     if (sessions.some((s) => s.id === selectedHost)) return // 已连接
+    if (connectedSessionId) return // 已在连接中
     const conn = connections.find((c) => c.id === selectedHost)
     if (!conn) return
 
@@ -98,7 +101,8 @@ export default function DockerPage() {
         }
         useSshStore.getState().addSession(session)
         useAppStore.getState().addSshSession(sessionId)
-        // selectedHost 设为新 session id，触发 currentConnId 更新
+        // 先写 state，再更新 selectedHost，确保 currentConnId 立即可用
+        setConnectedSessionId(sessionId)
         setSelectedHost(sessionId)
       } catch {
         // ignore - user will see empty state
@@ -109,7 +113,7 @@ export default function DockerPage() {
     return () => {
       cancelled = true
     }
-  }, [selectedHost, sessions, connections, connecting])
+  }, [selectedHost, sessions, connections, connecting, connectedSessionId])
 
   const fetchContainers = useCallback(async () => {
     if (!currentConnId) return

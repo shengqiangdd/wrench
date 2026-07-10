@@ -639,8 +639,15 @@ fn clean_ansi_output(s: &str) -> String {
     // Remove ANSI escape sequences: ESC[ ... m, ESC[ ... H, ESC[ ... J, etc.
     let re = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
     let cleaned = re.replace_all(s, "");
-    // Normalize \r\n → \n, strip trailing whitespace
-    cleaned.replace("\r\n", "\n").trim().to_string()
+    // Also remove OSC sequences: ESC] ... BEL or ESC\
+    let re2 = regex::Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap();
+    let cleaned = re2.replace_all(&cleaned, "");
+    // Normalize \r\n → \n, strip standalone \r, strip trailing whitespace
+    cleaned
+        .replace("\r\n", "\n")
+        .replace('\r', "")
+        .trim()
+        .to_string()
 }
 
 /// POST /api/docker/compose/action

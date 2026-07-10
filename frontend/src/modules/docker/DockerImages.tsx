@@ -534,7 +534,31 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
           danger
           onConfirm={() => {
             setPruneConfirm(false)
-            openModal('prune')
+            // 直接执行清理，不走 modal 流程
+            void (async () => {
+              setActionLoading('prune')
+              try {
+                const res = await fetch('/api/docker/prune', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ connectionId }),
+                })
+                const json = (await res.json()) as ApiResponse
+                if (!json.success) {
+                  notify(`清理失败: ${json.error || json.msg || '未知错误'}`, 'error')
+                } else {
+                  const output = (json.data?.data ?? json.data ?? '').toString()
+                  const msg = output ? output.trim().split('\n').pop() || '' : ''
+                  notify(`清理成功${msg ? ': ' + msg.slice(0, 80) : ''}`, 'success')
+                  onRefresh()
+                }
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : '未知错误'
+                notify(`清理请求失败: ${msg}`, 'error')
+              } finally {
+                setActionLoading(null)
+              }
+            })()
           }}
           onCancel={() => setPruneConfirm(false)}
         />
