@@ -11,7 +11,6 @@ import {
   Bell,
   ExternalLink,
 } from 'lucide-react'
-import { useSshStore } from '../../stores/ssh-store'
 import { useAppStore } from '../../stores/app-store'
 import { useAlertStore } from '../../stores/alert-store'
 import AlertSettings from './AlertSettings'
@@ -243,8 +242,6 @@ function _mockHistory(): HistoryPoint[] {
 }
 
 export default function MonitorPage() {
-  const sessions = useSshStore((s) => s.sessions)
-  const connections = useSshStore((s) => s.connections)
   const setActiveNav = useAppStore((s) => s.setActiveNav)
   const setSshSidebarOpen = useAppStore((s) => s.setSshSidebarOpen)
   const [hosts, setHosts] = useState<{ id: string; name: string }[]>([])
@@ -304,9 +301,12 @@ export default function MonitorPage() {
         }
         return cleaned
       })
-      // 清理网络速度缓存
+      // 清理网络/IO 速度缓存
       for (const k of Object.keys(prevNetRef.current)) {
         if (!newIds.has(k)) delete prevNetRef.current[k]
+      }
+      for (const k of Object.keys(prevIoRef.current)) {
+        if (!newIds.has(k)) delete prevIoRef.current[k]
       }
 
       setHosts(deduped)
@@ -321,51 +321,13 @@ export default function MonitorPage() {
         setSelected([])
       }
     } catch {
-      // 回退到前端 store（同样需要去重 + 清理）
-      const seen = new Set<string>()
-      const list: { id: string; name: string }[] = []
-      for (const sess of sessions) {
-        if (sess.status !== 'connected') continue
-        const hostKey = sess.host || sess.connectionId
-        if (seen.has(hostKey)) continue
-        list.push({ id: sess.id, name: sess.connectionName || sess.host || sess.id.slice(0, 8) })
-        seen.add(hostKey)
-      }
-      for (const conn of connections) {
-        const hostKey = conn.host || conn.name
-        if (seen.has(hostKey)) continue
-        list.push({ id: conn.id, name: conn.name })
-        seen.add(hostKey)
-      }
-
-      const newIds = new Set(list.map((h) => h.id))
-      setStats((prev) => {
-        const cleaned: Record<string, HostStats> = {}
-        for (const [k, v] of Object.entries(prev)) {
-          if (newIds.has(k)) cleaned[k] = v
-        }
-        return cleaned
-      })
-      setHistory((prev) => {
-        const cleaned: Record<string, HistoryPoint[]> = {}
-        for (const [k, v] of Object.entries(prev)) {
-          if (newIds.has(k)) cleaned[k] = v
-        }
-        return cleaned
-      })
-
-      setHosts(list)
-      if (list.length > 0) {
-        setSelected((prev) => {
-          const valid = prev.filter((id) => newIds.has(id))
-          if (valid.length === 0) return [list[0]!.id]
-          return valid
-        })
-      } else {
-        setSelected([])
-      }
+      // API 失败时清空列表，避免显示过期数据
+      setHosts([])
+      setSelected([])
+      setStats({})
+      setHistory({})
     }
-  }, [connections, sessions])
+  }, [])
 
   // 从后端 /api/hosts/health 获取结构化数据（无需自行拼 SSH 命令解析）
   interface BackendHealthHost {

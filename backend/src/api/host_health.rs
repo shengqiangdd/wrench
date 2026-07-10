@@ -21,7 +21,7 @@ struct HostInfo {
     host: String,
     port: u16,
     username: String,
-    connected: bool,
+    session: Option<Arc<crate::ssh::SshSession>>,
 }
 
 /// Health check results for a single host.
@@ -64,7 +64,7 @@ pub async fn get_all_health(
                     host: conn.host.clone(),
                     port: conn.port,
                     username: conn.username.clone(),
-                    connected: conn.is_connected(),
+                    session: conn.session.clone(),
                 },
             )
         })
@@ -74,13 +74,29 @@ pub async fn get_all_health(
         return Ok(ApiResponse::success(Vec::new()));
     }
 
-    // Run all host health checks in parallel
-    let futures: Vec<_> = hosts
+    // 并行检查所有主机的连接状态
+    let mut host_infos = Vec::with_capacity(hosts.len());
+    let connect_futures: Vec<_> = hosts
         .into_iter()
-        .map(|(id, info)| {
+        .map(|(id, info)| async move {
+            let connected = match &info.session {
+                Some(s) => s.is_connected().await,
+                None => false,
+            };
+            (id, info, connected)
+        })
+        .collect();
+    for result in join_all(connect_futures).await {
+        host_infos.push(result);
+    }
+
+    // Run all host health checks in parallel
+    let futures: Vec<_> = host_infos
+        .into_iter()
+        .map(|(id, info, connected)| {
             let state = Arc::clone(&state);
             async move {
-                if !info.connected {
+                if !connected {
                     return HostHealth {
                         id,
                         host: info.host,
@@ -127,6 +143,15 @@ pub async fn get_all_health(
         .collect();
 
     let results = join_all(futures).await;
+
+    // 自动清理僵尸连接（已断开但仍留在 state.connections 中的）
+    for h in &results {
+        if !h.connected && !h.error.as_deref().unwrap_or("").contains("Not connected") {
+            // 连接失败的清理掉
+            state.connections.remove(&h.id);
+            tracing::info!("Cleaned up zombie connection: {} ({})", h.host, h.id);
+        }
+    }
 
     auto_alert_health_anomalies(&state, &results);
 

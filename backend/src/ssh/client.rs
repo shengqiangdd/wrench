@@ -18,8 +18,11 @@ impl SshConnection {
         Self { connection_id, host, port, username, auth_method, session: None }
     }
 
-    pub fn is_connected(&self) -> bool {
-        self.session.is_some()
+    pub async fn is_connected(&self) -> bool {
+        match &self.session {
+            Some(s) => s.is_connected().await,
+            None => false,
+        }
     }
 
     pub fn set_session(&mut self, session: Arc<SshSession>) {

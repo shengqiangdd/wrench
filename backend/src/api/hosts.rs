@@ -4,24 +4,46 @@ use std::sync::Arc;
 use crate::api_types::{HostCreatedResponse, HostEntry};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
+use futures_util::future::join_all;
 
 /// List all hosts (GET /api/hosts)
 pub async fn list_hosts(State(state): State<Arc<AppState>>) -> ApiResponse<Vec<HostEntry>> {
-    let hosts: Vec<HostEntry> = state
-        .connections
-        .iter()
-        .map(|entry| {
-            let conn = entry.value();
+    // 先收集基础信息
+    let host_snapshots: Vec<(String, String, u16, String, Option<Arc<crate::ssh::SshSession>>)> =
+        state
+            .connections
+            .iter()
+            .map(|entry| {
+                let conn = entry.value();
+                (
+                    conn.connection_id.clone(),
+                    conn.host.clone(),
+                    conn.port,
+                    conn.username.clone(),
+                    conn.session.clone(),
+                )
+            })
+            .collect();
+
+    // 并行检查连接状态
+    let futures: Vec<_> = host_snapshots
+        .into_iter()
+        .map(|(id, host, port, username, session)| async move {
+            let connected = match &session {
+                Some(s) => s.is_connected().await,
+                None => false,
+            };
             HostEntry {
-                id: conn.connection_id.clone(),
-                host: conn.host.clone(),
-                port: conn.port,
-                username: conn.username.clone(),
-                connected: conn.is_connected(),
+                id,
+                host,
+                port,
+                username,
+                connected,
             }
         })
         .collect();
 
+    let hosts = join_all(futures).await;
     ApiResponse::success(hosts)
 }
 
