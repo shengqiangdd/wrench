@@ -28,7 +28,8 @@ vi.mock('../../services/pluginSandboxManager', () => ({
 }))
 
 const mockPluginCatalog = {
-  plugins: [
+  success: true,
+  data: [
     {
       id: 'plugin-json-viewer',
       name: 'JSON Viewer',
@@ -38,7 +39,6 @@ const mockPluginCatalog = {
       icon: '🔍',
       commands: [{ id: 'format', label: 'Format JSON', description: 'Format JSON content' }],
       panels: [{ id: 'json-panel', title: 'JSON Tree', icon: '🔍' }],
-      entry: '/plugins/json-viewer/index.js',
     },
   ],
 }
@@ -108,7 +108,7 @@ describe('pluginManager', () => {
     it('returns manifest on success', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve(mockPluginCatalog.plugins[0]),
+        json: () => Promise.resolve(mockPluginCatalog.data[0]),
       })
       const manifest = await fetchPluginManifest('/plugins/test/manifest.json')
       expect(manifest?.id).toBe('plugin-json-viewer')
@@ -126,7 +126,7 @@ describe('pluginManager', () => {
         ok: true,
         text: () => Promise.resolve(mockPluginCode),
       })
-      await loadPluginToSandbox(mockPluginCatalog.plugins[0]!)
+      await loadPluginToSandbox(mockPluginCatalog.data[0]!)
       // Verify the plugin was registered
       const stored = usePluginStore.getState().plugins
       expect(stored.length).toBe(1)
@@ -135,7 +135,7 @@ describe('pluginManager', () => {
 
     it('handles fetch failure gracefully', async () => {
       mockFetch.mockRejectedValueOnce(new Error('Network error'))
-      const result = await loadPluginToSandbox(mockPluginCatalog.plugins[0]!)
+      const result = await loadPluginToSandbox(mockPluginCatalog.data[0]!)
       expect(result.success).toBe(false)
       expect(result.error).toBe('Network error')
     })
@@ -146,7 +146,7 @@ describe('pluginManager', () => {
       // First manually register a plugin
       const { registerPlugin } = usePluginStore.getState()
       registerPlugin(
-        mockPluginCatalog.plugins[0]! as unknown as PluginManifest,
+        mockPluginCatalog.data[0]! as unknown as PluginManifest,
         {
           addCommand: vi.fn(),
           addPanel: vi.fn(),
