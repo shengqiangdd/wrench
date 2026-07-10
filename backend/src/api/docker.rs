@@ -416,8 +416,8 @@ pub async fn container_logs(
     Json(req): Json<LogsRequest>,
 ) -> ApiResponse<DockerExecResponse> {
     let tail_flag = format!("--tail={}", req.tail.unwrap_or(100));
-    match docker_exec(&state, &req.connection_id, &["logs", &tail_flag, "--timestamps", &req.id]).await {
-        Ok(data) => ApiResponse::success(DockerExecResponse { data }),
+    match docker_exec(&state, &req.connection_id, &["logs", &tail_flag, "--timestamps", "--no-color", &req.id]).await {
+        Ok(data) => ApiResponse::success(DockerExecResponse { data: clean_ansi_output(&data) }),
         Err(e) => ApiResponse::error(-1, &e),
     }
 }
@@ -487,7 +487,7 @@ pub async fn exec_container(
     };
     let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     match docker_exec(&state, &req.connection_id, &args_ref).await {
-        Ok(data) => ApiResponse::success(crate::api_types::DockerExecResultResponse { data, exit_code: 0 }),
+        Ok(data) => ApiResponse::success(crate::api_types::DockerExecResultResponse { data: clean_ansi_output(&data), exit_code: 0 }),
         Err(e) => ApiResponse::error(-1, &e),
     }
 }
@@ -634,6 +634,15 @@ pub struct DockerComposeRawResponse {
     pub output: String,
 }
 
+/// Strip ANSI escape codes and normalize line endings for clean log output
+fn clean_ansi_output(s: &str) -> String {
+    // Remove ANSI escape sequences: ESC[ ... m, ESC[ ... H, ESC[ ... J, etc.
+    let re = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+    let cleaned = re.replace_all(s, "");
+    // Normalize \r\n → \n, strip trailing whitespace
+    cleaned.replace("\r\n", "\n").trim().to_string()
+}
+
 /// POST /api/docker/compose/action
 pub async fn compose_action(
     State(state): State<Arc<AppState>>,
@@ -655,7 +664,7 @@ pub async fn compose_action(
     }
     if req.action == "logs" {
         args.push("--tail=200");
-        args.push("--timestamps");
+        args.push("--no-color");
     }
 
     match docker_exec(&state, &req.connection_id, &args).await {
@@ -668,9 +677,14 @@ pub async fn compose_action(
                 })))
             } else {
                 // For non-ps actions (up, down, logs, start, stop), return raw output
+                let output = if action_cmd == "logs" {
+                    clean_ansi_output(&data)
+                } else {
+                    data
+                };
                 Ok(axum::Json(serde_json::json!({
                     "success": true,
-                    "data": { "output": data }
+                    "data": { "output": output }
                 })))
             }
         }

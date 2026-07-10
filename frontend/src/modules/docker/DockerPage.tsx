@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense, useMemo } from 'react'
 import { Container, RefreshCw, Activity, AlertCircle } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
-import { useSshStore } from '../../stores/ssh-store'
+import { useSshStore, decryptConnection } from '../../stores/ssh-store'
+import { setSessionCredentials } from '../../services/session-credentials'
+import type { SshSession } from '../../types/ssh'
 import type { DockerContainer, DockerImage } from './index'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,15 +53,63 @@ export default function DockerPage() {
   }, [sessions, connections])
 
   const [selectedHost, setSelectedHost] = useState<string | null>(null)
-  const currentConnId = useMemo(
-    () =>
-      selectedHost && availableHosts.some((h) => h.id === selectedHost && h.connected)
-        ? selectedHost
-        : sessions.length > 0
-          ? sessions[0]!.id
-          : null,
-    [selectedHost, availableHosts, sessions],
-  )
+  const [connecting, setConnecting] = useState(false)
+  // selectedHost 可能是 session id 或 connection id，currentConnId 始终是 session id
+  const currentConnId = useMemo(() => {
+    if (selectedHost) {
+      // 先检查是否已经是活跃 session
+      if (sessions.some((s) => s.id === selectedHost)) return selectedHost
+      // 否则返回 null，等自动连接完成后 sessions 更新
+      return null
+    }
+    return sessions.length > 0 ? sessions[0]!.id : null
+  }, [selectedHost, sessions])
+
+  // 选中未连接的主机时自动建立 SSH 连接
+  useEffect(() => {
+    if (!selectedHost || connecting) return
+    if (sessions.some((s) => s.id === selectedHost)) return // 已连接
+    const conn = connections.find((c) => c.id === selectedHost)
+    if (!conn) return
+
+    let cancelled = false
+    ;(async () => {
+      setConnecting(true)
+      try {
+        const decrypted = await decryptConnection(conn)
+        if (cancelled) return
+        const sessionId = `sess_docker_${conn.id}_${Date.now()}`
+        setSessionCredentials(sessionId, {
+          host: conn.host,
+          port: conn.port,
+          username: conn.username,
+          password: decrypted.password,
+          privateKey: decrypted.privateKey,
+          sudoPassword: decrypted.sudoPassword || decrypted.password,
+        })
+        const session: SshSession = {
+          id: sessionId,
+          connectionId: conn.id,
+          connectionName: conn.name,
+          host: conn.host,
+          status: 'connected',
+          terminalCols: 80,
+          terminalRows: 24,
+        }
+        useSshStore.getState().addSession(session)
+        useAppStore.getState().addSshSession(sessionId)
+        // selectedHost 设为新 session id，触发 currentConnId 更新
+        setSelectedHost(sessionId)
+      } catch {
+        // ignore - user will see empty state
+      } finally {
+        if (!cancelled) setConnecting(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedHost, sessions, connections, connecting])
 
   const fetchContainers = useCallback(async () => {
     if (!currentConnId) return
@@ -164,22 +214,19 @@ export default function DockerPage() {
       <div className="flex h-full flex-col items-center justify-center gap-4 text-slate-500">
         <Container size={48} className="text-slate-600" />
         <div className="text-center">
-          <p className="text-sm font-medium text-slate-400">未连接到任何 SSH</p>
-          <p className="mt-1 text-xs text-slate-600">选择一个已保存的连接，或前往 SSH 页面连接</p>
+          <p className="text-sm font-medium text-slate-400">
+            {connecting ? '正在连接...' : '未连接到任何 SSH'}
+          </p>
+          {!connecting && (
+            <p className="mt-1 text-xs text-slate-600">选择一个主机自动连接，或前往 SSH 页面</p>
+          )}
         </div>
-        {availableHosts.length > 0 && (
+        {availableHosts.length > 0 && !connecting && (
           <div className="flex flex-wrap gap-2">
             {availableHosts.map((host) => (
               <button
                 key={host.id}
-                onClick={() => {
-                  if (host.connected) {
-                    setSelectedHost(host.id)
-                  } else {
-                    // 不跳转，保留在当前页面，让用户点击快速连接
-                    setSelectedHost(host.id)
-                  }
-                }}
+                onClick={() => setSelectedHost(host.id)}
                 className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-xs transition-colors ${
                   host.connected
                     ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/40'
