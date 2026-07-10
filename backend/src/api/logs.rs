@@ -1,7 +1,7 @@
 use axum::{extract::State, Json};
 use std::sync::Arc;
 
-use crate::api_types::{GrepResponse, LogSource, LogTailResponse};
+use crate::api_types::{GrepResponse, LogScanResult, LogSource, LogTailResponse};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
 
@@ -153,4 +153,94 @@ pub async fn grep_log(
 
     let content = content.unwrap_or_else(|| format!("Unable to grep: {}", path));
     ApiResponse::success(GrepResponse { content, pattern: pattern.to_string(), path: path.to_string() })
+}
+
+/// Scan log files on remote host (POST /api/logs/scan)
+/// 接收一组路径，通过 SSH 检查哪些存在并返回大小
+pub async fn scan_log_sources(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> ApiResponse<Vec<LogScanResult>> {
+    let connection_id = body.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
+    let paths: Vec<String> = body
+        .get("paths")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    if paths.is_empty() {
+        return ApiResponse::success(Vec::new());
+    }
+
+    // 获取 SSH session
+    let session = if !connection_id.is_empty() {
+        state.connections.get(connection_id).and_then(|c| c.session.clone())
+    } else {
+        state.connections.iter().next().and_then(|e| e.value().session.clone())
+    };
+
+    let mut results: Vec<LogScanResult> = Vec::new();
+
+    if let Some(s) = session {
+        // 用一条命令检查所有文件：存在则输出 "path\tsize"，否则输出空
+        let checks: Vec<String> = paths.iter()
+            .map(|p| {
+                format!(
+                    "if [ -f '{p}' ]; then sz=$(du -sh '{p}' 2>/dev/null | cut -f1); echo \"{p}\\t${{sz:-?}}\"; fi",
+                    p = p.replace('\'', "'\\''")
+                )
+            })
+            .collect();
+        let cmd = checks.join("; ");
+
+        if let Ok((stdout, _, _)) = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            s.exec(&cmd),
+        ).await.unwrap_or(Ok((String::new(), String::new(), 0))) {
+            // 解析输出
+            let found: std::collections::HashMap<String, String> = stdout.lines()
+                .filter_map(|line| {
+                    let parts: Vec<&str> = line.split('\t').collect();
+                    if parts.len() >= 2 {
+                        Some((parts[0].to_string(), parts[1].to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            for path in &paths {
+                if let Some(size) = found.get(path) {
+                    results.push(LogScanResult { path: path.clone(), size: size.clone(), exists: true });
+                } else {
+                    results.push(LogScanResult { path: path.clone(), size: String::new(), exists: false });
+                }
+            }
+        } else {
+            // 超时或错误，全部标记为不存在
+            for path in &paths {
+                results.push(LogScanResult { path: path.clone(), size: String::new(), exists: false });
+            }
+        }
+    } else {
+        // 本地 fallback
+        for path in &paths {
+            if let Ok(meta) = std::fs::metadata(path) {
+                let size = if meta.len() >= 1_073_741_824 {
+                    format!("{:.1}G", meta.len() as f64 / 1_073_741_824.0)
+                } else if meta.len() >= 1_048_576 {
+                    format!("{:.1}M", meta.len() as f64 / 1_048_576.0)
+                } else if meta.len() >= 1024 {
+                    format!("{:.1}K", meta.len() as f64 / 1024.0)
+                } else {
+                    format!("{}B", meta.len())
+                };
+                results.push(LogScanResult { path: path.clone(), size, exists: true });
+            } else {
+                results.push(LogScanResult { path: path.clone(), size: String::new(), exists: false });
+            }
+        }
+    }
+
+    ApiResponse::success(results)
 }

@@ -22,7 +22,7 @@ function friendlyError(raw: string, path: string): { title: string; hint: string
 interface LogViewerProps {
   connectionId: string
   logPath: string
-  onClose: () => void
+  onClose?: () => void
 }
 
 function LogViewerInner({ connectionId, logPath, onClose }: LogViewerProps) {
@@ -311,7 +311,7 @@ function LogViewerInner({ connectionId, logPath, onClose }: LogViewerProps) {
         </button>
 
         <button
-          onClick={onClose}
+          onClick={() => onClose?.()}
           className="rounded px-1.5 py-0.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
         >
           <X size={14} />

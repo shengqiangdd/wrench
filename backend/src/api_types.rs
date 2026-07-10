@@ -88,6 +88,14 @@ pub struct LogSource {
     pub label: String,
 }
 
+/// 单个日志文件的扫描结果
+#[derive(Serialize)]
+pub struct LogScanResult {
+    pub path: String,
+    pub size: String,
+    pub exists: bool,
+}
+
 #[derive(Serialize)]
 pub struct LogTailResponse {
     pub content: Option<String>,
