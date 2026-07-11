@@ -537,24 +537,18 @@ function fallbackCopy(text: string) {
   document.body.removeChild(ta)
 }
 
-/** 按名称排序：目录在前，符号链接次之，文件在后，字母序 */
+/** 判断条目是否为目录（包括指向目录的符号链接） */
+function isDirLike(entry: SftpEntry): boolean {
+  return entry.type === 'directory' || (entry.type === 'symlink' && entry.targetType === 'directory')
+}
+
+/** 按名称排序：目录（含目录符号链接）在前，文件在后，字母序 */
 function sortEntries(entries: SftpEntry[]) {
-  const typeOrder = (t: string) => (t === 'directory' ? 0 : t === 'symlink' ? 1 : 2)
-  return {
-    dirs: entries
-      .filter((e) => e.type === 'directory')
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    symlinks: entries
-      .filter((e) => e.type === 'symlink')
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    files: entries
-      .filter((e) => e.type !== 'directory' && e.type !== 'symlink')
-      .sort((a, b) => {
-        const ao = typeOrder(a.type)
-        const bo = typeOrder(b.type)
-        return ao !== bo ? ao - bo : a.name.localeCompare(b.name)
-      }),
-  }
+  const dirs = entries.filter(isDirLike).sort((a, b) => a.name.localeCompare(b.name))
+  const files = entries
+    .filter((e) => !isDirLike(e))
+    .sort((a, b) => a.name.localeCompare(b.name))
+  return { dirs, files }
 }
 
 // ─── 文件类型判断工具 ───
@@ -768,6 +762,12 @@ const FilePreviewModal = memo(function FilePreviewModal({
     setLoading(true)
     setError(null)
     try {
+      // 无法预览目录或目录符号链接
+      if (entry.type === 'directory' || (entry.type === 'symlink' && entry.targetType === 'directory')) {
+        setError('无法预览目录')
+        setLoading(false)
+        return
+      }
       // Protect against opening extremely large files (>50MB text preview will crash browser)
       const MAX_TEXT_PREVIEW = 50 * 1024 * 1024
       if (
@@ -825,7 +825,7 @@ const FilePreviewModal = memo(function FilePreviewModal({
     } finally {
       setLoading(false)
     }
-  }, [sessionId, entry.path, entry.name, entry.size])
+  }, [sessionId, entry.path, entry.name, entry.size, entry.type, entry.targetType])
 
   useEffect(() => {
     const t = setTimeout(() => loadFile(), 0)
@@ -1296,6 +1296,28 @@ function SftpBrowserInner({
         setAlertModal({ title: '无法打开', message: '无法在编辑器中打开二进制文件' })
         return
       }
+      // 对符号链接先 stat 解析实际类型，防止目录符号链接进入编辑器
+      let resolvedEntry = entry
+      if (entry.type === 'symlink') {
+        try {
+          const st = await sftpApi<{ type: string }>('stat', {
+            connectionId: sessionId,
+            path: entry.path,
+          })
+          if (st.type === 'directory') {
+            navigateTo(entry.path)
+            return
+          }
+          // 用 stat 结果更新 entry（保留原 entry 其余字段）
+          resolvedEntry = { ...entry, type: st.type as SftpEntry['type'] }
+        } catch {
+          // stat 失败时继续尝试打开
+        }
+      }
+      if (resolvedEntry.type === 'directory') {
+        navigateTo(entry.path)
+        return
+      }
       let lang = detectLanguage(entry.name)
       const tabId = `sftp:${entry.path}`
       try {
@@ -1326,7 +1348,7 @@ function SftpBrowserInner({
         setAlertModal({ title: '打开失败', message: (err as Error).message })
       }
     },
-    [sessionId, fileStore, setActiveNav],
+    [sessionId, fileStore, setActiveNav, navigateTo],
   )
 
   /** 双击文件处理 */
@@ -1336,13 +1358,16 @@ function SftpBrowserInner({
         navigateTo(entry.path)
         return
       }
-      // Symlink to directory: use resolved targetType for reliable detection
       if (entry.type === 'symlink') {
         if (entry.targetType === 'directory') {
+          // 目录符号链接：直接导航（SFTP 协议跟随符号链接）
           navigateTo(entry.path)
           return
         }
-        // Unknown/broken target — fall through to open in editor (shows error if not a file)
+        // 其他符号链接（file / broken / unknown）：交给 openInEditor，
+        // 它会先 stat 解析实际类型，如果是目录则导航，否则打开编辑器
+        openInEditor(entry)
+        return
       }
       if (onFileDoubleClick) {
         onFileDoubleClick(entry)
@@ -1355,7 +1380,7 @@ function SftpBrowserInner({
 
   const handleDownload = useCallback(
     async (entry: SftpEntry) => {
-      if (!sessionId || entry.type === 'directory') return
+      if (!sessionId || isDirLike(entry)) return
       // 大文件下载保护（>100MB 的 base64 传输会消耗 ~266MB 内存）
       const MAX_DOWNLOAD = 100 * 1024 * 1024
       if (entry.size > MAX_DOWNLOAD) {
@@ -1572,10 +1597,9 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
   // 搜索过滤后的列表
   const displayEntries = useMemo(() => {
     if (allEntries.length > 0) return allEntries
-    if (!searchQuery.trim())
-      return [...sortedEntries.dirs, ...sortedEntries.symlinks, ...sortedEntries.files]
+    if (!searchQuery.trim()) return [...sortedEntries.dirs, ...sortedEntries.files]
     const q = searchQuery.toLowerCase()
-    return [...sortedEntries.dirs, ...sortedEntries.symlinks, ...sortedEntries.files].filter((e) =>
+    return [...sortedEntries.dirs, ...sortedEntries.files].filter((e) =>
       e.name.toLowerCase().includes(q),
     )
   }, [allEntries, searchQuery, sortedEntries])
@@ -1589,7 +1613,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       return (
         <div
           key={entry.path}
-          className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isDir ? 'text-sky-300' : isSymlink ? 'text-cyan-300' : 'text-slate-300'}`}
+          className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isDir || (isSymlink && entry.targetType === 'directory') ? 'text-sky-300' : 'text-slate-300'}`}
           style={{ height: 28 }}
           onClick={() => handleFileDoubleClick(entry)}
           onContextMenu={(e) => handleEntryContextMenu(e, entry)}
@@ -1666,12 +1690,11 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
     () => (
       <div className="flex items-center justify-between border-t border-slate-700/30 px-2 py-0.5 text-[10px] text-slate-600">
         <span>
-          {sortedEntries.dirs.length} 目录 · {sortedEntries.symlinks.length} 链接 ·{' '}
-          {sortedEntries.files.length} 文件
+          {sortedEntries.dirs.length} 目录 · {sortedEntries.files.length} 文件
         </span>
       </div>
     ),
-    [sortedEntries.dirs.length, sortedEntries.symlinks.length, sortedEntries.files.length],
+    [sortedEntries.dirs.length, sortedEntries.files.length],
   )
 
   // ─── 面包屑导航 ───
@@ -1953,9 +1976,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         >
           {contextMenu.entry ? (
             <>
-              {contextMenu.entry.type === 'directory' ||
-              (contextMenu.entry.type === 'symlink' &&
-                contextMenu.entry.targetType === 'directory') ? (
+              {isDirLike(contextMenu.entry) ? (
                 <button
                   onClick={() => {
                     navigateTo(contextMenu.entry!.path)
@@ -1976,7 +1997,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
                   >
                     <Eye size={12} /> 预览
                   </button>
-                  {isEditableText(contextMenu.entry.name) && (
+                  {!isBinaryFile(contextMenu.entry.name) && (
                     <button
                       onClick={() => {
                         openInEditor(contextMenu.entry!)
