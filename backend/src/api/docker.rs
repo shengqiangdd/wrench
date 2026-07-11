@@ -327,8 +327,8 @@ fn parse_compose_ps(output: &str) -> Vec<DockerComposeService> {
             Some(DockerComposeService {
                 name: extract_json_str(&v, &["Name", "Service"]),
                 image: extract_json_str(&v, &["Image"]),
-                state: extract_json_str(&v, &["State"]),
-                status: extract_json_str(&v, &["Status"]),
+                state: extract_json_str(&v, &["State", "state"]),
+                status: extract_json_str(&v, &["Status", "status"]),
                 ports: extract_json_str(&v, &["Publishers", "Ports"]),
                 command: extract_json_str(&v, &["Command"]),
             })
@@ -421,7 +421,7 @@ pub async fn container_logs(
     Json(req): Json<LogsRequest>,
 ) -> ApiResponse<DockerExecResponse> {
     let tail_flag = format!("--tail={}", req.tail.unwrap_or(100));
-    match docker_exec(&state, &req.connection_id, &["logs", &tail_flag, "--timestamps", "--no-color", &req.id]).await {
+    match docker_exec(&state, &req.connection_id, &["logs", &tail_flag, "--timestamps", &req.id]).await {
         Ok(data) => ApiResponse::success(DockerExecResponse { data: clean_ansi_output(&data) }),
         Err(e) => ApiResponse::error(-1, &e),
     }
@@ -676,7 +676,6 @@ pub async fn compose_action(
     }
     if req.action == "logs" {
         args.push("--tail=200");
-        args.push("--no-color");
     }
 
     match docker_exec(&state, &req.connection_id, &args).await {

@@ -3,7 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { X, Maximize2 } from 'lucide-react'
-import { getWsClientSync } from '../../services/websocket'
+import { createTerminalWsClient } from '../../services/websocket'
 
 const TERMINAL_THEME = {
   background: '#0f172a',
@@ -73,7 +73,10 @@ export default function DockerTerminal({
       setTimeout(() => fitAddon.fit(), 100)
     }
 
-    const wsClient = getWsClientSync()
+    // Create independent WS client for Docker terminal (same as SSH terminal)
+    const token = localStorage.getItem('auth_token') || ''
+    const wsClient = createTerminalWsClient(token)
+
     const reqId = `docker-shell-${containerId}`
     let connected = false
 
@@ -96,13 +99,21 @@ export default function DockerTerminal({
       connected = false
     })
 
-    wsClient.send({
-      type: 'docker_shell',
-      connectionId,
-      requestId: reqId,
-      containerId,
-      shell,
+    // Wait for connection to be established before sending docker_shell request
+    const unsubStatus = wsClient.onStatus((status) => {
+      if (status === 'connected') {
+        wsClient.send({
+          type: 'docker_shell',
+          connectionId,
+          requestId: reqId,
+          containerId,
+          shell,
+        })
+      }
     })
+
+    // Connect
+    wsClient.connect()
 
     const disposeInput = term.onData((data) => {
       if (!connected) return
@@ -139,6 +150,7 @@ export default function DockerTerminal({
       unsubReady()
       unsubOutput()
       unsubClosed()
+      unsubStatus()
       if (connected) {
         wsClient.send({
           type: 'docker_shell_data',
@@ -147,6 +159,7 @@ export default function DockerTerminal({
           data: btoa('exit\r'),
         })
       }
+      wsClient.disconnect()
       term.dispose()
     }
   }, [connectionId, containerId, shell])
