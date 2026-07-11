@@ -539,15 +539,15 @@ function fallbackCopy(text: string) {
 
 /** 判断条目是否为目录（包括指向目录的符号链接） */
 function isDirLike(entry: SftpEntry): boolean {
-  return entry.type === 'directory' || (entry.type === 'symlink' && entry.targetType === 'directory')
+  return (
+    entry.type === 'directory' || (entry.type === 'symlink' && entry.targetType === 'directory')
+  )
 }
 
 /** 按名称排序：目录（含目录符号链接）在前，文件在后，字母序 */
 function sortEntries(entries: SftpEntry[]) {
   const dirs = entries.filter(isDirLike).sort((a, b) => a.name.localeCompare(b.name))
-  const files = entries
-    .filter((e) => !isDirLike(e))
-    .sort((a, b) => a.name.localeCompare(b.name))
+  const files = entries.filter((e) => !isDirLike(e)).sort((a, b) => a.name.localeCompare(b.name))
   return { dirs, files }
 }
 
@@ -668,7 +668,6 @@ function isBinaryFile(name: string): boolean {
   return binaryExts.includes(ext || '')
 }
 
-
 // ─── 文件查看/编辑模态框 ───
 
 const FilePreviewModal = memo(function FilePreviewModal({
@@ -703,7 +702,10 @@ const FilePreviewModal = memo(function FilePreviewModal({
     setError(null)
     try {
       // 无法预览目录或目录符号链接
-      if (entry.type === 'directory' || (entry.type === 'symlink' && entry.targetType === 'directory')) {
+      if (
+        entry.type === 'directory' ||
+        (entry.type === 'symlink' && entry.targetType === 'directory')
+      ) {
         setError('无法预览目录')
         setLoading(false)
         return
