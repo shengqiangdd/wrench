@@ -26,6 +26,10 @@ pub struct FileEntry {
     pub permissions: String,
     #[serde(alias = "modified")]
     pub modify_time: i64,
+    #[serde(default)]
+    pub owner: String,
+    #[serde(default)]
+    pub group: String,
 }
 
 /// Determine file type from SFTP permission bits (POSIX file type mask).
@@ -91,6 +95,8 @@ fn attrs_to_entry(name: String, parent_path: &str, attrs: &FileAttributes) -> Fi
         size,
         permissions: perm_str,
         modify_time,
+        owner: attrs.owner.clone().unwrap_or_default(),
+        group: attrs.group.clone().unwrap_or_default(),
     }
 }
 
@@ -403,5 +409,31 @@ mod tests {
         assert_eq!(file_type_from_permissions(Some(0o010644)), "fifo");
         assert_eq!(file_type_from_permissions(Some(0o140644)), "socket");
         assert_eq!(file_type_from_permissions(None), "file");
+    }
+
+    #[test]
+    fn test_attrs_to_entry_owner_group() {
+        let attrs = FileAttributes {
+            permissions: Some(0o100644),
+            size: Some(256),
+            owner: Some("root".to_string()),
+            group: Some("admin".to_string()),
+            ..FileAttributes::default()
+        };
+        let entry = attrs_to_entry("owned.txt".into(), "/home/user", &attrs);
+        assert_eq!(entry.owner, "root");
+        assert_eq!(entry.group, "admin");
+    }
+
+    #[test]
+    fn test_attrs_to_entry_owner_group_defaults() {
+        let attrs = FileAttributes {
+            permissions: Some(0o100644),
+            size: Some(128),
+            ..FileAttributes::default()
+        };
+        let entry = attrs_to_entry("noowner.txt".into(), "/tmp", &attrs);
+        assert_eq!(entry.owner, "");
+        assert_eq!(entry.group, "");
     }
 }

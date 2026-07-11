@@ -577,6 +577,103 @@ function isAudioFile(name: string): boolean {
   return ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'opus'].includes(ext || '')
 }
 
+/** 判断文件是否为二进制文件（图片/视频/音频/压缩包/编译产物等） */
+function isBinaryFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase()
+  const binaryExts = [
+    // Images
+    'png',
+    'jpg',
+    'jpeg',
+    'gif',
+    'webp',
+    'bmp',
+    'ico',
+    'svg',
+    'avif',
+    'heic',
+    'heif',
+    'tiff',
+    'tif',
+    'raw',
+    'cr2',
+    'nef',
+    'arw',
+    'dng',
+    'psd',
+    'ai',
+    'eps',
+    'xcf',
+    'svgz',
+    // Video
+    'mp4',
+    'mkv',
+    'avi',
+    'mov',
+    'wmv',
+    'flv',
+    'webm',
+    'm4v',
+    'mpg',
+    'mpeg',
+    '3gp',
+    // Audio
+    'mp3',
+    'wav',
+    'ogg',
+    'flac',
+    'aac',
+    'm4a',
+    'opus',
+    'wma',
+    'ape',
+    'aiff',
+    'mid',
+    'midi',
+    // Archives
+    'zip',
+    'tar',
+    'gz',
+    'bz2',
+    'xz',
+    'lz',
+    'lzma',
+    'zst',
+    'br',
+    'rar',
+    '7z',
+    'cab',
+    'iso',
+    'dmg',
+    'deb',
+    'rpm',
+    'apk',
+    'msi',
+    'pkg',
+    'war',
+    'ear',
+    'jar',
+    // Binary / compiled
+    'so',
+    'dll',
+    'dylib',
+    'exe',
+    'bin',
+    'elf',
+    'out',
+    'class',
+    'rlib',
+    'wasm',
+    'o',
+    'a',
+    'lib',
+    'pdb',
+    'pyc',
+    'pyo',
+  ]
+  return binaryExts.includes(ext || '')
+}
+
 /** 判断文件是否为可编辑文本 */
 function isEditableText(name: string): boolean {
   const ext = name.split('.').pop()?.toLowerCase()
@@ -798,10 +895,11 @@ const FilePreviewModal = memo(function FilePreviewModal({
                 <Edit3 size={14} />
               </button>
             )}
-            {onOpenInEditor && isEditableText(entry.name) && (
+            {onOpenInEditor && !isImage && !isVideo && !isAudio && (
               <button
                 onClick={() => {
                   onOpenInEditor(entry)
+                  onClose()
                 }}
                 className="btn-icon text-slate-500 hover:text-slate-300"
                 title="在编辑器中打开"
@@ -1193,6 +1291,11 @@ function SftpBrowserInner({
   const openInEditor = useCallback(
     async (entry: SftpEntry) => {
       if (!sessionId) return
+      // 二进制文件无法在文本编辑器中打开
+      if (isBinaryFile(entry.name)) {
+        setAlertModal({ title: '无法打开', message: '无法在编辑器中打开二进制文件' })
+        return
+      }
       let lang = detectLanguage(entry.name)
       const tabId = `sftp:${entry.path}`
       try {
@@ -1239,12 +1342,7 @@ function SftpBrowserInner({
           navigateTo(entry.path)
           return
         }
-        // Unknown target type — try navigating (will fail gracefully if not a dir)
-        if (entry.targetType === 'unknown' || entry.targetType === 'broken') {
-          navigateTo(entry.path)
-          return
-        }
-        // Symlink to file — fall through to open in editor
+        // Unknown/broken target — fall through to open in editor (shows error if not a file)
       }
       if (onFileDoubleClick) {
         onFileDoubleClick(entry)
@@ -1498,6 +1596,8 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         >
           {isDir ? (
             <Folder size={14} className="shrink-0 text-sky-400" />
+          ) : isSymlink && entry.targetType === 'directory' ? (
+            <Folder size={14} className="shrink-0 text-cyan-400" />
           ) : (
             getFileIcon(entry.name, entry.type, entry.targetType)
           )}
@@ -1853,7 +1953,9 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         >
           {contextMenu.entry ? (
             <>
-              {contextMenu.entry.type === 'directory' ? (
+              {contextMenu.entry.type === 'directory' ||
+              (contextMenu.entry.type === 'symlink' &&
+                contextMenu.entry.targetType === 'directory') ? (
                 <button
                   onClick={() => {
                     navigateTo(contextMenu.entry!.path)
