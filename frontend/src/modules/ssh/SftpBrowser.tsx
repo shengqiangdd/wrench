@@ -2011,7 +2011,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
                 if (e.key === 'Enter') handleRename(entry, renameValue)
                 if (e.key === 'Escape') setRenaming(null)
               }}
-              onBlur={() => setRenaming(null)}
+              // onBlur 不再自动取消重命名——弹窗版本的 autoFocus 会触发 blur
               className="flex-1 rounded bg-slate-800 px-1 py-0.5 text-xs text-slate-200 outline-none"
               onClick={(e) => e.stopPropagation()}
             />
