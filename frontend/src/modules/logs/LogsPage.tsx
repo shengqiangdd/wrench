@@ -28,9 +28,7 @@ export default function LogsPage() {
   )
 
   // 选中的主机 — 从 connections 初始化
-  const [selectedId, setSelectedId] = useState<string | null>(
-    () => connections[0]?.id ?? null,
-  )
+  const [selectedId, setSelectedId] = useState<string | null>(() => connections[0]?.id ?? null)
 
   // 确保 SSH 连接
   useEffect(() => {
@@ -110,8 +108,7 @@ export default function LogsPage() {
     )
   }
 
-  const currentHostLabel =
-    availableHosts.find((h) => h.id === selectedId)?.name || selectedId || ''
+  const currentHostLabel = availableHosts.find((h) => h.id === selectedId)?.name || selectedId || ''
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -140,9 +137,7 @@ export default function LogsPage() {
           </div>
         )}
 
-        {connecting && (
-          <span className="text-xs text-yellow-400 animate-pulse">连接中...</span>
-        )}
+        {connecting && <span className="animate-pulse text-xs text-yellow-400">连接中...</span>}
 
         <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">
           {currentHostLabel}
