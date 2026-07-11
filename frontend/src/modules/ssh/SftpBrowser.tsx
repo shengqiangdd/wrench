@@ -377,10 +377,7 @@ function getFileIcon(name: string, type?: string, targetType?: string) {
   }
 
   // Check special filenames (no extension match needed)
-  if (
-    baseName === 'dockerfile' ||
-    baseName.startsWith('dockerfile.')
-  ) {
+  if (baseName === 'dockerfile' || baseName.startsWith('dockerfile.')) {
     return <FileCode size={14} className="text-sky-500" />
   }
   if (baseName === 'makefile' || baseName === 'gnumakefile') {
@@ -584,12 +581,60 @@ function isAudioFile(name: string): boolean {
 function isEditableText(name: string): boolean {
   const ext = name.split('.').pop()?.toLowerCase()
   const editableExts = [
-    'txt', 'md', 'log', 'csv', 'tsv', 'json', 'json5', 'yaml', 'yml', 'toml', 'xml',
-    'html', 'htm', 'css', 'scss', 'less', 'js', 'ts', 'tsx', 'jsx', 'vue', 'svelte',
-    'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp', 'sh', 'bash', 'zsh',
-    'sql', 'env', 'cfg', 'conf', 'ini', 'properties', 'dockerfile', 'makefile',
-    'docker-compose', 'nginx', 'fstab', 'hosts', 'passwd', 'shadow', 'group',
-    'ssh', 'sshd_config', 'gitignore', 'gitattributes', 'editorconfig',
+    'txt',
+    'md',
+    'log',
+    'csv',
+    'tsv',
+    'json',
+    'json5',
+    'yaml',
+    'yml',
+    'toml',
+    'xml',
+    'html',
+    'htm',
+    'css',
+    'scss',
+    'less',
+    'js',
+    'ts',
+    'tsx',
+    'jsx',
+    'vue',
+    'svelte',
+    'py',
+    'rb',
+    'go',
+    'rs',
+    'java',
+    'c',
+    'cpp',
+    'h',
+    'hpp',
+    'sh',
+    'bash',
+    'zsh',
+    'sql',
+    'env',
+    'cfg',
+    'conf',
+    'ini',
+    'properties',
+    'dockerfile',
+    'makefile',
+    'docker-compose',
+    'nginx',
+    'fstab',
+    'hosts',
+    'passwd',
+    'shadow',
+    'group',
+    'ssh',
+    'sshd_config',
+    'gitignore',
+    'gitattributes',
+    'editorconfig',
   ]
   return editableExts.includes(ext || '')
 }
@@ -628,7 +673,12 @@ const FilePreviewModal = memo(function FilePreviewModal({
     try {
       // Protect against opening extremely large files (>50MB text preview will crash browser)
       const MAX_TEXT_PREVIEW = 50 * 1024 * 1024
-      if (!isImageFile(entry.name) && !isVideoFile(entry.name) && !isAudioFile(entry.name) && entry.size > MAX_TEXT_PREVIEW) {
+      if (
+        !isImageFile(entry.name) &&
+        !isVideoFile(entry.name) &&
+        !isAudioFile(entry.name) &&
+        entry.size > MAX_TEXT_PREVIEW
+      ) {
         setError(`文件过大 (${formatSize(entry.size)})，无法预览。请下载后查看或在编辑器中打开。`)
         setLoading(false)
         return
@@ -778,11 +828,7 @@ const FilePreviewModal = memo(function FilePreviewModal({
             </div>
           ) : isVideo && binaryUrl ? (
             <div className="flex items-center justify-center">
-              <video
-                src={binaryUrl}
-                controls
-                className="max-h-[60vh] max-w-full rounded"
-              >
+              <video src={binaryUrl} controls className="max-h-[60vh] max-w-full rounded">
                 您的浏览器不支持视频播放
               </video>
             </div>
@@ -1472,7 +1518,10 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             <>
               <span className="flex-1 truncate">{entry.name}</span>
               {isSymlink && entry.linkTarget && (
-                <span className="max-w-[40%] shrink-0 truncate text-[10px] text-slate-600" title={entry.linkTarget}>
+                <span
+                  className="max-w-[40%] shrink-0 truncate text-[10px] text-slate-600"
+                  title={entry.linkTarget}
+                >
                   → {entry.linkTarget.split('/').pop() || entry.linkTarget}
                 </span>
               )}
@@ -1704,7 +1753,10 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       {/* 上传进度条 */}
       {/* 面包屑导航 */}
       {breadcrumb.length > 1 && (
-        <div className="flex items-center gap-0 overflow-x-auto border-b border-slate-700/30 px-2 py-0.5 text-[11px] text-slate-500" style={{ scrollbarWidth: 'none' }}>
+        <div
+          className="flex items-center gap-0 overflow-x-auto border-b border-slate-700/30 px-2 py-0.5 text-[11px] text-slate-500"
+          style={{ scrollbarWidth: 'none' }}
+        >
           {breadcrumb.map((crumb, i) => (
             <span key={crumb.path} className="flex items-center">
               {i > 0 && <span className="mx-0.5 text-slate-700">/</span>}
@@ -1981,29 +2033,75 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
 
       {/* ── 文件信息弹窗 ── */}
       {infoEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setInfoEntry(null)}>
-          <div className="w-[90vw] max-w-sm rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => setInfoEntry(null)}
+        >
+          <div
+            className="w-[90vw] max-w-sm rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
                 {getFileIcon(infoEntry.name, infoEntry.type, infoEntry.targetType)}
                 <span className="truncate">{infoEntry.name}</span>
               </div>
-              <button onClick={() => setInfoEntry(null)} className="btn-icon text-slate-500 hover:text-slate-300">
+              <button
+                onClick={() => setInfoEntry(null)}
+                className="btn-icon text-slate-500 hover:text-slate-300"
+              >
                 <X size={14} />
               </button>
             </div>
             <div className="space-y-1.5 text-xs text-slate-400">
-              <div className="flex justify-between"><span className="text-slate-600">类型</span><span>{infoEntry.type === 'symlink' ? `符号链接 → ${infoEntry.targetType || 'unknown'}` : infoEntry.type}</span></div>
-              <div className="flex justify-between"><span className="text-slate-600">大小</span><span>{formatSize(infoEntry.size)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-600">权限</span><span className="font-mono">{formatPerms(parseInt(infoEntry.permissions, 16) || 0)} ({infoEntry.permissions})</span></div>
-              <div className="flex justify-between"><span className="text-slate-600">修改时间</span><span>{infoEntry.modifyTime ? new Date(infoEntry.modifyTime * 1000).toLocaleString() : '-'}</span></div>
-              <div className="flex justify-between break-all"><span className="shrink-0 text-slate-600">路径</span><span className="text-right font-mono text-[10px] text-slate-500">{infoEntry.path}</span></div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">类型</span>
+                <span>
+                  {infoEntry.type === 'symlink'
+                    ? `符号链接 → ${infoEntry.targetType || 'unknown'}`
+                    : infoEntry.type}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">大小</span>
+                <span>{formatSize(infoEntry.size)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">权限</span>
+                <span className="font-mono">
+                  {formatPerms(parseInt(infoEntry.permissions, 16) || 0)} ({infoEntry.permissions})
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">修改时间</span>
+                <span>
+                  {infoEntry.modifyTime
+                    ? new Date(infoEntry.modifyTime * 1000).toLocaleString()
+                    : '-'}
+                </span>
+              </div>
+              <div className="flex justify-between break-all">
+                <span className="shrink-0 text-slate-600">路径</span>
+                <span className="text-right font-mono text-[10px] text-slate-500">
+                  {infoEntry.path}
+                </span>
+              </div>
               {infoEntry.type === 'symlink' && infoEntry.linkTarget && (
-                <div className="flex justify-between break-all"><span className="shrink-0 text-slate-600">链接目标</span><span className="text-right font-mono text-[10px] text-cyan-500">{infoEntry.linkTarget}</span></div>
+                <div className="flex justify-between break-all">
+                  <span className="shrink-0 text-slate-600">链接目标</span>
+                  <span className="text-right font-mono text-[10px] text-cyan-500">
+                    {infoEntry.linkTarget}
+                  </span>
+                </div>
               )}
             </div>
             <div className="mt-3 flex justify-end">
-              <button onClick={() => setInfoEntry(null)} className="rounded bg-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-600">关闭</button>
+              <button
+                onClick={() => setInfoEntry(null)}
+                className="rounded bg-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-600"
+              >
+                关闭
+              </button>
             </div>
           </div>
         </div>
