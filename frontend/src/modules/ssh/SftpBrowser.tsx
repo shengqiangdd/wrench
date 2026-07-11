@@ -987,10 +987,13 @@ function SftpBrowserInner({
       dir: string,
       query: string,
       depth: number = 0,
+      resultCount: { current: number } = { current: 0 },
     ): Promise<SftpEntry[]> {
       if (!sessionId) return []
       // 限制最大递归深度为 5 层，防止遍历整个文件系统
       if (depth > 5) return []
+      // 限制最大结果数为 500 条，防止内存暴涨
+      if (resultCount.current >= 500) return []
       const results: SftpEntry[] = []
       const q = query.toLowerCase()
       try {
@@ -1003,16 +1006,22 @@ function SftpBrowserInner({
           15000,
         )
         for (const item of items) {
+          if (resultCount.current >= 500) break
           if (item.name.toLowerCase().includes(q)) {
             results.push({
               ...item,
               path: dir === '/' ? `/${item.name}` : `${dir}/${item.name}`,
             })
+            resultCount.current++
           }
-          if (item.type === 'directory') {
-            const subDir = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`
-            const sub = await recursiveSearch(subDir, q, depth + 1)
-            results.push(...sub)
+          if (item.type === 'directory' || item.type === 'symlink') {
+            // 符号链接到目录也递归（targetType 在 list 结果中已解析）
+            const isDirLink = item.type === 'symlink' && item.targetType === 'directory'
+            if (item.type === 'directory' || isDirLink) {
+              const subDir = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`
+              const sub = await recursiveSearch(subDir, q, depth + 1, resultCount)
+              results.push(...sub)
+            }
           }
         }
       } catch {
@@ -1203,6 +1212,16 @@ function SftpBrowserInner({
   const handleDownload = useCallback(
     async (entry: SftpEntry) => {
       if (!sessionId || entry.type === 'directory') return
+      // 大文件下载保护（>100MB 的 base64 传输会消耗 ~266MB 内存）
+      const MAX_DOWNLOAD = 100 * 1024 * 1024
+      if (entry.size > MAX_DOWNLOAD) {
+        setAlertModal({
+          title: '文件过大',
+          message: `文件 ${formatSize(entry.size)} 超过 100MB 下载限制。请使用 SCP/SFTP 客户端下载。`,
+        })
+        setContextMenu(null)
+        return
+      }
       try {
         const b64 = await sftpApi<string>('download', {
           connectionId: sessionId,
