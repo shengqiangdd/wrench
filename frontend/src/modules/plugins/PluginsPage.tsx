@@ -30,7 +30,7 @@ export default function PluginsPage() {
   const [sandboxReady, setSandboxReady] = useState<Record<string, boolean>>({})
   const [sandboxKeys, setSandboxKeys] = useState<Record<string, number>>({})
   const [activePlugin, setActivePlugin] = useState<string | null>(null)
-  const [commandOutput, setCommandOutput] = useState<string | null>(null)
+  const _commandOutput = useState<string | null>(null)[0]
 
   const storePlugins = usePluginStore((s) => s.plugins)
   const enablePlugin = usePluginStore((s) => s.enablePlugin)
@@ -219,6 +219,29 @@ export default function PluginsPage() {
 
   return (
     <div className="flex h-full flex-col p-4 sm:p-6">
+      {/* ── 隐藏的沙箱挂载点：所有插件沙箱始终在这里执行 ── */}
+      <div style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
+        {catalog
+          .filter((p) => sandboxCodes[p.id] && sandboxKeys[p.id])
+          .map((plugin) => (
+            <PluginSandbox
+              key={sandboxKeys[plugin.id] as number}
+              manifest={{
+                id: plugin.id,
+                name: plugin.name,
+                version: plugin.version,
+                description: plugin.description,
+                author: plugin.author,
+                icon: plugin.icon,
+                entry: plugin.entry,
+              }}
+              pluginCode={sandboxCodes[plugin.id] || ''}
+              onReady={(handle) => handleSandboxReady(plugin.id, handle)}
+              onError={(err) => console.error(`[Plugins] ${plugin.name} error:`, err)}
+            />
+          ))}
+      </div>
+
       <div className="mb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-3">
@@ -347,6 +370,9 @@ export default function PluginsPage() {
                             {sandboxCodes[plugin.id] && !ready && (
                               <Loader2 size={12} className="animate-spin text-amber-400" />
                             )}
+                            {ready && (
+                              <span className="text-[10px] text-emerald-500/70">✓ 就绪</span>
+                            )}
                             {!sandboxCodes[plugin.id] && (
                               <span className="text-[10px] text-slate-600">⏳ 代码未加载</span>
                             )}
@@ -387,7 +413,7 @@ export default function PluginsPage() {
                         <button
                           onClick={() => handleToggle(plugin.id, enabled)}
                           disabled={!ready}
-                          className={`ml-4 flex h-7 w-7 items-center justify-center rounded-lg border transition-colors ${
+                          className={`ml-4 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors ${
                             enabled
                               ? 'border-emerald-600/50 bg-emerald-500/10 text-emerald-400'
                               : 'border-slate-700 text-slate-600 hover:border-slate-600 hover:text-slate-400'
@@ -402,7 +428,7 @@ export default function PluginsPage() {
                 })}
               </div>
 
-              {/* 右侧：活跃插件面板区域 */}
+              {/* 右侧：插件面板区域 */}
               <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-slate-700/30 bg-slate-900/30">
                 {activePlugin && activePluginData ? (
                   <>
@@ -432,52 +458,92 @@ export default function PluginsPage() {
                       </div>
                     </div>
 
-                    {/* 沙箱执行区域 */}
-                    <div className="flex-1 overflow-y-auto">
-                      {sandboxKeys[activePlugin] ? (
-                        <div className="h-full">
-                          <PluginSandbox
-                            key={sandboxKeys[activePlugin] as number}
-                            manifest={{
-                              id: activePluginData.id,
-                              name: activePluginData.name,
-                              version: activePluginData.version,
-                              description: activePluginData.description,
-                              author: activePluginData.author,
-                              icon: activePluginData.icon,
-                              entry: activePluginData.entry,
-                            }}
-                            pluginCode={sandboxCodes[activePlugin] || ''}
-                            onReady={(handle) => handleSandboxReady(activePlugin, handle)}
-                            onError={(err) =>
-                              console.error(`[Plugins] ${activePluginData.name} error:`, err)
+                    {/* 插件命令列表 */}
+                    {activePluginData.commands && activePluginData.commands.length > 0 && (
+                      <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-slate-700/30 p-3">
+                        {activePluginData.commands.map((cmd) => (
+                          <button
+                            key={cmd.id}
+                            onClick={() =>
+                              handleExecuteCommand(activePluginData.id, cmd.id, cmd.label || cmd.id)
                             }
-                          />
+                            disabled={!enabledMap[activePluginData.id]}
+                            title={cmd.description || cmd.label || cmd.id}
+                            className={`inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs transition-colors ${
+                              enabledMap[activePluginData.id]
+                                ? 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 hover:text-slate-100'
+                                : 'cursor-not-allowed bg-slate-800/30 text-slate-600'
+                            }`}
+                          >
+                            <Play size={11} className="shrink-0" />
+                            {cmd.label || cmd.id}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 插件面板内容 */}
+                    <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+                      {activePluginData.panels && activePluginData.panels.length > 0 ? (
+                        <div className="rounded-lg border border-slate-700/30 bg-slate-900/50 p-4">
+                          <div className="mb-3 flex items-center gap-2">
+                            <Shield size={14} className="text-emerald-500/70" />
+                            <h3 className="text-sm font-medium text-slate-300">
+                              {activePluginData.panels[0]?.title || activePluginData.panels[0]?.id}
+                            </h3>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            插件面板将在编辑器中显示。请在文件管理器中打开文件后使用插件命令。
+                          </p>
+                          <div className="mt-3 space-y-1.5">
+                            {(activePluginData.commands || []).map((cmd) => (
+                              <div
+                                key={cmd.id}
+                                className="flex items-center justify-between rounded bg-slate-800/50 px-3 py-2"
+                              >
+                                <div>
+                                  <span className="text-xs text-slate-300">
+                                    {cmd.label || cmd.id}
+                                  </span>
+                                  {cmd.description && (
+                                    <span className="ml-2 text-[10px] text-slate-600">
+                                      {cmd.description}
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() =>
+                                    handleExecuteCommand(
+                                      activePluginData.id,
+                                      cmd.id,
+                                      cmd.label || cmd.id,
+                                    )
+                                  }
+                                  disabled={!enabledMap[activePluginData.id]}
+                                  className={`rounded px-2 py-0.5 text-[10px] transition-colors ${
+                                    enabledMap[activePluginData.id]
+                                      ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                                      : 'text-slate-600'
+                                  }`}
+                                >
+                                  执行
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ) : (
-                        <div className="flex h-full items-center justify-center">
-                          <p className="text-xs text-slate-600">沙箱加载中...</p>
+                        <div className="flex h-full items-center justify-center text-center">
+                          <div>
+                            <Puzzle size={32} className="mx-auto mb-2 text-slate-600" />
+                            <p className="text-xs text-slate-500">此插件没有面板</p>
+                            <p className="mt-1 text-[10px] text-slate-600">
+                              使用左侧命令按钮执行插件功能
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
-
-                    {/* 命令输出区域 */}
-                    {commandOutput && (
-                      <div className="shrink-0 border-t border-slate-700/30 bg-slate-950/50 p-3">
-                        <div className="mb-1 flex items-center justify-between">
-                          <span className="text-[10px] text-slate-500">命令输出</span>
-                          <button
-                            onClick={() => setCommandOutput(null)}
-                            className="text-slate-600 hover:text-slate-400"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                        <pre className="max-h-32 overflow-auto font-mono text-xs whitespace-pre-wrap text-slate-300">
-                          {commandOutput}
-                        </pre>
-                      </div>
-                    )}
                   </>
                 ) : (
                   /* 未选中插件时的默认状态 */
@@ -503,9 +569,12 @@ export default function PluginsPage() {
                                 className="flex items-center justify-between rounded-lg border border-slate-700/30 bg-slate-900/50 px-3 py-2"
                               >
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs font-medium text-slate-400">
+                                  <button
+                                    onClick={() => setActivePlugin(plugin.id)}
+                                    className="text-xs font-medium text-slate-400 transition-colors hover:text-blue-400"
+                                  >
                                     {plugin.name}
-                                  </span>
+                                  </button>
                                   {plugin.commands && plugin.commands.length > 0 && (
                                     <span className="text-[10px] text-slate-600">
                                       {plugin.commands.length} 命令
@@ -519,7 +588,7 @@ export default function PluginsPage() {
                               </div>
                             ))}
                           <p className="pt-2 text-center text-[11px] text-slate-600">
-                            点击左侧插件名称查看面板，或点击命令按钮执行
+                            点击插件名称查看详情，或点击命令按钮执行
                           </p>
                         </div>
                       )}
