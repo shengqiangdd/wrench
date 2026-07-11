@@ -113,10 +113,13 @@ async function sftpApi<T = unknown>(
 
 // ─── 工具函数 ───
 
-function getFileIcon(name: string, type?: string) {
+function getFileIcon(name: string, type?: string, targetType?: string) {
   // Special file types from backend
   if (type === 'symlink') {
-    return <Link2 size={14} className="text-cyan-400" />
+    // Color hint based on resolved target type
+    if (targetType === 'directory') return <Link2 size={14} className="text-cyan-400" />
+    if (targetType === 'broken') return <Link2 size={14} className="text-red-400" />
+    return <Link2 size={14} className="text-cyan-300" />
   }
   if (type === 'block_device') {
     return <HardDrive size={14} className="text-orange-400" />
@@ -623,6 +626,14 @@ const FilePreviewModal = memo(function FilePreviewModal({
     setLoading(true)
     setError(null)
     try {
+      // Protect against opening extremely large files (>50MB text preview will crash browser)
+      const MAX_TEXT_PREVIEW = 50 * 1024 * 1024
+      if (!isImageFile(entry.name) && !isVideoFile(entry.name) && !isAudioFile(entry.name) && entry.size > MAX_TEXT_PREVIEW) {
+        setError(`文件过大 (${formatSize(entry.size)})，无法预览。请下载后查看或在编辑器中打开。`)
+        setLoading(false)
+        return
+      }
+
       const b64 = await sftpApi<string>('download', {
         connectionId: sessionId,
         path: entry.path,
@@ -667,7 +678,7 @@ const FilePreviewModal = memo(function FilePreviewModal({
     } finally {
       setLoading(false)
     }
-  }, [sessionId, entry.path, entry.name])
+  }, [sessionId, entry.path, entry.name, entry.size])
 
   useEffect(() => {
     const t = setTimeout(() => loadFile(), 0)
@@ -721,7 +732,7 @@ const FilePreviewModal = memo(function FilePreviewModal({
         {/* 标题栏 */}
         <div className="flex items-center justify-between border-b border-slate-700/50 px-4 py-2">
           <div className="flex items-center gap-2 text-sm text-slate-300">
-            {getFileIcon(entry.name, entry.type)}
+            {getFileIcon(entry.name, entry.type, entry.targetType)}
             <span className="font-medium">{entry.name}</span>
             <span className="text-[10px] text-slate-600">{formatSize(entry.size)}</span>
           </div>
@@ -823,9 +834,8 @@ const FilePreviewModal = memo(function FilePreviewModal({
 
 // ─── 主组件 ───
 
-// 分块上传常量
-const CHUNK_SIZE = 5 * 1024 * 1024 // 每块 5MB
-const CHUNK_THRESHOLD = 50 * 1024 * 1024 // 超过 50MB 才分块
+// 上传限制
+const MAX_UPLOAD_SIZE = 200 * 1024 * 1024 // 200MB base64 传输上限（浏览器内存限制）
 
 function SftpBrowserInner({
   sessionId,
@@ -1168,11 +1178,18 @@ function SftpBrowserInner({
         navigateTo(entry.path)
         return
       }
-      // Symlink to directory: try to navigate into it
-      if (entry.type === 'symlink' && entry.size === 0) {
-        // Could be a directory symlink — try navigating
-        navigateTo(entry.path)
-        return
+      // Symlink to directory: use resolved targetType for reliable detection
+      if (entry.type === 'symlink') {
+        if (entry.targetType === 'directory') {
+          navigateTo(entry.path)
+          return
+        }
+        // Unknown target type — try navigating (will fail gracefully if not a dir)
+        if (entry.targetType === 'unknown' || entry.targetType === 'broken') {
+          navigateTo(entry.path)
+          return
+        }
+        // Symlink to file — fall through to open in editor
       }
       if (onFileDoubleClick) {
         onFileDoubleClick(entry)
@@ -1234,67 +1251,26 @@ function SftpBrowserInner({
     })
   }, [])
 
-  const uploadSmallFile = useCallback(
-    async (file: File, targetDir: string) => {
+  const uploadFile = useCallback(
+    async (file: File, targetDir: string, onProgress?: (pct: number) => void) => {
+      // Enforce size limit — base64 encoding inflates ~33%, so a 200MB file becomes ~266MB in transit
+      if (file.size > MAX_UPLOAD_SIZE) {
+        throw new Error(
+          `文件过大 (${formatSize(file.size)})，超过 200MB 上传限制。请使用 SCP/SFTP 客户端传输。`,
+        )
+      }
+      onProgress?.(10)
       const data = await readFileAsBase64(file)
+      onProgress?.(60)
       const remotePath = targetDir === '/' ? `/${file.name}` : `${targetDir}/${file.name}`
       await sftpApi('upload', {
         connectionId: sessionId,
         path: remotePath,
         data,
       })
+      onProgress?.(100)
     },
     [sessionId, readFileAsBase64],
-  )
-
-  /**
-   * 大文件分块上传
-   * REST API 不提供 chunk 端点，直接使用 upload 端点上传完整文件。
-   * 如果服务端实现分块，可在此处扩展。
-   */
-  const uploadLargeFile = useCallback(
-    async (file: File, targetDir: string, onChunkProgress?: (pct: number) => void) => {
-      const remotePath = targetDir === '/' ? `/${file.name}` : `${targetDir}/${file.name}`
-      const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
-      let offset = 0
-      const fileReader = new FileReader()
-
-      for (let i = 0; i < totalChunks; i++) {
-        const chunk = file.slice(offset, offset + CHUNK_SIZE)
-        const b64 = await new Promise<string>((resolve, reject) => {
-          fileReader.onload = () => {
-            const result = fileReader.result as string
-            const comma = result.indexOf(',')
-            resolve(comma > -1 ? result.slice(comma + 1) : result)
-          }
-          fileReader.onerror = () => reject(new Error(`读取分块 ${i + 1}/${totalChunks} 失败`))
-          fileReader.readAsDataURL(chunk)
-        })
-
-        // 将每个分块作为独立的上传请求发送
-        await sftpApi('upload', {
-          connectionId: sessionId,
-          path: remotePath,
-          data: b64,
-        })
-
-        offset += CHUNK_SIZE
-        onChunkProgress?.(Math.round(((i + 1) / totalChunks) * 100))
-      }
-    },
-    [sessionId],
-  )
-
-  const uploadFile = useCallback(
-    async (file: File, targetDir: string, onChunkProgress?: (pct: number) => void) => {
-      if (file.size >= CHUNK_THRESHOLD) {
-        await uploadLargeFile(file, targetDir, onChunkProgress)
-      } else {
-        await uploadSmallFile(file, targetDir)
-        onChunkProgress?.(100)
-      }
-    },
-    [uploadSmallFile, uploadLargeFile],
   )
 
   const handleDragEnter = useCallback(
@@ -1458,7 +1434,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
           {isDir ? (
             <Folder size={14} className="shrink-0 text-sky-400" />
           ) : (
-            getFileIcon(entry.name, entry.type)
+            getFileIcon(entry.name, entry.type, entry.targetType)
           )}
           {isRenaming ? (
             <input
@@ -1474,7 +1450,14 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span className="flex-1 truncate">{entry.name}</span>
+            <>
+              <span className="flex-1 truncate">{entry.name}</span>
+              {isSymlink && entry.linkTarget && (
+                <span className="max-w-[40%] shrink-0 truncate text-[10px] text-slate-600" title={entry.linkTarget}>
+                  → {entry.linkTarget.split('/').pop() || entry.linkTarget}
+                </span>
+              )}
+            </>
           )}
           {!isDir && (
             <span className="shrink-0 text-[10px] text-slate-600">{formatSize(entry.size)}</span>
@@ -1518,11 +1501,27 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
           {sortedEntries.dirs.length} 目录 · {sortedEntries.symlinks.length} 链接 ·{' '}
           {sortedEntries.files.length} 文件
         </span>
-        <span>{currentPath}</span>
       </div>
     ),
-    [sortedEntries.dirs.length, sortedEntries.symlinks.length, sortedEntries.files.length, currentPath],
+    [sortedEntries.dirs.length, sortedEntries.symlinks.length, sortedEntries.files.length],
   )
+
+  // ─── 面包屑导航 ───
+  const breadcrumb = useMemo(() => {
+    const parts = currentPath.split('/').filter(Boolean)
+    const items: { label: string; path: string }[] = [{ label: '/', path: '/' }]
+    let accumulated = ''
+    for (const part of parts) {
+      accumulated += '/' + part
+      items.push({ label: part, path: accumulated })
+    }
+    return items
+  }, [currentPath])
+
+  // ─── 文件信息弹窗 ───
+  const [infoEntry, setInfoEntry] = useState<SftpEntry | null>(null)
+
+  // ─── 右键菜单增强：添加「文件信息」 ───
 
   return (
     <div
@@ -1684,6 +1683,24 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       )}
 
       {/* 上传进度条 */}
+      {/* 面包屑导航 */}
+      {breadcrumb.length > 1 && (
+        <div className="flex items-center gap-0 overflow-x-auto border-b border-slate-700/30 px-2 py-0.5 text-[11px] text-slate-500" style={{ scrollbarWidth: 'none' }}>
+          {breadcrumb.map((crumb, i) => (
+            <span key={crumb.path} className="flex items-center">
+              {i > 0 && <span className="mx-0.5 text-slate-700">/</span>}
+              <button
+                onClick={() => navigateTo(crumb.path)}
+                className={`shrink-0 rounded px-0.5 py-0 hover:text-slate-300 ${i === breadcrumb.length - 1 ? 'text-slate-400' : 'text-slate-600'}`}
+                title={crumb.path}
+              >
+                {crumb.label === '/' ? '/' : crumb.label}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       {uploadProgress && (
         <div className="mx-2 mt-1 flex items-center gap-2 rounded bg-blue-500/10 px-3 py-1.5 text-xs text-blue-300">
           <Loader2 size={12} className="shrink-0 animate-spin" />
@@ -1851,6 +1868,15 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
               >
                 <Copy size={12} /> 复制文件名
               </button>
+              <button
+                onClick={() => {
+                  setInfoEntry(contextMenu.entry!)
+                  setContextMenu(null)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
+              >
+                <Eye size={12} /> 文件信息
+              </button>
             </>
           ) : (
             <>
@@ -1932,6 +1958,36 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
           onSaved={() => refresh()}
           onOpenInEditor={openInEditor}
         />
+      )}
+
+      {/* ── 文件信息弹窗 ── */}
+      {infoEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setInfoEntry(null)}>
+          <div className="w-[90vw] max-w-sm rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
+                {getFileIcon(infoEntry.name, infoEntry.type, infoEntry.targetType)}
+                <span className="truncate">{infoEntry.name}</span>
+              </div>
+              <button onClick={() => setInfoEntry(null)} className="btn-icon text-slate-500 hover:text-slate-300">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="space-y-1.5 text-xs text-slate-400">
+              <div className="flex justify-between"><span className="text-slate-600">类型</span><span>{infoEntry.type === 'symlink' ? `符号链接 → ${infoEntry.targetType || 'unknown'}` : infoEntry.type}</span></div>
+              <div className="flex justify-between"><span className="text-slate-600">大小</span><span>{formatSize(infoEntry.size)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-600">权限</span><span className="font-mono">{formatPerms(parseInt(infoEntry.permissions, 16) || 0)} ({infoEntry.permissions})</span></div>
+              <div className="flex justify-between"><span className="text-slate-600">修改时间</span><span>{infoEntry.modifyTime ? new Date(infoEntry.modifyTime * 1000).toLocaleString() : '-'}</span></div>
+              <div className="flex justify-between break-all"><span className="shrink-0 text-slate-600">路径</span><span className="text-right font-mono text-[10px] text-slate-500">{infoEntry.path}</span></div>
+              {infoEntry.type === 'symlink' && infoEntry.linkTarget && (
+                <div className="flex justify-between break-all"><span className="shrink-0 text-slate-600">链接目标</span><span className="text-right font-mono text-[10px] text-cyan-500">{infoEntry.linkTarget}</span></div>
+              )}
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button onClick={() => setInfoEntry(null)} className="rounded bg-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-600">关闭</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Alert 弹窗 ── */}

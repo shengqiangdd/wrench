@@ -30,6 +30,10 @@ export interface SftpEntry {
   name: string
   path: string
   type: 'file' | 'directory' | 'symlink' | 'block_device' | 'char_device' | 'fifo' | 'socket'
+  /** For symlinks: resolved target type ("directory" / "file" / "broken" / "unknown") */
+  targetType?: string
+  /** For symlinks: absolute path the symlink points to */
+  linkTarget?: string
   size: number
   modifyTime: number
   permissions: string

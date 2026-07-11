@@ -15,6 +15,13 @@ pub struct FileEntry {
     pub path: String,
     #[serde(alias = "is_dir")]
     pub r#type: String,
+    /// For symlinks: the resolved target type ("directory" / "file" / "symlink" if broken).
+    /// `null` for non-symlinks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_type: Option<String>,
+    /// For symlinks: the absolute path the symlink points to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_target: Option<String>,
     pub size: i64,
     pub permissions: String,
     #[serde(alias = "modified")]
@@ -79,6 +86,8 @@ fn attrs_to_entry(name: String, parent_path: &str, attrs: &FileAttributes) -> Fi
         name,
         path,
         r#type: file_type,
+        target_type: None,
+        link_target: None,
         size,
         permissions: perm_str,
         modify_time,
@@ -94,6 +103,9 @@ async fn open_sftp(session: &Arc<SshSession>) -> Result<Arc<SftpSession>, String
 }
 
 /// List directory contents via SFTP.
+///
+/// For symlinks, attempts to stat the target to resolve `target_type` and `link_target`,
+/// enabling the frontend to follow directory symlinks on double-click.
 pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec<FileEntry>, String> {
     let sftp = open_sftp(session).await?;
     let abs_path = sftp
@@ -110,9 +122,46 @@ pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec
         .map(|entry| {
             let name = entry.file_name();
             let attrs = entry.metadata();
-            attrs_to_entry(name, &abs_path, &attrs)
+            let mut file_entry = attrs_to_entry(name, &abs_path, &attrs);
+
+            // For symlinks, resolve the target type so the frontend can follow them
+            if file_entry.r#type == "symlink" {
+                // Try to read the symlink target path from attrs
+                // russh-sftp doesn't expose readlink directly, so we try stat on the
+                // resolved path (canonicalize follows symlinks).
+                let link_path = file_entry.path.clone();
+                // We'll populate target_type after the loop using a separate stat call
+                file_entry.target_type = Some("unknown".to_string());
+                // Store the link path in link_target (will be resolved below)
+                file_entry.link_target = Some(link_path);
+            }
+
+            file_entry
         })
         .collect();
+
+    // Resolve symlink targets in batch — stat each symlink to get resolved type
+    for entry in &mut entries {
+        if entry.r#type == "symlink" {
+            if let Ok(resolved) = sftp.canonicalize(&entry.path).await {
+                if let Ok(meta) = sftp.metadata(&resolved).await {
+                    entry.target_type = Some(file_type_from_permissions(meta.permissions));
+                    entry.link_target = Some(resolved);
+                    // Also update size to reflect target size
+                    entry.size = meta.size.unwrap_or(0) as i64;
+                    let perm_str = meta
+                        .permissions
+                        .map(|p| format!("{:o}", p & 0o7777))
+                        .unwrap_or_else(|| "----".to_string());
+                    entry.permissions = perm_str;
+                } else {
+                    // canonicalize worked but metadata failed — broken symlink
+                    entry.target_type = Some("broken".to_string());
+                    entry.link_target = Some(resolved);
+                }
+            }
+        }
+    }
 
     // Sort: directories first, then symlinks, then other files, then by name
     entries.sort_by(|a, b| {
@@ -285,6 +334,8 @@ mod tests {
         assert_eq!(entry.size, 1024);
         assert_eq!(entry.permissions, "644");
         assert_eq!(entry.modify_time, 1705314600);
+        assert!(entry.target_type.is_none());
+        assert!(entry.link_target.is_none());
     }
 
     #[test]
