@@ -258,6 +258,11 @@ fn parse_docker_ps(output: &str) -> Vec<DockerContainerInfo> {
                 ports: extract_json_str(&v, &["Ports"]),
                 created: extract_json_str(&v, &["CreatedAt"]),
                 command: extract_json_str(&v, &["Command"]),
+                running_for: extract_json_str(&v, &["RunningFor"]),
+                labels: extract_json_str(&v, &["Labels"]),
+                mounts: extract_json_str(&v, &["Mounts"]),
+                networks: extract_json_str(&v, &["Networks"]),
+                size: extract_json_str(&v, &["Size"]),
             })
         })
         .collect()

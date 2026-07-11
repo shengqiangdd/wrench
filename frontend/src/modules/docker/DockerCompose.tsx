@@ -1,4 +1,4 @@
-import { memo, useCallback, useState, useEffect, useRef } from 'react'
+import { memo, useCallback, useState, useEffect } from 'react'
 import {
   Layers,
   RefreshCw,
@@ -46,7 +46,6 @@ function DockerComposeInner({ connectionId }: Props) {
   const [logData, setLogData] = useState<{ key: string; content: string } | null>(null)
   const [search, setSearch] = useState('')
   const [manualPath, setManualPath] = useState('')
-  const mountedRef = useRef(false)
 
   // 加载项目列表
   const discoverProjects = useCallback(async () => {
@@ -95,7 +94,7 @@ function DockerComposeInner({ connectionId }: Props) {
                 Image?: string
                 State?: string
                 Status?: string
-                Publishers?: string
+                Ports?: string
               }> = j.data?.services ?? []
               return {
                 path: p.path,
@@ -103,7 +102,7 @@ function DockerComposeInner({ connectionId }: Props) {
                   name: s.Name || '-',
                   status: s.Status || '-',
                   image: s.Image || '-',
-                  ports: s.Publishers || '',
+                  ports: s.Ports || '',
                   state: (s.State || '').toLowerCase(),
                 })),
               }
@@ -162,12 +161,9 @@ function DockerComposeInner({ connectionId }: Props) {
     }
   }, [connectionId, manualPath])
 
-  // 初始加载
+  // 初始加载 & connectionId 变化时重新加载
   useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true
-      discoverProjects()
-    }
+    discoverProjects()
   }, [discoverProjects])
 
   // 展开项目时获取 services 状态
@@ -182,19 +178,19 @@ function DockerComposeInner({ connectionId }: Props) {
         })
         const json = (await res.json()) as ApiResponse
         if (json.success) {
-          // 后端返回结构化数据: { services: [{Name, Image, State, Status, Publishers}] }
+          // 后端返回结构化数据: { services: [{Name, Image, State, Status, Ports}] }
           const servicesData: Array<{
             Name?: string
             Image?: string
             State?: string
             Status?: string
-            Publishers?: string
+            Ports?: string
           }> = json.data?.services ?? []
           const services: ComposeService[] = servicesData.map((s) => ({
             name: s.Name || '-',
             status: s.Status || '-',
             image: s.Image || '-',
-            ports: s.Publishers || '',
+            ports: s.Ports || '',
             state: (s.State || '').toLowerCase(),
           }))
           setProjects((prev) => prev.map((p) => (p.path === path ? { ...p, services } : p)))

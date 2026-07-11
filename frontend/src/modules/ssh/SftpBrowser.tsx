@@ -1285,6 +1285,16 @@ function SftpBrowserInner({
     onCancel: () => void
   } | null>(null)
 
+  // ── 多选 ──
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  // ── 权限编辑弹窗 ──
+  const [chmodEntry, setChmodEntry] = useState<SftpEntry | null>(null)
+  const [chmodValue, setChmodValue] = useState('')
+  // ── 移动弹窗 ──
+  const [moveEntry, setMoveEntry] = useState<SftpEntry | null>(null)
+  const [moveTarget, setMoveTarget] = useState('')
+  const [moveBusy, setMoveBusy] = useState(false)
+
   const retryCountRef = useRef(0)
   const fileStore = useFileStore()
   const setActiveNav = useAppStore((s) => s.setActiveNav)
@@ -1651,6 +1661,114 @@ function SftpBrowserInner({
     [sessionId],
   )
 
+  // ─── 权限编辑（chmod） ───
+
+  const handleChmod = useCallback(
+    async (entry: SftpEntry, octalStr: string) => {
+      if (!sessionId) return
+      // 解析八进制字符串为数字（如 "755" → 493）
+      const num = parseInt(octalStr, 8)
+      if (isNaN(num) || num < 0 || num > 0o7777) {
+        setAlertModal({ title: '权限无效', message: '请输入有效的八进制权限值（如 755、644）' })
+        return
+      }
+      try {
+        await sftpApi('chmod', {
+          connectionId: sessionId,
+          path: entry.path,
+          permissions: num,
+        })
+        setChmodEntry(null)
+        refresh()
+      } catch (err) {
+        setAlertModal({ title: '修改权限失败', message: (err as Error).message })
+      }
+    },
+    [sessionId, refresh],
+  )
+
+  // ─── 文件移动（基于 rename） ───
+
+  const handleMove = useCallback(
+    async (entry: SftpEntry, targetPath: string) => {
+      if (!sessionId || !targetPath.trim()) return
+      const target = targetPath.trim()
+      // 如果目标是目录，把文件移到目录内部
+      let destPath = target
+      if (target.endsWith('/')) {
+        destPath = `${target}${entry.name}`
+      }
+      setMoveBusy(true)
+      try {
+        await sftpApi('rename', {
+          connectionId: sessionId,
+          from: entry.path,
+          to: destPath,
+        })
+        setMoveEntry(null)
+        setMoveTarget('')
+        refresh()
+      } catch (err) {
+        setAlertModal({ title: '移动失败', message: (err as Error).message })
+      } finally {
+        setMoveBusy(false)
+      }
+    },
+    [sessionId, refresh],
+  )
+
+  // ─── 多选操作 ───
+
+  const toggleSelect = useCallback((path: string) => {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }, [])
+
+  const clearSelection = useCallback(() => setSelectedPaths(new Set()), [])
+
+  const selectAll = useCallback(() => {
+    setSelectedPaths(new Set(entries.map((e) => e.path)))
+  }, [entries])
+
+  const batchDelete = useCallback(async () => {
+    if (!sessionId || selectedPaths.size === 0) return
+    const paths = [...selectedPaths]
+    setConfirmModal({
+      title: `删除 ${paths.length} 个项目`,
+      message: `确定删除选中的 ${paths.length} 个项目吗？此操作不可撤销。`,
+      variant: 'danger',
+      confirmText: '删除',
+      onConfirm: async () => {
+        setConfirmModal(null)
+        let ok = 0
+        let fail = 0
+        for (const p of paths) {
+          try {
+            await sftpApi('delete', {
+              connectionId: sessionId,
+              path: p,
+              recursive: true,
+            })
+            ok++
+          } catch {
+            fail++
+          }
+        }
+        clearSelection()
+        refresh()
+        setAlertModal({
+          title: '批量删除完成',
+          message: `成功 ${ok} 个${fail > 0 ? `，失败 ${fail} 个` : ''}`,
+        })
+      },
+      onCancel: () => setConfirmModal(null),
+    })
+  }, [sessionId, selectedPaths, refresh, clearSelection])
+
   // ─── 右键事件 ───
 
   const handleEntryContextMenu = useCallback((e: React.MouseEvent, entry: SftpEntry) => {
@@ -1851,14 +1969,36 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       const isRenaming = renaming === entry.path
       const isDir = entry.type === 'directory'
       const isSymlink = entry.type === 'symlink'
+      const isSelected = selectedPaths.has(entry.path)
       return (
         <div
           key={entry.path}
-          className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isDir || (isSymlink && entry.targetType === 'directory') ? 'text-sky-300' : 'text-slate-300'}`}
+          className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isSelected ? 'bg-sky-900/20' : ''} ${isDir || (isSymlink && entry.targetType === 'directory') ? 'text-sky-300' : 'text-slate-300'}`}
           style={{ height: 28 }}
-          onClick={() => handleFileDoubleClick(entry)}
+          onClick={(e) => {
+            // 点击复选框区域不触发打开
+            if ((e.target as HTMLElement).closest('[data-select]')) return
+            handleFileDoubleClick(entry)
+          }}
           onContextMenu={(e) => handleEntryContextMenu(e, entry)}
         >
+          {/* 复选框 */}
+          <div
+            data-select
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+              isSelected
+                ? 'border-sky-500 bg-sky-600'
+                : 'border-slate-600 hover:border-slate-400'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleSelect(entry.path)
+            }}
+          >
+            {isSelected && (
+              <Check size={10} className="text-white" />
+            )}
+          </div>
           {isDir ? (
             <Folder size={14} className="shrink-0 text-sky-400" />
           ) : isSymlink && entry.targetType === 'directory' ? (
@@ -1901,7 +2041,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         </div>
       )
     },
-    [renaming, renameValue, handleFileDoubleClick, handleEntryContextMenu, handleRename],
+    [renaming, renameValue, handleFileDoubleClick, handleEntryContextMenu, handleRename, selectedPaths, toggleSelect],
   )
 
   // ─── 工具栏事件 ───
@@ -1937,6 +2077,35 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
     ),
     [sortedEntries.dirs.length, sortedEntries.files.length],
   )
+
+  // ── 批量选择工具栏 ──
+  const selectionBar = useMemo(() => {
+    if (selectedPaths.size === 0) return null
+    return (
+      <div className="flex items-center gap-2 border-t border-sky-900/50 bg-sky-950/30 px-2 py-1 text-[11px] text-sky-300">
+        <span className="font-medium">已选 {selectedPaths.size} 项</span>
+        <button
+          onClick={selectAll}
+          className="rounded px-1.5 py-0.5 text-[10px] text-sky-400 hover:bg-sky-900/40"
+        >
+          全选
+        </button>
+        <button
+          onClick={clearSelection}
+          className="rounded px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-slate-700/50"
+        >
+          取消
+        </button>
+        <div className="flex-1" />
+        <button
+          onClick={batchDelete}
+          className="rounded px-2 py-0.5 text-[10px] text-red-400 hover:bg-red-900/30"
+        >
+          <Trash2 size={10} className="mr-1 inline" /> 删除
+        </button>
+      </div>
+    )
+  }, [selectedPaths.size, selectAll, clearSelection, batchDelete])
 
   // ─── 面包屑导航 ───
   const breadcrumb = useMemo(() => {
@@ -2204,6 +2373,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         )}
       </div>
 
+      {selectionBar}
       {statusBar}
 
       {/* 递归搜索中提示 */}
@@ -2280,6 +2450,33 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
               >
                 <Trash2 size={12} /> 删除
               </button>
+              <button
+                onClick={() => {
+                  setChmodEntry(contextMenu.entry!)
+                  setChmodValue(
+                    (parseInt(contextMenu.entry!.permissions, 16) || 0).toString(8).padStart(4, '0'),
+                  )
+                  setContextMenu(null)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
+              >
+                <Edit3 size={12} /> 权限
+              </button>
+              {!isDirLike(contextMenu.entry!) && (
+                <button
+                  onClick={() => {
+                    const parentPath = contextMenu.entry!.path.includes('/')
+                      ? contextMenu.entry!.path.substring(0, contextMenu.entry!.path.lastIndexOf('/'))
+                      : ''
+                    setMoveEntry(contextMenu.entry!)
+                    setMoveTarget(parentPath ? `${parentPath}/` : '/')
+                    setContextMenu(null)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
+                >
+                  <Edit3 size={12} /> 移动到…
+                </button>
+              )}
               <div className="mx-2 my-1 border-t border-slate-700/50" />
               <button
                 onClick={() => {
@@ -2497,6 +2694,171 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
           onConfirm={confirmModal.onConfirm}
           onCancel={confirmModal.onCancel}
         />
+      )}
+
+      {/* ── 权限编辑弹窗 ── */}
+      {chmodEntry && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setChmodEntry(null)}
+        >
+          <div
+            className="w-80 rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-3 text-sm font-medium text-slate-200">修改权限</h3>
+            <p className="mb-1 text-xs text-slate-400">{chmodEntry.name}</p>
+            <p className="mb-3 text-xs text-slate-500">
+              当前: {formatPerms(parseInt(chmodEntry.permissions, 16) || 0)}
+            </p>
+            {/* 八进制输入 */}
+            <div className="mb-3">
+              <label className="mb-1 block text-xs text-slate-500">八进制权限</label>
+              <input
+                autoFocus
+                value={chmodValue}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/[^0-7]/g, '').slice(0, 4)
+                  setChmodValue(v)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleChmod(chmodEntry, chmodValue)
+                  if (e.key === 'Escape') setChmodEntry(null)
+                }}
+                className="w-full rounded bg-slate-800 px-2 py-1.5 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-sky-500"
+                placeholder="例如: 755"
+                maxLength={4}
+              />
+            </div>
+            {/* 快捷权限预设 */}
+            <div className="mb-3 grid grid-cols-3 gap-1">
+              {[
+                { label: '755', desc: 'rwxr-xr-x' },
+                { label: '777', desc: 'rwxrwxrwx' },
+                { label: '644', desc: 'rw-r--r--' },
+                { label: '600', desc: 'rw-------' },
+                { label: '700', desc: 'rwx------' },
+                { label: '666', desc: 'rw-rw-rw-' },
+              ].map((p) => (
+                <button
+                  key={p.label}
+                  onClick={() => setChmodValue(p.label)}
+                  className={`rounded px-1.5 py-1 text-[10px] transition-colors ${
+                    chmodValue === p.label
+                      ? 'bg-sky-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                  }`}
+                >
+                  <div className="font-medium">{p.label}</div>
+                  <div className="text-[8px] opacity-60">{p.desc}</div>
+                </button>
+              ))}
+            </div>
+            {/* rwx 复选框 */}
+            <div className="mb-3 grid grid-cols-3 gap-2 text-center text-[10px] text-slate-500">
+              {(['owner', 'group', 'others'] as const).map((who, wi) => (
+                <div key={who}>
+                  <div className="mb-1 font-medium text-slate-400">
+                    {who === 'owner' ? '所有者' : who === 'group' ? '用户组' : '其他'}
+                  </div>
+                  {(['r', 'w', 'x'] as const).map((perm, pi) => {
+                    const bits = [0o400, 0o200, 0o100, 0o040, 0o020, 0o010, 0o004, 0o002, 0o001]
+                    const bitVal = bits[wi * 3 + pi] ?? 0
+                    const current = parseInt(chmodValue, 8) || 0
+                    const checked = (current & bitVal) === bitVal
+                    return (
+                      <label
+                        key={perm}
+                        className="flex cursor-pointer items-center justify-center gap-0.5"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            const newVal = checked ? current & ~bitVal : current | bitVal
+                            setChmodValue((newVal & 0o7777).toString(8).padStart(4, '0'))
+                          }}
+                          className="accent-sky-500"
+                        />
+                        <span>{perm}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setChmodEntry(null)}
+                className="rounded px-3 py-1 text-xs text-slate-400 hover:bg-slate-800"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleChmod(chmodEntry, chmodValue)}
+                className="rounded bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-500"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 移动到弹窗 ── */}
+      {moveEntry && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => {
+            setMoveEntry(null)
+            setMoveTarget('')
+          }}
+        >
+          <div
+            className="w-80 rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-3 text-sm font-medium text-slate-200">移动到</h3>
+            <p className="mb-1 text-xs text-slate-400">
+              {moveEntry.name}
+            </p>
+            <input
+              autoFocus
+              value={moveTarget}
+              onChange={(e) => setMoveTarget(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !moveBusy) handleMove(moveEntry, moveTarget)
+                if (e.key === 'Escape') {
+                  setMoveEntry(null)
+                  setMoveTarget('')
+                }
+              }}
+              className="mb-1 w-full rounded bg-slate-800 px-2 py-1.5 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-sky-500"
+              placeholder="目标路径，例如: /tmp/"
+            />
+            <p className="mb-3 text-[10px] text-slate-600">
+              输入完整路径。以 / 结尾表示移到目录内。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setMoveEntry(null)
+                  setMoveTarget('')
+                }}
+                className="rounded px-3 py-1 text-xs text-slate-400 hover:bg-slate-800"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleMove(moveEntry, moveTarget)}
+                disabled={moveBusy || !moveTarget.trim()}
+                className="rounded bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-500 disabled:opacity-50"
+              >
+                {moveBusy ? '移动中…' : '移动'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

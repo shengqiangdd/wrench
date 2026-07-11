@@ -208,6 +208,31 @@ function parsePctStr(s?: string): number {
   return parseFloat(s.replace('%', '')) || 0
 }
 
+/** 格式化 uptime 字符串：去掉 "up " 前缀，规范化显示 */
+function formatUptime(raw?: string): string {
+  if (!raw) return '—'
+  // 去掉 "up " 前缀（uptime -p 输出如 "up 5 days, 2 hours"）
+  const s = raw.replace(/^up\s+/i, '').trim()
+  if (!s) return '—'
+  // 如果是纯数字（秒），转换为可读格式
+  const asNum = parseInt(s, 10)
+  if (!isNaN(asNum) && s === String(asNum)) {
+    const days = Math.floor(asNum / 86400)
+    const hours = Math.floor((asNum % 86400) / 3600)
+    const mins = Math.floor((asNum % 3600) / 60)
+    if (days > 0) return `${days}天 ${hours}时`
+    if (hours > 0) return `${hours}时 ${mins}分`
+    return `${mins}分`
+  }
+  // 截断过长的字符串（如 "5 years, 3 months, 1 day, 2 hours, 30 minutes, 12 seconds"）
+  // 保留前两段
+  const parts = s.split(',').map((p) => p.trim()).filter(Boolean)
+  if (parts.length > 2) {
+    return parts.slice(0, 2).join(', ')
+  }
+  return s
+}
+
 // ─── 模拟数据（测试用） ───
 
 function _mockStats(id: string, name: string, host: string): HostStats {
@@ -381,7 +406,7 @@ export default function MonitorPage() {
         }
 
         // 运行时间
-        const uptime = h.uptime || '—'
+        const uptime = formatUptime(h.uptime)
         const loadAvg = [h.cpu_load ?? 0, h.cpu_load_5 ?? 0, h.cpu_load_15 ?? 0]
           .map((v) => v.toFixed(2))
           .join(', ')

@@ -197,6 +197,16 @@ pub struct DockerContainerInfo {
     pub created: String,
     #[serde(rename = "Command")]
     pub command: String,
+    #[serde(rename = "RunningFor", skip_serializing_if = "String::is_empty")]
+    pub running_for: String,
+    #[serde(rename = "Labels", skip_serializing_if = "String::is_empty")]
+    pub labels: String,
+    #[serde(rename = "Mounts", skip_serializing_if = "String::is_empty")]
+    pub mounts: String,
+    #[serde(rename = "Networks", skip_serializing_if = "String::is_empty")]
+    pub networks: String,
+    #[serde(rename = "Size", skip_serializing_if = "String::is_empty")]
+    pub size: String,
 }
 
 /// Structured container stats from `docker stats --no-stream --format json`

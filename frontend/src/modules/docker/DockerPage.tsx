@@ -226,7 +226,12 @@ export default function DockerPage() {
             value={currentConnId ?? ''}
             onChange={(e) => {
               const val = e.target.value
-              setSelectedHost(val)
+              const host = availableHosts.find((h) => h.id === val)
+              if (host?.connected) {
+                setSelectedHost(val)
+              } else if (host) {
+                goToSshAndConnect(host.id)
+              }
             }}
             className="focus:border-wrench-500 ml-2 rounded border border-slate-700 bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300 focus:outline-none"
           >

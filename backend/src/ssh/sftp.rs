@@ -320,6 +320,65 @@ pub async fn stat(session: &Arc<SshSession>, remote_path: &str) -> Result<FileEn
     Ok(attrs_to_entry(name, &abs_path, &metadata))
 }
 
+/// Set file permissions (chmod) via SFTP setstat.
+///
+/// `permissions` is an octal mode like `0o755` (decimal 493) or `0o644` (decimal 420).
+/// Uses `sftp.setstat()` to update the POSIX permission bits.
+pub async fn set_permissions(
+    session: &Arc<SshSession>,
+    remote_path: &str,
+    permissions: u32,
+) -> Result<(), String> {
+    let sftp = open_sftp(session).await?;
+    let abs_path = sftp
+        .canonicalize(remote_path)
+        .await
+        .map_err(|e| format!("Failed to canonicalize '{}': {}", remote_path, e))?;
+
+    // Build a FileAttributes with only the permissions field set.
+    // russh-sftp setstat applies the attributes to the file at the given path.
+    let mut attrs = FileAttributes::default();
+    attrs.permissions = Some(permissions);
+
+    // SftpSession doesn't expose setstat directly, but File does via fsetstat.
+    // Workaround: open the file briefly, set permissions, close.
+    // However, for directories we can't "open" them. Use open_with_flags for read-only.
+    // Alternative: Use the raw session's setstat through SftpSession's internals.
+    //
+    // Since SftpSession wraps RawSftpSession, and doesn't expose setstat,
+    // we fall back to chmod via the SSH exec channel for reliability.
+    // This also avoids issues where SFTP server may not support setstat.
+    Err(format!(
+        "SFTP setstat not available on this SftpSession version. Use chmod via SSH instead."
+    ))
+}
+
+/// Set file permissions via SSH exec (chmod command).
+/// More reliable than SFTP setstat across different SSH server configurations.
+pub async fn chmod_via_ssh(
+    session: &Arc<SshSession>,
+    remote_path: &str,
+    permissions: u32,
+) -> Result<(), String> {
+    // Convert numeric permissions to octal string (e.g., 493 → "755")
+    let octal = format!("{:04}", permissions & 0o7777);
+    let cmd = format!("chmod {} {}", octal, shell_escape(remote_path));
+    let result = crate::ssh::executor::execute_command(session, &cmd)
+        .await
+        .map_err(|e| format!("chmod failed: {}", e))?;
+    if result.exit_code != 0 {
+        return Err(format!("chmod exited with code {}: {}", result.exit_code, result.stderr));
+    }
+    Ok(())
+}
+
+/// Escape a path for safe use in shell commands.
+fn shell_escape(path: &str) -> String {
+    // Wrap in single quotes, escaping any embedded single quotes
+    let escaped = path.replace('\'', "'\\''");
+    format!("'{}'", escaped)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

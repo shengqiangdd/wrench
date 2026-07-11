@@ -234,3 +234,36 @@ pub async fn sftp_stat(
         Err(e) => Json(ApiResponse::error(9, &e)),
     }
 }
+
+/// Set file permissions (chmod) via SFTP + SSH
+pub async fn sftp_chmod(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> Json<ApiResponse<()>> {
+    let connection_id = s(&body, "connectionId");
+    let path = s(&body, "path");
+    let permissions = match body["permissions"].as_u64() {
+        Some(p) => p as u32,
+        None => return Json(ApiResponse::error(10, "Missing 'permissions' field (numeric octal, e.g. 493 for 0755)")),
+    };
+
+    let (host, username, session) = match get_session(&state, &connection_id) {
+        Some(v) => v,
+        None => return Json(ApiResponse::error(1, &format!("SSH not connected: {}", connection_id))),
+    };
+
+    match crate::ssh::sftp::chmod_via_ssh(&session, &path, permissions).await {
+        Ok(_) => {
+            audit(
+                &state,
+                "sftp_chmod",
+                &connection_id,
+                &host,
+                &username,
+                serde_json::json!({"path": path, "permissions": format!("{:o}", permissions)}),
+            );
+            Json(ApiResponse::success(()))
+        }
+        Err(e) => Json(ApiResponse::error(11, &e)),
+    }
+}

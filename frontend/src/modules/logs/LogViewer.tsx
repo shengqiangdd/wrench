@@ -199,7 +199,8 @@ function LogViewerInner({ connectionId, logPath, onClose }: LogViewerProps) {
     setSearching(true)
     setSearchResult('')
     try {
-      const res = await fetch('/api/logs/grep', {
+      const { authedFetch } = await import('../../services/auth')
+      const res = await authedFetch('/api/logs/grep', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId, path: logPath, pattern: searchTerm, context: 2 }),

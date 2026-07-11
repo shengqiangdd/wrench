@@ -150,14 +150,10 @@ export default function DockerMonitor({ connectionId, containers: propContainers
     }
   }, [connectionId])
 
-  // 挂载时获取容器列表（用 ref 避免 lint 警告）
-  const fetchedRef = useRef(false)
+  // connectionId 变化时获取容器列表
   useEffect(() => {
-    if (!fetchedRef.current && connectionId) {
-      fetchedRef.current = true
-      void fetchContainers()
-    }
-  }, [connectionId, fetchContainers])
+    void fetchContainers()
+  }, [fetchContainers])
 
   useEffect(() => {
     dataRef.current = monitors
@@ -184,16 +180,15 @@ export default function DockerMonitor({ connectionId, containers: propContainers
     setSelectedIds(new Set())
   }, [])
 
-  // 初始化时自动选中所有运行中的容器
-  const initRef = useRef(false)
+  // 容器列表变化时自动选中所有运行中的容器（仅在首次或连接变化时）
+  const prevContainerKeyRef = useRef('')
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!initRef.current && containers.length > 0) {
-      initRef.current = true
+    const key = containers.map((c) => c.ID).sort().join(',')
+    if (containers.length > 0 && key !== prevContainerKeyRef.current) {
+      prevContainerKeyRef.current = key
       const running = containers.filter((c) => c.State === 'running')
-      if (running.length > 0) {
-        setSelectedIds(new Set(running.map((c) => c.ID)))
-      }
+      setSelectedIds(new Set(running.map((c) => c.ID)))
     }
   }, [containers])
   /* eslint-enable react-hooks/set-state-in-effect */

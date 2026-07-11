@@ -50,6 +50,31 @@ interface HostHealth {
 
 // ─── Helper fns ───
 
+/** 格式化 uptime 字符串：去掉 "up " 前缀，规范化显示 */
+function formatUptime(raw?: string | null): string {
+  if (!raw) return '—'
+  // 去掉 "up " 前缀（uptime -p 输出如 "up 5 days, 2 hours"）
+  const s = raw.replace(/^up\s+/i, '').trim()
+  if (!s) return '—'
+  // 如果是纯数字（秒），转换为可读格式
+  const asNum = parseInt(s, 10)
+  if (!isNaN(asNum) && s === String(asNum)) {
+    const days = Math.floor(asNum / 86400)
+    const hours = Math.floor((asNum % 86400) / 3600)
+    const mins = Math.floor((asNum % 3600) / 60)
+    if (days > 0) return `${days}天 ${hours}时`
+    if (hours > 0) return `${hours}时 ${mins}分`
+    return `${mins}分`
+  }
+  // 截断过长的字符串（如 "5 years, 3 months, 1 day, 2 hours, 30 minutes, 12 seconds"）
+  // 保留前两段
+  const parts = s.split(',').map((p) => p.trim()).filter(Boolean)
+  if (parts.length > 2) {
+    return parts.slice(0, 2).join(', ')
+  }
+  return s
+}
+
 function pctColor(pct: number | null): string {
   if (pct == null) return 'text-slate-500'
   if (pct > 90) return 'text-red-400'
@@ -90,6 +115,13 @@ const HostCard = memo(function HostCard({
   onDiagnose,
   onSelect,
 }: HostCardProps) {
+  // CPU 利用率：raw load / cores × 100（后端 cpu_load 是 load average，不是百分比）
+  const cpuPct = useMemo(() => {
+    const cores = host.cpu_cores ?? 1
+    const load = host.cpu_load ?? 0
+    return Math.min(100, Math.round((load / cores) * 1000) / 10)
+  }, [host.cpu_load, host.cpu_cores])
+
   // 取 / 分区或使用率最高的分区
   const rootDisk = useMemo(() => {
     if (!host.disks || host.disks.length === 0) return null
@@ -137,8 +169,8 @@ const HostCard = memo(function HostCard({
             <Cpu size={12} /> CPU
           </div>
           <div className="flex items-baseline gap-1.5">
-            <span className={`text-lg font-semibold tabular-nums ${pctColor(host.cpu_load)}`}>
-              {host.cpu_load != null ? `${host.cpu_load.toFixed(1)}%` : '--'}
+            <span className={`text-lg font-semibold tabular-nums ${pctColor(cpuPct)}`}>
+              {host.cpu_load != null ? `${cpuPct.toFixed(1)}%` : '--'}
             </span>
             {host.cpu_cores != null && (
               <span className="text-xs text-slate-500">{host.cpu_cores}核</span>
@@ -146,10 +178,15 @@ const HostCard = memo(function HostCard({
           </div>
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
             <div
-              className={`h-full rounded-full transition-all ${pctBg(host.cpu_load)}`}
-              style={{ width: `${Math.min(100, host.cpu_load ?? 0)}%` }}
+              className={`h-full rounded-full transition-all ${pctBg(cpuPct)}`}
+              style={{ width: `${cpuPct}%` }}
             />
           </div>
+          {host.cpu_load != null && (
+            <div className="mt-1 text-[10px] text-slate-500">
+              负载 {host.cpu_load.toFixed(2)}
+            </div>
+          )}
         </div>
 
         {/* Memory */}
@@ -202,7 +239,7 @@ const HostCard = memo(function HostCard({
         <div className="rounded-lg bg-slate-800/80 p-2.5">
           {host.uptime && (
             <div className="mb-1 text-xs text-slate-400">
-              <span className="text-slate-500">运行:</span> {host.uptime}
+              <span className="text-slate-500">运行:</span> {formatUptime(host.uptime)}
             </div>
           )}
           {host.processes != null && (

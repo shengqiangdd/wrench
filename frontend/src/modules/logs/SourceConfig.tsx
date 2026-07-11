@@ -86,7 +86,8 @@ export default function SourceConfig({ connectionId, onSelectPath, scanKey }: Pr
   const doScan = useCallback(async (connId: string) => {
     setDiscovering(true)
     try {
-      const res = await fetch('/api/logs/scan', {
+      const { authedFetch } = await import('../../services/auth')
+      const res = await authedFetch('/api/logs/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId: connId, paths: [] }),
