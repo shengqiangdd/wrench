@@ -10,7 +10,9 @@ import type { QuickCommand } from './index'
 
 export default function CommandsPage() {
   const sessions = useSshStore((s) => s.sessions)
-  const connectionId = sessions.length > 0 ? sessions[0]!.id : null
+
+  // 直接从已有 sessions 获取连接 ID（DockerPage 会负责 ensure 连接）
+  const connectionId = sessions[0]?.id ?? null
 
   const {
     customCommands,

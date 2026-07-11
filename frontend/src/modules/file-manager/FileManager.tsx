@@ -361,6 +361,20 @@ function FileManagerInner() {
     }
   }, [sessions, fmState.sessionId, fmState.connId, tryRestoreSession])
 
+  // 无任何已知连接（首次打开，且只有1台主机）时自动连接
+  const connectAndSftpRef = useRef<((connId: string) => Promise<string | undefined>) | null>(null)
+  useEffect(() => {
+    if (
+      !fmState.connId &&
+      !fmState.sessionId &&
+      !connectingRef.current &&
+      connections.length === 1 &&
+      connectAndSftpRef.current
+    ) {
+      void connectAndSftpRef.current(connections[0]!.id)
+    }
+  }, [connections, fmState.connId, fmState.sessionId])
+
   // 连接并打开 SFTP
   const connectAndSftp = useCallback(
     async (connId: string) => {
@@ -402,6 +416,10 @@ function FileManagerInner() {
     },
     [sessions, addSession, removeSession, wsClient, setFmState],
   )
+
+  // 同步 ref 供 useEffect 使用（避免 hook 顺序问题）
+  // eslint-disable-next-line react-hooks/refs
+  connectAndSftpRef.current = connectAndSftp
 
   // 当前 session 是否有效
   const isConnected =

@@ -31,7 +31,9 @@ export default function DockerPage() {
   const connections = useSshStore((s) => s.connections)
 
   // 选中的主机（可以是 session.id 或 connection.id）
-  const [selectedHost, setSelectedHost] = useState<string | null>(null)
+  const [selectedHost, setSelectedHost] = useState<string | null>(
+    () => connections[0]?.id ?? null,
+  )
 
   // 实际用于 API 调用的 backend connectionId
   const [currentConnId, setCurrentConnId] = useState<string | null>(null)
@@ -49,11 +51,6 @@ export default function DockerPage() {
       privateKey: conn.privateKey,
     }))
   }, [connections])
-
-  // 选中的主机 — 从 connections 初始化，避免 effect 中 setState
-  const [selectedHost, setSelectedHost] = useState<string | null>(
-    () => connections[0]?.id ?? null,
-  )
 
   // selectedHost 变化时自动 ensure 连接
   const ensureRef = useRef<ReturnType<typeof ensureSshConnection> | null>(null)
@@ -164,8 +161,11 @@ export default function DockerPage() {
   // Fetch data when tab or connection changes
   useEffect(() => {
     if (!isVisible || !currentConnId) return
-    if (tab === 'containers') fetchContainers()
-    else if (tab === 'images') fetchImages()
+    const run = async () => {
+      if (tab === 'containers') await fetchContainers()
+      else if (tab === 'images') await fetchImages()
+    }
+    void run()
   }, [isVisible, tab, currentConnId, fetchContainers, fetchImages])
 
   // Auto refresh
