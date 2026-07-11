@@ -1,9 +1,9 @@
 /**
  * content-sniff.ts — 文件内容嗅探
  *
- * 当扩展名无法确定语言类型时（无后缀/未知后缀），
- * 从文件内容头部推断编程语言、文件类型等。
- * 同时辅助 getFileIcon 做图标映射。
+ * 1. 语言嗅探：当扩展名无法确定语言类型时，从内容推断。
+ * 2. 媒体类型嗅探：当扩展名不明确时，从内容特征判断图片/视频/音频等。
+ *    核心场景：.face.icon（SVG）、无扩展名图片、扩展名被改错的媒体文件。
  */
 
 // ─── Shebang 检测 ───
@@ -35,15 +35,10 @@ const SHEBANG_MAP: Record<string, string> = {
 
 /** 从 shebang 行解析语言 */
 function sniffShebang(firstLine: string): string | null {
-  // 去掉可能的 BOM 和前导空格
   const trimmed = firstLine.trim()
-
-  // #!/usr/bin/env node
   if (!trimmed.startsWith('#!')) return null
-
   const afterShebang = trimmed.slice(2).trim()
 
-  // 处理 /usr/bin/env <interpreter> 格式
   if (afterShebang.startsWith('/usr/bin/env ')) {
     const parts = afterShebang.slice('/usr/bin/env '.length).trim().split(/\s+/)
     const interpreter = parts[0]
@@ -55,7 +50,6 @@ function sniffShebang(firstLine: string): string | null {
     }
   }
 
-  // 处理 /bin/<interpreter> 格式
   for (const [key, val] of Object.entries(SHEBANG_MAP)) {
     if (
       !key.startsWith('/usr/bin/env ') &&
@@ -70,62 +64,103 @@ function sniffShebang(firstLine: string): string | null {
 
 // ─── Magic Bytes 检测 ───
 
-/** 文件内容头部字节 → 文件类型 / 语言 */
-const MAGIC_SIGNATURES: Array<{
-  match: number[] // 匹配字节序列（用 -1 表示通配）
-  name: string // 文件类型名
-  language: string // CodeMirror 语言标识
-}> = [
+interface MagicSignature {
+  match: number[]
+  name: string
+  language: string
+  mediaType?: 'image' | 'video' | 'audio' | 'document' | 'archive' | 'database' | 'binary'
+}
+
+/** 文件内容头部字节 → 文件类型 / 语言 / 媒体类型 */
+const MAGIC_SIGNATURES: MagicSignature[] = [
   // 图片
-  { match: [0x89, 0x50, 0x4e, 0x47], name: 'PNG Image', language: 'text' },
-  { match: [0xff, 0xd8, 0xff], name: 'JPEG Image', language: 'text' },
-  { match: [0x47, 0x49, 0x46, 0x38], name: 'GIF Image', language: 'text' },
-  { match: [0x52, 0x49, 0x46, 0x46], name: 'WebP Image', language: 'text' },
-  { match: [0x42, 0x4d], name: 'BMP Image', language: 'text' },
+  { match: [0x89, 0x50, 0x4e, 0x47], name: 'PNG Image', language: 'text', mediaType: 'image' },
+  { match: [0xff, 0xd8, 0xff], name: 'JPEG Image', language: 'text', mediaType: 'image' },
+  { match: [0x47, 0x49, 0x46, 0x38], name: 'GIF Image', language: 'text', mediaType: 'image' },
+  { match: [0x52, 0x49, 0x46, 0x46], name: 'RIFF (WebP/WAV/AVI)', language: 'text', mediaType: 'image' },
+  { match: [0x42, 0x4d], name: 'BMP Image', language: 'text', mediaType: 'image' },
+
+  // 视频
+  { match: [0x1a, 0x45, 0xdf, 0xa3], name: 'MKV/WebM/MP4', language: 'text', mediaType: 'video' },
+
+  // 音频
+  { match: [0x49, 0x44, 0x33], name: 'MP3 Audio', language: 'text', mediaType: 'audio' },
+  { match: [0xff, 0xfb], name: 'MP3 Audio', language: 'text', mediaType: 'audio' },
+  { match: [0xff, 0xf3], name: 'MP3 Audio', language: 'text', mediaType: 'audio' },
+  { match: [0xff, 0xf2], name: 'MP3 Audio', language: 'text', mediaType: 'audio' },
+  { match: [0x66, 0x4c, 0x61, 0x43], name: 'FLAC Audio', language: 'text', mediaType: 'audio' },
+  { match: [0x4f, 0x67, 0x67, 0x53], name: 'OGG Audio', language: 'text', mediaType: 'audio' },
 
   // 文档
-  { match: [0x25, 0x50, 0x44, 0x46], name: 'PDF Document', language: 'text' },
-  { match: [0x50, 0x4b, 0x03, 0x04], name: 'ZIP/DOCX/XLSX', language: 'text' },
+  { match: [0x25, 0x50, 0x44, 0x46], name: 'PDF Document', language: 'text', mediaType: 'document' },
+  { match: [0x50, 0x4b, 0x03, 0x04], name: 'ZIP/DOCX/XLSX', language: 'text', mediaType: 'archive' },
 
   // 压缩
-  { match: [0x1f, 0x8b], name: 'GZIP Archive', language: 'text' },
-  { match: [0x42, 0x5a, 0x68], name: 'BZIP2 Archive', language: 'text' },
+  { match: [0x1f, 0x8b], name: 'GZIP Archive', language: 'text', mediaType: 'archive' },
+  { match: [0x42, 0x5a, 0x68], name: 'BZIP2 Archive', language: 'text', mediaType: 'archive' },
 
   // ELF/可执行
-  { match: [0x7f, 0x45, 0x4c, 0x46], name: 'ELF Binary', language: 'text' },
+  { match: [0x7f, 0x45, 0x4c, 0x46], name: 'ELF Binary', language: 'text', mediaType: 'binary' },
 
   // SQLite 数据库
-  { match: [0x53, 0x51, 0x4c, 0x69], name: 'SQLite Database', language: 'text' },
+  { match: [0x53, 0x51, 0x4c, 0x69], name: 'SQLite Database', language: 'text', mediaType: 'database' },
 ]
 
 /** 从二进制头部检测 magic bytes */
-function sniffMagic(headBytes: Uint8Array): string | null {
+function sniffMagic(headBytes: Uint8Array): MagicSignature | null {
   for (const sig of MAGIC_SIGNATURES) {
     if (sig.match.length > headBytes.length) continue
-    let match = true
+    let ok = true
     for (let i = 0; i < sig.match.length; i++) {
       if (sig.match[i] !== -1 && sig.match[i] !== headBytes[i]) {
-        match = false
+        ok = false
         break
       }
     }
-    if (match) return sig.language
+    if (ok) return sig
   }
   return null
 }
 
+// ─── 文本内容模式检测（SVG/XML/JSON/HTML） ───
+
+/** 检测文本内容是否为 SVG（扩展名不明确时使用） */
+function isSvgContent(content: string): boolean {
+  const head = content.slice(0, 2000).trim()
+  if (/^<svg[\s>]/i.test(head)) return true
+  if (/^<\?xml[^>]*\?>\s*<svg[\s>]/i.test(head)) return true
+  if (/^<!DOCTYPE[^>]*svg[^>]*>/i.test(head)) return true
+  return false
+}
+
+/** 检测文本内容是否为 JSON */
+function isJsonContent(content: string): boolean {
+  const head = content.slice(0, 1000).trim()
+  if (head.startsWith('{') || head.startsWith('[')) {
+    try {
+      JSON.parse(head.length < 500 ? head : content.slice(0, 5000))
+      return true
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
+/** 检测文本内容是否为 HTML */
+function isHtmlContent(content: string): boolean {
+  const head = content.slice(0, 1000).trim()
+  return /^<!DOCTYPE\s+html>/i.test(head) || /^<html[\s>]/i.test(head)
+}
+
 // ─── 无后缀文件名模式匹配 ───
 
-/** 常见的无后缀文件名 → 语言映射 */
 const NAMED_FILE_MAP: Record<string, string> = {
-  // 构建/配置
   dockerfile: 'dockerfile',
   makefile: 'makefile',
   gemfile: 'ruby',
   rakefile: 'ruby',
   justfile: 'makefile',
-
-  // 配置文件
   '.gitignore': 'text',
   '.gitattributes': 'text',
   '.gitmodules': 'ini',
@@ -138,8 +173,6 @@ const NAMED_FILE_MAP: Record<string, string> = {
   '.env': 'dotenv',
   '.env.example': 'dotenv',
   '.dockerignore': 'text',
-
-  // 包管理器锁文件
   'package-lock.json': 'json',
   'yarn.lock': 'yaml',
   'pnpm-lock.yaml': 'yaml',
@@ -148,46 +181,32 @@ const NAMED_FILE_MAP: Record<string, string> = {
   'Gemfile.lock': 'ruby',
 }
 
-// ─── 主入口 ───
+// ═══════════════════════════════════════════════
+//  公开 API
+// ═══════════════════════════════════════════════
 
 export interface SniffResult {
-  /** CodeMirror 使用的语言标识，如 'javascript', 'python', 'text' */
+  /** CodeMirror 使用的语言标识 */
   language: string
   /** 人类可读的文件类型描述 */
   typeName?: string
-  /** 推断依据：'extension' | 'shebang' | 'magic' | 'filename' */
-  method: 'extension' | 'shebang' | 'magic' | 'filename'
+  /** 推断依据 */
+  method: 'extension' | 'shebang' | 'magic' | 'filename' | 'content'
 }
 
 /**
- * 综合内容嗅探 — 按优先级：
- * 1. 扩展名映射（最高优先级）
- * 2. 已知文件名（无后缀文件如 Dockerfile）
- * 3. shebang 行（脚本文件）
- * 4. magic bytes（二进制文件头部）
- *
- * @param filename  文件名
- * @param content   文件内容（可选，提供后启用 3 和 4）
- * @returns SniffResult
+ * 综合内容嗅探 — 语言
  */
 export function sniffLanguage(filename: string, content?: string): SniffResult {
-  const ext = filename.split('.').pop()?.toLowerCase()
   const basename = filename.toLowerCase()
 
-  // 1. 先用扩展名判断（兜底 LANGUAGE_MAP 已在 SftpBrowser 中）
-  //    这里只处理扩展名已知但"未识别"的情形
-  if (ext && ext !== basename) {
-    // 有扩展名但不一定在 LANGUAGE_MAP 中 => 交给 SftpBrowser 的 detectLanguage
-    // 这里不做重复判断
-  }
-
-  // 2. 已知文件名模式（无后缀或特殊文件名）
+  // 1. 已知文件名模式
   const namedMatch = NAMED_FILE_MAP[basename]
   if (namedMatch) {
     return { language: namedMatch, method: 'filename' }
   }
 
-  // 3. 如果有内容，做 shebang 嗅探
+  // 2. shebang 嗅探
   if (content && content.length > 0) {
     const firstLine = content.split('\n')[0]!
     const shebangLang = sniffShebang(firstLine)
@@ -196,14 +215,26 @@ export function sniffLanguage(filename: string, content?: string): SniffResult {
     }
   }
 
-  // 4. 如果有内容（二进制），做 magic bytes 嗅探
+  // 3. magic bytes 嗅探
   if (content) {
-    // 将前几个字符转为字节判断
     const encoder = new TextEncoder()
     const headBytes = encoder.encode(content.slice(0, 16))
-    const magicLang = sniffMagic(headBytes)
-    if (magicLang) {
-      return { language: magicLang, method: 'magic' }
+    const magicSig = sniffMagic(headBytes)
+    if (magicSig) {
+      return { language: magicSig.language, typeName: magicSig.name, method: 'magic' }
+    }
+  }
+
+  // 4. 文本内容模式检测
+  if (content && content.length > 0) {
+    if (isSvgContent(content)) {
+      return { language: 'xml', typeName: 'SVG Image', method: 'content' }
+    }
+    if (isHtmlContent(content)) {
+      return { language: 'html', typeName: 'HTML', method: 'content' }
+    }
+    if (isJsonContent(content)) {
+      return { language: 'json', typeName: 'JSON', method: 'content' }
     }
   }
 
@@ -211,32 +242,209 @@ export function sniffLanguage(filename: string, content?: string): SniffResult {
 }
 
 /**
- * 从内容头部获取文件类型描述（用于信息展示）
+ * 从内容头部获取文件类型描述
  */
 export function sniffFileType(content: string): string | null {
   if (!content) return null
 
-  // Shebang
   const firstLine = content.split('\n')[0]!.trim()
   if (firstLine.startsWith('#!')) {
     const interpreter = firstLine.slice(2).trim()
     return `${interpreter} script`
   }
 
-  // Magic bytes
   const encoder = new TextEncoder()
   const headBytes = encoder.encode(content.slice(0, 16))
-  for (const sig of MAGIC_SIGNATURES) {
-    if (sig.match.length > headBytes.length) continue
-    let match = true
-    for (let i = 0; i < sig.match.length; i++) {
-      if (sig.match[i] !== -1 && sig.match[i] !== headBytes[i]) {
-        match = false
-        break
-      }
-    }
-    if (match) return sig.name
-  }
+  const sig = sniffMagic(headBytes)
+  if (sig) return sig.name
 
   return null
+}
+
+// ═══════════════════════════════════════════════
+//  媒体类型嗅探（核心新增）
+// ═══════════════════════════════════════════════
+
+export type MediaType = 'image' | 'video' | 'audio' | 'svg' | 'document' | 'text' | 'unknown'
+
+/**
+ * 从文件内容嗅探实际媒体类型
+ *
+ * 解决的核心问题：扩展名与内容不匹配（如 .face.icon 实际是 SVG）
+ *
+ * @param content    文件内容（文本字符串或 ArrayBuffer）
+ * @param isBinary   是否被标记为二进制文件
+ */
+export function sniffMediaType(
+  content: string | ArrayBuffer | null,
+  isBinary: boolean,
+): MediaType {
+  if (!content) return 'unknown'
+
+  // ── 二进制内容（ArrayBuffer）：magic bytes 检测 ──
+  if (isBinary && content instanceof ArrayBuffer) {
+    const head = new Uint8Array(content.slice(0, 16))
+    const sig = sniffMagic(head)
+    if (sig?.mediaType === 'image') return 'image'
+    if (sig?.mediaType === 'video') return 'video'
+    if (sig?.mediaType === 'audio') return 'audio'
+    if (sig?.mediaType === 'document') return 'document'
+    return 'unknown'
+  }
+
+  // ── 二进制内容（base64 字符串）：解码后检测 ──
+  if (isBinary && typeof content === 'string') {
+    const b64 = content.includes(',') ? content.split(',')[1]! : content
+    try {
+      const raw = atob(b64.slice(0, 1000))
+      const head = new Uint8Array([...raw].map((c) => c.charCodeAt(0)))
+      const sig = sniffMagic(head)
+      if (sig?.mediaType === 'image') return 'image'
+      if (sig?.mediaType === 'video') return 'video'
+      if (sig?.mediaType === 'audio') return 'audio'
+      if (sig?.mediaType === 'document') return 'document'
+    } catch {
+      // 不是有效的 base64，跳过
+    }
+    return 'unknown'
+  }
+
+  // ── 文本内容：模式检测 ──
+  if (typeof content === 'string') {
+    if (isSvgContent(content)) return 'svg'
+    if (isHtmlContent(content)) return 'text'
+    if (isJsonContent(content)) return 'text'
+    return 'text'
+  }
+
+  return 'unknown'
+}
+
+/**
+ * 从文本内容判断是否为 SVG
+ */
+export function isSvgText(content: string): boolean {
+  return isSvgContent(content)
+}
+
+// ═══════════════════════════════════════════════
+//  综合文件分类
+// ═══════════════════════════════════════════════
+
+export type FileCategory =
+  | 'image'
+  | 'svg'
+  | 'video'
+  | 'audio'
+  | 'document'
+  | 'code'
+  | 'text'
+  | 'binary'
+  | 'archive'
+
+const IMAGE_EXTS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif', 'heic', 'heif',
+  'tiff', 'tif', 'raw', 'cr2', 'nef', 'arw', 'dng', 'psd', 'xcf',
+])
+const VIDEO_EXTS = new Set([
+  'mp4', 'webm', 'ogg', 'ogv', 'mov', 'mkv', 'avi', 'wmv', 'flv',
+  'm4v', '3gp', 'mpeg', 'mpg',
+])
+const AUDIO_EXTS = new Set([
+  'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'opus', 'wma', 'ape',
+  'aiff', 'mid', 'midi',
+])
+const ARCHIVE_EXTS = new Set([
+  'zip', 'tar', 'gz', 'bz2', 'xz', 'lz', 'lzma', 'zst', 'br',
+  'rar', '7z', 'cab', 'iso', 'dmg', 'deb', 'rpm', 'apk', 'msi',
+])
+const DOC_EXTS = new Set(['pdf'])
+const CODE_EXTS = new Set([
+  'ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h',
+  'css', 'scss', 'less', 'html', 'htm', 'xml', 'json', 'yaml', 'yml',
+  'toml', 'ini', 'conf', 'sh', 'bash', 'zsh', 'fish', 'rb', 'php',
+  'swift', 'kt', 'vue', 'svelte', 'sql', 'md', 'rst', 'tex', 'vim',
+])
+
+/**
+ * 从文件扩展名 + 内容综合判断文件类型
+ *
+ * 返回确定的分类 + 置信度（high = 扩展名匹配，low = 仅内容嗅探）
+ */
+export function classifyFile(
+  filename: string,
+  ext: string,
+  content: string | ArrayBuffer | null,
+  isBinary: boolean,
+): { category: FileCategory; confidence: 'high' | 'low' } {
+  // ── 扩展名高置信度检测 ──
+  if (ext === 'svg' || ext === 'svgz') {
+    return { category: 'svg', confidence: 'high' }
+  }
+  if (IMAGE_EXTS.has(ext)) {
+    return { category: 'image', confidence: 'high' }
+  }
+  if (VIDEO_EXTS.has(ext)) {
+    return { category: 'video', confidence: 'high' }
+  }
+  if (AUDIO_EXTS.has(ext)) {
+    return { category: 'audio', confidence: 'high' }
+  }
+  if (DOC_EXTS.has(ext)) {
+    return { category: 'document', confidence: 'high' }
+  }
+  if (ARCHIVE_EXTS.has(ext)) {
+    return { category: 'archive', confidence: 'high' }
+  }
+  if (CODE_EXTS.has(ext)) {
+    return { category: 'code', confidence: 'high' }
+  }
+
+  // ── 扩展名不匹配：内容嗅探（低置信度） ──
+  if (!content) {
+    return { category: 'binary', confidence: 'low' }
+  }
+
+  if (typeof content === 'string') {
+    if (isSvgContent(content)) return { category: 'svg', confidence: 'low' }
+    if (isHtmlContent(content)) return { category: 'code', confidence: 'low' }
+    if (isJsonContent(content)) return { category: 'code', confidence: 'low' }
+
+    const textRatio = calculateTextRatio(content.slice(0, 2000))
+    if (textRatio > 0.9) {
+      return { category: 'text', confidence: 'low' }
+    }
+    return { category: 'binary', confidence: 'low' }
+  }
+
+  if (content instanceof ArrayBuffer && isBinary) {
+    const head = new Uint8Array(content.slice(0, 16))
+    const sig = sniffMagic(head)
+    if (sig?.mediaType === 'image') return { category: 'image', confidence: 'low' }
+    if (sig?.mediaType === 'video') return { category: 'video', confidence: 'low' }
+    if (sig?.mediaType === 'audio') return { category: 'audio', confidence: 'low' }
+    if (sig?.mediaType === 'document') return { category: 'document', confidence: 'low' }
+    if (sig?.mediaType === 'archive') return { category: 'archive', confidence: 'low' }
+  }
+
+  return { category: 'binary', confidence: 'low' }
+}
+
+/** 计算文本中可打印字符的比例 */
+function calculateTextRatio(text: string): number {
+  if (text.length === 0) return 0
+  let printable = 0
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    if (
+      (code >= 0x20 && code <= 0x7e) ||
+      code === 0x09 ||
+      code === 0x0a ||
+      code === 0x0d ||
+      code >= 0x00a0
+    ) {
+      printable++
+    }
+  }
+  return printable / text.length
 }

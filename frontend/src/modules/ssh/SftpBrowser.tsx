@@ -47,7 +47,7 @@ import {
 } from 'lucide-react'
 import { useFileStore } from '../../stores/file-store'
 import { useAppStore } from '../../stores/app-store'
-import { sniffLanguage } from '../../utils/content-sniff'
+import { sniffLanguage, classifyFile } from '../../utils/content-sniff'
 import { AlertModal, ConfirmModal } from '../../components/ConfirmModal'
 import type { SftpEntry } from '../../types/ssh'
 
@@ -84,6 +84,82 @@ function textToB64(text: string): string {
   let bin = ''
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ?? 0)
   return btoa(bin)
+}
+
+/**
+ * 从 base64 数据的前几个字节推断 MIME 类型
+ * 用于内容嗅探到的媒体文件（扩展名不匹配时）
+ */
+function inferMimeFromBase64(b64: string): string {
+  try {
+    const raw = atob(b64.slice(0, 20))
+    const bytes = new Uint8Array([...raw].map((c) => c.charCodeAt(0)))
+
+    // PNG: 89 50 4E 47
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+      return 'image/png'
+    }
+    // JPEG: FF D8 FF
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+      return 'image/jpeg'
+    }
+    // GIF: 47 49 46 38 (GIF8)
+    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+      return 'image/gif'
+    }
+    // BMP: 42 4D
+    if (bytes[0] === 0x42 && bytes[1] === 0x4d) {
+      return 'image/bmp'
+    }
+    // WebP: RIFF....WEBP
+    if (
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    ) {
+      return 'image/webp'
+    }
+    // MP3: ID3 or FF FB/FF F3/FF F2
+    if (
+      (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) ||
+      (bytes[0] === 0xff && (bytes[1] === 0xfb || bytes[1] === 0xf3 || bytes[1] === 0xf2))
+    ) {
+      return 'audio/mpeg'
+    }
+    // FLAC: fLaC
+    if (bytes[0] === 0x66 && bytes[1] === 0x4c && bytes[2] === 0x61 && bytes[3] === 0x43) {
+      return 'audio/flac'
+    }
+    // OGG: OggS
+    if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
+      return 'audio/ogg'
+    }
+    // MP4: ....ftyp
+    if (
+      bytes[4] === 0x66 &&
+      bytes[5] === 0x74 &&
+      bytes[6] === 0x79 &&
+      bytes[7] === 0x70
+    ) {
+      return 'video/mp4'
+    }
+    // Matroska/WebM: 1A 45 DF A3
+    if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
+      return 'video/webm'
+    }
+    // PDF: %PDF
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+      return 'application/pdf'
+    }
+  } catch {
+    // ignore decode errors
+  }
+  return 'application/octet-stream'
 }
 
 // --- MIME type map (covers common formats) ---
@@ -904,14 +980,19 @@ const FilePreviewModal = memo(function FilePreviewModal({
         entry.type === 'symlink' && entry.linkTarget
           ? entry.linkTarget.split('/').pop() || entry.name
           : entry.name
-      // Protect against opening extremely large files (>50MB text preview will crash browser)
-      const MAX_TEXT_PREVIEW = 50 * 1024 * 1024
-      if (
-        !isImageFile(effectiveName) &&
-        !isVideoFile(effectiveName) &&
-        !isAudioFile(effectiveName) &&
-        entry.size > MAX_TEXT_PREVIEW
-      ) {
+
+      // 第一步：扩展名检测（高置信度）
+      const extByName = isImageFile(effectiveName)
+        ? 'image'
+        : isVideoFile(effectiveName)
+          ? 'video'
+          : isAudioFile(effectiveName)
+            ? 'audio'
+            : null
+
+      // 如果扩展名未识别，但文件较小，先下载再嗅探
+      // 如果已识别为媒体，也直接下载
+      if (!extByName && entry.size > 50 * 1024 * 1024) {
         setError(`文件过大 (${formatSize(entry.size)})，无法预览。请下载后查看或在编辑器中打开。`)
         setLoading(false)
         return
@@ -922,25 +1003,70 @@ const FilePreviewModal = memo(function FilePreviewModal({
         path: entry.path,
       })
 
-      // Check if this is a binary file (image/video/audio)
-      const img = isImageFile(effectiveName)
-      const vid = isVideoFile(effectiveName)
-      const aud = isAudioFile(effectiveName)
+      // 第二步：如果扩展名没识别出来，用内容嗅探兜底
+      // 这解决了 .face.icon、无扩展名图片、扩展名被改错的媒体文件等问题
+      if (!extByName) {
+        const ext = effectiveName.split('.').pop()?.toLowerCase() || ''
+        // 先尝试 base64 解码为文本，看是否为 SVG
+        const decoded = b64ToText(b64)
+        const classification = classifyFile(effectiveName, ext, decoded, false)
 
-      if (img || vid || aud) {
-        const mime = getMimeByName(effectiveName)
-        if (img) setIsImage(true)
-        if (vid) setIsVideo(true)
-        if (aud) setIsAudio(true)
-        setBinaryUrl(`data:${mime};base64,${b64}`)
+        if (classification.category === 'svg') {
+          // SVG 是文本格式，用 img 标签渲染
+          setIsImage(true)
+          setBinaryUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(decoded)}`)
+          setLoading(false)
+          return
+        }
+        if (classification.category === 'image') {
+          // 通过 magic bytes 检测到的图片，尝试从 base64 推断 MIME
+          const mimeFromBytes = inferMimeFromBase64(b64)
+          setIsImage(true)
+          setBinaryUrl(`data:${mimeFromBytes};base64,${b64}`)
+          setLoading(false)
+          return
+        }
+        if (classification.category === 'video') {
+          const mimeFromBytes = inferMimeFromBase64(b64)
+          setIsVideo(true)
+          setBinaryUrl(`data:${mimeFromBytes};base64,${b64}`)
+          setLoading(false)
+          return
+        }
+        if (classification.category === 'audio') {
+          const mimeFromBytes = inferMimeFromBase64(b64)
+          setIsAudio(true)
+          setBinaryUrl(`data:${mimeFromBytes};base64,${b64}`)
+          setLoading(false)
+          return
+        }
+
+        // 不是媒体，作为文本显示
+        setContent(decoded)
+        setOriginalContent(decoded)
         setLoading(false)
         return
       }
 
-      // Text file — decode (UTF-8 safe)
-      const decoded = b64ToText(b64)
-      setContent(decoded)
-      setOriginalContent(decoded)
+      // 第三步：扩展名已识别为媒体
+      const mime = getMimeByName(effectiveName)
+      if (extByName === 'image') {
+        setIsImage(true)
+        // SVG 文件特殊处理：data URI 用 UTF-8 编码而非 base64
+        const lowerName = effectiveName.toLowerCase()
+        if (lowerName.endsWith('.svg') || lowerName.endsWith('.svgz')) {
+          const decoded = b64ToText(b64)
+          setBinaryUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(decoded)}`)
+        } else {
+          setBinaryUrl(`data:${mime};base64,${b64}`)
+        }
+      } else if (extByName === 'video') {
+        setIsVideo(true)
+        setBinaryUrl(`data:${mime};base64,${b64}`)
+      } else if (extByName === 'audio') {
+        setIsAudio(true)
+        setBinaryUrl(`data:${mime};base64,${b64}`)
+      }
     } catch (err) {
       setError('读取失败: ' + (err as Error).message)
     } finally {
