@@ -29,7 +29,7 @@ export interface SshSession {
 export interface SftpEntry {
   name: string
   path: string
-  type: 'file' | 'directory' | 'symlink'
+  type: 'file' | 'directory' | 'symlink' | 'block_device' | 'char_device' | 'fifo' | 'socket'
   size: number
   modifyTime: number
   permissions: string

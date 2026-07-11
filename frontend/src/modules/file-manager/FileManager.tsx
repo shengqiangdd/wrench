@@ -27,7 +27,10 @@ import ResizablePanel from '../../components/ResizablePanel'
 
 // ─── 工具函数 ───
 
-function getFileIcon(name: string) {
+function getFileIcon(name: string, type?: string) {
+  if (type === 'symlink') {
+    return <FileCode2 size={14} className="text-cyan-400" />
+  }
   const ext = name.split('.').pop()?.toLowerCase()
   if (!ext) return <FileCode2 size={14} className="text-slate-500" />
   switch (ext) {
@@ -45,20 +48,67 @@ function getFileIcon(name: string) {
     case 'php':
     case 'sh':
     case 'bash':
+    case 'vue':
+    case 'svelte':
       return <FileCode2 size={14} className="text-sky-400" />
     case 'json':
     case 'yaml':
     case 'yml':
     case 'toml':
     case 'xml':
+    case 'ini':
+    case 'cfg':
+    case 'conf':
       return <FileCode2 size={14} className="text-amber-400" />
     case 'md':
     case 'txt':
     case 'log':
-    case 'cfg':
-    case 'conf':
-    case 'env':
+    case 'csv':
+    case 'pdf':
+    case 'doc':
+    case 'docx':
       return <FileCode2 size={14} className="text-slate-400" />
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'svg':
+    case 'webp':
+    case 'bmp':
+    case 'ico':
+    case 'avif':
+      return <FileCode2 size={14} className="text-purple-400" />
+    case 'mp4':
+    case 'mkv':
+    case 'avi':
+    case 'mov':
+    case 'webm':
+      return <FileCode2 size={14} className="text-red-400" />
+    case 'mp3':
+    case 'wav':
+    case 'flac':
+    case 'ogg':
+    case 'aac':
+      return <FileCode2 size={14} className="text-rose-400" />
+    case 'zip':
+    case 'tar':
+    case 'gz':
+    case 'bz2':
+    case 'xz':
+    case 'rar':
+    case '7z':
+    case 'deb':
+    case 'rpm':
+      return <FileCode2 size={14} className="text-yellow-400" />
+    case 'so':
+    case 'dll':
+    case 'dylib':
+    case 'exe':
+    case 'bin':
+    case 'wasm':
+    case 'class':
+    case 'pyc':
+      return <FileCode2 size={14} className="text-amber-300" />
     default:
       return <FileCode2 size={14} className="text-slate-500" />
   }

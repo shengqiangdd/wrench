@@ -19,6 +19,13 @@ import {
   FileJson,
   FileText,
   Image,
+  Film,
+  Music,
+  Archive,
+  Link2,
+  Binary,
+  HardDrive,
+  Cpu,
   ArrowUp,
   Home,
   RefreshCw,
@@ -106,49 +113,293 @@ async function sftpApi<T = unknown>(
 
 // ─── 工具函数 ───
 
-function getFileIcon(name: string) {
+function getFileIcon(name: string, type?: string) {
+  // Special file types from backend
+  if (type === 'symlink') {
+    return <Link2 size={14} className="text-cyan-400" />
+  }
+  if (type === 'block_device') {
+    return <HardDrive size={14} className="text-orange-400" />
+  }
+  if (type === 'char_device') {
+    return <Cpu size={14} className="text-orange-300" />
+  }
+  if (type === 'fifo') {
+    return <Binary size={14} className="text-yellow-400" />
+  }
+  if (type === 'socket') {
+    return <Binary size={14} className="text-pink-400" />
+  }
+
   const ext = name.split('.').pop()?.toLowerCase()
   if (!ext) return <File size={14} className="text-slate-500" />
+
+  // No extension but name itself indicates type
+  const baseName = name.split('/').pop()?.toLowerCase() || ''
+
   switch (ext) {
+    // Source code
     case 'js':
+    case 'mjs':
+    case 'cjs':
     case 'ts':
+    case 'mts':
+    case 'cts':
     case 'tsx':
     case 'jsx':
+    case 'vue':
+    case 'svelte':
+    case 'astro':
     case 'py':
+    case 'pyw':
+    case 'pyx':
     case 'go':
     case 'rs':
     case 'java':
+    case 'kt':
+    case 'kts':
     case 'c':
     case 'cpp':
+    case 'cxx':
+    case 'cc':
+    case 'h':
+    case 'hpp':
     case 'rb':
     case 'php':
+    case 'swift':
+    case 'm':
+    case 'mm':
+    case 'dart':
+    case 'zig':
+    case 'nim':
+    case 'cr':
+    case 'ex':
+    case 'exs':
+    case 'erl':
+    case 'hs':
+    case 'ml':
+    case 'scala':
+    case 'r':
+    case 'jl':
+    case 'v':
+    case 'sv':
+    case 'vhd':
+      return <FileCode size={14} className="text-sky-400" />
+
+    // Shell / config scripts
     case 'sh':
     case 'bash':
-      return <FileCode size={14} className="text-sky-400" />
+    case 'zsh':
+    case 'fish':
+    case 'csh':
+    case 'tcsh':
+    case 'ps1':
+    case 'psm1':
+    case 'bat':
+    case 'cmd':
+      return <FileCode size={14} className="text-emerald-400" />
+
+    // Web
+    case 'html':
+    case 'htm':
+    case 'xhtml':
+    case 'css':
+    case 'scss':
+    case 'less':
+    case 'sass':
+    case 'styl':
+      return <FileCode size={14} className="text-orange-400" />
+
+    // Data / config
     case 'json':
+    case 'json5':
+    case 'jsonc':
+    case 'jsonl':
     case 'yaml':
     case 'yml':
     case 'toml':
-    case 'xml':
-      return <FileJson size={14} className="text-amber-400" />
-    case 'md':
-    case 'txt':
-    case 'log':
+    case 'ini':
     case 'cfg':
     case 'conf':
     case 'env':
+    case 'xml':
+    case 'xsd':
+    case 'xsl':
+    case 'xslt':
+    case 'properties':
+    case 'plist':
+      return <FileJson size={14} className="text-amber-400" />
+
+    // Markup / docs
+    case 'md':
+    case 'mdx':
+    case 'markdown':
+    case 'rst':
+    case 'txt':
+    case 'log':
+    case 'csv':
+    case 'tsv':
+    case 'rtf':
+    case 'doc':
+    case 'docx':
+    case 'pdf':
+    case 'epub':
+    case 'tex':
+    case 'latex':
       return <FileText size={14} className="text-slate-400" />
+
+    // Images
     case 'png':
     case 'jpg':
     case 'jpeg':
     case 'gif':
-    case 'svg':
+    case 'bmp':
     case 'ico':
     case 'webp':
+    case 'avif':
+    case 'heic':
+    case 'heif':
+    case 'tiff':
+    case 'tif':
+    case 'raw':
+    case 'cr2':
+    case 'nef':
+    case 'arw':
+    case 'dng':
+    case 'psd':
+    case 'ai':
+    case 'eps':
+    case 'xcf':
+    case 'svg':
+    case 'svgz':
       return <Image size={14} className="text-purple-400" />
+
+    // Video
+    case 'mp4':
+    case 'mkv':
+    case 'avi':
+    case 'mov':
+    case 'wmv':
+    case 'flv':
+    case 'webm':
+    case 'm4v':
+    case 'mpg':
+    case 'mpeg':
+    case '3gp':
+      return <Film size={14} className="text-red-400" />
+
+    // Audio
+    case 'mp3':
+    case 'wav':
+    case 'flac':
+    case 'aac':
+    case 'ogg':
+    case 'opus':
+    case 'wma':
+    case 'm4a':
+    case 'ape':
+    case 'aiff':
+    case 'mid':
+    case 'midi':
+      return <Music size={14} className="text-rose-400" />
+
+    // Archives
+    case 'zip':
+    case 'tar':
+    case 'gz':
+    case 'bz2':
+    case 'xz':
+    case 'lz':
+    case 'lzma':
+    case 'zst':
+    case 'br':
+    case 'rar':
+    case '7z':
+    case 'cab':
+    case 'iso':
+    case 'dmg':
+    case 'deb':
+    case 'rpm':
+    case 'apk':
+    case 'msi':
+    case 'pkg':
+    case 'war':
+    case 'ear':
+    case 'jar':
+      return <Archive size={14} className="text-yellow-400" />
+
+    // Binary / compiled
+    case 'so':
+    case 'dll':
+    case 'dylib':
+    case 'exe':
+    case 'bin':
+    case 'elf':
+    case 'out':
+    case 'class':
+    case 'rlib':
+    case 'wasm':
+    case 'o':
+    case 'a':
+    case 'lib':
+    case 'pdb':
+    case 'pyc':
+    case 'pyo':
+      return <Binary size={14} className="text-amber-300" />
+
+    // Database
+    case 'db':
+    case 'sqlite':
+    case 'sqlite3':
+    case 'sql':
+    case 'pgsql':
+    case 'mysql':
+      return <FileJson size={14} className="text-teal-400" />
+
+    // Docker / DevOps
+    case 'dockerfile':
+    case 'docker':
+    case 'tf':
+    case 'tfvars':
+    case 'hcl':
+    case 'tfstate':
+      return <FileCode size={14} className="text-sky-500" />
+
+    // Makefile (special names)
+    case 'mk':
+      return <FileCode size={14} className="text-blue-400" />
+
     default:
-      return <File size={14} className="text-slate-500" />
+      break
   }
+
+  // Check special filenames (no extension match needed)
+  if (
+    baseName === 'dockerfile' ||
+    baseName.startsWith('dockerfile.')
+  ) {
+    return <FileCode size={14} className="text-sky-500" />
+  }
+  if (baseName === 'makefile' || baseName === 'gnumakefile') {
+    return <FileCode size={14} className="text-blue-400" />
+  }
+  if (baseName === 'gemfile' || baseName === 'rakefile') {
+    return <FileCode size={14} className="text-red-400" />
+  }
+  if (baseName === 'cmakelists.txt') {
+    return <FileCode size={14} className="text-teal-400" />
+  }
+  if (baseName === '.gitignore' || baseName === '.dockerignore') {
+    return <FileText size={14} className="text-slate-500" />
+  }
+  if (baseName === 'license' || baseName.startsWith('license.')) {
+    return <FileText size={14} className="text-emerald-500" />
+  }
+  if (baseName === 'readme' || baseName.startsWith('readme.')) {
+    return <FileText size={14} className="text-blue-400" />
+  }
+
+  return <File size={14} className="text-slate-500" />
 }
 
 function formatSize(bytes: number): string {
@@ -286,16 +537,58 @@ function fallbackCopy(text: string) {
   document.body.removeChild(ta)
 }
 
-/** 按名称排序：目录在前，文件在后，字母序 */
+/** 按名称排序：目录在前，符号链接次之，文件在后，字母序 */
 function sortEntries(entries: SftpEntry[]) {
+  const typeOrder = (t: string) => (t === 'directory' ? 0 : t === 'symlink' ? 1 : 2)
   return {
     dirs: entries
       .filter((e) => e.type === 'directory')
       .sort((a, b) => a.name.localeCompare(b.name)),
-    files: entries
-      .filter((e) => e.type !== 'directory')
+    symlinks: entries
+      .filter((e) => e.type === 'symlink')
       .sort((a, b) => a.name.localeCompare(b.name)),
+    files: entries
+      .filter((e) => e.type !== 'directory' && e.type !== 'symlink')
+      .sort((a, b) => {
+        const ao = typeOrder(a.type)
+        const bo = typeOrder(b.type)
+        return ao !== bo ? ao - bo : a.name.localeCompare(b.name)
+      }),
   }
+}
+
+// ─── 文件类型判断工具 ───
+
+/** 判断文件是否为图片 */
+function isImageFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase()
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'avif'].includes(ext || '')
+}
+
+/** 判断文件是否为视频 */
+function isVideoFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase()
+  return ['mp4', 'webm', 'ogg', 'mov', 'mkv'].includes(ext || '')
+}
+
+/** 判断文件是否为音频 */
+function isAudioFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase()
+  return ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'opus'].includes(ext || '')
+}
+
+/** 判断文件是否为可编辑文本 */
+function isEditableText(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase()
+  const editableExts = [
+    'txt', 'md', 'log', 'csv', 'tsv', 'json', 'json5', 'yaml', 'yml', 'toml', 'xml',
+    'html', 'htm', 'css', 'scss', 'less', 'js', 'ts', 'tsx', 'jsx', 'vue', 'svelte',
+    'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp', 'sh', 'bash', 'zsh',
+    'sql', 'env', 'cfg', 'conf', 'ini', 'properties', 'dockerfile', 'makefile',
+    'docker-compose', 'nginx', 'fstab', 'hosts', 'passwd', 'shadow', 'group',
+    'ssh', 'sshd_config', 'gitignore', 'gitattributes', 'editorconfig',
+  ]
+  return editableExts.includes(ext || '')
 }
 
 // ─── 文件查看/编辑模态框 ───
@@ -321,6 +614,10 @@ const FilePreviewModal = memo(function FilePreviewModal({
   const [error, setError] = useState<string | null>(null)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [binaryUrl, setBinaryUrl] = useState<string | null>(null)
+  const [isImage, setIsImage] = useState(false)
+  const [isVideo, setIsVideo] = useState(false)
+  const [isAudio, setIsAudio] = useState(false)
 
   const loadFile = useCallback(async () => {
     setLoading(true)
@@ -330,6 +627,38 @@ const FilePreviewModal = memo(function FilePreviewModal({
         connectionId: sessionId,
         path: entry.path,
       })
+
+      // Check if this is a binary file (image/video/audio)
+      const img = isImageFile(entry.name)
+      const vid = isVideoFile(entry.name)
+      const aud = isAudioFile(entry.name)
+
+      if (img) {
+        setIsImage(true)
+        const ext = entry.name.split('.').pop()?.toLowerCase() || 'png'
+        const mime = ext === 'jpg' ? 'jpeg' : ext === 'svg' ? 'svg+xml' : ext
+        setBinaryUrl(`data:image/${mime};base64,${b64}`)
+        setLoading(false)
+        return
+      }
+      if (vid) {
+        setIsVideo(true)
+        const ext = entry.name.split('.').pop()?.toLowerCase() || 'mp4'
+        const mime = ext === 'mkv' ? 'x-matroska' : ext
+        setBinaryUrl(`data:video/${mime};base64,${b64}`)
+        setLoading(false)
+        return
+      }
+      if (aud) {
+        setIsAudio(true)
+        const ext = entry.name.split('.').pop()?.toLowerCase() || 'mp3'
+        const mime = ext === 'm4a' ? 'mp4' : ext
+        setBinaryUrl(`data:audio/${mime};base64,${b64}`)
+        setLoading(false)
+        return
+      }
+
+      // Text file — decode
       const decoded = atob(b64)
       setContent(decoded)
       setOriginalContent(decoded)
@@ -338,7 +667,7 @@ const FilePreviewModal = memo(function FilePreviewModal({
     } finally {
       setLoading(false)
     }
-  }, [sessionId, entry.path])
+  }, [sessionId, entry.path, entry.name])
 
   useEffect(() => {
     const t = setTimeout(() => loadFile(), 0)
@@ -386,20 +715,20 @@ const FilePreviewModal = memo(function FilePreviewModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[80vh] w-[90vw] max-w-3xl flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-xl"
+        className="flex max-h-[85vh] w-[90vw] max-w-4xl flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 标题栏 */}
         <div className="flex items-center justify-between border-b border-slate-700/50 px-4 py-2">
           <div className="flex items-center gap-2 text-sm text-slate-300">
-            {getFileIcon(entry.name)}
+            {getFileIcon(entry.name, entry.type)}
             <span className="font-medium">{entry.name}</span>
             <span className="text-[10px] text-slate-600">{formatSize(entry.size)}</span>
           </div>
           <div className="flex items-center gap-1">
             {error && <span className="text-[10px] text-red-400">{error}</span>}
             {saveMsg && <span className="text-[10px] text-emerald-400">{saveMsg}</span>}
-            {!editMode && (
+            {!isImage && !isVideo && !isAudio && !editMode && isEditableText(entry.name) && (
               <button
                 onClick={() => setEditMode(true)}
                 className="btn-icon text-slate-500 hover:text-slate-300"
@@ -408,9 +737,11 @@ const FilePreviewModal = memo(function FilePreviewModal({
                 <Edit3 size={14} />
               </button>
             )}
-            {onOpenInEditor && (
+            {onOpenInEditor && isEditableText(entry.name) && (
               <button
-                onClick={() => onOpenInEditor(entry)}
+                onClick={() => {
+                  onOpenInEditor(entry)
+                }}
                 className="btn-icon text-slate-500 hover:text-slate-300"
                 title="在编辑器中打开"
               >
@@ -426,12 +757,35 @@ const FilePreviewModal = memo(function FilePreviewModal({
         <div className="flex-1 overflow-auto p-4">
           {error ? (
             <p className="text-xs text-red-400">{error}</p>
+          ) : isImage && binaryUrl ? (
+            <div className="flex items-center justify-center">
+              <img
+                src={binaryUrl}
+                alt={entry.name}
+                className="max-h-[60vh] max-w-full rounded object-contain"
+              />
+            </div>
+          ) : isVideo && binaryUrl ? (
+            <div className="flex items-center justify-center">
+              <video
+                src={binaryUrl}
+                controls
+                className="max-h-[60vh] max-w-full rounded"
+              >
+                您的浏览器不支持视频播放
+              </video>
+            </div>
+          ) : isAudio && binaryUrl ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Music size={48} className="mb-4 text-slate-600" />
+              <audio src={binaryUrl} controls className="w-full max-w-md" />
+            </div>
           ) : editMode ? (
             <textarea
               ref={textareaRef}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="h-full w-full resize-none rounded bg-slate-800 p-3 font-mono text-xs text-slate-200 outline-none"
+              className="h-full min-h-[400px] w-full resize-none rounded bg-slate-800 p-3 font-mono text-xs text-slate-200 outline-none"
               spellCheck={false}
             />
           ) : (
@@ -441,25 +795,27 @@ const FilePreviewModal = memo(function FilePreviewModal({
           )}
         </div>
         {/* 底部操作栏 */}
-        <div className="flex items-center justify-between border-t border-slate-700/50 px-4 py-2">
-          <div className="flex items-center gap-2">
-            {!editMode && (
-              <span className="text-[10px] text-slate-600">
-                点击 ✏️ 编辑{onOpenInEditor ? ' 或 📎 在编辑器中打开' : ''}
-              </span>
-            )}
-            {editMode && (
-              <button
-                onClick={handleSave}
-                disabled={saving || !isDirty}
-                className={`btn-primary flex items-center gap-1 px-3 py-1.5 text-xs ${!isDirty ? 'opacity-50' : ''}`}
-              >
-                {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                保存
-              </button>
-            )}
+        {!isImage && !isVideo && !isAudio && (
+          <div className="flex items-center justify-between border-t border-slate-700/50 px-4 py-2">
+            <div className="flex items-center gap-2">
+              {!editMode && isEditableText(entry.name) && (
+                <span className="text-[10px] text-slate-600">
+                  点击 ✏️ 编辑{onOpenInEditor ? ' 或 📎 在编辑器中打开' : ''}
+                </span>
+              )}
+              {editMode && (
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !isDirty}
+                  className={`btn-primary flex items-center gap-1 px-3 py-1.5 text-xs ${!isDirty ? 'opacity-50' : ''}`}
+                >
+                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  保存
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
@@ -526,6 +882,12 @@ function SftpBrowserInner({
   const setActiveNav = useAppStore((s) => s.setActiveNav)
   const notifyRef = useRef<HTMLDivElement>(null)
   const dragCounterRef = useRef(0)
+
+  // 检测是否为触摸设备（移动端禁用拖拽上传）
+  const isTouchDevice = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    return 'ontouchstart' in window || navigator.maxTouchPoints > 0
+  }, [])
 
   // 读取目录（REST API）
   const listDir = useCallback(
@@ -806,6 +1168,12 @@ function SftpBrowserInner({
         navigateTo(entry.path)
         return
       }
+      // Symlink to directory: try to navigate into it
+      if (entry.type === 'symlink' && entry.size === 0) {
+        // Could be a directory symlink — try navigating
+        navigateTo(entry.path)
+        return
+      }
       if (onFileDoubleClick) {
         onFileDoubleClick(entry)
       } else {
@@ -929,24 +1297,37 @@ function SftpBrowserInner({
     [uploadSmallFile, uploadLargeFile],
   )
 
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    dragCounterRef.current++
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) setDragOver(true)
-  }, [])
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      // 移动端禁用拖拽上传
+      if (isTouchDevice) return
+      e.preventDefault()
+      e.stopPropagation()
+      dragCounterRef.current++
+      if (e.dataTransfer.items && e.dataTransfer.items.length > 0) setDragOver(true)
+    },
+    [isTouchDevice],
+  )
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    dragCounterRef.current--
-    if (dragCounterRef.current === 0) setDragOver(false)
-  }, [])
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (isTouchDevice) return
+      e.preventDefault()
+      e.stopPropagation()
+      dragCounterRef.current--
+      if (dragCounterRef.current === 0) setDragOver(false)
+    },
+    [isTouchDevice],
+  )
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }, [])
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (isTouchDevice) return
+      e.preventDefault()
+      e.stopPropagation()
+    },
+    [isTouchDevice],
+  )
 
   const doUpload = useCallback(
     async (files: File[], targetDir: string) => {
@@ -1007,6 +1388,8 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
+      // 移动端禁用拖拽上传
+      if (isTouchDevice) return
       e.preventDefault()
       e.stopPropagation()
       setDragOver(false)
@@ -1020,7 +1403,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       const confirmed = await confirmOverwrite(files, currentPath)
       if (confirmed) doUpload(files, currentPath)
     },
-    [sessionId, currentPath, doUpload, confirmOverwrite],
+    [sessionId, currentPath, doUpload, confirmOverwrite, isTouchDevice],
   )
 
   const handleUploadToDir = useCallback(
@@ -1050,9 +1433,10 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
   // 搜索过滤后的列表
   const displayEntries = useMemo(() => {
     if (allEntries.length > 0) return allEntries
-    if (!searchQuery.trim()) return [...sortedEntries.dirs, ...sortedEntries.files]
+    if (!searchQuery.trim())
+      return [...sortedEntries.dirs, ...sortedEntries.symlinks, ...sortedEntries.files]
     const q = searchQuery.toLowerCase()
-    return [...sortedEntries.dirs, ...sortedEntries.files].filter((e) =>
+    return [...sortedEntries.dirs, ...sortedEntries.symlinks, ...sortedEntries.files].filter((e) =>
       e.name.toLowerCase().includes(q),
     )
   }, [allEntries, searchQuery, sortedEntries])
@@ -1062,15 +1446,20 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
     (entry: SftpEntry, _index: number) => {
       const isRenaming = renaming === entry.path
       const isDir = entry.type === 'directory'
+      const isSymlink = entry.type === 'symlink'
       return (
         <div
           key={entry.path}
-          className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isDir ? 'text-sky-300' : 'text-slate-300'}`}
+          className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isDir ? 'text-sky-300' : isSymlink ? 'text-cyan-300' : 'text-slate-300'}`}
           style={{ height: 28 }}
           onClick={() => handleFileDoubleClick(entry)}
           onContextMenu={(e) => handleEntryContextMenu(e, entry)}
         >
-          {isDir ? <Folder size={14} className="shrink-0 text-sky-400" /> : getFileIcon(entry.name)}
+          {isDir ? (
+            <Folder size={14} className="shrink-0 text-sky-400" />
+          ) : (
+            getFileIcon(entry.name, entry.type)
+          )}
           {isRenaming ? (
             <input
               autoFocus
@@ -1126,12 +1515,13 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
     () => (
       <div className="flex items-center justify-between border-t border-slate-700/30 px-2 py-0.5 text-[10px] text-slate-600">
         <span>
-          {sortedEntries.dirs.length} 目录 · {sortedEntries.files.length} 文件
+          {sortedEntries.dirs.length} 目录 · {sortedEntries.symlinks.length} 链接 ·{' '}
+          {sortedEntries.files.length} 文件
         </span>
         <span>{currentPath}</span>
       </div>
     ),
-    [sortedEntries.dirs.length, sortedEntries.files.length, currentPath],
+    [sortedEntries.dirs.length, sortedEntries.symlinks.length, sortedEntries.files.length, currentPath],
   )
 
   return (
@@ -1306,8 +1696,8 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         </div>
       )}
 
-      {/* 拖拽悬浮遮罩 */}
-      {dragOver && (
+      {/* 拖拽悬浮遮罩 (仅桌面端) */}
+      {!isTouchDevice && dragOver && (
         <div
           className="absolute inset-0 z-30 flex items-center justify-center"
           style={{ pointerEvents: 'none' }}
@@ -1343,6 +1733,14 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             <p className="mt-2 text-xs">
               {error ? '无法加载目录' : searchQuery ? '无搜索结果' : '空目录'}
             </p>
+            {!error && !searchQuery && sessionId && (
+              <button
+                onClick={() => handleUploadToDir(currentPath)}
+                className="mt-3 flex items-center gap-1 rounded border border-slate-700/50 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-700/50 hover:text-slate-300"
+              >
+                <Upload size={12} /> 上传文件
+              </button>
+            )}
           </div>
         ) : (
           displayEntries.map((entry, i) => renderFileItem(entry, i))
@@ -1388,15 +1786,17 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
                   >
                     <Eye size={12} /> 预览
                   </button>
-                  <button
-                    onClick={() => {
-                      openInEditor(contextMenu.entry!)
-                      setContextMenu(null)
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-                  >
-                    <Edit3 size={12} /> 在编辑器中打开
-                  </button>
+                  {isEditableText(contextMenu.entry.name) && (
+                    <button
+                      onClick={() => {
+                        openInEditor(contextMenu.entry!)
+                        setContextMenu(null)
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
+                    >
+                      <Edit3 size={12} /> 在编辑器中打开
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDownload(contextMenu.entry!)}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
@@ -1436,6 +1836,20 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
               >
                 <Copy size={12} /> 复制路径
+              </button>
+              <button
+                onClick={() => {
+                  const name = contextMenu.entry!.name
+                  if (navigator.clipboard) {
+                    navigator.clipboard.writeText(name).catch(() => fallbackCopy(name))
+                  } else {
+                    fallbackCopy(name)
+                  }
+                  setContextMenu(null)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
+              >
+                <Copy size={12} /> 复制文件名
               </button>
             </>
           ) : (

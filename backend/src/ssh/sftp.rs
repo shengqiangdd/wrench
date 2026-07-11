@@ -21,6 +21,41 @@ pub struct FileEntry {
     pub modify_time: i64,
 }
 
+/// Determine file type from SFTP permission bits (POSIX file type mask).
+///
+/// SFTP returns permissions with the file type encoded in the high bits:
+/// - `0o040000` = directory (S_IFDIR)
+/// - `0o120000` = symbolic link (S_IFLNK)
+/// - `0o100000` = regular file (S_IFREG)
+/// - `0o060000` = block device
+/// - `0o020000` = character device
+/// - `0o010000` = named pipe (FIFO)
+/// - `0o140000` = socket
+fn file_type_from_permissions(perms: Option<u32>) -> String {
+    match perms {
+        Some(p) => {
+            let ft = p & 0o170000; // S_IFMT mask
+            if ft == 0o040000 {
+                "directory"
+            } else if ft == 0o120000 {
+                "symlink"
+            } else if ft == 0o060000 {
+                "block_device"
+            } else if ft == 0o020000 {
+                "char_device"
+            } else if ft == 0o010000 {
+                "fifo"
+            } else if ft == 0o140000 {
+                "socket"
+            } else {
+                "file"
+            }
+        }
+        None => "file",
+    }
+    .to_string()
+}
+
 /// Convert a `Metadata` (which is `FileAttributes`) into our `FileEntry`.
 fn attrs_to_entry(name: String, parent_path: &str, attrs: &FileAttributes) -> FileEntry {
     let path = if parent_path.ends_with('/') {
@@ -29,7 +64,8 @@ fn attrs_to_entry(name: String, parent_path: &str, attrs: &FileAttributes) -> Fi
         format!("{}/{}", parent_path, name)
     };
 
-    let is_dir = attrs.is_dir();
+    // Detect file type from POSIX permission bits (handles symlinks, devices, etc.)
+    let file_type = file_type_from_permissions(attrs.permissions);
     let size = attrs.size.unwrap_or(0) as i64;
 
     let perm_str = attrs
@@ -39,7 +75,14 @@ fn attrs_to_entry(name: String, parent_path: &str, attrs: &FileAttributes) -> Fi
 
     let modify_time = attrs.mtime.unwrap_or(0) as i64;
 
-    FileEntry { name, path, r#type: if is_dir { "directory".to_string() } else { "file".to_string() }, size, permissions: perm_str, modify_time }
+    FileEntry {
+        name,
+        path,
+        r#type: file_type,
+        size,
+        permissions: perm_str,
+        modify_time,
+    }
 }
 
 /// Open a cached or new SFTP session for an SSH connection.
@@ -71,12 +114,17 @@ pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec
         })
         .collect();
 
-    // Sort: directories first, then by name
+    // Sort: directories first, then symlinks, then other files, then by name
     entries.sort_by(|a, b| {
-        let a_is_dir = a.r#type == "directory";
-        let b_is_dir = b.r#type == "directory";
-        if a_is_dir != b_is_dir {
-            b_is_dir.cmp(&a_is_dir)
+        let type_order = |t: &str| match t {
+            "directory" => 0,
+            "symlink" => 1,
+            _ => 2,
+        };
+        let ao = type_order(&a.r#type);
+        let bo = type_order(&b.r#type);
+        if ao != bo {
+            ao.cmp(&bo)
         } else {
             a.name.cmp(&b.name)
         }
@@ -241,11 +289,32 @@ mod tests {
 
     #[test]
     fn test_attrs_to_entry_directory() {
-        let attrs = FileAttributes { size: Some(4096), ..FileAttributes::default() };
+        // Directory: S_IFDIR = 0o040000, permissions 0o40755
+        let attrs = FileAttributes {
+            permissions: Some(0o40755),
+            size: Some(4096),
+            ..FileAttributes::default()
+        };
 
         let entry = attrs_to_entry("subdir".into(), "/home/user", &attrs);
         assert_eq!(entry.name, "subdir");
         assert_eq!(entry.r#type, "directory");
+        assert_eq!(entry.permissions, "755");
+    }
+
+    #[test]
+    fn test_attrs_to_entry_symlink() {
+        // Symlink: S_IFLNK = 0o120000, permissions 0o120777
+        let attrs = FileAttributes {
+            permissions: Some(0o120777),
+            size: Some(0),
+            mtime: Some(1705314600),
+            ..FileAttributes::default()
+        };
+
+        let entry = attrs_to_entry("link".into(), "/usr/bin", &attrs);
+        assert_eq!(entry.name, "link");
+        assert_eq!(entry.r#type, "symlink");
         assert_eq!(entry.permissions, "777");
     }
 
@@ -271,5 +340,17 @@ mod tests {
         let attrs = FileAttributes::default();
         let entry = attrs_to_entry("file.txt".into(), "/root/", &attrs);
         assert_eq!(entry.path, "/root/file.txt");
+    }
+
+    #[test]
+    fn test_file_type_from_permissions() {
+        assert_eq!(file_type_from_permissions(Some(0o100644)), "file");
+        assert_eq!(file_type_from_permissions(Some(0o40755)), "directory");
+        assert_eq!(file_type_from_permissions(Some(0o120777)), "symlink");
+        assert_eq!(file_type_from_permissions(Some(0o060644)), "block_device");
+        assert_eq!(file_type_from_permissions(Some(0o020644)), "char_device");
+        assert_eq!(file_type_from_permissions(Some(0o010644)), "fifo");
+        assert_eq!(file_type_from_permissions(Some(0o140644)), "socket");
+        assert_eq!(file_type_from_permissions(None), "file");
     }
 }
