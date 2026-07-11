@@ -77,7 +77,12 @@ const MAGIC_SIGNATURES: MagicSignature[] = [
   { match: [0x89, 0x50, 0x4e, 0x47], name: 'PNG Image', language: 'text', mediaType: 'image' },
   { match: [0xff, 0xd8, 0xff], name: 'JPEG Image', language: 'text', mediaType: 'image' },
   { match: [0x47, 0x49, 0x46, 0x38], name: 'GIF Image', language: 'text', mediaType: 'image' },
-  { match: [0x52, 0x49, 0x46, 0x46], name: 'RIFF (WebP/WAV/AVI)', language: 'text', mediaType: 'image' },
+  {
+    match: [0x52, 0x49, 0x46, 0x46],
+    name: 'RIFF (WebP/WAV/AVI)',
+    language: 'text',
+    mediaType: 'image',
+  },
   { match: [0x42, 0x4d], name: 'BMP Image', language: 'text', mediaType: 'image' },
 
   // 视频
@@ -92,8 +97,18 @@ const MAGIC_SIGNATURES: MagicSignature[] = [
   { match: [0x4f, 0x67, 0x67, 0x53], name: 'OGG Audio', language: 'text', mediaType: 'audio' },
 
   // 文档
-  { match: [0x25, 0x50, 0x44, 0x46], name: 'PDF Document', language: 'text', mediaType: 'document' },
-  { match: [0x50, 0x4b, 0x03, 0x04], name: 'ZIP/DOCX/XLSX', language: 'text', mediaType: 'archive' },
+  {
+    match: [0x25, 0x50, 0x44, 0x46],
+    name: 'PDF Document',
+    language: 'text',
+    mediaType: 'document',
+  },
+  {
+    match: [0x50, 0x4b, 0x03, 0x04],
+    name: 'ZIP/DOCX/XLSX',
+    language: 'text',
+    mediaType: 'archive',
+  },
 
   // 压缩
   { match: [0x1f, 0x8b], name: 'GZIP Archive', language: 'text', mediaType: 'archive' },
@@ -103,7 +118,12 @@ const MAGIC_SIGNATURES: MagicSignature[] = [
   { match: [0x7f, 0x45, 0x4c, 0x46], name: 'ELF Binary', language: 'text', mediaType: 'binary' },
 
   // SQLite 数据库
-  { match: [0x53, 0x51, 0x4c, 0x69], name: 'SQLite Database', language: 'text', mediaType: 'database' },
+  {
+    match: [0x53, 0x51, 0x4c, 0x69],
+    name: 'SQLite Database',
+    language: 'text',
+    mediaType: 'database',
+  },
 ]
 
 /** 从二进制头部检测 magic bytes */
@@ -275,10 +295,7 @@ export type MediaType = 'image' | 'video' | 'audio' | 'svg' | 'document' | 'text
  * @param content    文件内容（文本字符串或 ArrayBuffer）
  * @param isBinary   是否被标记为二进制文件
  */
-export function sniffMediaType(
-  content: string | ArrayBuffer | null,
-  isBinary: boolean,
-): MediaType {
+export function sniffMediaType(content: string | ArrayBuffer | null, isBinary: boolean): MediaType {
   if (!content) return 'unknown'
 
   // ── 二进制内容（ArrayBuffer）：magic bytes 检测 ──
@@ -332,38 +349,118 @@ export function isSvgText(content: string): boolean {
 // ═══════════════════════════════════════════════
 
 export type FileCategory =
-  | 'image'
-  | 'svg'
-  | 'video'
-  | 'audio'
-  | 'document'
-  | 'code'
-  | 'text'
-  | 'binary'
-  | 'archive'
+  'image' | 'svg' | 'video' | 'audio' | 'document' | 'code' | 'text' | 'binary' | 'archive'
 
 const IMAGE_EXTS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif', 'heic', 'heif',
-  'tiff', 'tif', 'raw', 'cr2', 'nef', 'arw', 'dng', 'psd', 'xcf',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'ico',
+  'avif',
+  'heic',
+  'heif',
+  'tiff',
+  'tif',
+  'raw',
+  'cr2',
+  'nef',
+  'arw',
+  'dng',
+  'psd',
+  'xcf',
 ])
 const VIDEO_EXTS = new Set([
-  'mp4', 'webm', 'ogg', 'ogv', 'mov', 'mkv', 'avi', 'wmv', 'flv',
-  'm4v', '3gp', 'mpeg', 'mpg',
+  'mp4',
+  'webm',
+  'ogg',
+  'ogv',
+  'mov',
+  'mkv',
+  'avi',
+  'wmv',
+  'flv',
+  'm4v',
+  '3gp',
+  'mpeg',
+  'mpg',
 ])
 const AUDIO_EXTS = new Set([
-  'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'opus', 'wma', 'ape',
-  'aiff', 'mid', 'midi',
+  'mp3',
+  'wav',
+  'ogg',
+  'flac',
+  'aac',
+  'm4a',
+  'opus',
+  'wma',
+  'ape',
+  'aiff',
+  'mid',
+  'midi',
 ])
 const ARCHIVE_EXTS = new Set([
-  'zip', 'tar', 'gz', 'bz2', 'xz', 'lz', 'lzma', 'zst', 'br',
-  'rar', '7z', 'cab', 'iso', 'dmg', 'deb', 'rpm', 'apk', 'msi',
+  'zip',
+  'tar',
+  'gz',
+  'bz2',
+  'xz',
+  'lz',
+  'lzma',
+  'zst',
+  'br',
+  'rar',
+  '7z',
+  'cab',
+  'iso',
+  'dmg',
+  'deb',
+  'rpm',
+  'apk',
+  'msi',
 ])
 const DOC_EXTS = new Set(['pdf'])
 const CODE_EXTS = new Set([
-  'ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h',
-  'css', 'scss', 'less', 'html', 'htm', 'xml', 'json', 'yaml', 'yml',
-  'toml', 'ini', 'conf', 'sh', 'bash', 'zsh', 'fish', 'rb', 'php',
-  'swift', 'kt', 'vue', 'svelte', 'sql', 'md', 'rst', 'tex', 'vim',
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'py',
+  'rs',
+  'go',
+  'java',
+  'c',
+  'cpp',
+  'h',
+  'css',
+  'scss',
+  'less',
+  'html',
+  'htm',
+  'xml',
+  'json',
+  'yaml',
+  'yml',
+  'toml',
+  'ini',
+  'conf',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'rb',
+  'php',
+  'swift',
+  'kt',
+  'vue',
+  'svelte',
+  'sql',
+  'md',
+  'rst',
+  'tex',
+  'vim',
 ])
 
 /**

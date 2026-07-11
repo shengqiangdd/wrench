@@ -140,12 +140,7 @@ function inferMimeFromBase64(b64: string): string {
       return 'audio/ogg'
     }
     // MP4: ....ftyp
-    if (
-      bytes[4] === 0x66 &&
-      bytes[5] === 0x74 &&
-      bytes[6] === 0x79 &&
-      bytes[7] === 0x70
-    ) {
+    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
       return 'video/mp4'
     }
     // Matroska/WebM: 1A 45 DF A3
