@@ -149,6 +149,7 @@ pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec
     // Resolve symlink targets in batch — stat each symlink to get resolved type
     for entry in &mut entries {
         if entry.r#type == "symlink" {
+            // First try canonicalize (resolves relative symlinks)
             if let Ok(resolved) = sftp.canonicalize(&entry.path).await {
                 if let Ok(meta) = sftp.metadata(&resolved).await {
                     entry.target_type = Some(file_type_from_permissions(meta.permissions));
@@ -164,6 +165,25 @@ pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec
                     // canonicalize worked but metadata failed — broken symlink
                     entry.target_type = Some("broken".to_string());
                     entry.link_target = Some(resolved);
+                }
+            } else {
+                // canonicalize failed — try metadata on the path directly
+                // (russh-sftp metadata follows symlinks by default)
+                if let Ok(meta) = sftp.metadata(&entry.path).await {
+                    let resolved_type = file_type_from_permissions(meta.permissions);
+                    // If it resolved to something other than "symlink", it's a followable link
+                    if resolved_type != "symlink" {
+                        entry.target_type = Some(resolved_type);
+                        entry.link_target = Some(entry.path.clone());
+                        entry.size = meta.size.unwrap_or(0) as i64;
+                        let perm_str = meta
+                            .permissions
+                            .map(|p| format!("{:o}", p & 0o7777))
+                            .unwrap_or_else(|| "----".to_string());
+                        entry.permissions = perm_str;
+                    } else {
+                        entry.target_type = Some("broken".to_string());
+                    }
                 }
             }
         }

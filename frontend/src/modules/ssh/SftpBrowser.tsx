@@ -303,7 +303,7 @@ function getFileIcon(name: string, type?: string, targetType?: string) {
   // Special file types from backend
   if (type === 'symlink') {
     // Color hint based on resolved target type
-    if (targetType === 'directory') return <Link2 size={14} className="text-cyan-400" />
+    if (targetType === 'directory' || targetType === 'unknown') return <Link2 size={14} className="text-cyan-400" />
     if (targetType === 'broken') return <Link2 size={14} className="text-red-400" />
     return <Link2 size={14} className="text-cyan-300" />
   }
@@ -754,7 +754,8 @@ function fallbackCopy(text: string) {
 /** 判断条目是否为目录（包括指向目录的符号链接） */
 function isDirLike(entry: SftpEntry): boolean {
   return (
-    entry.type === 'directory' || (entry.type === 'symlink' && entry.targetType === 'directory')
+    entry.type === 'directory' ||
+    (entry.type === 'symlink' && (entry.targetType === 'directory' || entry.targetType === 'unknown'))
   )
 }
 
@@ -1426,7 +1427,7 @@ function SftpBrowserInner({
           }
           if (item.type === 'directory' || item.type === 'symlink') {
             // 符号链接到目录也递归（targetType 在 list 结果中已解析）
-            const isDirLink = item.type === 'symlink' && item.targetType === 'directory'
+            const isDirLink = item.type === 'symlink' && (item.targetType === 'directory' || item.targetType === 'unknown')
             if (item.type === 'directory' || isDirLink) {
               const subDir = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`
               const sub = await recursiveSearch(subDir, q, depth + 1, resultCount)
@@ -1978,7 +1979,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       return (
         <div
           key={entry.path}
-          className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isSelected ? 'bg-sky-900/20' : ''} ${isDir || (isSymlink && entry.targetType === 'directory') ? 'text-sky-300' : 'text-slate-300'}`}
+          className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isSelected ? 'bg-sky-900/20' : ''} ${isDir || (isSymlink && (entry.targetType === 'directory' || entry.targetType === 'unknown')) ? 'text-sky-300' : 'text-slate-300'}`}
           style={{ height: 28 }}
           onClick={(e) => {
             // 点击复选框区域不触发打开
@@ -2028,7 +2029,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
           )}
           {isDir ? (
             <Folder size={14} className="shrink-0 text-sky-400" />
-          ) : isSymlink && entry.targetType === 'directory' ? (
+          ) : isSymlink && (entry.targetType === 'directory' || entry.targetType === 'unknown') ? (
             <Folder size={14} className="shrink-0 text-cyan-400" />
           ) : (
             getFileIcon(entry.name, entry.type, entry.targetType)
