@@ -895,20 +895,22 @@ const FilePreviewModal = memo(function FilePreviewModal({
     setError(null)
     try {
       // 无法预览目录或目录符号链接
-      if (
-        entry.type === 'directory' ||
-        (entry.type === 'symlink' && entry.targetType === 'directory')
-      ) {
+      if (isDirLike(entry)) {
         setError('无法预览目录')
         setLoading(false)
         return
       }
+      // Determine effective name for type detection (use linkTarget for symlinks)
+      const effectiveName =
+        entry.type === 'symlink' && entry.linkTarget
+          ? entry.linkTarget.split('/').pop() || entry.name
+          : entry.name
       // Protect against opening extremely large files (>50MB text preview will crash browser)
       const MAX_TEXT_PREVIEW = 50 * 1024 * 1024
       if (
-        !isImageFile(entry.name) &&
-        !isVideoFile(entry.name) &&
-        !isAudioFile(entry.name) &&
+        !isImageFile(effectiveName) &&
+        !isVideoFile(effectiveName) &&
+        !isAudioFile(effectiveName) &&
         entry.size > MAX_TEXT_PREVIEW
       ) {
         setError(`文件过大 (${formatSize(entry.size)})，无法预览。请下载后查看或在编辑器中打开。`)
@@ -922,12 +924,12 @@ const FilePreviewModal = memo(function FilePreviewModal({
       })
 
       // Check if this is a binary file (image/video/audio)
-      const img = isImageFile(entry.name)
-      const vid = isVideoFile(entry.name)
-      const aud = isAudioFile(entry.name)
+      const img = isImageFile(effectiveName)
+      const vid = isVideoFile(effectiveName)
+      const aud = isAudioFile(effectiveName)
 
       if (img || vid || aud) {
-        const mime = getMimeByName(entry.name)
+        const mime = getMimeByName(effectiveName)
         if (img) setIsImage(true)
         if (vid) setIsVideo(true)
         if (aud) setIsAudio(true)
@@ -1121,7 +1123,7 @@ function SftpBrowserInner({
   onConnect,
   connecting: externalConnecting,
   showConnector = false,
-  onFileDoubleClick,
+  _onFileDoubleClick,
   widthClass,
 }: SftpBrowserProps) {
   const [currentPath, setCurrentPath] = useState('/')
@@ -1479,37 +1481,23 @@ function SftpBrowserInner({
         setActiveNav('files')
       } catch (err) {
         setAlertModal({ title: '打开失败', message: (err as Error).message })
-        throw err
       }
     },
     [sessionId, fileStore, setActiveNav, navigateTo],
   )
 
-  /** 双击文件处理 */
+  /** 点击文件/目录处理（移动端单击 = 此处） */
   const handleFileDoubleClick = useCallback(
     (entry: SftpEntry) => {
-      if (entry.type === 'directory') {
+      // 目录（含 symlink to dir）：导航进入
+      if (isDirLike(entry)) {
         navigateTo(entry.path)
         return
       }
-      if (entry.type === 'symlink') {
-        if (entry.targetType === 'directory') {
-          // 目录符号链接：直接导航（SFTP 协议跟随符号链接）
-          navigateTo(entry.path)
-          return
-        }
-        // 其他符号链接（file / broken / unknown）：交给 openInEditor，
-        // 它会先 stat 解析实际类型，如果是目录则导航，否则打开编辑器
-        openInEditor(entry)
-        return
-      }
-      if (onFileDoubleClick) {
-        onFileDoubleClick(entry)
-      } else {
-        openInEditor(entry)
-      }
+      // 所有文件：打开预览模态框（自动识别图片/视频/音频/文本）
+      setPreviewEntry(entry)
     },
-    [navigateTo, onFileDoubleClick, openInEditor],
+    [navigateTo],
   )
 
   const handleDownload = useCallback(
