@@ -64,7 +64,6 @@ interface SftpBrowserProps {
   /** 是否显示连接选择器（FileManager 顶部有，这里默认不显示） */
   showConnector?: boolean
   /** 文件双击回调 — 默认发送到 fileStore.openFile */
-  onFileDoubleClick?: (entry: SftpEntry) => void
   /** 宽度类名 */
   widthClass?: string
 }
@@ -947,7 +946,7 @@ const FilePreviewModal = memo(function FilePreviewModal({
     } finally {
       setLoading(false)
     }
-  }, [sessionId, entry.path, entry.name, entry.size, entry.type, entry.targetType])
+  }, [sessionId, entry])
 
   useEffect(() => {
     const t = setTimeout(() => loadFile(), 0)
@@ -1123,7 +1122,6 @@ function SftpBrowserInner({
   onConnect,
   connecting: externalConnecting,
   showConnector = false,
-  _onFileDoubleClick,
   widthClass,
 }: SftpBrowserProps) {
   const [currentPath, setCurrentPath] = useState('/')
