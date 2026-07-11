@@ -68,7 +68,10 @@ function formatUptime(raw?: string | null): string {
   }
   // 截断过长的字符串（如 "5 years, 3 months, 1 day, 2 hours, 30 minutes, 12 seconds"）
   // 保留前两段
-  const parts = s.split(',').map((p) => p.trim()).filter(Boolean)
+  const parts = s
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
   if (parts.length > 2) {
     return parts.slice(0, 2).join(', ')
   }
@@ -183,9 +186,7 @@ const HostCard = memo(function HostCard({
             />
           </div>
           {host.cpu_load != null && (
-            <div className="mt-1 text-[10px] text-slate-500">
-              负载 {host.cpu_load.toFixed(2)}
-            </div>
+            <div className="mt-1 text-[10px] text-slate-500">负载 {host.cpu_load.toFixed(2)}</div>
           )}
         </div>
 

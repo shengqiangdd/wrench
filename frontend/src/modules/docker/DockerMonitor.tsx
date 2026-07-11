@@ -151,9 +151,11 @@ export default function DockerMonitor({ connectionId, containers: propContainers
   }, [connectionId])
 
   // connectionId 变化时获取容器列表
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     void fetchContainers()
   }, [fetchContainers])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     dataRef.current = monitors
@@ -182,16 +184,17 @@ export default function DockerMonitor({ connectionId, containers: propContainers
 
   // 容器列表变化时自动选中所有运行中的容器（仅在首次或连接变化时）
   const prevContainerKeyRef = useRef('')
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const key = containers.map((c) => c.ID).sort().join(',')
+    const key = containers
+      .map((c) => c.ID)
+      .sort()
+      .join(',')
     if (containers.length > 0 && key !== prevContainerKeyRef.current) {
       prevContainerKeyRef.current = key
       const running = containers.filter((c) => c.State === 'running')
       setSelectedIds(new Set(running.map((c) => c.ID)))
     }
   }, [containers])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // 获取 stats
   function parseSize(s: string): number {

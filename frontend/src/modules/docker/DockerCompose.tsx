@@ -162,9 +162,11 @@ function DockerComposeInner({ connectionId }: Props) {
   }, [connectionId, manualPath])
 
   // 初始加载 & connectionId 变化时重新加载
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     discoverProjects()
   }, [discoverProjects])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // 展开项目时获取 services 状态
   const fetchServices = useCallback(
