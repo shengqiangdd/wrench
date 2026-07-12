@@ -162,13 +162,9 @@ export class WsClient {
         const urlBase = this.url.split('?')[0]
         const diag = `Code: ${event.code}, Reason: ${event.reason || '(无)'}, WasClean: ${event.wasClean}, URL: ${urlBase}`
         if (event.code === 1006) {
-          this.setError(
-            `连接被拒绝（HTTP upgrade 可能返回了 401/403/500）。${diag}`,
-          )
+          this.setError(`连接被拒绝（HTTP upgrade 可能返回了 401/403/500）。${diag}`)
         } else if (event.code !== 1000) {
-          this.setError(
-            `连接在建立前被关闭（WebSocket is closed before open）。${diag}`,
-          )
+          this.setError(`连接在建立前被关闭（WebSocket is closed before open）。${diag}`)
         }
         console.error(`[WsClient] 连接失败 — ${diag}`)
       }
@@ -186,9 +182,7 @@ export class WsClient {
         this.setError(
           `连接错误：无法建立 WebSocket 连接${detail ? ` (${detail})` : ''}，请检查网络和服务状态`,
         )
-        console.error(
-          `[WsClient] onerror — URL: ${urlBase}, readyState: ${this.ws?.readyState}`,
-        )
+        console.error(`[WsClient] onerror — URL: ${urlBase}, readyState: ${this.ws?.readyState}`)
       }
     }
   }

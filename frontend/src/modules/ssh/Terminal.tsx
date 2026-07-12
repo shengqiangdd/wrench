@@ -512,9 +512,7 @@ export default function TerminalView({
             // WS 连接失败：重置状态，允许重试
             connectingRef.current = false
             if (!disposedRef.current) {
-              term.write(
-                `\r\n\x1b[31m[WebSocket 连接失败] ${lastErr}\x1b[0m\r\n`,
-              )
+              term.write(`\r\n\x1b[31m[WebSocket 连接失败] ${lastErr}\x1b[0m\r\n`)
             }
             onDisconnectedRef.current?.()
           }
