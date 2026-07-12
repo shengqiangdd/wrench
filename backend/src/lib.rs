@@ -1,3 +1,5 @@
+#![allow(clippy::needless_update)]
+
 pub mod api;
 pub mod api_types;
 pub mod app_state;

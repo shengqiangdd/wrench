@@ -1,3 +1,5 @@
+#![allow(clippy::needless_update)]
+
 use wrench_backend::build_app;
 use wrench_backend::config::AppConfig;
 use wrench_backend::AppState;
