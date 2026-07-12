@@ -1,4 +1,5 @@
 import { memo, useCallback, useState, useEffect } from 'react'
+import { authedFetch } from '../../services/auth'
 import {
   Layers,
   RefreshCw,
@@ -51,7 +52,7 @@ function DockerComposeInner({ connectionId }: Props) {
   const discoverProjects = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/docker/compose', {
+      const res = await authedFetch('/api/docker/compose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId }),
@@ -82,7 +83,7 @@ function DockerComposeInner({ connectionId }: Props) {
       void Promise.all(
         parsed.map(async (p) => {
           try {
-            const r = await fetch('/api/docker/compose/action', {
+            const r = await authedFetch('/api/docker/compose/action', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ connectionId, filePath: p.path, action: 'ps' }),
@@ -134,7 +135,7 @@ function DockerComposeInner({ connectionId }: Props) {
     if (!manualPath.trim()) return
     setLoading(true)
     try {
-      const res = await fetch('/api/docker/compose', {
+      const res = await authedFetch('/api/docker/compose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId, filePath: manualPath.trim() }),
@@ -173,7 +174,7 @@ function DockerComposeInner({ connectionId }: Props) {
     async (path: string) => {
       setActionLoading(`ps:${path}`)
       try {
-        const res = await fetch('/api/docker/compose/action', {
+        const res = await authedFetch('/api/docker/compose/action', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, filePath: path, action: 'ps' }),
@@ -228,7 +229,7 @@ function DockerComposeInner({ connectionId }: Props) {
       setActionLoading(key)
       if (action === 'logs') setLogData({ key, content: '' })
       try {
-        const res = await fetch('/api/docker/compose/action', {
+        const res = await authedFetch('/api/docker/compose/action', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, filePath: path, action, service }),

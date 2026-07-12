@@ -6,6 +6,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { authedFetch } from '../../services/auth'
 import { Brain, Send, Terminal, Loader2, X, Sparkles, Copy, Check, Trash2 } from 'lucide-react'
 import { useAiStore } from '../../stores/ai-store'
 import type { AiMessage } from '../../types/ai'
@@ -26,7 +27,7 @@ async function* streamChat(
   baseUrl: string,
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
-  const res = await fetch('/api/ai/chat', {
+  const res = await authedFetch('/api/ai/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -345,7 +346,7 @@ export default function AiSidebar({ sessionId: _sessionId, connectionId, onClose
 
         let res: Response
         try {
-          res = await fetch('/api/ssh/exec', {
+          res = await authedFetch('/api/ssh/exec', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ connectionId, command: cmd }),

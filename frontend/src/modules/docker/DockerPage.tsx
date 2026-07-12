@@ -3,6 +3,7 @@ import { Container, RefreshCw, Activity, AlertCircle } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useSshStore } from '../../stores/ssh-store'
 import { ensureSshConnection } from '../../services/ssh-ensure'
+import { authedFetch } from '../../services/auth'
 import type { DockerContainer, DockerImage } from './index'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -100,7 +101,7 @@ export default function DockerPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/docker/ps', {
+      const res = await authedFetch('/api/docker/ps', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId: currentConnId, all: true }),
@@ -126,7 +127,7 @@ export default function DockerPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/docker/images', {
+      const res = await authedFetch('/api/docker/images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId: currentConnId }),

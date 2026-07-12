@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, memo, useMemo, useReducer } from 'react'
+import { authedFetch } from '../../services/auth'
 import {
   RefreshCw,
   Search,
@@ -119,7 +120,7 @@ export default function AuditLogPage() {
   const fetchLogs = useCallback(async () => {
     dispatch({ status: 'loading', data: [], total: 0 })
     try {
-      const res = await fetch('/api/audit-logs')
+      const res = await authedFetch('/api/audit-logs')
       const json = await res.json()
       if (json.success) {
         dispatch({ status: 'idle', data: json.data.logs, total: json.data.total })

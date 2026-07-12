@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useCallback, useRef, useReducer, memo } from 'react'
+import { authedFetch } from '../../services/auth'
 import { FileCode2, X, PanelLeftClose, PanelLeft, Loader2 } from 'lucide-react'
 import { useSshStore, decryptConnection } from '../../stores/ssh-store'
 import { useAppStore } from '../../stores/app-store'
@@ -156,7 +157,7 @@ async function ensureSftpSession(
   if (existing) {
     onStatus('检测到已有 SSH 连接，尝试复用 SFTP...')
     try {
-      const resp = await fetch('/api/sftp/stat', {
+      const resp = await authedFetch('/api/sftp/stat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId: existing.id, path: '/' }),

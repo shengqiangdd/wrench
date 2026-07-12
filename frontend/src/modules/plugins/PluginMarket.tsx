@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { authedFetch } from '../../services/auth'
 import {
   Download,
   Trash2,
@@ -85,7 +86,7 @@ export default function PluginMarket() {
     setLoading(true)
     setError(null)
     try {
-      const resp = await fetch(MARKET_API)
+      const resp = await authedFetch(MARKET_API)
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
       }
@@ -121,7 +122,7 @@ export default function PluginMarket() {
     }))
 
     try {
-      const resp = await fetch('/api/plugins/install', {
+      const resp = await authedFetch('/api/plugins/install', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -163,7 +164,7 @@ export default function PluginMarket() {
     }))
 
     try {
-      const resp = await fetch('/api/plugins/uninstall', {
+      const resp = await authedFetch('/api/plugins/uninstall', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pluginId }),

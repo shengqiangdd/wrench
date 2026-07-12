@@ -9,6 +9,7 @@ import {
   useMemo,
 } from 'react'
 import { Play, Square, Trash2, FileText, Search, Eye } from 'lucide-react'
+import { authedFetch } from '../../services/auth'
 import type { DockerContainer } from './index'
 import { STATUS_DOTS } from './index'
 
@@ -237,7 +238,7 @@ export default function DockerContainerList({
 
       setActionLoading(id)
       try {
-        const res = await fetch(`/api/docker/${action}`, {
+        const res = await authedFetch(`/api/docker/${action}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id }),

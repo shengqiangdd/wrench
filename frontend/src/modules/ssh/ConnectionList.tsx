@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { authedFetch } from '../../services/auth'
 import {
   Plus,
   Plug,
@@ -86,7 +87,7 @@ export default function ConnectionList({ onConnect }: Props) {
 
   // ── 开发模式：从服务端获取 SSH 测试环境变量 ──
   useEffect(() => {
-    fetch('/api/ssh/test-config')
+    authedFetch('/api/ssh/test-config')
       .then((r) => r.json())
       .then((data) => {
         if (data.host) setQuickHost(data.host)

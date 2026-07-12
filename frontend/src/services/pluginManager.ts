@@ -13,6 +13,7 @@
 
 import { usePluginStore } from '../stores/plugin-store'
 import { pluginSandboxManager } from './pluginSandboxManager'
+import { authedFetch } from './auth'
 import type { PluginSandboxHandle } from '../components/PluginSandbox'
 import type { PluginManifest } from '../types/plugin'
 
@@ -49,7 +50,7 @@ export interface PluginLoadResult {
  */
 export async function fetchPlugins(): Promise<PluginCatalogItem[]> {
   try {
-    const response = await fetch(`/api/plugins`)
+    const response = await authedFetch(`/api/plugins`)
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
@@ -90,7 +91,7 @@ export async function fetchPlugins(): Promise<PluginCatalogItem[]> {
  * 获取插件 JS 代码
  */
 export async function fetchPluginCode(entry: string): Promise<string> {
-  const response = await fetch(entry)
+  const response = await authedFetch(entry)
   if (!response.ok) {
     throw new Error(`Failed to load plugin JS: HTTP ${response.status}`)
   }
@@ -101,7 +102,7 @@ export async function fetchPluginCode(entry: string): Promise<string> {
  * 获取插件 manifest（从后端）
  */
 export async function fetchPluginManifest(pluginId: string): Promise<PluginManifest> {
-  const response = await fetch(`/api/plugins/${pluginId}/manifest.json`)
+  const response = await authedFetch(`/api/plugins/${pluginId}/manifest.json`)
   if (!response.ok) {
     throw new Error(`Failed to load manifest: HTTP ${response.status}`)
   }

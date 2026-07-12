@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
+import { authedFetch } from '../../services/auth'
 import {
   Folder,
   File,
@@ -278,7 +279,7 @@ async function sftpApi<T = unknown>(
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const res = await fetch(`/api/sftp/${endpoint}`, {
+    const res = await authedFetch(`/api/sftp/${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

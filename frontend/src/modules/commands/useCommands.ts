@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { authedFetch } from '../../services/auth'
 import type { QuickCommand, CommandGroup } from './index'
 import { BUILTIN_COMMANDS, BUILTIN_GROUPS, STORAGE_KEY, DEFAULT_CUSTOM } from './index'
 
@@ -101,7 +102,7 @@ export function useCommands() {
 
       let resp: Response
       try {
-        resp = await fetch('/api/ssh/exec', {
+        resp = await authedFetch('/api/ssh/exec', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, command: cmd.command }),

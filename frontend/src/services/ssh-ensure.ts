@@ -5,6 +5,8 @@
  * 无需用户先去 SSH 页连接。同一 host:port:username 会复用已有连接。
  */
 
+import { authedFetch } from './auth'
+
 const _pending: Record<string, Promise<string>> = {}
 
 export interface SshCredentials {
@@ -34,7 +36,7 @@ export async function ensureSshConnection(creds: SshCredentials): Promise<string
 
   const promise = (async () => {
     try {
-      const res = await fetch('/api/ssh/ensure', {
+      const res = await authedFetch('/api/ssh/ensure', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

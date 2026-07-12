@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
+import { authedFetch } from '../../services/auth'
 import {
   X,
   Play,
@@ -94,7 +95,7 @@ export default function BatchExecPanel({ onClose }: { onClose: () => void }) {
       })
 
       try {
-        const res = await fetch('/api/ssh/exec', {
+        const res = await authedFetch('/api/ssh/exec', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId: r.connId, command: command.trim() }),

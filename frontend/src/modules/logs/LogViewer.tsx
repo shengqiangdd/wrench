@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useReducer, memo } from 'react'
 import { Download, Search, X, ArrowUpDown, Radio, Activity, AlertTriangle } from 'lucide-react'
+import { authedFetch, buildWsUrl } from '../../services/auth'
 
 /** 将常见 SSH/系统错误转为友好提示 */
 function friendlyError(raw: string, path: string): { title: string; hint: string } | null {
@@ -57,7 +58,7 @@ function LogViewerInner({ connectionId, logPath, onClose }: LogViewerProps) {
   const fetchLogs = useCallback(async () => {
     dispatch({ status: 'loading' })
     try {
-      const { authedFetch } = await import('../../services/auth')
+      
       const res = await authedFetch('/api/logs/tail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -94,7 +95,7 @@ function LogViewerInner({ connectionId, logPath, onClose }: LogViewerProps) {
   const startFollow = useCallback(async () => {
     dispatch({ errorMsg: null })
     try {
-      const { buildWsUrl } = await import('../../services/auth')
+      
       const wsUrl = await buildWsUrl('/ws')
       const ws = new WebSocket(wsUrl)
       const reqId = requestIdRef.current
@@ -199,7 +200,7 @@ function LogViewerInner({ connectionId, logPath, onClose }: LogViewerProps) {
     setSearching(true)
     setSearchResult('')
     try {
-      const { authedFetch } = await import('../../services/auth')
+      
       const res = await authedFetch('/api/logs/grep', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

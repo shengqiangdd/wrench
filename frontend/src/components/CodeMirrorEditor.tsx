@@ -8,6 +8,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { EditorView, keymap, placeholder } from '@codemirror/view'
 import { EditorState, type Extension } from '@codemirror/state'
+import { authedFetch } from '../services/auth'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import {
   syntaxHighlighting,
@@ -150,7 +151,7 @@ export default function CodeMirrorEditor() {
 
         // 策略一：REST API（最可靠，不依赖 WebSocket 连接状态）
         try {
-          const res = await fetch('/api/sftp/upload', {
+          const res = await authedFetch('/api/sftp/upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

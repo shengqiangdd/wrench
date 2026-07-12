@@ -1,4 +1,5 @@
 import { useState, useEffect, useReducer } from 'react'
+import { authedFetch } from '../../services/auth'
 import { X, Loader2, Cpu, HardDrive, Network, Box, Terminal } from 'lucide-react'
 import type { DockerInspectInfo } from './index'
 import DockerTerminal from './DockerTerminal'
@@ -68,7 +69,7 @@ export default function DockerDetail({ connectionId, containerId, onClose }: Pro
     ;(async () => {
       dispatch({ type: 'start' })
       try {
-        const res = await fetch('/api/docker/inspect', {
+        const res = await authedFetch('/api/docker/inspect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id: containerId }),

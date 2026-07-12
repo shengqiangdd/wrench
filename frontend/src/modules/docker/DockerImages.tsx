@@ -1,4 +1,5 @@
 import { useState, useCallback, memo, useMemo } from 'react'
+import { authedFetch } from '../../services/auth'
 import {
   Trash2,
   Search,
@@ -149,7 +150,7 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
       const id = img.Repository === '<none>' ? img.ID : `${img.Repository}:${img.Tag}`
       setActionLoading(id)
       try {
-        const res = await fetch('/api/docker/rmi', {
+        const res = await authedFetch('/api/docker/rmi', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id }),
@@ -209,7 +210,7 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
         // 后端 prune_images 只需要 connectionId，不需要 all 字段
       }
 
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -249,7 +250,7 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
       setInspectData(null)
       setHistoryLoading(true)
       try {
-        const res = await fetch('/api/docker/history', {
+        const res = await authedFetch('/api/docker/history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id: img.ID }),
@@ -281,7 +282,7 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
     if (!selectedImage) return
     setInspectLoading(true)
     try {
-      const res = await fetch('/api/docker/inspect', {
+      const res = await authedFetch('/api/docker/inspect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId, id: selectedImage.ID }),
@@ -538,7 +539,7 @@ function DockerImagesInner({ connectionId, images, loading, onRefresh }: Props) 
             void (async () => {
               setActionLoading('prune')
               try {
-                const res = await fetch('/api/docker/prune', {
+                const res = await authedFetch('/api/docker/prune', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ connectionId }),

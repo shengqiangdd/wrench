@@ -11,6 +11,15 @@ import {
 import { usePluginStore } from '../../stores/plugin-store'
 import type { PluginManifest, PluginAPI } from '../../types/plugin'
 
+// Mock auth module — authedFetch wraps this for all /api/ calls
+vi.mock('../../services/auth', () => ({
+  authedFetch: vi.fn(async (url: string, init?: RequestInit) => {
+    return globalThis.fetch(url, init)
+  }),
+  getToken: vi.fn(async () => 'test-token'),
+  buildWsUrl: vi.fn(async (path: string) => `ws://localhost${path}`),
+}))
+
 // Mock fetch globally
 const mockFetch = vi.fn()
 globalThis.fetch = mockFetch

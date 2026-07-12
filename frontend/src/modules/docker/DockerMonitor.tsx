@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { authedFetch } from '../../services/auth'
 import { RefreshCw, Cpu, MemoryStick, Activity } from 'lucide-react'
 import type { DockerContainer } from './index'
 
@@ -132,7 +133,7 @@ export default function DockerMonitor({ connectionId, containers: propContainers
   const fetchContainers = useCallback(async () => {
     if (!connectionId) return
     try {
-      const res = await fetch('/api/docker/ps', {
+      const res = await authedFetch('/api/docker/ps', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId, all: true }),
@@ -225,7 +226,7 @@ export default function DockerMonitor({ connectionId, containers: propContainers
     if (!connectionId) return
     try {
       // Use batch endpoint to get all container stats at once
-      const res = await fetch('/api/docker/stats/all', {
+      const res = await authedFetch('/api/docker/stats/all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId }),

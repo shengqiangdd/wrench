@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
+import { authedFetch } from '../../services/auth'
 import {
   X,
   Upload,
@@ -122,7 +123,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
       return next
     })
 
-    const res = await fetch('/api/sftp/upload', {
+    const res = await authedFetch('/api/sftp/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionId: connId, path, data: base64 }),
@@ -223,7 +224,7 @@ export default function BatchFilePanel({ onClose }: { onClose: () => void }) {
         addLog(`⚡ [${target.name}] 执行: ${remoteCommand}`)
         const startTime = Date.now()
 
-        const res = await fetch('/api/ssh/exec', {
+        const res = await authedFetch('/api/ssh/exec', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId: target.connId, command: remoteCommand }),

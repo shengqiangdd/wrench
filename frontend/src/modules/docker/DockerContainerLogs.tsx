@@ -1,5 +1,6 @@
 import { useReducer, useRef, useCallback, useState, useEffect } from 'react'
 import { X, Loader2, Download } from 'lucide-react'
+import { authedFetch } from '../../services/auth'
 
 interface Props {
   connectionId: string
@@ -33,7 +34,7 @@ export default function DockerContainerLogs({ connectionId, containerName, onClo
     async (n: number) => {
       dispatch({ status: 'loading', data: '', error: null })
       try {
-        const res = await fetch('/api/docker/logs', {
+        const res = await authedFetch('/api/docker/logs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ connectionId, id: containerName, tail: n }),

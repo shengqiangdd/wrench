@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback, useEffect, memo, useMemo } from 'react'
+import { authedFetch } from '../../services/auth'
 import {
   Key,
   Globe,
@@ -47,7 +48,7 @@ const AiSettings = memo(function AiSettings() {
   // 从后端环境变量获取 API Key（如果前端未填写）
   useEffect(() => {
     if (!aiConfig.apiKey && aiConfig.provider === 'openrouter') {
-      fetch('/api/ai/config')
+      authedFetch('/api/ai/config')
         .then((r) => r.json())
         .then((data) => {
           if (data.apiKeyHint && !data.apiKey) {
@@ -140,7 +141,7 @@ const AiSettings = memo(function AiSettings() {
         if (providerId) params.set('provider', providerId)
         if (aiConfig.apiKey) params.set('api_key', aiConfig.apiKey)
         params.set('base_url', currentProvider.baseUrl)
-        const resp = await fetch(`/api/ai/fetch-all-models?${params.toString()}`)
+        const resp = await authedFetch(`/api/ai/fetch-all-models?${params.toString()}`)
         if (!resp.ok) throw new Error('API 请求失败: ' + resp.status)
         const data = await resp.json()
         if (data.models && Array.isArray(data.models) && data.models.length > 0) {
