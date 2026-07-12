@@ -45,7 +45,13 @@ impl SftpResponse {
             msg_type: "sftp-result".into(),
             operation: operation.into(),
             success: true,
-            ..Self::default()
+            files: None,
+            content: None,
+            size: None,
+            is_dir: None,
+            permissions: None,
+            modified: None,
+            error: None,
         }
     }
 
@@ -56,7 +62,12 @@ impl SftpResponse {
             operation: operation.into(),
             success: false,
             error: Some(msg.into()),
-            ..Self::default()
+            files: None,
+            content: None,
+            size: None,
+            is_dir: None,
+            permissions: None,
+            modified: None,
         }
     }
 
