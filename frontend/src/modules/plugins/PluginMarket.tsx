@@ -106,6 +106,15 @@ export default function PluginMarket() {
 
   // 安装插件
   const handleInstall = async (plugin: MarketPlugin) => {
+    // 本地市场插件没有远程 URL，无法通过 API 安装
+    if (!plugin.manifestUrl || !plugin.pluginUrl) {
+      setInstallStates((prev) => ({
+        ...prev,
+        [plugin.id]: { status: 'error', message: '本地插件，请将文件放入 plugins/ 目录' },
+      }))
+      return
+    }
+
     setInstallStates((prev) => ({
       ...prev,
       [plugin.id]: { status: 'installing', message: '正在下载...' },

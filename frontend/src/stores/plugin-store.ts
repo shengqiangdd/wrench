@@ -6,6 +6,21 @@ import { pluginSandboxManager } from '../services/pluginSandboxManager'
 /** 命令到插件的反向映射：commandId → pluginId */
 const commandToPlugin: Record<string, string> = {}
 
+/**
+ * 从已持久化的插件列表重建 commandToPlugin 映射。
+ * 页面刷新后 Zustand 从 localStorage 恢复 plugins/commands，
+ * 但模块级 commandToPlugin 为空，需要此函数重建映射。
+ */
+function rebuildCommandMap(plugins: LoadedPlugin[]) {
+  for (const p of plugins) {
+    if (p.manifest.commands) {
+      for (const cmd of p.manifest.commands) {
+        commandToPlugin[cmd.id] = p.manifest.id
+      }
+    }
+  }
+}
+
 interface PluginState {
   // 已加载插件
   plugins: LoadedPlugin[]
@@ -114,6 +129,15 @@ export const usePluginStore = create<PluginState>()(
           enabled: p.enabled,
         })),
       }),
+      onRehydrateStorage: () => {
+        // Zustand persist 完成 rehydration 后，从持久化的 plugins 重建 commandToPlugin
+        return (_state, error) => {
+          if (!error) {
+            const current = usePluginStore.getState()
+            rebuildCommandMap(current.plugins)
+          }
+        }
+      },
     },
   ),
 )
@@ -125,11 +149,14 @@ export const refreshPluginStore = () => {
   try {
     const parsed = JSON.parse(raw)
     const state = parsed.state || parsed
+    const plugins = state.plugins || usePluginStore.getState().plugins
     usePluginStore.setState({
-      plugins: state.plugins || usePluginStore.getState().plugins,
+      plugins,
       commands: state.commands || usePluginStore.getState().commands,
       panels: state.panels || usePluginStore.getState().panels,
     })
+    // 重建命令映射
+    rebuildCommandMap(plugins)
   } catch {
     /* ignore */
   }
