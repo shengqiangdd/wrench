@@ -3,7 +3,8 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { X, Maximize2 } from 'lucide-react'
-import { createTerminalWsClient } from '../../services/websocket'
+import { createTerminalWsClient, type WsClient } from '../../services/websocket'
+import { getToken } from '../../services/auth'
 
 const TERMINAL_THEME = {
   background: '#0f172a',
@@ -32,7 +33,6 @@ interface Props {
   connectionId: string
   containerId: string
   shell?: string
-  /** Called when user clicks X button or backdrop — parent decides what to do */
   onClose: () => void
 }
 
@@ -46,6 +46,9 @@ export default function DockerTerminal({
   const terminalRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const openedRef = useRef(false)
+  const wsClientRef = useRef<WsClient | null>(null)
+  const connectedRef = useRef(false)
+  const cleanupRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (openedRef.current) return
@@ -73,51 +76,68 @@ export default function DockerTerminal({
       setTimeout(() => fitAddon.fit(), 100)
     }
 
-    // Create independent WS client for Docker terminal (same as SSH terminal)
-    const token = localStorage.getItem('auth_token') || ''
-    const wsClient = createTerminalWsClient(token)
-
+    // ─── Async init: get JWT from backend → create WS → connect ───
     const reqId = `docker-shell-${containerId}`
-    let connected = false
 
-    const unsubReady = wsClient.on('docker_shell_ready', (msg) => {
-      if (msg.connectionId !== connectionId && msg.requestId !== reqId) return
-      connected = true
-      term.focus()
-      setTimeout(() => fitAddon.fit(), 200)
-    })
+    const initDockerTerminal = async () => {
+      try {
+        const token = await getToken()
+        const client = createTerminalWsClient(token)
+        wsClientRef.current = client
 
-    const unsubOutput = wsClient.on('docker_shell_output', (msg) => {
-      if (msg.connectionId !== connectionId) return
-      const data = atob(msg.data as string)
-      term.write(data)
-    })
-
-    const unsubClosed = wsClient.on('docker_shell_closed', (msg) => {
-      if (msg.connectionId !== connectionId) return
-      term.write(`\r\n\x1b[31m[容器终端已关闭，退出码: ${msg.exitCode}]\x1b[0m\r\n`)
-      connected = false
-    })
-
-    // Wait for connection to be established before sending docker_shell request
-    const unsubStatus = wsClient.onStatus((status) => {
-      if (status === 'connected') {
-        wsClient.send({
-          type: 'docker_shell',
-          connectionId,
-          requestId: reqId,
-          containerId,
-          shell,
+        const readyOff = client.on('docker_shell_ready', (msg) => {
+          if (msg.connectionId !== connectionId && msg.requestId !== reqId) return
+          connectedRef.current = true
+          term.focus()
+          setTimeout(() => fitAddon.fit(), 200)
         })
-      }
-    })
 
-    // Connect
-    wsClient.connect()
+        const outputOff = client.on('docker_shell_output', (msg) => {
+          if (msg.connectionId !== connectionId) return
+          const data = atob(msg.data as string)
+          term.write(data)
+        })
+
+        const closedOff = client.on('docker_shell_closed', (msg) => {
+          if (msg.connectionId !== connectionId) return
+          term.write(
+            `\r\n\x1b[31m[容器终端已关闭，退出码: ${msg.exitCode}]\x1b[0m\r\n`,
+          )
+          connectedRef.current = false
+        })
+
+        const statusOff = client.onStatus((status) => {
+          if (status === 'connected') {
+            client.send({
+              type: 'docker_shell',
+              connectionId,
+              requestId: reqId,
+              containerId,
+              shell,
+            })
+          }
+        })
+
+        cleanupRef.current = () => {
+          readyOff()
+          outputOff()
+          closedOff()
+          statusOff()
+        }
+
+        client.connect()
+      } catch (err) {
+        term.write(
+          `\r\n\x1b[31m[错误] 获取认证令牌失败: ${err instanceof Error ? err.message : String(err)}\x1b[0m\r\n`,
+        )
+      }
+    }
+
+    initDockerTerminal()
 
     const disposeInput = term.onData((data) => {
-      if (!connected) return
-      wsClient.send({
+      if (!connectedRef.current) return
+      wsClientRef.current?.send({
         type: 'docker_shell_data',
         connectionId,
         containerId,
@@ -126,8 +146,8 @@ export default function DockerTerminal({
     })
 
     const disposeResize = term.onResize(({ cols, rows }) => {
-      if (!connected) return
-      wsClient.send({
+      if (!connectedRef.current) return
+      wsClientRef.current?.send({
         type: 'docker_shell_resize',
         connectionId,
         containerId,
@@ -137,7 +157,7 @@ export default function DockerTerminal({
     })
 
     const onWindowResize = () => {
-      if (fitAddon && connected) {
+      if (fitAddon && connectedRef.current) {
         fitAddon.fit()
       }
     }
@@ -147,19 +167,16 @@ export default function DockerTerminal({
       window.removeEventListener('resize', onWindowResize)
       disposeInput.dispose()
       disposeResize.dispose()
-      unsubReady()
-      unsubOutput()
-      unsubClosed()
-      unsubStatus()
-      if (connected) {
-        wsClient.send({
+      cleanupRef.current?.()
+      if (connectedRef.current && wsClientRef.current) {
+        wsClientRef.current.send({
           type: 'docker_shell_data',
           connectionId,
           containerId,
           data: btoa('exit\r'),
         })
       }
-      wsClient.disconnect()
+      wsClientRef.current?.disconnect()
       term.dispose()
     }
   }, [connectionId, containerId, shell])
@@ -168,7 +185,6 @@ export default function DockerTerminal({
     <div
       className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60"
       onClick={(e) => {
-        // 点击背景才关闭，点击内容区不关闭
         if (e.target === e.currentTarget) onClose()
       }}
     >
