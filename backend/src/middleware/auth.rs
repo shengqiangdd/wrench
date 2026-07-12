@@ -108,9 +108,25 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request<Bo
             next.run(req).await
         }
         Some(t) => {
-            tracing::warn!("[auth] {} {} — REJECTED token_len={} upgrade={}", method, uri, t.len(), is_upgrade);
+            // Enhanced diagnostics: try to decode the JWT to identify the exact failure reason
             let has_jwt_service = state.jwt_service.read().is_some();
-            tracing::warn!("[auth]   jwt_service available: {}, ws_tokens count: {}", has_jwt_service, state.ws_tokens.len());
+            let token_preview = if t.len() > 20 { format!("{}...{}", &t[..10], &t[t.len()-5..]) } else { t.clone() };
+            let jwt_secret_len = state.config.jwt_secret.len();
+
+            // Try to manually decode to find failure reason
+            let decode_hint = if let Some(service) = state.jwt_service.read().as_ref() {
+                match service.verify(&t) {
+                    Ok(claims) => format!("signature OK, exp={}, now={}", claims.claims.exp, chrono::Utc::now().timestamp() as u64),
+                    Err(e) => format!("verify failed: {:?}", e),
+                }
+            } else {
+                "jwt_service is None".to_string()
+            };
+
+            tracing::warn!(
+                "[auth] {} {} — REJECTED token_len={} upgrade={} preview=[{}] jwt_secret_len={} jwt_service={} hint=[{}]",
+                method, uri, t.len(), is_upgrade, token_preview, jwt_secret_len, has_jwt_service, decode_hint
+            );
             let body = serde_json::json!({
                 "error": "Unauthorized: invalid or expired token. Call POST /api/ws-token first."
             })
