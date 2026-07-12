@@ -17,7 +17,13 @@ if [ ! -f /app/.env ]; then
 fi
 
 # ── 2. 确保 JWT_SECRET 存在 ──
-if ! grep -q "^JWT_SECRET=." /app/.env 2>/dev/null; then
+# 优先级：环境变量 > .env 文件 > 自动生成
+if [ -n "$JWT_SECRET" ] && [ "$JWT_SECRET" != "" ]; then
+  # 环境变量已设置（来自 docker-compose environment），同步写入 .env
+  sed -i '/^#*JWT_SECRET=/d' /app/.env
+  echo "JWT_SECRET=${JWT_SECRET}" >> /app/.env
+  log "Using JWT_SECRET from environment variable"
+elif ! grep -q "^JWT_SECRET=." /app/.env 2>/dev/null; then
   JWT_SECRET=$(openssl rand -hex 32)
   sed -i '/^#*JWT_SECRET=/d' /app/.env
   echo "JWT_SECRET=${JWT_SECRET}" >> /app/.env
