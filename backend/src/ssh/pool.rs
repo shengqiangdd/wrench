@@ -78,9 +78,21 @@ impl SshSession {
         self.last_used.lock().await.elapsed().as_secs() > IDLE_TIMEOUT_SECS
     }
 
+    /// Build a client config with keepalive and nodelay enabled.
+    fn build_config() -> Arc<client::Config> {
+        let mut config = client::Config::default();
+        // Send keepalive probes every 30 seconds to prevent idle disconnects
+        config.keepalive_interval = Some(std::time::Duration::from_secs(30));
+        // Close connection after 3 missed keepalives (90s total)
+        config.keepalive_max = 3;
+        // Disable Nagle's algorithm for lower latency on interactive sessions
+        config.nodelay = true;
+        Arc::new(config)
+    }
+
     /// Connect using password authentication.
     pub async fn connect_password(&self, password: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let config = Arc::new(client::Config::default());
+        let config = Self::build_config();
         let handler = SshHandler;
 
         let mut handle = client::connect(config, (self.host.as_str(), self.port), handler).await?;
@@ -112,7 +124,7 @@ impl SshSession {
         private_key_pem: &str,
         passphrase: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let config = Arc::new(client::Config::default());
+        let config = Self::build_config();
         let handler = SshHandler;
 
         let mut handle = client::connect(config, (self.host.as_str(), self.port), handler).await?;
