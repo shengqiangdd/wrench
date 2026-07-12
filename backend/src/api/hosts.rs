@@ -1,4 +1,5 @@
 use axum::{extract::State, Json};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::api_types::{HostCreatedResponse, HostEntry};
@@ -29,8 +30,10 @@ pub async fn list_hosts(State(state): State<Arc<AppState>>) -> ApiResponse<Vec<H
         .collect();
 
     // 并行检查连接状态
+    let mut seen_hostnames: HashSet<String> = HashSet::new();
     let futures: Vec<_> = host_snapshots
         .into_iter()
+        .filter(|(_, host, _, _, _)| seen_hostnames.insert(host.clone()))
         .map(|(id, host, port, username, session)| async move {
             let connected = match &session {
                 Some(s) => s.is_connected().await,

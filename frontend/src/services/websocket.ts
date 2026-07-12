@@ -158,11 +158,19 @@ export class WsClient {
       this.stopOutputFlush()
 
       if (this._status === 'connecting') {
+        // close 在 open 之前发生 → HTTP upgrade 很可能被拒绝
+        const urlBase = this.url.split('?')[0]
+        const diag = `Code: ${event.code}, Reason: ${event.reason || '(无)'}, WasClean: ${event.wasClean}, URL: ${urlBase}`
         if (event.code === 1006) {
-          this.setError('连接被拒绝，请检查后端服务是否正常运行且端口可达')
+          this.setError(
+            `连接被拒绝（HTTP upgrade 可能返回了 401/403/500）。${diag}`,
+          )
         } else if (event.code !== 1000) {
-          this.setError(`连接异常关闭 (code: ${event.code})`)
+          this.setError(
+            `连接在建立前被关闭（WebSocket is closed before open）。${diag}`,
+          )
         }
+        console.error(`[WsClient] 连接失败 — ${diag}`)
       }
 
       this.setStatus('disconnected')
@@ -171,9 +179,16 @@ export class WsClient {
       this.scheduleReconnect()
     }
 
-    this.ws.onerror = () => {
+    this.ws.onerror = (event) => {
       if (this._status === 'connecting') {
-        this.setError('连接错误：无法建立 WebSocket 连接，请检查网络和服务状态')
+        const urlBase = this.url.split('?')[0]
+        const detail = event instanceof Event ? `${urlBase}` : ''
+        this.setError(
+          `连接错误：无法建立 WebSocket 连接${detail ? ` (${detail})` : ''}，请检查网络和服务状态`,
+        )
+        console.error(
+          `[WsClient] onerror — URL: ${urlBase}, readyState: ${this.ws?.readyState}`,
+        )
       }
     }
   }

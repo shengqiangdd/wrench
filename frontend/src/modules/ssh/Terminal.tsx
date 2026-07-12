@@ -484,6 +484,7 @@ export default function TerminalView({
         })
 
         // 连接 WebSocket
+        console.log(`[Terminal] Connecting to WebSocket: ${token.substring(0, 20)}...`)
         termWs.connect()
 
         // 等待连接建立后发送 SSH connect 消息
@@ -504,11 +505,18 @@ export default function TerminalView({
           } else if (status === 'disconnected') {
             unsub()
             clearTimeout(sshTimeout)
+            const lastErr = termWs.lastError || '未知原因'
+            console.error(
+              `[Terminal] WebSocket disconnected — host: ${creds.host}, error: ${lastErr}`,
+            )
             // WS 连接失败：重置状态，允许重试
             connectingRef.current = false
             if (!disposedRef.current) {
-              term.write('\r\n\x1b[31m[WebSocket 连接失败] 请检查网络连接\x1b[0m\r\n')
+              term.write(
+                `\r\n\x1b[31m[WebSocket 连接失败] ${lastErr}\x1b[0m\r\n`,
+              )
             }
+            onDisconnectedRef.current?.()
           }
         })
       } catch (err) {
