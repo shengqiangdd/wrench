@@ -368,6 +368,8 @@ export default function TerminalView({
         return
       }
 
+      term.write('\r\n\x1b[33m[连接中] 正在连接 ' + creds.host + ' ...\x1b[0m\r\n')
+
       try {
         const token = await getToken()
         if (gen !== genRef.current) return
@@ -395,8 +397,17 @@ export default function TerminalView({
             return
           }
 
-          // 过滤后端错误响应（静默忽略，不显示给用户）
-          if (msg.type === 'error') return
+          // 过滤后端非关键错误（如 "Unknown message type"），
+          // 但 SSH 连接/认证错误必须展示给用户
+          if (msg.type === 'error') {
+            const errMsg = (msg.message as string) || (msg.data as string) || '连接失败'
+            if (errMsg.includes('Unknown message type')) return
+            // SSH 错误：写入终端让用户看到原因
+            if (gen === genRef.current && !disposedRef.current) {
+              term.write(`\r\n\x1b[31m[错误] ${errMsg}\x1b[0m\r\n`)
+            }
+            return
+          }
 
           const raw = msg.data as string
           try {
