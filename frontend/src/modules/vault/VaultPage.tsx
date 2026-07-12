@@ -185,7 +185,9 @@ export default function VaultPage() {
 
   const copyValue = useCallback(async (_id: string, value: string) => {
     try {
-      await navigator.clipboard.writeText(value)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value)
+      }
       setCopied(_id)
       setTimeout(() => setCopied(null), 2000)
     } catch {

@@ -7,6 +7,29 @@ import { Search, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { createTerminalWsClient, type WsClient } from '../../services/websocket'
 import { getToken } from '../../services/auth'
 
+/** 安全读取剪贴板（WebView 中 navigator.clipboard 可能为 undefined） */
+async function safeReadClipboard(): Promise<string> {
+  try {
+    if (navigator.clipboard?.readText) {
+      return (await navigator.clipboard.readText()) || ''
+    }
+  } catch {
+    /* ignore — permission denied or not supported */
+  }
+  return ''
+}
+
+/** 安全写入剪贴板 */
+async function safeWriteClipboard(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 分屏面板配置 */
 export interface SplitPanel {
   id: string
@@ -290,15 +313,12 @@ export default function TerminalView({
           setShowCopyModal(true)
         } else {
           // 没有选中文本时，读取剪贴板
-          navigator.clipboard
-            .readText()
-            .then((text) => {
-              if (text && text.trim()) {
-                setCopyText(text)
-                setShowCopyModal(true)
-              }
-            })
-            .catch(() => {})
+          safeReadClipboard().then((text) => {
+            if (text && text.trim()) {
+              setCopyText(text)
+              setShowCopyModal(true)
+            }
+          })
         }
       }, 500)
     }
@@ -455,7 +475,7 @@ export default function TerminalView({
       if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'c') {
         const selection = term.getSelection()
         if (selection) {
-          navigator.clipboard.writeText(selection).catch(() => {})
+          safeWriteClipboard(selection)
           term.clearSelection()
         }
         return false // 阻止发送到终端
@@ -463,16 +483,13 @@ export default function TerminalView({
 
       // Ctrl+Shift+V → 粘贴
       if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'v') {
-        navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (text) {
-              const encoded = btoa(unescape(encodeURIComponent(text)))
-              termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-              onTerminalData?.(encoded)
-            }
-          })
-          .catch(() => {})
+        safeReadClipboard().then((text) => {
+          if (text) {
+            const encoded = btoa(unescape(encodeURIComponent(text)))
+            termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+            onTerminalData?.(encoded)
+          }
+        })
         return false
       }
 
@@ -480,7 +497,7 @@ export default function TerminalView({
       if (type === 'keydown' && ctrlKey && !shiftKey && key.toLowerCase() === 'c') {
         const selection = term.getSelection()
         if (selection) {
-          navigator.clipboard.writeText(selection).catch(() => {})
+          safeWriteClipboard(selection)
           term.clearSelection()
           return false // 阻止 SIGINT
         }
@@ -493,16 +510,13 @@ export default function TerminalView({
         ((ctrlKey && !shiftKey && key.toLowerCase() === 'v') ||
           (!ctrlKey && shiftKey && key === 'Insert'))
       ) {
-        navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (text) {
-              const encoded = btoa(unescape(encodeURIComponent(text)))
-              termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-              onTerminalData?.(encoded)
-            }
-          })
-          .catch(() => {})
+        safeReadClipboard().then((text) => {
+          if (text) {
+            const encoded = btoa(unescape(encodeURIComponent(text)))
+            termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+            onTerminalData?.(encoded)
+          }
+        })
         return false
       }
 
@@ -797,7 +811,7 @@ export default function TerminalView({
             />
             <button
               onClick={() => {
-                navigator.clipboard.writeText(copyText).catch(() => {})
+                safeWriteClipboard(copyText)
                 setShowCopyModal(false)
               }}
               className="bg-wrench-600 hover:bg-wrench-500 active:bg-wrench-700 w-full rounded-lg px-4 py-2 text-sm font-medium text-white"

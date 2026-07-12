@@ -270,7 +270,7 @@ export default function CodeMirrorEditor() {
 
   const copyAiResult = useCallback(() => {
     if (!aiResult) return
-    navigator.clipboard.writeText(aiResult.modified)
+    navigator.clipboard?.writeText?.(aiResult.modified)
   }, [aiResult])
 
   // 初始化编辑器（语言包动态加载）

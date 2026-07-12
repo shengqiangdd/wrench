@@ -20,7 +20,9 @@ export default function CommandOutput({
 
   const handleCopy = async (text: string, idx: number) => {
     try {
-      await navigator.clipboard.writeText(text)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+      }
       setCopiedIdx(idx)
       setTimeout(() => setCopiedIdx(null), 2000)
     } catch {}

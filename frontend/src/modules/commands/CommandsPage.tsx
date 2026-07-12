@@ -78,7 +78,7 @@ export default function CommandsPage() {
 
   /** 复制命令到剪贴板 */
   const handleCopyToClipboard = useCallback((cmdStr: string) => {
-    navigator.clipboard.writeText(cmdStr).catch(() => {})
+    navigator.clipboard?.writeText?.(cmdStr).catch(() => {})
   }, [])
 
   /** 发送命令到终端 */
