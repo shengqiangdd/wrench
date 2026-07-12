@@ -303,7 +303,8 @@ function getFileIcon(name: string, type?: string, targetType?: string) {
   // Special file types from backend
   if (type === 'symlink') {
     // Color hint based on resolved target type
-    if (targetType === 'directory' || targetType === 'unknown') return <Link2 size={14} className="text-cyan-400" />
+    if (targetType === 'directory' || targetType === 'unknown')
+      return <Link2 size={14} className="text-cyan-400" />
     if (targetType === 'broken') return <Link2 size={14} className="text-red-400" />
     return <Link2 size={14} className="text-cyan-300" />
   }
@@ -755,7 +756,8 @@ function fallbackCopy(text: string) {
 function isDirLike(entry: SftpEntry): boolean {
   return (
     entry.type === 'directory' ||
-    (entry.type === 'symlink' && (entry.targetType === 'directory' || entry.targetType === 'unknown'))
+    (entry.type === 'symlink' &&
+      (entry.targetType === 'directory' || entry.targetType === 'unknown'))
   )
 }
 
@@ -1427,7 +1429,9 @@ function SftpBrowserInner({
           }
           if (item.type === 'directory' || item.type === 'symlink') {
             // 符号链接到目录也递归（targetType 在 list 结果中已解析）
-            const isDirLink = item.type === 'symlink' && (item.targetType === 'directory' || item.targetType === 'unknown')
+            const isDirLink =
+              item.type === 'symlink' &&
+              (item.targetType === 'directory' || item.targetType === 'unknown')
             if (item.type === 'directory' || isDirLink) {
               const subDir = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`
               const sub = await recursiveSearch(subDir, q, depth + 1, resultCount)
