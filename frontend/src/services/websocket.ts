@@ -97,7 +97,8 @@ export class WsClient {
     if (this.ws) {
       const state = this.ws.readyState
       // OPEN / CONNECTING / CLOSING 都不应创建新连接
-      if (state === WebSocket.OPEN || state === WebSocket.CONNECTING || state === WebSocket.CLOSING) return
+      if (state === WebSocket.OPEN || state === WebSocket.CONNECTING || state === WebSocket.CLOSING)
+        return
     }
     this.setStatus('connecting')
     this._lastError = null
