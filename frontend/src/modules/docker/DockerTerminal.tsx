@@ -100,9 +100,7 @@ export default function DockerTerminal({
 
         const closedOff = client.on('docker_shell_closed', (msg) => {
           if (msg.connectionId !== connectionId) return
-          term.write(
-            `\r\n\x1b[31m[容器终端已关闭，退出码: ${msg.exitCode}]\x1b[0m\r\n`,
-          )
+          term.write(`\r\n\x1b[31m[容器终端已关闭，退出码: ${msg.exitCode}]\x1b[0m\r\n`)
           connectedRef.current = false
         })
 
