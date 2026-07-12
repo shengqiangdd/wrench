@@ -19,7 +19,7 @@ const DockerContainerLogs = lazy(() => import('./DockerContainerLogs'))
 const DockerDetail = lazy(() => import('./DockerDetail'))
 
 function notify(message: string, type: 'success' | 'error' | 'info' = 'info') {
-  const ev = new CustomEvent('wrench-toast', { detail: { message, type } })
+  const ev = new CustomEvent('wrench-notification', { detail: { message, type } })
   window.dispatchEvent(ev)
 }
 

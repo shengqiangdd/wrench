@@ -229,22 +229,21 @@ export default function DockerPage() {
       </div>
 
       {/* Error */}
-      {error && (
+      {error && error !== 'success' && (
         <div className="mx-4 mt-2 flex items-center gap-2 rounded border border-red-800 bg-red-900/30 p-2 text-sm text-red-400">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
-      {/* No connection warning */}
+      {/* No connection — compact inline hint */}
       {!currentConnId && !connecting && (
-        <div className="flex flex-1 items-center justify-center text-slate-500">
-          <div className="text-center">
-            <Container className="mx-auto mb-3 h-12 w-12 opacity-30" />
-            <p className="text-sm">
-              {availableHosts.length === 0 ? '请先在 SSH 页面添加主机连接' : '选择主机以连接'}
-            </p>
-          </div>
+        <div className="flex items-center justify-center border-b border-slate-800 bg-slate-900/50 px-4 py-6 text-slate-500">
+          <p className="text-xs">
+            {availableHosts.length === 0
+              ? '请先在 SSH 页面添加并连接主机'
+              : '从顶部下拉框选择主机以连接'}
+          </p>
         </div>
       )}
 

@@ -6,7 +6,7 @@ import type { DockerContainer } from './index'
 type ApiResponse = { success?: boolean; data?: any; error?: string; msg?: string }
 
 function notify(message: string, type: 'success' | 'error' | 'info' = 'info') {
-  const ev = new CustomEvent('wrench-toast', { detail: { message, type } })
+  const ev = new CustomEvent('wrench-notification', { detail: { message, type } })
   window.dispatchEvent(ev)
 }
 
