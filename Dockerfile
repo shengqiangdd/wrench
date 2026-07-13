@@ -85,7 +85,10 @@ COPY --from=frontend-builder /app/frontend/dist/ /app/frontend/dist/
 COPY plugins/ ./plugins
 COPY backend/.env.example /app/.env.example
 COPY docker-entrypoint.sh /app/
-RUN chmod +x /app/docker-entrypoint.sh
+
+# 设置所有文件权限和所有者（放在所有 COPY 之后，确保不被缓存覆盖）
+RUN chmod +x /app/docker-entrypoint.sh /app/wrench && \
+    chown -R wrench:wrench /app
 
 # BUILD_HASH in RUN ensures this layer busts when BUILD_HASH changes,
 # even if all COPY layers above are cached.
