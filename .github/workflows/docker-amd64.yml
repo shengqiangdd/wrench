@@ -45,3 +45,14 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64
           build-args: |
             BUILD_HASH=${{ github.sha }}
+
+      # Fix: buildx wraps single-arch images in a manifest list.
+      # Use crane to extract the actual amd64 digest and re-tag it directly.
+      - uses: imjasonh/setup-crane@v0.3
+
+      - name: Re-tag amd64 as single-arch manifest
+        run: |
+          DIGEST=$(crane digest "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64" --platform linux/amd64)
+          echo "Resolved amd64 digest: $DIGEST"
+          crane copy "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64"
+          echo "✅ amd64 tag is now a single-arch manifest"
