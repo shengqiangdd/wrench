@@ -24,7 +24,9 @@ const JWT_REFRESH_AHEAD_MS = 5 * 60 * 1000
 export async function getToken(): Promise<string> {
   // JWT 仍然有效 → 直接返回
   if (_jwtToken && _jwtExpiresAt > Date.now() + JWT_REFRESH_AHEAD_MS) {
-    console.log(`[Auth] getToken: cached token still valid (expires in ${Math.round((_jwtExpiresAt - Date.now()) / 1000)}s)`)
+    console.log(
+      `[Auth] getToken: cached token still valid (expires in ${Math.round((_jwtExpiresAt - Date.now()) / 1000)}s)`,
+    )
     return _jwtToken
   }
   // JWT 过期或不存在 → 刷新

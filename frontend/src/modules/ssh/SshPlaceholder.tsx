@@ -1,13 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import {
-  Server,
-  PanelRightClose,
-  PanelRightOpen,
-  Menu,
-  PlugZap,
-  X,
-  Terminal,
-} from 'lucide-react'
+import { Server, PanelRightClose, PanelRightOpen, Menu, PlugZap, X, Terminal } from 'lucide-react'
 import { useAppStore, type SplitDef } from '../../stores/app-store'
 import { useSshStore, decryptConnection } from '../../stores/ssh-store'
 import {
@@ -369,7 +361,7 @@ export default function SshPlaceholder() {
   // TODO: 分屏命令同步需要每个终端的 WS 引用，当前暂不实现。
   // 每个 Terminal 创建独立 WS，父组件无法直接访问它们的 WS client。
   // 替代方案：通过 BroadcastChannel 或后端 relay 实现。
-   
+
   const handleTerminalData = useCallback((_sessionId: string, _data: string) => {
     // 命令同步功能暂未实现（每个终端使用独立 WS 连接）
   }, [])
