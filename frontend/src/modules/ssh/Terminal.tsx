@@ -502,6 +502,10 @@ export default function TerminalView({
         // 而 handler 内需要调用 unsub()，但 const unsub 尚未赋值。
         // 通过 ref 间接引用，绕过 const 的时域死区（Temporal Dead Zone）。
         const unsubRef: { current: (() => void) | null } = { current: null }
+        // ⚠️ onStatus 注册时会同步用当前状态调用 handler，
+        // 新建 WsClient 状态为 'disconnected'（初始值），这不是真正的断连。
+        // 用 startedRef 跳过首次同步回调，只处理 connect() 之后的真实状态变化。
+        let startedRef = false
         const unsub = termWs.onStatus((status) => {
           console.log(`[Terminal] onStatus: ${status}`)
           if (status === 'connected') {
@@ -519,6 +523,11 @@ export default function TerminalView({
               sudoPassword: creds.sudoPassword || '',
             })
           } else if (status === 'disconnected') {
+            if (!startedRef) {
+              // 初始状态同步回调，忽略——connect() 还没调用
+              console.log(`[Terminal] onStatus: disconnected (initial, skipping)`)
+              return
+            }
             unsubRef.current?.()
             clearTimeout(sshTimeout)
             const lastErr = termWs.lastError || '未知原因'
@@ -536,6 +545,7 @@ export default function TerminalView({
         unsubRef.current = unsub
 
         // 注册完毕后再连接
+        startedRef = true
         console.log(`[Terminal] Calling termWs.connect()...`)
         termWs.connect()
       } catch (err) {
