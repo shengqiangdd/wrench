@@ -6,6 +6,7 @@ on:
     paths:
       - 'backend/**'
       - 'frontend/**'
+      - 'plugins/**'
       - 'Dockerfile'
       - 'docker-entrypoint.sh'
       - '.github/workflows/docker-amd64.yml'
@@ -18,7 +19,7 @@ env:
 jobs:
   build-amd64:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -43,8 +44,6 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64
-          build-args: |
-            BUILD_HASH=${{ github.sha }}
           # Disable attestation to avoid unknown/unknown platform manifest
           # that confuses Docker pull on older clients
           provenance: false

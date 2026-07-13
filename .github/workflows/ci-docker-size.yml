@@ -20,7 +20,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@v4
 
-      - name: Build Docker image (amd64 only, with cache)
+      - name: Build Docker image (amd64 only, no registry cache)
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -28,7 +28,7 @@ jobs:
           load: true
           tags: wrench:size-check
           platforms: linux/amd64
-          cache-from: type=registry,ref=${{ github.repository }}:cache-amd64
+          no-cache: true
           build-args: |
             BUILD_HASH=${{ github.sha }}
 

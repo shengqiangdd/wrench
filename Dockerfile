@@ -3,18 +3,13 @@
 # ============================================
 FROM node:22-alpine AS frontend-builder
 
-ARG BUILD_HASH
-
 WORKDIR /app
 
-# Cache npm dependencies
+# Cache npm dependencies (only registry cache, no build artifacts)
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 RUN --mount=type=cache,target=/root/.npm cd frontend && npm ci
 
-# Inject build hash to bust cache when needed
-RUN echo "$BUILD_HASH" > /tmp/build-hash.txt
-
-# Copy and build frontend
+# Copy source and build (no-cache ensures COPY always re-runs)
 COPY frontend/ ./frontend/
 RUN cd frontend && npm run build
 
@@ -22,9 +17,6 @@ RUN cd frontend && npm run build
 # Stage 2: Build Rust backend
 # ============================================
 FROM rust:1.96-slim-bookworm AS rust-builder
-
-# Build hash arg to bust registry cache when source changes
-ARG BUILD_HASH
 
 ENV CARGO_NET_RETRY=5
 ENV CARGO_HTTP_TIMEOUT=120
@@ -37,15 +29,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy all source code (full copy, no dummy-source cache trick)
+# Copy all source code (no-cache ensures this layer always re-runs)
 COPY backend/ ./
 
-# Touch a file with the build hash to invalidate cargo cache when source changes
-RUN echo "$BUILD_HASH" > /tmp/backend-build-hash.txt
-
-# Build with cargo cache mount (reuses downloaded crates across builds)
+# Build — only mount cargo registry cache (downloaded crates)
+# Do NOT mount /app/target: persistent compiled artifacts can cause
+# stale binaries when source changes but cargo's mtime check misses it.
+# With no-cache:true in CI, a full rebuild is fast enough and guaranteed correct.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
     cargo build --release && \
     cp /app/target/release/wrench-backend /tmp/wrench-backend
 
