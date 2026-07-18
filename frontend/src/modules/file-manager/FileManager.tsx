@@ -14,9 +14,9 @@
  * - clipboard 兜底方案（fallbackCopy）
  */
 
-import { useEffect, useCallback, useRef, useReducer, memo } from 'react'
+import { useEffect, useCallback, useRef, useReducer, useState, useMemo, memo } from 'react'
 import { authedFetch } from '../../services/auth'
-import { FileCode2, X, PanelLeftClose, PanelLeft, Loader2 } from 'lucide-react'
+import { FileCode2, X, PanelLeftClose, PanelLeft, Loader2, ChevronDown } from 'lucide-react'
 import { useSshStore, decryptConnection } from '../../stores/ssh-store'
 import { useAppStore } from '../../stores/app-store'
 import { useFileStore } from '../../stores/file-store'
@@ -24,7 +24,22 @@ import { getWsClientSync, WsClient } from '../../services/websocket'
 import { setSessionCredentials } from '../../services/session-credentials'
 import SftpBrowser from '../ssh/SftpBrowser'
 import CodeMirrorEditor from '../../components/CodeMirrorEditor'
+import { ConfirmModal } from '../../components/ConfirmModal'
 import ResizablePanel from '../../components/ResizablePanel'
+
+/** 检测是否为移动端视口 */
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < breakpoint : false,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [breakpoint])
+  return isMobile
+}
 
 // ─── 工具函数 ───
 
@@ -259,7 +274,6 @@ function FileManagerInner() {
     ) => ({ ...state, ...action }),
     { connecting: false, statusMsg: '' },
   )
-  const wsClient = getWsClientSync()
   const fileStore = useFileStore()
   const connectingRef = useRef(false)
   const mountedRef = useRef(false)
@@ -270,11 +284,39 @@ function FileManagerInner() {
   const setSidebarOpen = useAppStore((s) => s.setFmSidebarOpen)
   const fmState = useAppStore((s) => s.fmSftpState)
   const setFmState = useAppStore((s) => s.setFmSftpState)
+  const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null)
+  const [selectedHostId, setSelectedHostId] = useState<string>('')
+  const wsClientRef = useRef<WsClient | null>(null)
+  const [wsReady, setWsReady] = useState(false)
+  const isMobile = useIsMobile()
+
+  // 使用 getWsClientSync() 获取 WS 客户端（AuthGate 已完成初始化，避免重复异步等待）
+  useEffect(() => {
+    const client = getWsClientSync()
+    wsClientRef.current = client
+    // 使用 queueMicrotask 避免在 effect 中同步调用 setState
+    queueMicrotask(() => setWsReady(true))
+  }, [])
+
+  /** 持久化 SFTP 浏览路径（用 useCallback 包装，避免 re-render 时重建回调） */
+  const handlePathChange = useCallback((path: string) => {
+    const currentCache = useAppStore.getState().fmSftpState.pathCache
+    const connId = useAppStore.getState().fmSftpState.connId
+    setFmState({
+      ...useAppStore.getState().fmSftpState,
+      currentPath: path,
+      pathCache: connId ? { ...currentCache, [connId]: path } : currentCache,
+    })
+  }, [setFmState])
 
   /** 核心：尝试从缓存恢复 SFTP session */
   const tryRestoreSession = useCallback(async (): Promise<boolean> => {
     const cached = useAppStore.getState().fmSftpState
     if (!cached.connId || connectingRef.current) return false
+
+    // 等待 WsClient 就绪（token 可能还没加载完）
+    const client = wsClientRef.current
+    if (!client) return false
 
     const connArr = useSshStore.getState().connections
     const conn = connArr.find((c) => c.id === cached.connId)
@@ -304,12 +346,12 @@ function FileManagerInner() {
     // 清理旧的 sftp session
     for (const sess of sessArr) {
       if (sess.connectionId === cached.connId && sess.id.startsWith('sftp_')) {
-        wsClient.send({ type: 'disconnect', connectionId: sess.id })
+        client.send({ type: 'disconnect', connectionId: sess.id })
         removeSession(sess.id)
       }
     }
 
-    const sid = await ensureSftpSession(cached.connId, sessArr, addSession, wsClient, (msg) => {
+    const sid = await ensureSftpSession(cached.connId, sessArr, addSession, client, (msg) => {
       if (msg) dispatch({ statusMsg: msg })
     })
 
@@ -328,7 +370,7 @@ function FileManagerInner() {
     connectingRef.current = false
     dispatch({ connecting: false, statusMsg: '' })
     return false
-  }, [addSession, removeSession, wsClient, setFmState])
+  }, [addSession, removeSession, setFmState])
 
   // mount 时尝试恢复
   useEffect(() => {
@@ -341,7 +383,7 @@ function FileManagerInner() {
         retryTimerRef.current = null
       }
     }
-  }, [tryRestoreSession])
+  }, [tryRestoreSession, wsReady])
 
   // 当 sessions 变化且当前 session 无效时自动重试
   // 解决 Zustand persist 异步恢复的问题
@@ -354,34 +396,59 @@ function FileManagerInner() {
       return
     }
     // 如果 connId 还在且 sessions 非空（persist 已恢复），尝试重建
-    if (fmState.connId && sessions.length > 0 && !connectingRef.current) {
+    if (fmState.connId && sessions.length > 0 && !connectingRef.current && wsClientRef.current) {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
       retryTimerRef.current = setTimeout(() => {
         if (mountedRef.current) tryRestoreSession()
       }, 500)
     }
-  }, [sessions, fmState.sessionId, fmState.connId, tryRestoreSession])
+  }, [sessions, fmState.sessionId, fmState.connId, tryRestoreSession, wsReady])
 
-  // 无任何已知连接（首次打开，且只有1台主机）时自动连接
+  // 无任何已知连接（首次打开，且有主机）时自动连接第一个
   const connectAndSftpRef = useRef<((connId: string) => Promise<string | undefined>) | null>(null)
   useEffect(() => {
     if (
       !fmState.connId &&
       !fmState.sessionId &&
       !connectingRef.current &&
-      connections.length === 1 &&
+      connections.length >= 1 &&
       connectAndSftpRef.current
     ) {
+      // 自动选中第一个主机并连接
+      setSelectedHostId(connections[0]!.id)
       void connectAndSftpRef.current(connections[0]!.id)
     }
-  }, [connections, fmState.connId, fmState.sessionId])
+  }, [connections, fmState.connId, fmState.sessionId, wsReady])
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  // 当 fmState.connId 变化时，同步下拉框选中状态
+  useEffect(() => {
+    if (fmState.connId) {
+      setSelectedHostId(fmState.connId)
+    }
+  }, [fmState.connId])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // 当有活动编辑器 tab 时，移动端首次自动折叠侧边栏
+  const activeTabId = useFileStore((s) => s.activeTabId)
+  const hasAutoCollapsedRef2 = useRef(false)
+  useEffect(() => {
+    if (activeTabId && isMobile && !hasAutoCollapsedRef2.current) {
+      hasAutoCollapsedRef2.current = true
+      useAppStore.getState().setFmSidebarOpen(false)
+    }
+    if (!activeTabId) {
+      hasAutoCollapsedRef2.current = false
+    }
+  }, [activeTabId, isMobile])
 
   // 连接并打开 SFTP
   const connectAndSftp = useCallback(
     async (connId: string) => {
       // 使用 getState() 避免闭包快照未更新的竞态问题
       const conn = useSshStore.getState().connections.find((c) => c.id === connId)
-      if (!conn || connectingRef.current) return
+      const client = wsClientRef.current
+      if (!conn || !client || connectingRef.current) return
 
       connectingRef.current = true
       dispatch({ connecting: true })
@@ -390,12 +457,12 @@ function FileManagerInner() {
       const storeSessions = useSshStore.getState().sessions
       for (const sess of storeSessions) {
         if (sess.connectionId === connId && sess.id.startsWith('sftp_')) {
-          wsClient.send({ type: 'disconnect', connectionId: sess.id })
+          client.send({ type: 'disconnect', connectionId: sess.id })
           removeSession(sess.id)
         }
       }
 
-      const sid = await ensureSftpSession(connId, sessions, addSession, wsClient, (msg) => {
+      const sid = await ensureSftpSession(connId, sessions, addSession, client, (msg) => {
         if (msg) dispatch({ statusMsg: msg })
       })
 
@@ -415,51 +482,62 @@ function FileManagerInner() {
       dispatch({ connecting: false })
       return
     },
-    [sessions, addSession, removeSession, wsClient, setFmState],
+    [sessions, addSession, removeSession, setFmState],
   )
 
   // 同步 ref 供 useEffect 使用（避免 hook 顺序问题）
   // eslint-disable-next-line react-hooks/refs
   connectAndSftpRef.current = connectAndSftp
 
+  // 移动端：首次打开编辑器时自动折叠侧边栏（仅折叠一次，不阻止用户手动展开）
+  const hasAutoCollapsedRef = useRef(false)
+  useEffect(() => {
+    if (fileStore.activeTabId && isMobile && !hasAutoCollapsedRef.current) {
+      hasAutoCollapsedRef.current = true
+      setSidebarOpen(false)
+    }
+    if (!fileStore.activeTabId) {
+      hasAutoCollapsedRef.current = false
+    }
+  }, [fileStore.activeTabId, setSidebarOpen, isMobile])
+
   // 当前 session 是否有效
   const isConnected =
     fmState.sessionId !== null &&
     sessions.some((s) => s.id === fmState.sessionId && s.status === 'connected')
 
+  // 移动端侧边栏宽度
+  const sidebarWidth = useMemo(() => (isMobile ? Math.min(260, window.innerWidth - 40) : 260), [isMobile])
+
   // 无连接时显示可选连接列表
   if (!isConnected && !connecting) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-4 text-slate-500">
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-4 pb-nav text-slate-500">
         <FileCode2 size={48} className="text-slate-600" />
         <div className="text-center">
           <p className="text-sm font-medium text-slate-400">未连接到任何 SSH</p>
           <p className="mt-1 text-xs text-slate-600">选择一个已保存的连接来浏览文件</p>
         </div>
         {connections.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-2">
-            {connections.map((conn) => {
-              const isActive = sessions.some(
-                (s) => s.connectionId === conn.id && s.status === 'connected',
-              )
-              return (
-                <button
-                  key={conn.id}
-                  onClick={() => connectAndSftp(conn.id)}
-                  className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-xs transition-colors ${
-                    isActive
-                      ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-400'
-                      : 'border-slate-700/50 bg-slate-800/50 text-slate-400 hover:bg-slate-700/50'
-                  }`}
-                >
-                  <span
-                    className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-600'}`}
-                  />
-                  {conn.name}
-                  {isActive ? ' (已连接)' : ''}
-                </button>
-              )
-            })}
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-[10px] text-slate-600">选择主机连接</p>
+            <div className="relative">
+              <select
+                value={selectedHostId || connections[0]?.id || ''}
+                onChange={(e) => {
+                  setSelectedHostId(e.target.value)
+                  connectAndSftp(e.target.value)
+                }}
+                className="appearance-none rounded-lg border border-slate-700/50 bg-slate-800/80 px-4 py-2 pr-8 text-xs text-slate-300 focus:ring-1 focus:ring-sky-500 focus:outline-none"
+              >
+                {connections.map((conn) => (
+                  <option key={conn.id} value={conn.id} className="bg-slate-800">
+                    {conn.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={12} className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-slate-500" />
+            </div>
           </div>
         )}
         <button
@@ -473,9 +551,54 @@ function FileManagerInner() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* 左侧文件浏览器 */}
-      {sidebarOpen && (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* ─── 移动端 overlay 侧边栏 ─── */}
+      {isMobile && sidebarOpen && (
+        <>
+          {/* 遮罩层 */}
+          <div
+            className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm transition-opacity"
+            onClick={() => setSidebarOpen(false)}
+          />
+          {/* 滑出面板 */}
+          <div
+            className="fixed top-0 left-0 z-40 flex h-full flex-col border-r border-slate-700/50 bg-slate-950"
+            style={{ width: sidebarWidth }}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-700/30 px-2 py-1.5">
+              <span className="text-[11px] font-medium tracking-wider text-slate-500 uppercase">
+                文件
+              </span>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="btn-icon text-slate-500 hover:text-slate-300"
+                title="隐藏文件浏览器"
+              >
+                <PanelLeftClose size={14} />
+              </button>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <SftpBrowser
+                sessionId={fmState.sessionId}
+                activeConnId={fmState.connId}
+                connectionOptions={connections.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  host: c.host,
+                }))}
+                onConnect={connectAndSftp}
+                connecting={connecting}
+                showConnector={true}
+                initialPath={fmState.currentPath || fmState.pathCache[fmState.connId || ''] || undefined}
+                onPathChange={handlePathChange}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ─── 桌面端内联侧边栏 ─── */}
+      {!isMobile && sidebarOpen && (
         <div className="flex h-full min-h-0 flex-col border-r border-slate-700/50">
           <ResizablePanel
             side="right"
@@ -509,6 +632,8 @@ function FileManagerInner() {
                   onConnect={connectAndSftp}
                   connecting={connecting}
                   showConnector={true}
+                  initialPath={fmState.currentPath || fmState.pathCache[fmState.connId || ''] || undefined}
+                  onPathChange={handlePathChange}
                 />
               </div>
             </div>
@@ -566,7 +691,11 @@ function FileManagerInner() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      fileStore.closeFile(tab.id)
+                      if (tab.isDirty) {
+                        setConfirmCloseTabId(tab.id)
+                      } else {
+                        fileStore.closeFile(tab.id)
+                      }
                     }}
                     className="ml-1 shrink-0 text-slate-600 hover:text-red-400"
                   >
@@ -597,6 +726,22 @@ function FileManagerInner() {
           )}
         </div>
       </div>
+      {/* 关闭未保存标签确认弹窗 */}
+      {confirmCloseTabId && (
+        <ConfirmModal
+          open={true}
+          title="关闭未保存的文件"
+          message="此文件有未保存的更改，确定要关闭吗？"
+          confirmText="关闭"
+          cancelText="取消"
+          variant="danger"
+          onConfirm={() => {
+            fileStore.closeFile(confirmCloseTabId)
+            setConfirmCloseTabId(null)
+          }}
+          onCancel={() => setConfirmCloseTabId(null)}
+        />
+      )}
     </div>
   )
 }

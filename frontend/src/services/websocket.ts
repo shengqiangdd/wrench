@@ -247,7 +247,10 @@ export class WsClient {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) return
     if (this.reconnectTimer) return
 
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000)
+    const base = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000)
+    // 指数退避 + 随机 jitter（±30%），避免多个客户端同时重连的 thundering herd
+    const jitter = base * 0.3
+    const delay = base + (Math.random() * 2 * jitter - jitter)
     this.reconnectAttempts++
     this.setStatus('reconnecting')
 
@@ -477,6 +480,7 @@ export class WsClient {
 // 单例
 let _instance: WsClient | null = null
 let _tokenReady = false
+let _initPromise: Promise<WsClient> | null = null
 
 /** 获取 WS 连接地址（带一次性 token） */
 async function resolveWsUrl(): Promise<string> {
@@ -492,16 +496,33 @@ async function resolveWsUrl(): Promise<string> {
 
 /**
  * 获取 WS 客户端（异步，确保 token 就绪后连接）—— 由 AuthGate 在应用启动时调用。
+ *
+ * 内置单例守卫：多次调用会复用同一个 Promise，避免竞态导致重复 connect()。
  */
 export async function getWsClient(): Promise<WsClient> {
-  if (!_instance) {
-    _instance = new WsClient('')
-  }
-  const url = await resolveWsUrl()
-  _instance.setUrl(url)
-  _tokenReady = true
-  _instance.connect()
-  return _instance
+  // 如果已有正在进行的初始化，直接返回同一个 Promise
+  if (_initPromise) return _initPromise
+
+  _initPromise = (async () => {
+    if (!_instance) {
+      _instance = new WsClient('')
+    }
+    const url = await resolveWsUrl()
+    _instance.setUrl(url)
+    _tokenReady = true
+    _instance.connect()
+    return _instance
+  })()
+
+  // 完成后清除守卫（允许 token 刷新后重新初始化）
+  _initPromise.finally(() => {
+    // 如果连接失败，清除守卫以便重试
+    if (_instance && _instance.status === 'disconnected') {
+      _initPromise = null
+    }
+  })
+
+  return _initPromise
 }
 
 /**
