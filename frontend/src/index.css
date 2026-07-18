@@ -111,6 +111,39 @@ html:not(.dark) {
     appearance: none;
   }
 
+  /* file 输入恢复原生样式 — 移动端需要原生 UI 才能正确弹出文件选择器 */
+  input[type="file"] {
+    -webkit-appearance: auto;
+    appearance: auto;
+    background-color: transparent;
+    border: none;
+    padding: 0;
+    color: inherit;
+  }
+  input[type="file"]::file-selector-button {
+    background-color: #334155;
+    color: #e2e8f0;
+    border: 1px solid #475569;
+    border-radius: 0.375rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    -webkit-appearance: auto;
+    appearance: auto;
+    transition: background-color 150ms;
+  }
+  input[type="file"]::file-selector-button:hover {
+    background-color: #475569;
+  }
+  html:not(.dark) input[type="file"]::file-selector-button {
+    background-color: #e2e8f0;
+    color: #334155;
+    border-color: #cbd5e1;
+  }
+  html:not(.dark) input[type="file"]::file-selector-button:hover {
+    background-color: #cbd5e1;
+  }
+
   /* 隐藏滚动条 */
   .no-scrollbar::-webkit-scrollbar {
     display: none;
@@ -641,6 +674,35 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
 }
 
 /* ============================================
+   移动端禁用长按默认行为 — 文件列表区域
+   ============================================ */
+/*
+ * 关键：touch-action: manipulation 告诉浏览器底层渲染引擎
+ * 在此元素上不处理 long press 手势（即不弹出原生文本选择/操作菜单）。
+ * 这是 CSS Touch Events 规范的底层控制，比 JS preventDefault 更可靠。
+ * pan-y 保留纵向滚动能力。
+ */
+.sftp-file-entry,
+.sftp-file-entry * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+
+/*
+ * 文件列表滚动容器：只允许纵向滚动，禁止浏览器接管 long press
+ * touch-action: pan-y pinch-zoom 是最安全的组合
+ * （pinch-zoom 让双指缩放仍然正常，同时 long press 被禁用）
+ */
+.sftp-file-list {
+  touch-action: pan-y pinch-zoom !important;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* ============================================
    移动端触摸目标保底：所有小图标按钮至少 44×44
    ============================================ */
 @media (pointer: coarse) {
@@ -700,4 +762,68 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
     background-color: rgba(100, 116, 139, 0.5);
     border-radius: 9999px;
   }
+}
+
+/* ============================================
+   Agent Markdown 渲染样式
+   ============================================ */
+.prose-agent {
+  line-height: 1.6;
+}
+
+.prose-agent pre {
+  margin: 0;
+  padding: 0;
+}
+
+.prose-agent blockquote {
+  margin: 0.5rem 0;
+  border-left: 3px solid rgba(14, 165, 233, 0.4);
+  padding-left: 0.75rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.prose-agent table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.prose-agent th,
+.prose-agent td {
+  border: 1px solid rgba(51, 65, 85, 0.3);
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.prose-agent th {
+  background: rgba(30, 41, 59, 0.6);
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.prose-agent td {
+  color: #cbd5e1;
+}
+
+.prose-agent hr {
+  border: none;
+  border-top: 1px solid rgba(51, 65, 85, 0.5);
+  margin: 0.75rem 0;
+}
+
+.prose-agent input[type="checkbox"] {
+  accent-color: #0ea5e9;
+  margin-right: 6px;
+}
+
+/* Agent 触发按钮动画 */
+@keyframes agent-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(14, 165, 233, 0); }
+}
+
+.agent-fab-pulse {
+  animation: agent-pulse 2s infinite;
 }

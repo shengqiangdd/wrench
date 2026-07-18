@@ -12,25 +12,13 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
-import { authedFetch } from '../../services/auth'
 import {
   Folder,
   File,
-  FileCode,
-  FileJson,
-  FileText,
-  Image,
-  Film,
   Music,
-  Archive,
-  Link2,
-  Binary,
-  HardDrive,
-  Cpu,
   ArrowUp,
   Home,
   RefreshCw,
-  Download,
   Upload,
   Trash2,
   Edit3,
@@ -40,8 +28,8 @@ import {
   Server,
   X,
   Check,
+  CheckSquare,
   Loader2,
-  Eye,
   Save,
   ExternalLink,
   Search,
@@ -51,6 +39,7 @@ import { useAppStore } from '../../stores/app-store'
 import { sniffLanguage, classifyFile } from '../../utils/content-sniff'
 import { AlertModal, ConfirmModal } from '../../components/ConfirmModal'
 import type { SftpEntry } from '../../types/ssh'
+import { SftpContextMenu, FileInfoModal, DiskUsageModal, HashModal, ChmodModal, MoveModal } from './sftp-components'
 
 interface SftpBrowserProps {
   sessionId: string | null
@@ -67,873 +56,28 @@ interface SftpBrowserProps {
   /** 文件双击回调 — 默认发送到 fileStore.openFile */
   /** 宽度类名 */
   widthClass?: string
+  /** 初始浏览路径（用于从持久化状态恢复） */
+  initialPath?: string
+  /** 路径变化回调（用于持久化当前浏览路径） */
+  onPathChange?: (path: string) => void
 }
 
 // --- Base64 / Text encoding helpers (UTF-8 safe) ---
 
 /** base64 -> string (correctly handles multibyte UTF-8 chars like CJK) */
-function b64ToText(b64: string): string {
-  const bin = atob(b64)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return new TextDecoder('utf-8').decode(bytes)
-}
 
-/** string -> base64 (correctly handles multibyte UTF-8 chars) */
-function textToB64(text: string): string {
-  const bytes = new TextEncoder().encode(text)
-  let bin = ''
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ?? 0)
-  return btoa(bin)
-}
-
-/**
- * 从 base64 数据的前几个字节推断 MIME 类型
- * 用于内容嗅探到的媒体文件（扩展名不匹配时）
- */
-function inferMimeFromBase64(b64: string): string {
-  try {
-    const raw = atob(b64.slice(0, 20))
-    const bytes = new Uint8Array([...raw].map((c) => c.charCodeAt(0)))
-
-    // PNG: 89 50 4E 47
-    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
-      return 'image/png'
-    }
-    // JPEG: FF D8 FF
-    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-      return 'image/jpeg'
-    }
-    // GIF: 47 49 46 38 (GIF8)
-    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
-      return 'image/gif'
-    }
-    // BMP: 42 4D
-    if (bytes[0] === 0x42 && bytes[1] === 0x4d) {
-      return 'image/bmp'
-    }
-    // WebP: RIFF....WEBP
-    if (
-      bytes[0] === 0x52 &&
-      bytes[1] === 0x49 &&
-      bytes[2] === 0x46 &&
-      bytes[3] === 0x46 &&
-      bytes[8] === 0x57 &&
-      bytes[9] === 0x45 &&
-      bytes[10] === 0x42 &&
-      bytes[11] === 0x50
-    ) {
-      return 'image/webp'
-    }
-    // MP3: ID3 or FF FB/FF F3/FF F2
-    if (
-      (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) ||
-      (bytes[0] === 0xff && (bytes[1] === 0xfb || bytes[1] === 0xf3 || bytes[1] === 0xf2))
-    ) {
-      return 'audio/mpeg'
-    }
-    // FLAC: fLaC
-    if (bytes[0] === 0x66 && bytes[1] === 0x4c && bytes[2] === 0x61 && bytes[3] === 0x43) {
-      return 'audio/flac'
-    }
-    // OGG: OggS
-    if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
-      return 'audio/ogg'
-    }
-    // MP4: ....ftyp
-    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
-      return 'video/mp4'
-    }
-    // Matroska/WebM: 1A 45 DF A3
-    if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
-      return 'video/webm'
-    }
-    // PDF: %PDF
-    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
-      return 'application/pdf'
-    }
-  } catch {
-    // ignore decode errors
-  }
-  return 'application/octet-stream'
-}
-
-// --- MIME type map (covers common formats) ---
-
-const MIME_MAP: Record<string, string> = {
-  // Images
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  bmp: 'image/bmp',
-  ico: 'image/x-icon',
-  svg: 'image/svg+xml',
-  avif: 'image/avif',
-  heic: 'image/heic',
-  heif: 'image/heif',
-  tiff: 'image/tiff',
-  tif: 'image/tiff',
-  raw: 'image/raw',
-  cr2: 'image/x-canon-cr2',
-  nef: 'image/x-nikon-nef',
-  arw: 'image/x-sony-arw',
-  dng: 'image/x-adobe-dng',
-  psd: 'image/vnd.adobe.photoshop',
-  // Video
-  mp4: 'video/mp4',
-  webm: 'video/webm',
-  ogg: 'video/ogg',
-  ogv: 'video/ogg',
-  mov: 'video/quicktime',
-  mkv: 'video/x-matroska',
-  avi: 'video/x-msvideo',
-  wmv: 'video/x-ms-wmv',
-  flv: 'video/x-flv',
-  m4v: 'video/mp4',
-  '3gp': 'video/3gpp',
-  mpeg: 'video/mpeg',
-  mpg: 'video/mpeg',
-  // Audio
-  mp3: 'audio/mpeg',
-  wav: 'audio/wav',
-  flac: 'audio/flac',
-  aac: 'audio/aac',
-  m4a: 'audio/mp4',
-  opus: 'audio/opus',
-  wma: 'audio/x-ms-wma',
-  aiff: 'audio/aiff',
-  mid: 'audio/midi',
-  midi: 'audio/midi',
-  ape: 'audio/ape',
-  // Documents
-  pdf: 'application/pdf',
-  // Archives
-  zip: 'application/zip',
-  tar: 'application/x-tar',
-  gz: 'application/gzip',
-  bz2: 'application/x-bzip2',
-  xz: 'application/x-xz',
-  rar: 'application/vnd.rar',
-  '7z': 'application/x-7z-compressed',
-  // Text
-  txt: 'text/plain',
-  log: 'text/plain',
-  md: 'text/markdown',
-  json: 'application/json',
-  yaml: 'text/yaml',
-  yml: 'text/yaml',
-  xml: 'application/xml',
-  html: 'text/html',
-  htm: 'text/html',
-  css: 'text/css',
-  csv: 'text/csv',
-  js: 'text/javascript',
-  ts: 'text/typescript',
-  py: 'text/x-python',
-  sh: 'text/x-shellscript',
-  bash: 'text/x-shellscript',
-  rb: 'text/x-ruby',
-  go: 'text/x-go',
-  rs: 'text/x-rust',
-  java: 'text/x-java',
-  c: 'text/x-c',
-  cpp: 'text/x-c++',
-  h: 'text/x-c',
-  hpp: 'text/x-c++',
-  sql: 'text/x-sql',
-  kt: 'text/x-kotlin',
-  swift: 'text/x-swift',
-  dart: 'text/x-dart',
-  r: 'text/x-r',
-  R: 'text/x-r',
-}
-
-/** Get MIME type by filename extension */
-function getMimeByName(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() || ''
-  return MIME_MAP[ext] || 'application/octet-stream'
-}
-
-// ─── REST API 工具函数 ───
-
-/** REST API 统一响应格式 */
-interface SftpApiResponse<T = unknown> {
-  success: boolean
-  code: number
-  msg: string
-  data?: T
-  error?: string
-}
-
-/**
- * 通用 SFTP REST API 调用封装
- * 统一处理请求/响应格式和错误抛出
- */
-async function sftpApi<T = unknown>(
-  endpoint: string,
-  body: Record<string, unknown>,
-  timeoutMs = 15000,
-): Promise<T> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await authedFetch(`/api/sftp/${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-    }
-    const json: SftpApiResponse<T> = await res.json()
-    if (!json.success) {
-      throw new Error(json.error || json.msg || 'SFTP 操作失败')
-    }
-    return json.data as T
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-// ─── 工具函数 ───
-
-function getFileIcon(name: string, type?: string, targetType?: string) {
-  // Special file types from backend
-  if (type === 'symlink') {
-    // Color hint based on resolved target type
-    if (targetType === 'directory' || targetType === 'unknown')
-      return <Link2 size={14} className="text-cyan-400" />
-    if (targetType === 'broken') return <Link2 size={14} className="text-red-400" />
-    return <Link2 size={14} className="text-cyan-300" />
-  }
-  if (type === 'block_device') {
-    return <HardDrive size={14} className="text-orange-400" />
-  }
-  if (type === 'char_device') {
-    return <Cpu size={14} className="text-orange-300" />
-  }
-  if (type === 'fifo') {
-    return <Binary size={14} className="text-yellow-400" />
-  }
-  if (type === 'socket') {
-    return <Binary size={14} className="text-pink-400" />
-  }
-
-  const ext = name.split('.').pop()?.toLowerCase()
-  if (!ext) return <File size={14} className="text-slate-500" />
-
-  // No extension but name itself indicates type
-  const baseName = name.split('/').pop()?.toLowerCase() || ''
-
-  switch (ext) {
-    // Source code
-    case 'js':
-    case 'mjs':
-    case 'cjs':
-    case 'ts':
-    case 'mts':
-    case 'cts':
-    case 'tsx':
-    case 'jsx':
-    case 'vue':
-    case 'svelte':
-    case 'astro':
-    case 'py':
-    case 'pyw':
-    case 'pyx':
-    case 'go':
-    case 'rs':
-    case 'java':
-    case 'kt':
-    case 'kts':
-    case 'c':
-    case 'cpp':
-    case 'cxx':
-    case 'cc':
-    case 'h':
-    case 'hpp':
-    case 'rb':
-    case 'php':
-    case 'swift':
-    case 'm':
-    case 'mm':
-    case 'dart':
-    case 'zig':
-    case 'nim':
-    case 'cr':
-    case 'ex':
-    case 'exs':
-    case 'erl':
-    case 'hs':
-    case 'ml':
-    case 'scala':
-    case 'r':
-    case 'jl':
-    case 'v':
-    case 'sv':
-    case 'vhd':
-      return <FileCode size={14} className="text-sky-400" />
-
-    // Shell / config scripts
-    case 'sh':
-    case 'bash':
-    case 'zsh':
-    case 'fish':
-    case 'csh':
-    case 'tcsh':
-    case 'ps1':
-    case 'psm1':
-    case 'bat':
-    case 'cmd':
-      return <FileCode size={14} className="text-emerald-400" />
-
-    // Web
-    case 'html':
-    case 'htm':
-    case 'xhtml':
-    case 'css':
-    case 'scss':
-    case 'less':
-    case 'sass':
-    case 'styl':
-      return <FileCode size={14} className="text-orange-400" />
-
-    // Data / config
-    case 'json':
-    case 'json5':
-    case 'jsonc':
-    case 'jsonl':
-    case 'yaml':
-    case 'yml':
-    case 'toml':
-    case 'ini':
-    case 'cfg':
-    case 'conf':
-    case 'env':
-    case 'xml':
-    case 'xsd':
-    case 'xsl':
-    case 'xslt':
-    case 'properties':
-    case 'plist':
-      return <FileJson size={14} className="text-amber-400" />
-
-    // Markup / docs
-    case 'md':
-    case 'mdx':
-    case 'markdown':
-    case 'rst':
-    case 'txt':
-    case 'log':
-    case 'csv':
-    case 'tsv':
-    case 'rtf':
-    case 'doc':
-    case 'docx':
-    case 'pdf':
-    case 'epub':
-    case 'tex':
-    case 'latex':
-      return <FileText size={14} className="text-slate-400" />
-
-    // Images
-    case 'png':
-    case 'jpg':
-    case 'jpeg':
-    case 'gif':
-    case 'bmp':
-    case 'ico':
-    case 'webp':
-    case 'avif':
-    case 'heic':
-    case 'heif':
-    case 'tiff':
-    case 'tif':
-    case 'raw':
-    case 'cr2':
-    case 'nef':
-    case 'arw':
-    case 'dng':
-    case 'psd':
-    case 'ai':
-    case 'eps':
-    case 'xcf':
-    case 'svg':
-    case 'svgz':
-      return <Image size={14} className="text-purple-400" />
-
-    // Video
-    case 'mp4':
-    case 'mkv':
-    case 'avi':
-    case 'mov':
-    case 'wmv':
-    case 'flv':
-    case 'webm':
-    case 'm4v':
-    case 'mpg':
-    case 'mpeg':
-    case '3gp':
-      return <Film size={14} className="text-red-400" />
-
-    // Audio
-    case 'mp3':
-    case 'wav':
-    case 'flac':
-    case 'aac':
-    case 'ogg':
-    case 'opus':
-    case 'wma':
-    case 'm4a':
-    case 'ape':
-    case 'aiff':
-    case 'mid':
-    case 'midi':
-      return <Music size={14} className="text-rose-400" />
-
-    // Archives
-    case 'zip':
-    case 'tar':
-    case 'gz':
-    case 'bz2':
-    case 'xz':
-    case 'lz':
-    case 'lzma':
-    case 'zst':
-    case 'br':
-    case 'rar':
-    case '7z':
-    case 'cab':
-    case 'iso':
-    case 'dmg':
-    case 'deb':
-    case 'rpm':
-    case 'apk':
-    case 'msi':
-    case 'pkg':
-    case 'war':
-    case 'ear':
-    case 'jar':
-      return <Archive size={14} className="text-yellow-400" />
-
-    // Binary / compiled
-    case 'so':
-    case 'dll':
-    case 'dylib':
-    case 'exe':
-    case 'bin':
-    case 'elf':
-    case 'out':
-    case 'class':
-    case 'rlib':
-    case 'wasm':
-    case 'o':
-    case 'a':
-    case 'lib':
-    case 'pdb':
-    case 'pyc':
-    case 'pyo':
-      return <Binary size={14} className="text-amber-300" />
-
-    // Database
-    case 'db':
-    case 'sqlite':
-    case 'sqlite3':
-    case 'sql':
-    case 'pgsql':
-    case 'mysql':
-      return <FileJson size={14} className="text-teal-400" />
-
-    // Docker / DevOps
-    case 'dockerfile':
-    case 'docker':
-    case 'tf':
-    case 'tfvars':
-    case 'hcl':
-    case 'tfstate':
-      return <FileCode size={14} className="text-sky-500" />
-
-    // Makefile (special names)
-    case 'mk':
-      return <FileCode size={14} className="text-blue-400" />
-
-    default:
-      break
-  }
-
-  // Check special filenames (no extension match needed)
-  if (baseName === 'dockerfile' || baseName.startsWith('dockerfile.')) {
-    return <FileCode size={14} className="text-sky-500" />
-  }
-  if (baseName === 'makefile' || baseName === 'gnumakefile') {
-    return <FileCode size={14} className="text-blue-400" />
-  }
-  if (baseName === 'gemfile' || baseName === 'rakefile') {
-    return <FileCode size={14} className="text-red-400" />
-  }
-  if (baseName === 'cmakelists.txt') {
-    return <FileCode size={14} className="text-teal-400" />
-  }
-  if (baseName === '.gitignore' || baseName === '.dockerignore') {
-    return <FileText size={14} className="text-slate-500" />
-  }
-  if (baseName === 'license' || baseName.startsWith('license.')) {
-    return <FileText size={14} className="text-emerald-500" />
-  }
-  if (baseName === 'readme' || baseName.startsWith('readme.')) {
-    return <FileText size={14} className="text-blue-400" />
-  }
-
-  return <File size={14} className="text-slate-500" />
-}
-
-function formatSize(bytes: number): string {
-  if (bytes === 0) return '-'
-  const units = ['B', 'KB', 'MB', 'GB']
-  let i = 0
-  let size = bytes
-  while (size >= 1024 && i < units.length - 1) {
-    size /= 1024
-    i++
-  }
-  return `${size.toFixed(1)} ${units[i]}`
-}
-
-function formatPerms(mode: number): string {
-  const s = mode.toString(8).slice(-3)
-  const p = ['---', '--x', '-w-', '-wx', 'r--', 'r-x', 'rw-', 'rwx']
-  return s
-    .split('')
-    .map((c) => p[parseInt(c)] || '---')
-    .join('')
-}
-
-/** 文件扩展名 → CodeMirror 语言标识映射 */
-const LANGUAGE_MAP: Record<string, string> = {
-  js: 'javascript',
-  mjs: 'javascript',
-  cjs: 'javascript',
-  ts: 'typescript',
-  mts: 'typescript',
-  cts: 'typescript',
-  jsx: 'jsx',
-  tsx: 'tsx',
-  py: 'python',
-  pyw: 'python',
-  pyx: 'python',
-  go: 'go',
-  rs: 'rust',
-  rlib: 'rust',
-  java: 'java',
-  class: 'java',
-  jar: 'java',
-  c: 'c',
-  cpp: 'cpp',
-  cxx: 'cpp',
-  cc: 'cpp',
-  h: 'c',
-  hpp: 'cpp',
-  hxx: 'cpp',
-  css: 'css',
-  scss: 'scss',
-  less: 'less',
-  sass: 'scss',
-  html: 'html',
-  htm: 'html',
-  xhtml: 'html',
-  vue: 'vue',
-  xml: 'xml',
-  svg: 'xml',
-  xsd: 'xml',
-  xsl: 'xml',
-  json: 'json',
-  json5: 'json',
-  jsonc: 'json',
-  yaml: 'yaml',
-  yml: 'yaml',
-  toml: 'toml',
-  csv: 'text',
-  tsv: 'text',
-  md: 'markdown',
-  mdx: 'markdown',
-  markdown: 'markdown',
-  txt: 'text',
-  log: 'text',
-  diff: 'text',
-  patch: 'text',
-  sql: 'sql',
-  pgsql: 'sql',
-  mysql: 'sql',
-  sqlite: 'sql',
-  sh: 'shell',
-  bash: 'shell',
-  zsh: 'shell',
-  fish: 'shell',
-  php: 'php',
-  phtml: 'php',
-  php3: 'php',
-  php4: 'php',
-  php5: 'php',
-  php7: 'php',
-  php8: 'php',
-  rb: 'ruby',
-  rbs: 'ruby',
-  gemfile: 'ruby',
-  rake: 'ruby',
-  pl: 'perl',
-  pm: 'perl',
-  t: 'perl',
-  lua: 'lua',
-  wast: 'wast',
-  wat: 'wast',
-  liquid: 'liquid',
-  dockerfile: 'dockerfile',
-  docker: 'dockerfile',
-  env: 'dotenv',
-  conf: 'nginx',
-  cfg: 'ini',
-  ini: 'ini',
-  makefile: 'makefile',
-  mk: 'makefile',
-  terraform: 'hcl',
-  tf: 'hcl',
-  tfvars: 'hcl',
-  kt: 'kotlin',
-  kts: 'kotlin',
-  swift: 'swift',
-  dart: 'dart',
-  ex: 'elixir',
-  exs: 'elixir',
-  erl: 'erlang',
-  hrl: 'erlang',
-  hs: 'haskell',
-  lhs: 'haskell',
-  ml: 'ocaml',
-  mli: 'ocaml',
-  clj: 'clojure',
-  cljs: 'clojure',
-  r: 'r',
-  scala: 'scala',
-  groovy: 'groovy',
-  gradle: 'groovy',
-  v: 'verilog',
-  sv: 'systemverilog',
-  vhdl: 'vhdl',
-  cmake: 'cmake',
-  ps1: 'powershell',
-  psm1: 'powershell',
-  bat: 'bat',
-  cmd: 'bat',
-  vim: 'vim',
-  nginx: 'nginx',
-  '': 'text',
-}
-
-function detectLanguage(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() || ''
-  return LANGUAGE_MAP[ext] || 'text'
-}
-
-/** 兜底的复制方案：当 navigator.clipboard 不可用时使用 */
-function fallbackCopy(text: string) {
-  const ta = document.createElement('textarea')
-  ta.value = text
-  ta.style.position = 'fixed'
-  ta.style.left = '-9999px'
-  document.body.appendChild(ta)
-  ta.select()
-  try {
-    document.execCommand('copy')
-  } catch {
-    // 静默失败
-  }
-  document.body.removeChild(ta)
-}
-
-/** 判断条目是否为目录（包括指向目录的符号链接） */
-function isDirLike(entry: SftpEntry): boolean {
-  return (
-    entry.type === 'directory' ||
-    (entry.type === 'symlink' &&
-      (entry.targetType === 'directory' || entry.targetType === 'unknown'))
-  )
-}
-
-/** 按名称排序：目录（含目录符号链接）在前，文件在后，字母序 */
-function sortEntries(entries: SftpEntry[]) {
-  const dirs = entries.filter(isDirLike).sort((a, b) => a.name.localeCompare(b.name))
-  const files = entries.filter((e) => !isDirLike(e)).sort((a, b) => a.name.localeCompare(b.name))
-  return { dirs, files }
-}
-
-// ─── 文件类型判断工具 ───
-
-/** 判断文件是否为图片 */
-function isImageFile(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase()
-  return [
-    'png',
-    'jpg',
-    'jpeg',
-    'gif',
-    'webp',
-    'bmp',
-    'ico',
-    'svg',
-    'avif',
-    'heic',
-    'heif',
-    'tiff',
-    'tif',
-    'raw',
-    'cr2',
-    'nef',
-    'arw',
-    'dng',
-    'psd',
-    'xcf',
-    'svgz',
-  ].includes(ext || '')
-}
-
-/** 判断文件是否为视频 */
-function isVideoFile(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase()
-  return [
-    'mp4',
-    'webm',
-    'ogg',
-    'ogv',
-    'mov',
-    'mkv',
-    'avi',
-    'wmv',
-    'flv',
-    'm4v',
-    '3gp',
-    'mpeg',
-    'mpg',
-  ].includes(ext || '')
-}
-
-/** 判断文件是否为音频 */
-function isAudioFile(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase()
-  return [
-    'mp3',
-    'wav',
-    'ogg',
-    'flac',
-    'aac',
-    'm4a',
-    'opus',
-    'wma',
-    'ape',
-    'aiff',
-    'mid',
-    'midi',
-  ].includes(ext || '')
-}
-
-/** 判断文件是否为二进制文件（图片/视频/音频/压缩包/编译产物等） */
-function isBinaryFile(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase()
-  const binaryExts = [
-    // Images
-    'png',
-    'jpg',
-    'jpeg',
-    'gif',
-    'webp',
-    'bmp',
-    'ico',
-    'svg',
-    'avif',
-    'heic',
-    'heif',
-    'tiff',
-    'tif',
-    'raw',
-    'cr2',
-    'nef',
-    'arw',
-    'dng',
-    'psd',
-    'ai',
-    'eps',
-    'xcf',
-    'svgz',
-    // Video
-    'mp4',
-    'mkv',
-    'avi',
-    'mov',
-    'wmv',
-    'flv',
-    'webm',
-    'm4v',
-    'mpg',
-    'mpeg',
-    '3gp',
-    // Audio
-    'mp3',
-    'wav',
-    'ogg',
-    'flac',
-    'aac',
-    'm4a',
-    'opus',
-    'wma',
-    'ape',
-    'aiff',
-    'mid',
-    'midi',
-    // Archives
-    'zip',
-    'tar',
-    'gz',
-    'bz2',
-    'xz',
-    'lz',
-    'lzma',
-    'zst',
-    'br',
-    'rar',
-    '7z',
-    'cab',
-    'iso',
-    'dmg',
-    'deb',
-    'rpm',
-    'apk',
-    'msi',
-    'pkg',
-    'war',
-    'ear',
-    'jar',
-    // Binary / compiled
-    'so',
-    'dll',
-    'dylib',
-    'exe',
-    'bin',
-    'elf',
-    'out',
-    'class',
-    'rlib',
-    'wasm',
-    'o',
-    'a',
-    'lib',
-    'pdb',
-    'pyc',
-    'pyo',
-  ]
-  return binaryExts.includes(ext || '')
-}
+// ─── Extracted utility functions ───
+import {
+  b64ToText, textToB64, inferMimeFromBase64,
+  getMimeByName,
+  getFileIcon,
+  formatSize, formatPerms,
+  detectLanguage, fallbackCopy, isDirLike, sortEntriesBy,
+  isImageFile, isVideoFile, isAudioFile, isBinaryFile,
+  isBinaryContent,
+  sftpApi,
+  type SortKey, type SortDir,
+} from './sftp-utils'
 
 // ─── 文件查看/编辑模态框 ───
 
@@ -1248,8 +392,10 @@ function SftpBrowserInner({
   connecting: externalConnecting,
   showConnector = false,
   widthClass,
+  initialPath,
+  onPathChange,
 }: SftpBrowserProps) {
-  const [currentPath, setCurrentPath] = useState('/')
+  const [currentPath, setCurrentPath] = useState(initialPath || '/')
   const [entries, setEntries] = useState<SftpEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1292,6 +438,27 @@ function SftpBrowserInner({
   // ── 多选 ──
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [isSelectMode, setIsSelectMode] = useState(false)
+  // ── 排序 ──
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  // ── 剪贴板（复制/剪切） ──
+  const [clipboard, setClipboard] = useState<{ paths: string[]; mode: 'copy' | 'cut' } | null>(null)
+  // ── 磁盘使用弹窗 ──
+  const [diskUsageEntry, setDiskUsageEntry] = useState<SftpEntry | null>(null)
+  const [diskUsageData, setDiskUsageData] = useState<{
+    totalSize: number
+    fileCount: number
+    dirCount: number
+    largestFile?: string
+    largestSize: number
+  } | null>(null)
+  // ── 文件哈希弹窗 ──
+  const [hashEntry, setHashEntry] = useState<SftpEntry | null>(null)
+  const [hashData, setHashData] = useState<{
+    md5: string
+    sha1: string
+    sha256: string
+  } | null>(null)
   // ── 权限编辑弹窗 ──
   const [chmodEntry, setChmodEntry] = useState<SftpEntry | null>(null)
   const [chmodValue, setChmodValue] = useState('')
@@ -1345,7 +512,7 @@ function SftpBrowserInner({
           msg.includes('NOT_CONNECTED') ||
           msg.includes('SSH not connected')
         ) {
-          setError('SSH 连接已断开，请在连接列表中选择重新连接')
+          setError('SSH 连接已断开，请在左侧连接列表重新连接')
         } else {
           setError(msg)
         }
@@ -1360,13 +527,14 @@ function SftpBrowserInner({
   // sessionId 变化时加载
   useEffect(() => {
     if (sessionId) {
+      const startPath = initialPath || '/'
       const t1 = setTimeout(() => {
-        setCurrentPath('/')
+        setCurrentPath(startPath)
         setEntries([])
         setError(null)
       }, 0)
       retryCountRef.current = 0
-      const t2 = setTimeout(() => listDir('/', true), 300)
+      const t2 = setTimeout(() => listDir(startPath, true), 300)
       return () => {
         clearTimeout(t1)
         clearTimeout(t2)
@@ -1377,13 +545,24 @@ function SftpBrowserInner({
       setCurrentPath('/')
     }, 0)
     return () => clearTimeout(t3)
-  }, [sessionId, listDir])
+  }, [sessionId, listDir, initialPath])
 
-  // 关闭右键菜单
+  // 路径变化时回调（用于持久化当前浏览路径）
+  useEffect(() => {
+    if (onPathChange && currentPath) {
+      onPathChange(currentPath)
+    }
+  }, [currentPath, onPathChange])
+
+  // 关闭右键菜单（点击外部区域或滚动时）
   useEffect(() => {
     const handler = () => setContextMenu(null)
     window.addEventListener('click', handler)
-    return () => window.removeEventListener('click', handler)
+    window.addEventListener('scroll', handler, true)
+    return () => {
+      window.removeEventListener('click', handler)
+      window.removeEventListener('scroll', handler, true)
+    }
   }, [])
 
   const navigateTo = useCallback((p: string) => listDir(p), [listDir])
@@ -1469,25 +648,108 @@ function SftpBrowserInner({
 
   // ─── 操作处理 ───
 
+  // 受保护的系统目录 — 禁止删除
+  const PROTECTED_PATHS = useMemo(() => [
+    '/bin', '/sbin', '/usr', '/lib', '/lib64', '/etc', '/var', '/sys',
+    '/proc', '/dev', '/boot', '/root', '/run', '/snap', '/opt',
+    '/usr/local', '/usr/bin', '/usr/sbin', '/usr/lib', '/usr/share',
+    '/etc/ssh', '/etc/passwd', '/etc/shadow', '/etc/group',
+  ], [])
+
+  const isProtectedPath = useCallback((path: string): boolean => {
+    const normalized = path.replace(/\/+$/, '') || '/'
+    return PROTECTED_PATHS.some((p) => normalized === p || normalized.startsWith(p + '/'))
+  }, [PROTECTED_PATHS])
+
+  // 回收站路径
+  const TRASH_DIR = '/tmp/.wrench-trash'
+
+  const moveToTrash = useCallback(async (entryPath: string, entryName: string): Promise<void> => {
+    if (!sessionId) return
+    // 先确保回收站目录存在
+    try {
+      await sftpApi('mkdir', { connectionId: sessionId, path: TRASH_DIR })
+    } catch {
+      // 目录已存在或其他错误，忽略
+    }
+    // 带时间戳重命名移到回收站
+    const ts = Date.now()
+    const safeName = entryName.replace(/\//g, '_')
+    const trashPath = `${TRASH_DIR}/${ts}_${safeName}`
+    await sftpApi('rename', {
+      connectionId: sessionId,
+      from: entryPath,
+      to: trashPath,
+    })
+  }, [sessionId])
+
+  // 从回收站恢复文件（还原到原始位置）
+  const restoreFromTrash = useCallback(async (entry: SftpEntry): Promise<void> => {
+    if (!sessionId) return
+    // 回收站文件名格式：{timestamp}_{originalName}
+    const trashName = entry.name
+    const underscoreIdx = trashName.indexOf('_')
+    const originalName = underscoreIdx > 0 ? trashName.substring(underscoreIdx + 1) : trashName
+    // 恢复到 /tmp/ 下（因为原始位置可能已不存在）
+    const restorePath = `/tmp/${originalName}`
+    try {
+      await sftpApi('rename', {
+        connectionId: sessionId,
+        from: entry.path,
+        to: restorePath,
+      })
+      refresh()
+      setAlertModal({ title: '恢复成功', message: `已将 "${originalName}" 恢复到 /tmp/` })
+    } catch (err) {
+      setAlertModal({ title: '恢复失败', message: (err as Error).message })
+    }
+  }, [sessionId, refresh])
+
   const handleDelete = useCallback(
     (entry: SftpEntry) => {
       if (!sessionId) return
+
+      // 检查是否为受保护路径
+      if (isProtectedPath(entry.path)) {
+        setAlertModal({
+          title: '禁止删除',
+          message: `"${entry.name}" 是系统关键目录/文件，禁止删除。`,
+        })
+        return
+      }
+
       setConfirmModal({
         title: '确认删除',
-        message: `确定删除 ${entry.type === 'directory' ? '目录' : '文件'} "${entry.name}" 吗？`,
+        message: `确定删除 ${entry.type === 'directory' ? '目录' : '文件'} "${entry.name}" 吗？\n\n将移入回收站（可恢复），而非永久删除。`,
         variant: 'danger',
-        confirmText: '删除',
+        confirmText: '移入回收站',
         onConfirm: async () => {
           setConfirmModal(null)
           try {
-            await sftpApi('delete', {
-              connectionId: sessionId,
-              path: entry.path,
-              recursive: entry.type === 'directory',
-            })
+            await moveToTrash(entry.path, entry.name)
             refresh()
           } catch (err) {
-            setAlertModal({ title: '删除失败', message: (err as Error).message })
+            // 如果移动失败（如文件太大），回退到直接删除
+            setConfirmModal({
+              title: '回收站失败',
+              message: `无法移入回收站（${(err as Error).message}）。\n是否永久删除？`,
+              variant: 'danger',
+              confirmText: '永久删除',
+              onConfirm: async () => {
+                setConfirmModal(null)
+                try {
+                  await sftpApi('delete', {
+                    connectionId: sessionId,
+                    path: entry.path,
+                    recursive: entry.type === 'directory',
+                  })
+                  refresh()
+                } catch (err2) {
+                  setAlertModal({ title: '删除失败', message: (err2 as Error).message })
+                }
+              },
+              onCancel: () => setConfirmModal(null),
+            })
           }
           setContextMenu(null)
         },
@@ -1497,8 +759,139 @@ function SftpBrowserInner({
         },
       })
     },
-    [sessionId, refresh],
+    [sessionId, refresh, isProtectedPath, moveToTrash],
   )
+
+  // ─── 剪贴板操作 ───
+
+  const handleCopy = useCallback((entries: SftpEntry[]) => {
+    setClipboard({ paths: entries.map((e) => e.path), mode: 'copy' })
+    setContextMenu(null)
+  }, [])
+
+  const handleCut = useCallback((entries: SftpEntry[]) => {
+    setClipboard({ paths: entries.map((e) => e.path), mode: 'cut' })
+    setContextMenu(null)
+  }, [])
+
+  const handlePaste = useCallback(async () => {
+    if (!sessionId || !clipboard) return
+    try {
+      if (clipboard.mode === 'cut') {
+        // Move each file to current directory
+        for (const srcPath of clipboard.paths) {
+          const filename = srcPath.split('/').pop() || srcPath
+          const destPath = currentPath === '/' ? `/${filename}` : `${currentPath}/${filename}`
+          await sftpApi('rename', {
+            connectionId: sessionId,
+            from: srcPath,
+            to: destPath,
+          })
+        }
+        setClipboard(null)
+      } else {
+        // Copy: download + upload each file（并发最多 3 个）
+        const CONCURRENCY = 3
+        for (let i = 0; i < clipboard.paths.length; i += CONCURRENCY) {
+          const batch = clipboard.paths.slice(i, i + CONCURRENCY)
+          const results = await Promise.allSettled(
+            batch.map(async (srcPath) => {
+              const filename = srcPath.split('/').pop() || srcPath
+              const destPath = currentPath === '/' ? `/${filename}` : `${currentPath}/${filename}`
+              const data = await sftpApi<string>('download', {
+                connectionId: sessionId,
+                path: srcPath,
+              })
+              await sftpApi('upload', {
+                connectionId: sessionId,
+                path: destPath,
+                data,
+              })
+            }),
+          )
+          const failed = results.filter((r) => r.status === 'rejected')
+          if (failed.length > 0) {
+            const msg = (failed[0] as PromiseRejectedResult).reason?.message || '部分文件复制失败'
+            setAlertModal({ title: '复制失败', message: msg })
+          }
+        }
+        // Keep clipboard for potential multi-paste
+      }
+      refresh()
+    } catch (err) {
+      setAlertModal({ title: clipboard.mode === 'cut' ? '剪切失败' : '粘贴失败', message: (err as Error).message })
+    }
+  }, [sessionId, clipboard, currentPath, refresh])
+
+  // ─── 排序切换 ───
+  const toggleSort = useCallback((key: SortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+        return key
+      }
+      setSortDir('asc')
+      return key
+    })
+  }, [])
+
+  // ─── 磁盘使用 ───
+  const handleDiskUsage = useCallback(async (entry: SftpEntry) => {
+    if (!sessionId) return
+    setDiskUsageEntry(entry)
+    setDiskUsageData(null)
+    try {
+      const data = await sftpApi<{
+        totalSize: number
+        fileCount: number
+        dirCount: number
+        largestFile?: string
+        largestSize: number
+      }>('disk-usage', { connectionId: sessionId, path: entry.path })
+      setDiskUsageData(data)
+    } catch (err) {
+      setAlertModal({ title: '获取磁盘使用失败', message: (err as Error).message })
+      setDiskUsageEntry(null)
+    }
+  }, [sessionId])
+
+  // ─── 文件哈希 ───
+  const handleFileHash = useCallback(async (entry: SftpEntry) => {
+    if (!sessionId) return
+    setHashEntry(entry)
+    setHashData(null)
+    try {
+      const data = await sftpApi<{
+        md5: string
+        sha1: string
+        sha256: string
+      }>('file-hash', { connectionId: sessionId, path: entry.path })
+      setHashData(data)
+    } catch (err) {
+      setAlertModal({ title: '获取文件哈希失败', message: (err as Error).message })
+      setHashEntry(null)
+    }
+  }, [sessionId])
+
+  // ─── 批量操作 ───
+  const batchMoveSelected = useCallback(async () => {
+    if (!sessionId || selectedPaths.size === 0) return
+    const target = prompt('目标目录路径:', currentPath)
+    if (!target) return
+    try {
+      const paths = [...selectedPaths]
+      await sftpApi('batch-move', {
+        connectionId: sessionId,
+        paths,
+        targetDir: target,
+      })
+      setSelectedPaths(new Set())
+      setIsSelectMode(false)
+      refresh()
+    } catch (err) {
+      setAlertModal({ title: '批量移动失败', message: (err as Error).message })
+    }
+  }, [sessionId, selectedPaths, currentPath, refresh])
 
   const handleRename = useCallback(
     async (entry: SftpEntry, newName: string) => {
@@ -1563,33 +956,46 @@ function SftpBrowserInner({
   const openInEditor = useCallback(
     async (entry: SftpEntry) => {
       if (!sessionId) return
-      // 二进制文件无法在文本编辑器中打开
+      // 扩展名已知的二进制文件：直接拒绝
       if (isBinaryFile(entry.name)) {
         setAlertModal({ title: '无法打开', message: '无法在编辑器中打开二进制文件' })
         return
       }
-      // 对符号链接先 stat 解析实际类型，防止目录符号链接进入编辑器
-      let resolvedEntry = entry
-      if (entry.type === 'symlink') {
-        try {
-          const st = await sftpApi<{ type: string }>('stat', {
-            connectionId: sessionId,
-            path: entry.path,
-          })
-          if (st.type === 'directory') {
-            navigateTo(entry.path)
-            return
-          }
-          // 用 stat 结果更新 entry（保留原 entry 其余字段）
-          resolvedEntry = { ...entry, type: st.type as SftpEntry['type'] }
-        } catch {
-          // stat 失败时继续尝试打开
-        }
-      }
-      if (resolvedEntry.type === 'directory') {
-        navigateTo(entry.path)
+
+      // 大文件警告：超过 5MB 不建议在浏览器编辑器中打开
+      const MAX_EDITABLE_SIZE = 5 * 1024 * 1024 // 5 MB
+      if (entry.size != null && entry.size > MAX_EDITABLE_SIZE) {
+        const sizeMB = (entry.size / 1024 / 1024).toFixed(1)
+        setAlertModal({
+          title: '文件过大',
+          message: `该文件 ${sizeMB} MB，浏览器编辑器可能卡顿或内存不足。\n建议使用 SSH 终端中的 vim/nano 编辑，或下载到本地处理。`,
+        })
         return
       }
+
+      // 对符号链接先 stat 解析实际类型，防止目录符号链接进入编辑器
+      try {
+        const st = await sftpApi<{ type: string; size?: number }>('stat', {
+          connectionId: sessionId,
+          path: entry.path,
+        })
+        if (st.type === 'directory') {
+          navigateTo(entry.path)
+          return
+        }
+        // 用 stat 返回的实际大小做二次检查
+        if (st.size && st.size > MAX_EDITABLE_SIZE) {
+          const sizeMB = (st.size / 1024 / 1024).toFixed(1)
+          setAlertModal({
+            title: '文件过大',
+            message: `该文件 ${sizeMB} MB，浏览器编辑器可能卡顿或内存不足。`,
+          })
+          return
+        }
+      } catch {
+        // stat 失败时继续尝试打开
+      }
+
       let lang = detectLanguage(entry.name)
       const tabId = `sftp:${entry.path}`
       try {
@@ -1597,10 +1003,28 @@ function SftpBrowserInner({
           connectionId: sessionId,
           path: entry.path,
         })
+        // 增加二次大小检查（下载后实际内容可能比 stat 大，比如文件在下载期间被写入）
+        const estimatedBytes = Math.ceil(b64.length * 0.75) // base64 → raw bytes
+        if (estimatedBytes > MAX_EDITABLE_SIZE * 1.5) {
+          setAlertModal({
+            title: '文件过大',
+            message: `文件内容 ${(estimatedBytes / 1024 / 1024).toFixed(1)} MB，已超出浏览器编辑器的处理能力。`,
+          })
+          return
+        }
+        // 内容嗅探：检测是否为二进制（无扩展名文件可能漏过扩展名检查）
+        if (isBinaryContent(b64)) {
+          setAlertModal({
+            title: '二进制文件',
+            message: '该文件包含二进制内容，无法在文本编辑器中打开。',
+          })
+          return
+        }
         const content = b64ToText(b64)
-        // 扩展名未识别时，用内容嗅探提升准确度
+        // 扩展名未识别时，用内容嗅探提升准确度（只取前 8KB 用于嗅探）
         if (lang === 'text' && content) {
-          const sniffed = sniffLanguage(entry.name, content)
+          const sniffSample = content.length > 8192 ? content.slice(0, 8192) : content
+          const sniffed = sniffLanguage(entry.name, sniffSample)
           lang = sniffed.language
         }
         fileStore.openFile({
@@ -1642,7 +1066,7 @@ function SftpBrowserInner({
       if (!sessionId || isDirLike(entry)) return
       // 大文件下载保护（>100MB 的 base64 传输会消耗 ~266MB 内存）
       const MAX_DOWNLOAD = 100 * 1024 * 1024
-      if (entry.size > MAX_DOWNLOAD) {
+      if (entry.size != null && entry.size > MAX_DOWNLOAD) {
         setAlertModal({
           title: '文件过大',
           message: `文件 ${formatSize(entry.size)} 超过 100MB 下载限制。请使用 SCP/SFTP 客户端下载。`,
@@ -1748,51 +1172,152 @@ function SftpBrowserInner({
   const batchDelete = useCallback(async () => {
     if (!sessionId || selectedPaths.size === 0) return
     const paths = [...selectedPaths]
+    // 过滤掉受保护的路径
+    const protectedPaths = paths.filter((p) => isProtectedPath(p))
+    const deletablePaths = paths.filter((p) => !isProtectedPath(p))
+
+    if (protectedPaths.length > 0 && deletablePaths.length > 0) {
+      setAlertModal({
+        title: '部分文件受保护',
+        message: `${protectedPaths.length} 个系统关键文件被跳过，将删除 ${deletablePaths.length} 个项目。`,
+      })
+    } else if (protectedPaths.length > 0) {
+      setAlertModal({
+        title: '全部受保护',
+        message: `选中的 ${protectedPaths.length} 个项目均为系统关键文件，禁止删除。`,
+      })
+      return
+    }
+
     setConfirmModal({
-      title: `删除 ${paths.length} 个项目`,
-      message: `确定删除选中的 ${paths.length} 个项目吗？此操作不可撤销。`,
+      title: `删除 ${deletablePaths.length} 个项目`,
+      message: `确定将选中的 ${deletablePaths.length} 个项目移入回收站吗？`,
       variant: 'danger',
-      confirmText: '删除',
+      confirmText: '移入回收站',
       onConfirm: async () => {
         setConfirmModal(null)
+        const CONCURRENCY = 5
         let ok = 0
         let fail = 0
-        for (const p of paths) {
-          try {
-            await sftpApi('delete', {
-              connectionId: sessionId,
-              path: p,
-              recursive: true,
-            })
-            ok++
-          } catch {
-            fail++
+        for (let i = 0; i < deletablePaths.length; i += CONCURRENCY) {
+          const batch = deletablePaths.slice(i, i + CONCURRENCY)
+          const results = await Promise.allSettled(
+            batch.map(async (p) => {
+              const name = p.split('/').pop() || p
+              await moveToTrash(p, name)
+            }),
+          )
+          for (const r of results) {
+            if (r.status === 'fulfilled') ok++
+            else fail++
           }
         }
         clearSelection()
         refresh()
         setAlertModal({
           title: '批量删除完成',
-          message: `成功 ${ok} 个${fail > 0 ? `，失败 ${fail} 个` : ''}`,
+          message: `成功移入回收站 ${ok} 个${fail > 0 ? `，失败 ${fail} 个` : ''}`,
         })
       },
       onCancel: () => setConfirmModal(null),
     })
-  }, [sessionId, selectedPaths, refresh, clearSelection])
+  }, [sessionId, selectedPaths, refresh, clearSelection, isProtectedPath, moveToTrash])
+
+  // ─── 键盘快捷键 ───
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + C = 复制
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.shiftKey) {
+        const sel = window.getSelection()?.toString()
+        if (sel) return
+        if (selectedPaths.size > 0) {
+          const entriesToCopy = entries.filter((en) => selectedPaths.has(en.path))
+          handleCopy(entriesToCopy)
+        }
+      }
+      // Ctrl/Cmd + X = 剪切
+      if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+        const sel = window.getSelection()?.toString()
+        if (sel) return
+        if (selectedPaths.size > 0) {
+          const entriesToCut = entries.filter((en) => selectedPaths.has(en.path))
+          handleCut(entriesToCut)
+        }
+      }
+      // Ctrl/Cmd + V = 粘贴
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        if (clipboard) {
+          e.preventDefault()
+          handlePaste()
+        }
+      }
+      // Ctrl/Cmd + A = 全选
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        const sel = window.getSelection()?.toString()
+        if (sel) return
+        if (entries.length > 0) {
+          e.preventDefault()
+          selectAll()
+        }
+      }
+      // Delete = 删除选中
+      if (e.key === 'Delete' && selectedPaths.size > 0) {
+        batchDelete()
+      }
+      // Escape = 清除选择/关闭菜单
+      if (e.key === 'Escape') {
+        if (clipboard) {
+          setClipboard(null)
+        }
+        clearSelection()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [selectedPaths, entries, clipboard, handleCopy, handleCut, handlePaste, selectAll, batchDelete, clearSelection])
+
+  // ─── 移动端禁用浏览器默认长按行为 ───
+  // CSS touch-action: manipulation 已在 .sftp-file-entry 上禁用 long press
+  // JS 层补充拦截 contextmenu / selectstart（部分浏览器仍会触发）
+  const fileListRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = fileListRef.current
+    if (!el || !isTouchDevice) return
+
+    const prevent = (e: Event) => { e.preventDefault() }
+
+    // 阻止浏览器原生长按菜单
+    el.addEventListener('contextmenu', prevent, { capture: true })
+    // 阻止浏览器原生文本选择
+    el.addEventListener('selectstart', prevent, { capture: true })
+
+    return () => {
+      el.removeEventListener('contextmenu', prevent, { capture: true })
+      el.removeEventListener('selectstart', prevent, { capture: true })
+    }
+  }, [isTouchDevice])
 
   // ─── 右键事件 ───
+
+  const clampMenuPosition = useCallback((cx: number, cy: number) => {
+    const menuWidth = 180
+    const menuHeight = 280
+    const x = Math.min(cx, window.innerWidth - menuWidth)
+    const y = Math.min(cy, window.innerHeight - menuHeight)
+    return { x: Math.max(0, x), y: Math.max(0, y) }
+  }, [])
 
   const handleEntryContextMenu = useCallback((e: React.MouseEvent, entry: SftpEntry) => {
     e.preventDefault()
     e.stopPropagation()
-    setContextMenu({ x: e.clientX, y: e.clientY, entry })
-  }, [])
+    setContextMenu({ ...clampMenuPosition(e.clientX, e.clientY), entry })
+  }, [clampMenuPosition])
 
   const handleEmptyContextMenu = useCallback((e: React.MouseEvent) => {
     if (e.type !== 'contextmenu') return
     e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, entry: null })
-  }, [])
+    setContextMenu({ ...clampMenuPosition(e.clientX, e.clientY), entry: null })
+  }, [clampMenuPosition])
 
   // ─── 拖拽上传 ───
 
@@ -1962,17 +1487,24 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
   )
 
   // ─── 排序后的文件列表（useMemo 缓存） ───
-  const sortedEntries = useMemo(() => sortEntries(entries), [entries])
+  const sortedEntries = useMemo(() => {
+    if (allEntries.length > 0) {
+      return { dirs: [], files: sortEntriesBy(allEntries, sortKey, sortDir) }
+    }
+    return {
+      dirs: sortEntriesBy(entries.filter(isDirLike), sortKey, sortDir),
+      files: sortEntriesBy(entries.filter((e) => !isDirLike(e)), sortKey, sortDir),
+    }
+  }, [entries, allEntries, sortKey, sortDir])
 
   // 搜索过滤后的列表
   const displayEntries = useMemo(() => {
-    if (allEntries.length > 0) return allEntries
-    if (!searchQuery.trim()) return [...sortedEntries.dirs, ...sortedEntries.files]
+    if (allEntries.length > 0) return sortEntriesBy(allEntries, sortKey, sortDir)
+    const all = [...sortedEntries.dirs, ...sortedEntries.files]
+    if (!searchQuery.trim()) return all
     const q = searchQuery.toLowerCase()
-    return [...sortedEntries.dirs, ...sortedEntries.files].filter((e) =>
-      e.name.toLowerCase().includes(q),
-    )
-  }, [allEntries, searchQuery, sortedEntries])
+    return all.filter((e) => e.name.toLowerCase().includes(q))
+  }, [allEntries, searchQuery, sortedEntries, sortKey, sortDir])
 
   // ─── VirtualList 渲染项 ───
   const renderFileItem = useCallback(
@@ -1984,8 +1516,8 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       return (
         <div
           key={entry.path}
-          className={`flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isSelected ? 'bg-sky-900/20' : ''} ${isDir || (isSymlink && (entry.targetType === 'directory' || entry.targetType === 'unknown')) ? 'text-sky-300' : 'text-slate-300'}`}
-          style={{ height: 28 }}
+          className={`sftp-file-entry flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isSelected ? 'bg-sky-900/20' : ''} ${isDir || (isSymlink && (entry.targetType === 'directory' || entry.targetType === 'unknown')) ? 'text-sky-300' : 'text-slate-300'}`}
+          style={{ height: 28, userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation' as const }}
           onClick={(e) => {
             // 点击复选框区域不触发打开
             if ((e.target as HTMLElement).closest('[data-select]')) return
@@ -1997,11 +1529,24 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             handleFileDoubleClick(entry)
           }}
           onContextMenu={(e) => handleEntryContextMenu(e, entry)}
-          onPointerDown={() => {
-            // 长按 500ms 进入选择模式
+          onPointerDown={(e) => {
+            // 先捕获元素位置（setTimeout 内元素可能已卸载）
+            const el = e.currentTarget as HTMLElement
+            const rect = el?.getBoundingClientRect()
+            // 长按 500ms：触摸设备显示上下文菜单，非触摸进入选择模式
             longPressTimerRef.current = setTimeout(() => {
-              setIsSelectMode(true)
-              toggleSelect(entry.path)
+              if (isTouchDevice) {
+                // 触摸设备：长按显示上下文菜单
+                setContextMenu({
+                  x: Math.min((rect?.left ?? 0) + (rect?.width ?? 0) / 2, window.innerWidth - 180),
+                  y: Math.min((rect?.top ?? 0) + (rect?.height ?? 0) / 2, window.innerHeight - 300),
+                  entry,
+                })
+              } else {
+                // 非触摸设备：进入选择模式
+                setIsSelectMode(true)
+                toggleSelect(entry.path)
+              }
             }, 500)
           }}
           onPointerUp={() => {
@@ -2109,45 +1654,69 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
   }, [showSearch])
 
   // ─── 状态栏 ───
-  const statusBar = useMemo(
-    () => (
+  const statusBar = useMemo(() => {
+    const totalSize = entries.reduce((sum, e) => sum + (isDirLike(e) ? 0 : e.size), 0)
+    const sortLabel = sortKey === 'name' ? '名称' : sortKey === 'size' ? '大小' : sortKey === 'modified' ? '日期' : '类型'
+    return (
       <div className="flex items-center justify-between border-t border-slate-700/30 px-2 py-0.5 text-[10px] text-slate-600">
         <span>
-          {sortedEntries.dirs.length} 目录 · {sortedEntries.files.length} 文件
+          {sortedEntries.dirs.length} 目录 · {sortedEntries.files.length} 文件 · {formatSize(totalSize)}
+        </span>
+        <span className="text-slate-700">
+          排序: {sortLabel}{sortDir === 'asc' ? ' ↑' : ' ↓'}
+          {clipboard && ` · 剪贴板: ${clipboard.paths.length} 项`}
         </span>
       </div>
-    ),
-    [sortedEntries.dirs.length, sortedEntries.files.length],
-  )
+    )
+  }, [sortedEntries.dirs.length, sortedEntries.files.length, entries, sortKey, sortDir, clipboard])
 
   // ── 批量选择工具栏 ──
   const selectionBar = useMemo(() => {
     if (selectedPaths.size === 0) return null
+    const selectedEntries = entries.filter((e) => selectedPaths.has(e.path))
     return (
-      <div className="flex items-center gap-2 border-t border-sky-900/50 bg-sky-950/30 px-2 py-1 text-[11px] text-sky-300">
-        <span className="font-medium">已选 {selectedPaths.size} 项</span>
+      <div className="flex items-center gap-1 overflow-x-auto border-t border-sky-900/50 bg-sky-950/30 px-2 py-1 text-[11px] text-sky-300 pb-nav sm:gap-2">
+        <span className="shrink-0 font-medium">已选 {selectedPaths.size} 项</span>
         <button
           onClick={selectAll}
-          className="rounded px-1.5 py-0.5 text-[10px] text-sky-400 hover:bg-sky-900/40"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-sky-400 hover:bg-sky-900/40"
         >
           全选
         </button>
         <button
           onClick={clearSelection}
-          className="rounded px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-slate-700/50"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-slate-400 hover:bg-slate-700/50"
         >
           取消
         </button>
         <div className="flex-1" />
         <button
-          onClick={batchDelete}
-          className="rounded px-2 py-0.5 text-[10px] text-red-400 hover:bg-red-900/30"
+          onClick={() => handleCopy(selectedEntries)}
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-sky-400 hover:bg-sky-900/40 sm:px-2"
         >
-          <Trash2 size={10} className="mr-1 inline" /> 删除
+          <Copy size={10} className="mr-0.5 inline sm:mr-1" /> 复制
+        </button>
+        <button
+          onClick={() => handleCut(selectedEntries)}
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-amber-400 hover:bg-amber-900/30 sm:px-2"
+        >
+          <Edit3 size={10} className="mr-0.5 inline sm:mr-1" /> 剪切
+        </button>
+        <button
+          onClick={batchMoveSelected}
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-amber-400 hover:bg-amber-900/30 sm:px-2"
+        >
+          <Edit3 size={10} className="mr-0.5 inline sm:mr-1" /> 移动
+        </button>
+        <button
+          onClick={batchDelete}
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-red-400 hover:bg-red-900/30 sm:px-2"
+        >
+          <Trash2 size={10} className="mr-0.5 inline sm:mr-1" /> 删除
         </button>
       </div>
     )
-  }, [selectedPaths.size, selectAll, clearSelection, batchDelete])
+  }, [selectedPaths, entries, selectAll, clearSelection, batchDelete, handleCopy, handleCut, batchMoveSelected])
 
   // ─── 面包屑导航 ───
   const breadcrumb = useMemo(() => {
@@ -2174,7 +1743,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         <div className="flex items-center gap-2 border-b border-slate-700/30 px-2 py-1">
           <Server size={12} className="shrink-0 text-slate-500" />
           <select
-            value={sessionId || ''}
+            value={_activeConnId || ''}
             onChange={(e) => onConnect?.(e.target.value)}
             className="flex-1 bg-transparent text-xs text-slate-300 outline-none"
           >
@@ -2190,58 +1759,114 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       )}
 
       {/* 工具栏 */}
-      <div className="flex items-center gap-0.5 border-b border-slate-700/30 px-2 py-1">
+      <div className="flex items-center gap-0 overflow-x-auto border-b border-slate-700/30 px-1 py-0.5 sm:px-2 sm:py-1">
         <button
           onClick={goHome}
-          className="btn-icon text-slate-500 hover:text-slate-300"
+          className="btn-icon shrink-0 text-slate-500 hover:text-slate-300"
           title="根目录"
         >
           <Home size={14} />
         </button>
         <button
           onClick={goUp}
-          className="btn-icon text-slate-500 hover:text-slate-300"
+          className="btn-icon shrink-0 text-slate-500 hover:text-slate-300"
           title="上级目录"
         >
           <ArrowUp size={14} />
         </button>
         <button
           onClick={refresh}
-          className="btn-icon text-slate-500 hover:text-slate-300"
+          className="btn-icon shrink-0 text-slate-500 hover:text-slate-300"
           title="刷新"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </button>
-        <div className="mx-1 h-4 w-px bg-slate-700/50" />
+        <div className="mx-0.5 h-4 w-px shrink-0 bg-slate-700/50 sm:mx-1" />
         <button
           onClick={() => handleCreateClick('file')}
-          className="btn-icon text-slate-500 hover:text-slate-300"
+          className="btn-icon shrink-0 text-slate-500 hover:text-slate-300"
           title="新建文件"
         >
           <FilePlus size={14} />
         </button>
         <button
           onClick={() => handleCreateClick('directory')}
-          className="btn-icon text-slate-500 hover:text-slate-300"
+          className="btn-icon shrink-0 text-slate-500 hover:text-slate-300"
           title="新建文件夹"
         >
           <FolderPlus size={14} />
         </button>
-        <div className="mx-1 h-4 w-px bg-slate-700/50" />
+        <div className="mx-0.5 h-4 w-px shrink-0 bg-slate-700/50 sm:mx-1" />
         <button
           onClick={() => handleUploadToDir(currentPath)}
-          className="btn-icon text-slate-500 hover:text-slate-300"
+          className="btn-icon shrink-0 text-slate-500 hover:text-slate-300"
           title="上传文件"
         >
           <Upload size={14} />
         </button>
+        {clipboard && (
+          <button
+            onClick={handlePaste}
+            className="btn-icon shrink-0 text-amber-400 hover:text-amber-300"
+            title={`粘贴 ${clipboard.paths.length} 个${clipboard.mode === 'cut' ? '（剪切）' : '（复制）'}`}
+          >
+            <Save size={14} />
+          </button>
+        )}
         <div className="flex-1" />
+        {/* 排序按钮 */}
+        <div className="flex items-center gap-0">
+          {([
+            { key: 'name' as SortKey, label: '名称', icon: 'N' },
+            { key: 'size' as SortKey, label: '大小', icon: 'S' },
+            { key: 'modified' as SortKey, label: '日期', icon: 'D' },
+            { key: 'type' as SortKey, label: '类型', icon: 'T' },
+          ]).map(({ key, label, icon }) => (
+            <button
+              key={key}
+              onClick={() => toggleSort(key)}
+              className={`rounded px-1 py-0.5 text-[10px] transition-colors ${
+                sortKey === key
+                  ? 'bg-sky-600/20 text-sky-400'
+                  : 'text-slate-600 hover:text-slate-400'
+              }`}
+              title={`按${label}排序${sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}`}
+            >
+              <span className="sm:hidden">{icon}</span>
+              <span className="hidden sm:inline">{label}{sortKey === key && (sortDir === 'asc' ? '↑' : '↓')}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mx-0.5 h-4 w-px shrink-0 bg-slate-700/50 sm:mx-1" />
         <button
           onClick={toggleSearch}
-          className={`btn-icon ${showSearch ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`btn-icon shrink-0 ${showSearch ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}
           title="搜索文件"
         >
           <Search size={14} />
+        </button>
+        <button
+          onClick={() => navigateTo(TRASH_DIR)}
+          className="btn-icon shrink-0 text-slate-500 hover:text-amber-400"
+          title="回收站"
+        >
+          <Trash2 size={14} />
+        </button>
+        <div className="mx-0.5 h-4 w-px shrink-0 bg-slate-700/50 sm:mx-1" />
+        <button
+          onClick={() => {
+            if (isSelectMode) {
+              // 退出选择模式 — 清除所有选中
+              setIsSelectMode(false)
+              setSelectedPaths(new Set())
+            } else {
+              setIsSelectMode(true)
+            }
+          }}
+          className={`btn-icon shrink-0 ${isSelectMode ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}
+          title={isSelectMode ? '退出选择' : '多选'}
+        >
+          <CheckSquare size={14} />
         </button>
       </div>
 
@@ -2380,10 +2005,10 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
 
       {/* 文件列表 */}
       <div
-        className="relative min-h-0 flex-1 overflow-y-auto"
+        ref={fileListRef}
+        className="sftp-file-list relative min-h-0 flex-1 overflow-y-auto select-none"
         style={{
           WebkitOverflowScrolling: 'touch',
-          touchAction: 'pan-y',
           overscrollBehavior: 'contain',
         }}
         onContextMenu={handleEmptyContextMenu}
@@ -2397,17 +2022,42 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             className="flex flex-col items-center pt-8 text-slate-600"
             onContextMenu={handleEmptyContextMenu}
           >
-            <Folder size={32} />
-            <p className="mt-2 text-xs">
-              {error ? '无法加载目录' : searchQuery ? '无搜索结果' : '空目录'}
-            </p>
-            {!error && !searchQuery && sessionId && (
-              <button
-                onClick={() => handleUploadToDir(currentPath)}
-                className="mt-3 flex items-center gap-1 rounded border border-slate-700/50 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-700/50 hover:text-slate-300"
-              >
-                <Upload size={12} /> 上传文件
-              </button>
+            {currentPath === TRASH_DIR ? (
+              <>
+                <Trash2 size={32} className="text-slate-700" />
+                <p className="mt-2 text-xs">回收站为空</p>
+                <p className="mt-1 text-[10px] text-slate-700">删除的文件会出现在这里</p>
+              </>
+            ) : error ? (
+              <>
+                <Folder size={32} />
+                <p className="mt-2 text-xs text-amber-600">无法加载目录</p>
+                <p className="mt-1 max-w-[240px] break-all text-[10px] text-slate-700">{error}</p>
+                <button
+                  onClick={() => listDir(currentPath)}
+                  className="mt-3 flex items-center gap-1 rounded border border-slate-700/50 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-700/50 hover:text-slate-300"
+                >
+                  <RefreshCw size={12} /> 重试
+                </button>
+              </>
+            ) : searchQuery ? (
+              <>
+                <Folder size={32} />
+                <p className="mt-2 text-xs">无搜索结果</p>
+              </>
+            ) : (
+              <>
+                <Folder size={32} />
+                <p className="mt-2 text-xs">空目录</p>
+                {sessionId && (
+                  <button
+                    onClick={() => handleUploadToDir(currentPath)}
+                    className="mt-3 flex items-center gap-1 rounded border border-slate-700/50 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-700/50 hover:text-slate-300"
+                  >
+                    <Upload size={12} /> 上传文件
+                  </button>
+                )}
+              </>
             )}
           </div>
         ) : (
@@ -2427,176 +2077,60 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       )}
 
       {/* 右键菜单 */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 min-w-[160px] rounded-lg border border-slate-700 bg-slate-800 py-1 shadow-xl"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          {contextMenu.entry ? (
-            <>
-              {isDirLike(contextMenu.entry) ? (
-                <button
-                  onClick={() => {
-                    navigateTo(contextMenu.entry!.path)
-                    setContextMenu(null)
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-                >
-                  <Folder size={12} /> 打开
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={() => {
-                      setPreviewEntry(contextMenu.entry!)
-                      setContextMenu(null)
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-                  >
-                    <Eye size={12} /> 预览
-                  </button>
-                  {!isDirLike(contextMenu.entry) && !isBinaryFile(contextMenu.entry.name) && (
-                    <button
-                      onClick={async () => {
-                        const entry = contextMenu.entry!
-                        setContextMenu(null)
-                        await openInEditor(entry)
-                      }}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-                    >
-                      <Edit3 size={12} /> 在编辑器中打开
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleDownload(contextMenu.entry!)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-                  >
-                    <Download size={12} /> 下载
-                  </button>
-                </>
-              )}
-              <div className="mx-2 my-1 border-t border-slate-700/50" />
-              <button
-                onClick={() => {
-                  setRenaming(contextMenu.entry!.path)
-                  setRenameValue(contextMenu.entry!.name)
-                  setContextMenu(null)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-              >
-                <Edit3 size={12} /> 重命名
-              </button>
-              <button
-                onClick={() => handleDelete(contextMenu.entry!)}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-slate-700"
-              >
-                <Trash2 size={12} /> 删除
-              </button>
-              <button
-                onClick={() => {
-                  setChmodEntry(contextMenu.entry!)
-                  setChmodValue(
-                    (parseInt(contextMenu.entry!.permissions, 16) || 0)
-                      .toString(8)
-                      .padStart(4, '0'),
-                  )
-                  setContextMenu(null)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-              >
-                <Edit3 size={12} /> 权限
-              </button>
-              {!isDirLike(contextMenu.entry!) && (
-                <button
-                  onClick={() => {
-                    const parentPath = contextMenu.entry!.path.includes('/')
-                      ? contextMenu.entry!.path.substring(
-                          0,
-                          contextMenu.entry!.path.lastIndexOf('/'),
-                        )
-                      : ''
-                    setMoveEntry(contextMenu.entry!)
-                    setMoveTarget(parentPath ? `${parentPath}/` : '/')
-                    setContextMenu(null)
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-                >
-                  <Edit3 size={12} /> 移动到…
-                </button>
-              )}
-              <div className="mx-2 my-1 border-t border-slate-700/50" />
-              <button
-                onClick={() => {
-                  const path = contextMenu.entry!.path
-                  if (navigator.clipboard) {
-                    navigator.clipboard.writeText(path).catch(() => fallbackCopy(path))
-                  } else {
-                    fallbackCopy(path)
-                  }
-                  setContextMenu(null)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-              >
-                <Copy size={12} /> 复制路径
-              </button>
-              <button
-                onClick={() => {
-                  const name = contextMenu.entry!.name
-                  if (navigator.clipboard) {
-                    navigator.clipboard.writeText(name).catch(() => fallbackCopy(name))
-                  } else {
-                    fallbackCopy(name)
-                  }
-                  setContextMenu(null)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-              >
-                <Copy size={12} /> 复制文件名
-              </button>
-              <button
-                onClick={() => {
-                  setInfoEntry(contextMenu.entry!)
-                  setContextMenu(null)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-              >
-                <Eye size={12} /> 文件信息
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => {
-                  handleCreateClick('file')
-                  setContextMenu(null)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-              >
-                <FilePlus size={12} /> 新建文件
-              </button>
-              <button
-                onClick={() => {
-                  handleCreateClick('directory')
-                  setContextMenu(null)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-              >
-                <FolderPlus size={12} /> 新建文件夹
-              </button>
-              <div className="mx-2 my-1 border-t border-slate-700/50" />
-              <button
-                onClick={() => {
-                  refresh()
-                  setContextMenu(null)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-              >
-                <RefreshCw size={12} /> 刷新
-              </button>
-            </>
-          )}
-        </div>
-      )}
+      <SftpContextMenu
+        contextMenu={contextMenu}
+        onOpen={(entry) => navigateTo(entry.path)}
+        onPreview={(entry) => { setPreviewEntry(entry) }}
+        onOpenInEditor={openInEditor}
+        onDownload={handleDownload}
+        onRename={(entry) => { setRenaming(entry.path); setRenameValue(entry.name) }}
+        onDelete={handleDelete}
+        onChmod={(entry) => {
+          setChmodEntry(entry)
+          setChmodValue((parseInt(entry.permissions, 16) || 0).toString(8).padStart(4, '0'))
+        }}
+        onMove={(entry) => {
+          const parentPath = entry.path.includes('/')
+            ? entry.path.substring(0, entry.path.lastIndexOf('/'))
+            : ''
+          setMoveEntry(entry)
+          setMoveTarget(parentPath ? `${parentPath}/` : '/')
+        }}
+        onCopyPath={(entry) => {
+          const p = entry.path
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(p).catch(() => fallbackCopy(p))
+          } else {
+            fallbackCopy(p)
+          }
+        }}
+        onCopyName={(entry) => {
+          const n = entry.name
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(n).catch(() => fallbackCopy(n))
+          } else {
+            fallbackCopy(n)
+          }
+        }}
+        onFileInfo={(entry) => { setInfoEntry(entry) }}
+        onCopyFile={handleCopy}
+        onCutFile={handleCut}
+        onDiskUsage={handleDiskUsage}
+        onFileHash={handleFileHash}
+        onCreateFile={() => handleCreateClick('file')}
+        onCreateDir={() => handleCreateClick('directory')}
+        onPaste={handlePaste}
+        onRefresh={refresh}
+        onClose={() => setContextMenu(null)}
+        clipboard={clipboard}
+        clipboardCount={clipboard?.paths.length ?? 0}
+        isTrash={currentPath === TRASH_DIR}
+        onRestore={restoreFromTrash}
+        onSelect={(entry) => {
+          setIsSelectMode(true)
+          toggleSelect(entry.path)
+        }}
+      />
 
       {/* ── 重命名对话框 ── */}
       {renaming && (
@@ -2646,80 +2180,10 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       )}
 
       {/* ── 文件信息弹窗 ── */}
-      {infoEntry && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={() => setInfoEntry(null)}
-        >
-          <div
-            className="w-[90vw] max-w-sm rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
-                {getFileIcon(infoEntry.name, infoEntry.type, infoEntry.targetType)}
-                <span className="truncate">{infoEntry.name}</span>
-              </div>
-              <button
-                onClick={() => setInfoEntry(null)}
-                className="btn-icon text-slate-500 hover:text-slate-300"
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <div className="space-y-1.5 text-xs text-slate-400">
-              <div className="flex justify-between">
-                <span className="text-slate-600">类型</span>
-                <span>
-                  {infoEntry.type === 'symlink'
-                    ? `符号链接 → ${infoEntry.targetType || 'unknown'}`
-                    : infoEntry.type}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">大小</span>
-                <span>{formatSize(infoEntry.size)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">权限</span>
-                <span className="font-mono">
-                  {formatPerms(parseInt(infoEntry.permissions, 16) || 0)} ({infoEntry.permissions})
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">修改时间</span>
-                <span>
-                  {infoEntry.modifyTime
-                    ? new Date(infoEntry.modifyTime * 1000).toLocaleString()
-                    : '-'}
-                </span>
-              </div>
-              <div className="flex justify-between break-all">
-                <span className="shrink-0 text-slate-600">路径</span>
-                <span className="text-right font-mono text-[10px] text-slate-500">
-                  {infoEntry.path}
-                </span>
-              </div>
-              {infoEntry.type === 'symlink' && infoEntry.linkTarget && (
-                <div className="flex justify-between break-all">
-                  <span className="shrink-0 text-slate-600">链接目标</span>
-                  <span className="text-right font-mono text-[10px] text-cyan-500">
-                    {infoEntry.linkTarget}
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="mt-3 flex justify-end">
-              <button
-                onClick={() => setInfoEntry(null)}
-                className="rounded bg-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-600"
-              >
-                关闭
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <FileInfoModal
+        entry={infoEntry}
+        onClose={() => setInfoEntry(null)}
+      />
 
       {/* ── Alert 弹窗 ── */}
       <AlertModal
@@ -2743,168 +2207,47 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         />
       )}
 
+      {/* ── 磁盘使用弹窗 ── */}
+      <DiskUsageModal
+        entry={diskUsageEntry}
+        data={diskUsageData}
+        onClose={() => { setDiskUsageEntry(null); setDiskUsageData(null) }}
+      />
+
+      {/* ── 文件哈希弹窗 ── */}
+      <HashModal
+        entry={hashEntry}
+        data={hashData}
+        onClose={() => { setHashEntry(null); setHashData(null) }}
+        onCopied={(label) => setAlertModal({ title: '已复制', message: `${label} 已复制到剪贴板` })}
+      />
+
       {/* ── 权限编辑弹窗 ── */}
-      {chmodEntry && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => setChmodEntry(null)}
-        >
-          <div
-            className="w-80 rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-3 text-sm font-medium text-slate-200">修改权限</h3>
-            <p className="mb-1 text-xs text-slate-400">{chmodEntry.name}</p>
-            <p className="mb-3 text-xs text-slate-500">
-              当前: {formatPerms(parseInt(chmodEntry.permissions, 16) || 0)}
-            </p>
-            {/* 八进制输入 */}
-            <div className="mb-3">
-              <label className="mb-1 block text-xs text-slate-500">八进制权限</label>
-              <input
-                autoFocus
-                value={chmodValue}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/[^0-7]/g, '').slice(0, 4)
-                  setChmodValue(v)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleChmod(chmodEntry, chmodValue)
-                  if (e.key === 'Escape') setChmodEntry(null)
-                }}
-                className="w-full rounded bg-slate-800 px-2 py-1.5 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-sky-500"
-                placeholder="例如: 755"
-                maxLength={4}
-              />
-            </div>
-            {/* 快捷权限预设 */}
-            <div className="mb-3 grid grid-cols-3 gap-1">
-              {[
-                { label: '755', desc: 'rwxr-xr-x' },
-                { label: '777', desc: 'rwxrwxrwx' },
-                { label: '644', desc: 'rw-r--r--' },
-                { label: '600', desc: 'rw-------' },
-                { label: '700', desc: 'rwx------' },
-                { label: '666', desc: 'rw-rw-rw-' },
-              ].map((p) => (
-                <button
-                  key={p.label}
-                  onClick={() => setChmodValue(p.label)}
-                  className={`rounded px-1.5 py-1 text-[10px] transition-colors ${
-                    chmodValue === p.label
-                      ? 'bg-sky-600 text-white'
-                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                  }`}
-                >
-                  <div className="font-medium">{p.label}</div>
-                  <div className="text-[8px] opacity-60">{p.desc}</div>
-                </button>
-              ))}
-            </div>
-            {/* rwx 复选框 */}
-            <div className="mb-3 grid grid-cols-3 gap-2 text-center text-[10px] text-slate-500">
-              {(['owner', 'group', 'others'] as const).map((who, wi) => (
-                <div key={who}>
-                  <div className="mb-1 font-medium text-slate-400">
-                    {who === 'owner' ? '所有者' : who === 'group' ? '用户组' : '其他'}
-                  </div>
-                  {(['r', 'w', 'x'] as const).map((perm, pi) => {
-                    const bits = [0o400, 0o200, 0o100, 0o040, 0o020, 0o010, 0o004, 0o002, 0o001]
-                    const bitVal = bits[wi * 3 + pi] ?? 0
-                    const current = parseInt(chmodValue, 8) || 0
-                    const checked = (current & bitVal) === bitVal
-                    return (
-                      <label
-                        key={perm}
-                        className="flex cursor-pointer items-center justify-center gap-0.5"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            const newVal = checked ? current & ~bitVal : current | bitVal
-                            setChmodValue((newVal & 0o7777).toString(8).padStart(4, '0'))
-                          }}
-                          className="accent-sky-500"
-                        />
-                        <span>{perm}</span>
-                      </label>
-                    )
-                  })}
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setChmodEntry(null)}
-                className="rounded px-3 py-1 text-xs text-slate-400 hover:bg-slate-800"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => handleChmod(chmodEntry, chmodValue)}
-                className="rounded bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-500"
-              >
-                确定
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ChmodModal
+        entry={chmodEntry}
+        chmodValue={chmodValue}
+        onChmodValueChange={setChmodValue}
+        onConfirm={() => {
+          if (chmodEntry) handleChmod(chmodEntry, chmodValue)
+        }}
+        onClose={() => setChmodEntry(null)}
+      />
 
       {/* ── 移动到弹窗 ── */}
-      {moveEntry && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => {
-            setMoveEntry(null)
-            setMoveTarget('')
-          }}
-        >
-          <div
-            className="w-80 rounded-lg border border-slate-700 bg-slate-900 p-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-3 text-sm font-medium text-slate-200">移动到</h3>
-            <p className="mb-1 text-xs text-slate-400">{moveEntry.name}</p>
-            <input
-              autoFocus
-              value={moveTarget}
-              onChange={(e) => setMoveTarget(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !moveBusy) handleMove(moveEntry, moveTarget)
-                if (e.key === 'Escape') {
-                  setMoveEntry(null)
-                  setMoveTarget('')
-                }
-              }}
-              className="mb-1 w-full rounded bg-slate-800 px-2 py-1.5 text-sm text-slate-200 outline-none focus:ring-1 focus:ring-sky-500"
-              placeholder="目标路径，例如: /tmp/"
-            />
-            <p className="mb-3 text-[10px] text-slate-600">
-              输入完整路径。以 / 结尾表示移到目录内。
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setMoveEntry(null)
-                  setMoveTarget('')
-                }}
-                className="rounded px-3 py-1 text-xs text-slate-400 hover:bg-slate-800"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => handleMove(moveEntry, moveTarget)}
-                disabled={moveBusy || !moveTarget.trim()}
-                className="rounded bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-500 disabled:opacity-50"
-              >
-                {moveBusy ? '移动中…' : '移动'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <MoveModal
+        entry={moveEntry}
+        target={moveTarget}
+        busy={moveBusy}
+        onTargetChange={setMoveTarget}
+        onConfirm={() => {
+          if (moveEntry && !moveBusy) handleMove(moveEntry, moveTarget)
+        }}
+        onClose={() => {
+          setMoveEntry(null)
+          setMoveTarget('')
+        }}
+        sessionId={sessionId}
+      />
     </div>
   )
 }
