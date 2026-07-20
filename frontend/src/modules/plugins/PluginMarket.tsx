@@ -251,9 +251,7 @@ export default function PluginMarket() {
       </div>
 
       {/* 加载中 */}
-      {loading && (
-        <Skeleton type="card" rows={4} className="flex-1" />
-      )}
+      {loading && <Skeleton type="card" rows={4} className="flex-1" />}
 
       {/* 错误状态 */}
       {!loading && error && (

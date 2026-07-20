@@ -86,10 +86,13 @@ const EntryCard = memo(function EntryCard({
           <div>
             <button
               onClick={() => onEdit(entry)}
-              className="flex items-center gap-1.5 text-left text-sm font-medium text-slate-200 transition-colors hover:text-wrench-400"
+              className="hover:text-wrench-400 flex items-center gap-1.5 text-left text-sm font-medium text-slate-200 transition-colors"
             >
               {entry.name}
-              <Pencil size={11} className="text-slate-600 opacity-0 transition-opacity group-hover:opacity-100" />
+              <Pencil
+                size={11}
+                className="text-slate-600 opacity-0 transition-opacity group-hover:opacity-100"
+              />
             </button>
             <p className="mt-0.5 text-[11px] text-slate-500">{meta.label}</p>
           </div>
@@ -323,7 +326,9 @@ export default function VaultPage() {
         <div className="flex items-center gap-2 sm:gap-3">
           <KeyRound size={18} className="text-wrench-400 sm:text-[22px]" />
           <h1 className="text-base font-semibold text-slate-200 sm:text-lg">凭据保险箱</h1>
-          <span className="hidden rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400 sm:inline">本地存储</span>
+          <span className="hidden rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400 sm:inline">
+            本地存储
+          </span>
         </div>
         <button
           onClick={openAddModal}
@@ -343,7 +348,7 @@ export default function VaultPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索凭据..."
-            className="focus:border-wrench-500 w-full rounded-lg border border-slate-700 bg-slate-800/50 py-1.5 pl-8 pr-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none sm:py-2 sm:pl-9 sm:text-sm"
+            className="focus:border-wrench-500 w-full rounded-lg border border-slate-700 bg-slate-800/50 py-1.5 pr-3 pl-8 text-xs text-slate-200 placeholder-slate-500 focus:outline-none sm:py-2 sm:pl-9 sm:text-sm"
           />
         </div>
         <div className="no-scrollbar flex gap-1 overflow-x-auto pb-0.5 sm:gap-1">
@@ -351,7 +356,7 @@ export default function VaultPage() {
             <button
               key={k}
               onClick={() => setKindFilter(k)}
-              className={`shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-[10px] font-medium transition-colors sm:px-3 sm:py-1.5 sm:text-xs ${
+              className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium whitespace-nowrap transition-colors sm:px-3 sm:py-1.5 sm:text-xs ${
                 kindFilter === k
                   ? 'bg-wrench-600 text-white'
                   : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
@@ -365,7 +370,7 @@ export default function VaultPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-nav">
+      <div className="pb-nav flex-1 overflow-y-auto p-4 sm:p-6">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 size={24} className="animate-spin text-slate-500" />
@@ -430,7 +435,10 @@ export default function VaultPage() {
       {/* Add / Edit vault entry modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div key={editingEntry?.id ?? 'add'} className="w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+          <div
+            key={editingEntry?.id ?? 'add'}
+            className="w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+          >
             <h2 className="mb-4 text-lg font-semibold text-slate-200">
               {editingEntry ? '编辑凭据' : '新增凭据'}
             </h2>
@@ -438,23 +446,23 @@ export default function VaultPage() {
             <div className="space-y-4">
               {/* Name */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">名称 *</label>
+                <label className="mb-1 block text-xs font-medium text-slate-400">名称 *</label>
                 <input
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="例如：GitHub Token"
                   autoFocus
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-wrench-500 focus:outline-none"
+                  className="focus:border-wrench-500 w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
                 />
               </div>
 
               {/* Kind */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">类型</label>
+                <label className="mb-1 block text-xs font-medium text-slate-400">类型</label>
                 <select
                   value={formKind}
                   onChange={(e) => setFormKind(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 focus:border-wrench-500 focus:outline-none"
+                  className="focus:border-wrench-500 w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 focus:outline-none"
                 >
                   <option value="ssh_key">SSH Key</option>
                   <option value="api_key">API Key</option>
@@ -465,15 +473,17 @@ export default function VaultPage() {
 
               {/* Value */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">值 *</label>
+                <label className="mb-1 block text-xs font-medium text-slate-400">值 *</label>
                 <div className="relative">
                   <textarea
-                    value={showFormValue ? formValue : '•'.repeat(Math.min(formValue.length || 8, 30))}
+                    value={
+                      showFormValue ? formValue : '•'.repeat(Math.min(formValue.length || 8, 30))
+                    }
                     onChange={showFormValue ? (e) => setFormValue(e.target.value) : undefined}
                     readOnly={!showFormValue}
                     rows={4}
                     placeholder={showFormValue ? '粘贴凭据内容...' : ''}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 pr-10 text-sm font-mono text-slate-200 placeholder-slate-500 focus:border-wrench-500 focus:outline-none resize-none"
+                    className="focus:border-wrench-500 w-full resize-none rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 pr-10 font-mono text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
                   />
                   <button
                     type="button"
@@ -491,12 +501,14 @@ export default function VaultPage() {
 
               {/* Tags */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">标签（逗号分隔）</label>
+                <label className="mb-1 block text-xs font-medium text-slate-400">
+                  标签（逗号分隔）
+                </label>
                 <input
                   value={formTags}
                   onChange={(e) => setFormTags(e.target.value)}
                   placeholder="例如：production, api, team-a"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-wrench-500 focus:outline-none"
+                  className="focus:border-wrench-500 w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -515,7 +527,7 @@ export default function VaultPage() {
               <button
                 onClick={handleSaveEntry}
                 disabled={!formName.trim()}
-                className="bg-wrench-600 hover:bg-wrench-500 disabled:opacity-40 rounded-lg px-4 py-2 text-sm font-medium text-white"
+                className="bg-wrench-600 hover:bg-wrench-500 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
               >
                 {editingEntry ? '保存修改' : '添加凭据'}
               </button>

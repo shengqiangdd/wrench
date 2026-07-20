@@ -58,40 +58,43 @@ export default function Layout() {
   }, [])
 
   /** 直接用第一个已连接的主机执行（快捷方式），未连接则自动连接 */
-  const handleQuickExecute = useCallback(async (cmd: string) => {
-    const sshState = useSshStore.getState()
-    const sessions = sshState.sessions
-    const active = sessions.find((s) => s.status === 'connected')
+  const handleQuickExecute = useCallback(
+    async (cmd: string) => {
+      const sshState = useSshStore.getState()
+      const sessions = sshState.sessions
+      const active = sessions.find((s) => s.status === 'connected')
 
-    // 1. 已有活跃连接 → 直接执行
-    if (active?.connectionId) {
-      await handleHostSelected(active.connectionId, cmd)
-      return
-    }
-
-    // 2. 尝试自动连接：从保存的连接 / API / 测试配置中选第一个
-    const conn = sshState.connections[0]
-    if (conn) {
-      try {
-        notify('正在自动连接 SSH...', 'info')
-        const cid = await ensureSshConnection({
-          host: conn.host,
-          port: conn.port,
-          username: conn.username,
-          password: conn.password,
-          privateKey: conn.privateKey,
-        })
-        await handleHostSelected(cid, cmd)
+      // 1. 已有活跃连接 → 直接执行
+      if (active?.connectionId) {
+        await handleHostSelected(active.connectionId, cmd)
         return
-      } catch (err) {
-        // 自动连接失败，弹出选择器
-        console.warn('[Layout] Auto-connect failed:', err)
       }
-    }
 
-    // 3. 没有可用连接 → 弹出选择器
-    setPendingCommand(cmd)
-  }, [handleHostSelected])
+      // 2. 尝试自动连接：从保存的连接 / API / 测试配置中选第一个
+      const conn = sshState.connections[0]
+      if (conn) {
+        try {
+          notify('正在自动连接 SSH...', 'info')
+          const cid = await ensureSshConnection({
+            host: conn.host,
+            port: conn.port,
+            username: conn.username,
+            password: conn.password,
+            privateKey: conn.privateKey,
+          })
+          await handleHostSelected(cid, cmd)
+          return
+        } catch (err) {
+          // 自动连接失败，弹出选择器
+          console.warn('[Layout] Auto-connect failed:', err)
+        }
+      }
+
+      // 3. 没有可用连接 → 弹出选择器
+      setPendingCommand(cmd)
+    },
+    [handleHostSelected],
+  )
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-slate-950 dark:bg-slate-950">

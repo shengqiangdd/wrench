@@ -51,13 +51,25 @@ function createStorage(pluginId: string) {
   const PREFIX = `wrench_plugin_${pluginId}_`
   return {
     get: (key: string) => {
-      try { return localStorage.getItem(PREFIX + key) } catch { return null }
+      try {
+        return localStorage.getItem(PREFIX + key)
+      } catch {
+        return null
+      }
     },
     set: (key: string, value: string) => {
-      try { localStorage.setItem(PREFIX + key, value) } catch { /* */ }
+      try {
+        localStorage.setItem(PREFIX + key, value)
+      } catch {
+        /* */
+      }
     },
     remove: (key: string) => {
-      try { localStorage.removeItem(PREFIX + key) } catch { /* */ }
+      try {
+        localStorage.removeItem(PREFIX + key)
+      } catch {
+        /* */
+      }
     },
     clear: () => {
       try {
@@ -67,7 +79,9 @@ function createStorage(pluginId: string) {
           if (k?.startsWith(PREFIX)) keys.push(k)
         }
         keys.forEach((k) => localStorage.removeItem(k))
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
     },
   }
 }
@@ -125,7 +139,8 @@ export default function PluginSandbox({
         commandHandlers[id] = handler
       },
       getEditorContent: () => pluginSandboxManager.getEditorContent(),
-      setEditorContent: (content: string) => pluginSandboxManager.writeToEditor(content, manifest.id),
+      setEditorContent: (content: string) =>
+        pluginSandboxManager.writeToEditor(content, manifest.id),
       getCurrentFileLanguage: () => pluginSandboxManager.getEditorLanguage(),
       showNotification: pluginNotify,
       storage: createStorage(manifest.id),
@@ -140,8 +155,14 @@ export default function PluginSandbox({
 
     // 构建 wrench API（新插件期望的全局对象）
     // 每个插件使用独立的 wrench 对象实例，不共享全局
-    const wrenchCommands = new Map<string, { id: string; label: string; handler: (...args: unknown[]) => void }>()
-    const wrenchPanels = new Map<string, { id: string; title: string; icon?: string; render: (container: HTMLElement) => void }>()
+    const wrenchCommands = new Map<
+      string,
+      { id: string; label: string; handler: (...args: unknown[]) => void }
+    >()
+    const wrenchPanels = new Map<
+      string,
+      { id: string; title: string; icon?: string; render: (container: HTMLElement) => void }
+    >()
 
     const wrenchObj = {
       commands: {
@@ -157,9 +178,22 @@ export default function PluginSandbox({
         list: () => Array.from(wrenchCommands.values()),
       },
       panels: {
-        register: (id: string, config: { title: string; icon?: string; render: (container: HTMLElement) => void }) => {
-          wrenchPanels.set(id, { id, title: config.title, icon: config.icon, render: config.render })
-          registeredPanels.set(id, { id, title: config.title, icon: config.icon, render: config.render })
+        register: (
+          id: string,
+          config: { title: string; icon?: string; render: (container: HTMLElement) => void },
+        ) => {
+          wrenchPanels.set(id, {
+            id,
+            title: config.title,
+            icon: config.icon,
+            render: config.render,
+          })
+          registeredPanels.set(id, {
+            id,
+            title: config.title,
+            icon: config.icon,
+            render: config.render,
+          })
         },
         unregister: (id: string) => {
           wrenchPanels.delete(id)
@@ -170,7 +204,8 @@ export default function PluginSandbox({
       // 常用工具方法
       showNotification: pluginNotify,
       getEditorContent: () => pluginSandboxManager.getEditorContent(),
-      setEditorContent: (content: string) => pluginSandboxManager.writeToEditor(content, manifest.id),
+      setEditorContent: (content: string) =>
+        pluginSandboxManager.writeToEditor(content, manifest.id),
       storage: createStorage(manifest.id),
     }
 
@@ -189,8 +224,10 @@ export default function PluginSandbox({
 
     // 暴露插件命名空间的 camelCase/PascalCase 变量（用于 init() 查找）
     const segments = manifest.id.split('-')
-    const camelId = segments.map((s, i) => i === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1)).join('')
-    const pascalId = segments.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('')
+    const camelId = segments
+      .map((s, i) => (i === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1)))
+      .join('')
+    const pascalId = segments.map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join('')
     // 仅设置命名空间版本，不污染全局
     w[ns + camelId] = pluginAPI
     w[ns + pascalId] = pluginAPI
@@ -204,10 +241,7 @@ export default function PluginSandbox({
       _origLog.apply(console, args)
     }
     try {
-      const fn = new Function(
-        'Wrench', 'SmartBox', 'wrench', 'pluginAPI', 'rootEl',
-        pluginCode,
-      )
+      const fn = new Function('Wrench', 'SmartBox', 'wrench', 'pluginAPI', 'rootEl', pluginCode)
       fn(Wrench, Wrench, wrenchObj, pluginAPI, rootEl)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

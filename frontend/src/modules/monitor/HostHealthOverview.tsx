@@ -345,7 +345,10 @@ function HostHealthOverviewInner() {
         loadHealth()
         if (!timer) timer = setInterval(loadHealth, 30000)
       } else {
-        if (timer) { clearInterval(timer); timer = null }
+        if (timer) {
+          clearInterval(timer)
+          timer = null
+        }
       }
     }
     document.addEventListener('visibilitychange', onVisible)

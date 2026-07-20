@@ -46,7 +46,8 @@ class PluginSandboxManager {
   private editorSetter: ((content: string) => void) | null = null
 
   /** 命令结果缓存 — pluginId → { content, commandId, timestamp } */
-  private lastEditorWrite: Map<string, { content: string; commandId: string; timestamp: number }> = new Map()
+  private lastEditorWrite: Map<string, { content: string; commandId: string; timestamp: number }> =
+    new Map()
 
   /** 用于订阅命令结果变化的回调列表 */
   private resultListeners: Array<() => void> = []
@@ -136,7 +137,11 @@ class PluginSandboxManager {
       })
       // 通知监听者
       for (const listener of this.resultListeners) {
-        try { listener() } catch { /* */ }
+        try {
+          listener()
+        } catch {
+          /* */
+        }
       }
     }
   }
@@ -190,7 +195,9 @@ class PluginSandboxManager {
   }
 
   /** 获取指定插件的最后一次命令结果 */
-  getLastEditorWrite(pluginId: string): { content: string; commandId: string; timestamp: number } | null {
+  getLastEditorWrite(
+    pluginId: string,
+  ): { content: string; commandId: string; timestamp: number } | null {
     return this.lastEditorWrite.get(pluginId) || null
   }
 

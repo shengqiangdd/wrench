@@ -299,15 +299,18 @@ function FileManagerInner() {
   }, [])
 
   /** 持久化 SFTP 浏览路径（用 useCallback 包装，避免 re-render 时重建回调） */
-  const handlePathChange = useCallback((path: string) => {
-    const currentCache = useAppStore.getState().fmSftpState.pathCache
-    const connId = useAppStore.getState().fmSftpState.connId
-    setFmState({
-      ...useAppStore.getState().fmSftpState,
-      currentPath: path,
-      pathCache: connId ? { ...currentCache, [connId]: path } : currentCache,
-    })
-  }, [setFmState])
+  const handlePathChange = useCallback(
+    (path: string) => {
+      const currentCache = useAppStore.getState().fmSftpState.pathCache
+      const connId = useAppStore.getState().fmSftpState.connId
+      setFmState({
+        ...useAppStore.getState().fmSftpState,
+        currentPath: path,
+        pathCache: connId ? { ...currentCache, [connId]: path } : currentCache,
+      })
+    },
+    [setFmState],
+  )
 
   /** 核心：尝试从缓存恢复 SFTP session */
   const tryRestoreSession = useCallback(async (): Promise<boolean> => {
@@ -507,12 +510,15 @@ function FileManagerInner() {
     sessions.some((s) => s.id === fmState.sessionId && s.status === 'connected')
 
   // 移动端侧边栏宽度
-  const sidebarWidth = useMemo(() => (isMobile ? Math.min(260, window.innerWidth - 40) : 260), [isMobile])
+  const sidebarWidth = useMemo(
+    () => (isMobile ? Math.min(260, window.innerWidth - 40) : 260),
+    [isMobile],
+  )
 
   // 无连接时显示可选连接列表
   if (!isConnected && !connecting) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-4 pb-nav text-slate-500">
+      <div className="pb-nav flex h-full flex-col items-center justify-center gap-4 p-4 text-slate-500">
         <FileCode2 size={48} className="text-slate-600" />
         <div className="text-center">
           <p className="text-sm font-medium text-slate-400">未连接到任何 SSH</p>
@@ -536,7 +542,10 @@ function FileManagerInner() {
                   </option>
                 ))}
               </select>
-              <ChevronDown size={12} className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-slate-500" />
+              <ChevronDown
+                size={12}
+                className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-slate-500"
+              />
             </div>
           </div>
         )}
@@ -589,7 +598,9 @@ function FileManagerInner() {
                 onConnect={connectAndSftp}
                 connecting={connecting}
                 showConnector={true}
-                initialPath={fmState.currentPath || fmState.pathCache[fmState.connId || ''] || undefined}
+                initialPath={
+                  fmState.currentPath || fmState.pathCache[fmState.connId || ''] || undefined
+                }
                 onPathChange={handlePathChange}
               />
             </div>
@@ -632,7 +643,9 @@ function FileManagerInner() {
                   onConnect={connectAndSftp}
                   connecting={connecting}
                   showConnector={true}
-                  initialPath={fmState.currentPath || fmState.pathCache[fmState.connId || ''] || undefined}
+                  initialPath={
+                    fmState.currentPath || fmState.pathCache[fmState.connId || ''] || undefined
+                  }
                   onPathChange={handlePathChange}
                 />
               </div>

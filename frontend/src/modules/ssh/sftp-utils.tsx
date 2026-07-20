@@ -4,7 +4,20 @@
  * Pure functions with no React/JSX dependency.
  */
 
-import { FileText, Image, Film, Music, File, Link2, HardDrive, Cpu, Binary, FileCode, FileJson, Archive } from 'lucide-react'
+import {
+  FileText,
+  Image,
+  Film,
+  Music,
+  File,
+  Link2,
+  HardDrive,
+  Cpu,
+  Binary,
+  FileCode,
+  FileJson,
+  Archive,
+} from 'lucide-react'
 import type { SftpEntry } from '../../types/ssh'
 import { authedFetch } from '../../services/auth'
 
@@ -934,4 +947,3 @@ export function isBinaryContent(b64: string): boolean {
     return false
   }
 }
-

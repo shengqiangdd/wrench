@@ -42,7 +42,10 @@ export default function HostPickerModal({ command, onClose, onExecute }: Props) 
   )
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
       <div
         className="mx-4 w-full max-w-md rounded-xl border border-slate-700/50 bg-slate-900 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -92,7 +95,7 @@ export default function HostPickerModal({ command, onClose, onExecute }: Props) 
                     {/* 状态图标 */}
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-800">
                       {isLoading ? (
-                        <Loader2 size={14} className="animate-spin text-wrench-400" />
+                        <Loader2 size={14} className="text-wrench-400 animate-spin" />
                       ) : isConnected ? (
                         <Wifi size={14} className="text-emerald-400" />
                       ) : (

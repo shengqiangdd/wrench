@@ -31,10 +31,7 @@ export default function Toast() {
     return on('wrench-notification', ({ message, type }) => {
       if (!message) return
       const id = ++idRef.current
-      setToasts((prev) => [
-        ...prev,
-        { id, message, type: type || 'info', exiting: false },
-      ])
+      setToasts((prev) => [...prev, { id, message, type: type || 'info', exiting: false }])
       setTimeout(() => removeToast(id), 3500)
     })
   }, [removeToast])

@@ -89,9 +89,6 @@ export function onMount<K extends WrenchEventName>(
 // ── 便捷函数 ──
 
 /** 发送全局 Toast 通知 */
-export function notify(
-  message: string,
-  type: 'success' | 'error' | 'info' = 'info',
-): void {
+export function notify(message: string, type: 'success' | 'error' | 'info' = 'info'): void {
   emit('wrench-notification', { message, type })
 }

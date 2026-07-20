@@ -28,10 +28,7 @@ const FileInfoModal = memo(function FileInfoModal({ entry, onClose }: FileInfoMo
             {getFileIcon(entry.name, entry.type, entry.targetType)}
             <span className="truncate">{entry.name}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="btn-icon text-slate-500 hover:text-slate-300"
-          >
+          <button onClick={onClose} className="btn-icon text-slate-500 hover:text-slate-300">
             <X size={14} />
           </button>
         </div>
@@ -57,16 +54,12 @@ const FileInfoModal = memo(function FileInfoModal({ entry, onClose }: FileInfoMo
           <div className="flex justify-between">
             <span className="text-slate-600">修改时间</span>
             <span>
-              {entry.modifyTime
-                ? new Date(entry.modifyTime * 1000).toLocaleString()
-                : '-'}
+              {entry.modifyTime ? new Date(entry.modifyTime * 1000).toLocaleString() : '-'}
             </span>
           </div>
           <div className="flex justify-between break-all">
             <span className="shrink-0 text-slate-600">路径</span>
-            <span className="text-right font-mono text-[10px] text-slate-500">
-              {entry.path}
-            </span>
+            <span className="text-right font-mono text-[10px] text-slate-500">{entry.path}</span>
           </div>
           {entry.type === 'symlink' && entry.linkTarget && (
             <div className="flex justify-between break-all">

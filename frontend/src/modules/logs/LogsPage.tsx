@@ -6,15 +6,8 @@ import SourceConfig from './SourceConfig'
 
 export default function LogsPage() {
   // ── 统一主机选择器 ──
-  const {
-    hosts,
-    selectedId,
-    setSelectedId,
-    connectionId,
-    connecting,
-    hostLabel,
-    hasHosts,
-  } = useSshHostSelector()
+  const { hosts, selectedId, setSelectedId, connectionId, connecting, hostLabel, hasHosts } =
+    useSshHostSelector()
 
   const [currentPath, setCurrentPath] = useState<string | null>(null)
   const [sourcePanelOpen, setSourcePanelOpen] = useState(true)
@@ -99,7 +92,8 @@ export default function LogsPage() {
             >
               {hosts.map((h) => (
                 <option key={h.id} value={h.id} className="bg-slate-800">
-                  {h.source === 'test-config' ? '⚡ ' : ''}{h.name}
+                  {h.source === 'test-config' ? '⚡ ' : ''}
+                  {h.name}
                 </option>
               ))}
             </select>
@@ -129,7 +123,8 @@ export default function LogsPage() {
             >
               {hosts.map((h) => (
                 <option key={h.id} value={h.id} className="bg-slate-800">
-                  {h.source === 'test-config' ? '⚡ ' : ''}{h.name}
+                  {h.source === 'test-config' ? '⚡ ' : ''}
+                  {h.name}
                 </option>
               ))}
             </select>
@@ -158,7 +153,7 @@ export default function LogsPage() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden relative">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* 始终渲染 SourceConfig，用 CSS 隐藏，避免重建丢失状态 */}
         <div
           className={`shrink-0 overflow-y-auto bg-slate-900/50 transition-all ${

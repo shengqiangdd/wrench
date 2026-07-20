@@ -54,9 +54,7 @@ const LANG_LABELS: Record<string, string> = {
 }
 
 /** 可执行的 shell 语言 */
-const EXECUTABLE_LANGS = new Set([
-  'bash', 'sh', 'shell', 'zsh', 'shell-session',
-])
+const EXECUTABLE_LANGS = new Set(['bash', 'sh', 'shell', 'zsh', 'shell-session'])
 
 function AgentMarkdown({ content, onExecute }: Props) {
   return (
@@ -73,7 +71,7 @@ function AgentMarkdown({ content, onExecute }: Props) {
             if (!className && !codeString.includes('\n')) {
               return (
                 <code
-                  className="rounded bg-slate-700/50 px-1.5 py-0.5 font-mono text-[12px] text-wrench-300"
+                  className="text-wrench-300 rounded bg-slate-700/50 px-1.5 py-0.5 font-mono text-[12px]"
                   {...props}
                 >
                   {children}
@@ -82,13 +80,7 @@ function AgentMarkdown({ content, onExecute }: Props) {
             }
 
             // 代码块
-            return (
-              <CodeBlock
-                language={lang}
-                code={codeString}
-                onExecute={onExecute}
-              />
-            )
+            return <CodeBlock language={lang} code={codeString} onExecute={onExecute} />
           },
           // 表格
           table({ children }) {
@@ -118,7 +110,7 @@ function AgentMarkdown({ content, onExecute }: Props) {
           // 引用块
           blockquote({ children }) {
             return (
-              <blockquote className="my-2 border-l-3 border-wrench-500/50 bg-wrench-500/5 py-1 pl-3 text-[13px] text-slate-400 italic">
+              <blockquote className="border-wrench-500/50 bg-wrench-500/5 my-2 border-l-3 py-1 pl-3 text-[13px] text-slate-400 italic">
                 {children}
               </blockquote>
             )
@@ -130,7 +122,7 @@ function AgentMarkdown({ content, onExecute }: Props) {
                 type="checkbox"
                 checked={checked}
                 readOnly
-                className="mr-1.5 accent-wrench-500"
+                className="accent-wrench-500 mr-1.5"
                 {...props}
               />
             )
@@ -142,7 +134,7 @@ function AgentMarkdown({ content, onExecute }: Props) {
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-wrench-400 underline decoration-wrench-400/30 hover:decoration-wrench-400"
+                className="text-wrench-400 decoration-wrench-400/30 hover:decoration-wrench-400 underline"
               >
                 {children}
               </a>
@@ -154,23 +146,35 @@ function AgentMarkdown({ content, onExecute }: Props) {
           },
           // 标题
           h1({ children }) {
-            return <h1 className="mb-2 mt-4 text-base font-bold text-white">{children}</h1>
+            return <h1 className="mt-4 mb-2 text-base font-bold text-white">{children}</h1>
           },
           h2({ children }) {
-            return <h2 className="mb-1.5 mt-3 text-sm font-bold text-white">{children}</h2>
+            return <h2 className="mt-3 mb-1.5 text-sm font-bold text-white">{children}</h2>
           },
           h3({ children }) {
-            return <h3 className="mb-1 mt-2 text-[13px] font-semibold text-slate-200">{children}</h3>
+            return (
+              <h3 className="mt-2 mb-1 text-[13px] font-semibold text-slate-200">{children}</h3>
+            )
           },
           h4({ children }) {
-            return <h4 className="mb-1 mt-2 text-[12px] font-semibold text-slate-300">{children}</h4>
+            return (
+              <h4 className="mt-2 mb-1 text-[12px] font-semibold text-slate-300">{children}</h4>
+            )
           },
           // 列表
           ul({ children }) {
-            return <ul className="my-1 list-disc space-y-0.5 pl-5 text-[13px] text-slate-400">{children}</ul>
+            return (
+              <ul className="my-1 list-disc space-y-0.5 pl-5 text-[13px] text-slate-400">
+                {children}
+              </ul>
+            )
           },
           ol({ children }) {
-            return <ol className="my-1 list-decimal space-y-0.5 pl-5 text-[13px] text-slate-400">{children}</ol>
+            return (
+              <ol className="my-1 list-decimal space-y-0.5 pl-5 text-[13px] text-slate-400">
+                {children}
+              </ol>
+            )
           },
           li({ children }) {
             return <li className="leading-relaxed">{children}</li>

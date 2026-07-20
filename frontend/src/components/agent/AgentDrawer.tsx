@@ -22,11 +22,7 @@ interface Props {
   onExecuteCommand?: (cmd: string) => void
 }
 
-export default function AgentDrawer({
-  children,
-  context: _context,
-  onExecuteCommand,
-}: Props) {
+export default function AgentDrawer({ children, context: _context, onExecuteCommand }: Props) {
   const agentOpen = useAppStore((s) => s.agentOpen)
   const setAgentOpen = useAppStore((s) => s.setAgentOpen)
 
@@ -59,7 +55,7 @@ export default function AgentDrawer({
       {!agentOpen && (
         <button
           onClick={() => setAgentOpen(true)}
-          className="fixed bottom-6 right-4 z-40 hidden h-12 w-12 items-center justify-center rounded-full bg-wrench-600 text-white shadow-lg shadow-wrench-600/20 transition-all hover:scale-105 hover:bg-wrench-500 lg:flex"
+          className="bg-wrench-600 shadow-wrench-600/20 hover:bg-wrench-500 fixed right-4 bottom-6 z-40 hidden h-12 w-12 items-center justify-center rounded-full text-white shadow-lg transition-all hover:scale-105 lg:flex"
           title="AI Agent (⌘+Shift+A)"
         >
           <PanelRightOpen size={18} />
@@ -68,10 +64,7 @@ export default function AgentDrawer({
 
       {/* ── 遮罩层 ── */}
       {agentOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/30 transition-opacity"
-          onClick={handleClose}
-        />
+        <div className="fixed inset-0 z-40 bg-black/30 transition-opacity" onClick={handleClose} />
       )}
 
       {/* ── 抽屉面板 ── */}
@@ -84,9 +77,12 @@ export default function AgentDrawer({
         {/* 内容区 */}
         <div className="min-h-0 flex-1">
           {isValidElement(children)
-            ? cloneElement(children as React.ReactElement<{ onExecuteCommand?: (cmd: string) => void }>, {
-                onExecuteCommand,
-              })
+            ? cloneElement(
+                children as React.ReactElement<{ onExecuteCommand?: (cmd: string) => void }>,
+                {
+                  onExecuteCommand,
+                },
+              )
             : children}
         </div>
       </div>

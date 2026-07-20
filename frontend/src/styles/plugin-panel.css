@@ -6,7 +6,10 @@
 
 .wp-panel {
   padding: 16px;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
   color: #e2e8f0;
   line-height: 1.5;
 }
@@ -348,8 +351,12 @@
 }
 
 @keyframes wp-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── 浅色主题覆盖 ── */
@@ -458,23 +465,53 @@ html:not(.dark) .wp-color-swatch {
 /* 针对具体插件的旧 class 名映射（无需修改插件源码） */
 
 /* JWT Decoder — 粉色 → 蓝色 */
-.jwt-parse-btn { background: #0284c7 !important; }
-.jwt-parse-btn:hover { background: #0ea5e9 !important; }
-.jwt-status.jwt-ok { background: rgba(16,185,129,0.1) !important; color: #34d399 !important; border-color: rgba(16,185,129,0.2) !important; }
-.jwt-status.jwt-expired { background: rgba(239,68,68,0.1) !important; color: #f87171 !important; border-color: rgba(239,68,68,0.2) !important; }
-.jwt-status.jwt-warn { background: rgba(245,158,11,0.1) !important; color: #fbbf24 !important; border-color: rgba(245,158,11,0.2) !important; }
-.jwt-status.jwt-info { background: rgba(14,165,233,0.1) !important; color: #38bdf8 !important; border-color: rgba(14,165,233,0.2) !important; }
-.jwt-copy { background: #334155 !important; color: #94a3b8 !important; }
-.jwt-copy:hover { background: rgba(14,165,233,0.15) !important; color: #38bdf8 !important; }
-.v-pink { color: #38bdf8 !important; }
+.jwt-parse-btn {
+  background: #0284c7 !important;
+}
+.jwt-parse-btn:hover {
+  background: #0ea5e9 !important;
+}
+.jwt-status.jwt-ok {
+  background: rgba(16, 185, 129, 0.1) !important;
+  color: #34d399 !important;
+  border-color: rgba(16, 185, 129, 0.2) !important;
+}
+.jwt-status.jwt-expired {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #f87171 !important;
+  border-color: rgba(239, 68, 68, 0.2) !important;
+}
+.jwt-status.jwt-warn {
+  background: rgba(245, 158, 11, 0.1) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(245, 158, 11, 0.2) !important;
+}
+.jwt-status.jwt-info {
+  background: rgba(14, 165, 233, 0.1) !important;
+  color: #38bdf8 !important;
+  border-color: rgba(14, 165, 233, 0.2) !important;
+}
+.jwt-copy {
+  background: #334155 !important;
+  color: #94a3b8 !important;
+}
+.jwt-copy:hover {
+  background: rgba(14, 165, 233, 0.15) !important;
+  color: #38bdf8 !important;
+}
+.v-pink {
+  color: #38bdf8 !important;
+}
 
 /* 通用旧背景色映射 */
-[class*="plugin-"] { background-color: transparent !important; }
+[class*='plugin-'] {
+  background-color: transparent !important;
+}
 
 /* 旧 textarea/input 背景统一 */
 textarea,
-input[type="text"],
-input[type="number"],
+input[type='text'],
+input[type='number'],
 input:not([type]),
 .pf-input,
 #jwt-input,
@@ -485,39 +522,39 @@ input:not([type]),
 }
 
 textarea:focus,
-input[type="text"]:focus,
-input[type="number"]:focus,
+input[type='text']:focus,
+input[type='number']:focus,
 input:not([type]):focus,
 .pf-input:focus,
 #jwt-input:focus,
 #cv-expr:focus {
   border-color: #0ea5e9 !important;
-  box-shadow: 0 0 0 2px rgba(14,165,233,0.15) !important;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15) !important;
   outline: none !important;
 }
 
 /* 旧按钮色统一 → wrench 蓝 */
 .pf-btn,
-button[class*="parse"],
-button[class*="btn"],
-button:not([class*="wp-"]) {
+button[class*='parse'],
+button[class*='btn'],
+button:not([class*='wp-']) {
   transition: all 150ms !important;
 }
 
 /* 粉色/紫色按钮 → 蓝色 */
 .jwt-parse-btn,
 .cv-parse,
-.pf-btn:not(.pf-btn-secondary):not([class*="danger"]) {
+.pf-btn:not(.pf-btn-secondary):not([class*='danger']) {
   background: #0284c7 !important;
   color: white !important;
 }
 
 .jwt-parse-btn:hover,
 .cv-parse:hover,
-.pf-btn:not(.pf-btn-secondary):not([class*="danger"]):hover {
+.pf-btn:not(.pf-btn-secondary):not([class*='danger']):hover {
   background: #0ea5e9 !important;
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(14,165,233,0.25) !important;
+  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.25) !important;
 }
 
 /* 旧卡片背景统一 */
@@ -525,30 +562,34 @@ button:not([class*="wp-"]) {
 .jwt-card,
 .cv-builder,
 .cv-b-result,
-[class*="result"],
-[class*="card"] {
+[class*='result'],
+[class*='card'] {
   background: #0f172a !important;
   border-color: #1e293b !important;
 }
 
 /* 旧文字色统一 */
-.k, .d, [class*="label"] {
+.k,
+.d,
+[class*='label'] {
   color: #94a3b8 !important;
 }
 
-.v, [class*="result"] {
+.v,
+[class*='result'] {
   color: #cbd5e1 !important;
 }
 
 /* 旧分隔线统一 */
 .cv-trigger,
 .jwt-kv,
-[class*="divider"] {
+[class*='divider'] {
   border-color: #1e293b !important;
 }
 
 /* 旧 h4/h3 统一 */
-h3, h4 {
+h3,
+h4 {
   color: #f1f5f9 !important;
 }
 
@@ -570,8 +611,8 @@ select:focus {
 
 /* 浅色主题覆盖 — 旧颜色映射 */
 html:not(.dark) textarea,
-html:not(.dark) input[type="text"],
-html:not(.dark) input[type="number"],
+html:not(.dark) input[type='text'],
+html:not(.dark) input[type='number'],
 html:not(.dark) input:not([type]),
 html:not(.dark) .pf-input,
 html:not(.dark) #jwt-input,
@@ -582,8 +623,8 @@ html:not(.dark) #cv-expr {
 }
 
 html:not(.dark) textarea:focus,
-html:not(.dark) input[type="text"]:focus,
-html:not(.dark) input[type="number"]:focus,
+html:not(.dark) input[type='text']:focus,
+html:not(.dark) input[type='number']:focus,
 html:not(.dark) input:not([type]):focus,
 html:not(.dark) .pf-input:focus,
 html:not(.dark) #jwt-input:focus,
@@ -594,7 +635,7 @@ html:not(.dark) #cv-expr:focus {
 html:not(.dark) .pf-btn,
 html:not(.dark) .jwt-parse-btn,
 html:not(.dark) .cv-parse,
-html:not(.dark) .pf-btn:not(.pf-btn-secondary):not([class*="danger"]) {
+html:not(.dark) .pf-btn:not(.pf-btn-secondary):not([class*='danger']) {
   background: #0284c7 !important;
 }
 
@@ -613,8 +654,8 @@ html:not(.dark) .pf-result,
 html:not(.dark) .jwt-card,
 html:not(.dark) .cv-builder,
 html:not(.dark) .cv-b-result,
-html:not(.dark) [class*="result"],
-html:not(.dark) [class*="card"] {
+html:not(.dark) [class*='result'],
+html:not(.dark) [class*='card'] {
   background: #f8fafc !important;
   border-color: #e2e8f0 !important;
   color: #334155 !important;
@@ -622,12 +663,12 @@ html:not(.dark) [class*="card"] {
 
 html:not(.dark) .k,
 html:not(.dark) .d,
-html:not(.dark) [class*="label"] {
+html:not(.dark) [class*='label'] {
   color: #64748b !important;
 }
 
 html:not(.dark) .v,
-html:not(.dark) [class*="result"] {
+html:not(.dark) [class*='result'] {
   color: #334155 !important;
 }
 
@@ -658,7 +699,7 @@ html:not(.dark) .cv-preset:hover {
 }
 
 html:not(.dark) .cv-trigger:nth-child(odd) {
-  background: rgba(241,245,249,0.5) !important;
+  background: rgba(241, 245, 249, 0.5) !important;
 }
 
 html:not(.dark) .jwt-copy {

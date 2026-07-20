@@ -39,7 +39,14 @@ import { useAppStore } from '../../stores/app-store'
 import { sniffLanguage, classifyFile } from '../../utils/content-sniff'
 import { AlertModal, ConfirmModal } from '../../components/ConfirmModal'
 import type { SftpEntry } from '../../types/ssh'
-import { SftpContextMenu, FileInfoModal, DiskUsageModal, HashModal, ChmodModal, MoveModal } from './sftp-components'
+import {
+  SftpContextMenu,
+  FileInfoModal,
+  DiskUsageModal,
+  HashModal,
+  ChmodModal,
+  MoveModal,
+} from './sftp-components'
 
 interface SftpBrowserProps {
   sessionId: string | null
@@ -68,15 +75,25 @@ interface SftpBrowserProps {
 
 // ─── Extracted utility functions ───
 import {
-  b64ToText, textToB64, inferMimeFromBase64,
+  b64ToText,
+  textToB64,
+  inferMimeFromBase64,
   getMimeByName,
   getFileIcon,
-  formatSize, formatPerms,
-  detectLanguage, fallbackCopy, isDirLike, sortEntriesBy,
-  isImageFile, isVideoFile, isAudioFile, isBinaryFile,
+  formatSize,
+  formatPerms,
+  detectLanguage,
+  fallbackCopy,
+  isDirLike,
+  sortEntriesBy,
+  isImageFile,
+  isVideoFile,
+  isAudioFile,
+  isBinaryFile,
   isBinaryContent,
   sftpApi,
-  type SortKey, type SortDir,
+  type SortKey,
+  type SortDir,
 } from './sftp-utils'
 
 // ─── 文件查看/编辑模态框 ───
@@ -248,7 +265,10 @@ const FilePreviewModal = memo(function FilePreviewModal({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="rounded-lg border border-slate-700 bg-slate-800 p-6 shadow-xl">
           <Loader2 size={20} className="animate-spin text-sky-400" />
           <p className="mt-2 text-xs text-slate-400">加载中…</p>
@@ -260,7 +280,10 @@ const FilePreviewModal = memo(function FilePreviewModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={(e) => { e.stopPropagation(); onClose() }}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClose()
+      }}
     >
       <div
         className="flex max-h-[85vh] w-[95vw] max-w-4xl flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-xl sm:w-[90vw]"
@@ -269,12 +292,20 @@ const FilePreviewModal = memo(function FilePreviewModal({
         {/* 标题栏 */}
         <div className="flex shrink-0 items-center gap-2 border-b border-slate-700/50 px-3 py-2 sm:px-4">
           <div className="flex min-w-0 shrink items-center gap-2 overflow-hidden text-sm text-slate-300">
-            <span className="shrink-0">{getFileIcon(entry.name, entry.type, entry.targetType)}</span>
+            <span className="shrink-0">
+              {getFileIcon(entry.name, entry.type, entry.targetType)}
+            </span>
             <span className="min-w-0 truncate font-medium">{entry.name}</span>
-            <span className="shrink-0 whitespace-nowrap text-[10px] text-slate-500">{formatSize(entry.size)}</span>
+            <span className="shrink-0 text-[10px] whitespace-nowrap text-slate-500">
+              {formatSize(entry.size)}
+            </span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {error && <span className="max-w-[100px] truncate text-[10px] text-red-400" title={error}>{error}</span>}
+            {error && (
+              <span className="max-w-[100px] truncate text-[10px] text-red-400" title={error}>
+                {error}
+              </span>
+            )}
             {saveMsg && <span className="text-[10px] text-emerald-400">{saveMsg}</span>}
             {!isImage && !isVideo && !isAudio && !editMode && content && (
               <button
@@ -649,61 +680,93 @@ function SftpBrowserInner({
   // ─── 操作处理 ───
 
   // 受保护的系统目录 — 禁止删除
-  const PROTECTED_PATHS = useMemo(() => [
-    '/bin', '/sbin', '/usr', '/lib', '/lib64', '/etc', '/var', '/sys',
-    '/proc', '/dev', '/boot', '/root', '/run', '/snap', '/opt',
-    '/usr/local', '/usr/bin', '/usr/sbin', '/usr/lib', '/usr/share',
-    '/etc/ssh', '/etc/passwd', '/etc/shadow', '/etc/group',
-  ], [])
+  const PROTECTED_PATHS = useMemo(
+    () => [
+      '/bin',
+      '/sbin',
+      '/usr',
+      '/lib',
+      '/lib64',
+      '/etc',
+      '/var',
+      '/sys',
+      '/proc',
+      '/dev',
+      '/boot',
+      '/root',
+      '/run',
+      '/snap',
+      '/opt',
+      '/usr/local',
+      '/usr/bin',
+      '/usr/sbin',
+      '/usr/lib',
+      '/usr/share',
+      '/etc/ssh',
+      '/etc/passwd',
+      '/etc/shadow',
+      '/etc/group',
+    ],
+    [],
+  )
 
-  const isProtectedPath = useCallback((path: string): boolean => {
-    const normalized = path.replace(/\/+$/, '') || '/'
-    return PROTECTED_PATHS.some((p) => normalized === p || normalized.startsWith(p + '/'))
-  }, [PROTECTED_PATHS])
+  const isProtectedPath = useCallback(
+    (path: string): boolean => {
+      const normalized = path.replace(/\/+$/, '') || '/'
+      return PROTECTED_PATHS.some((p) => normalized === p || normalized.startsWith(p + '/'))
+    },
+    [PROTECTED_PATHS],
+  )
 
   // 回收站路径
   const TRASH_DIR = '/tmp/.wrench-trash'
 
-  const moveToTrash = useCallback(async (entryPath: string, entryName: string): Promise<void> => {
-    if (!sessionId) return
-    // 先确保回收站目录存在
-    try {
-      await sftpApi('mkdir', { connectionId: sessionId, path: TRASH_DIR })
-    } catch {
-      // 目录已存在或其他错误，忽略
-    }
-    // 带时间戳重命名移到回收站
-    const ts = Date.now()
-    const safeName = entryName.replace(/\//g, '_')
-    const trashPath = `${TRASH_DIR}/${ts}_${safeName}`
-    await sftpApi('rename', {
-      connectionId: sessionId,
-      from: entryPath,
-      to: trashPath,
-    })
-  }, [sessionId])
-
-  // 从回收站恢复文件（还原到原始位置）
-  const restoreFromTrash = useCallback(async (entry: SftpEntry): Promise<void> => {
-    if (!sessionId) return
-    // 回收站文件名格式：{timestamp}_{originalName}
-    const trashName = entry.name
-    const underscoreIdx = trashName.indexOf('_')
-    const originalName = underscoreIdx > 0 ? trashName.substring(underscoreIdx + 1) : trashName
-    // 恢复到 /tmp/ 下（因为原始位置可能已不存在）
-    const restorePath = `/tmp/${originalName}`
-    try {
+  const moveToTrash = useCallback(
+    async (entryPath: string, entryName: string): Promise<void> => {
+      if (!sessionId) return
+      // 先确保回收站目录存在
+      try {
+        await sftpApi('mkdir', { connectionId: sessionId, path: TRASH_DIR })
+      } catch {
+        // 目录已存在或其他错误，忽略
+      }
+      // 带时间戳重命名移到回收站
+      const ts = Date.now()
+      const safeName = entryName.replace(/\//g, '_')
+      const trashPath = `${TRASH_DIR}/${ts}_${safeName}`
       await sftpApi('rename', {
         connectionId: sessionId,
-        from: entry.path,
-        to: restorePath,
+        from: entryPath,
+        to: trashPath,
       })
-      refresh()
-      setAlertModal({ title: '恢复成功', message: `已将 "${originalName}" 恢复到 /tmp/` })
-    } catch (err) {
-      setAlertModal({ title: '恢复失败', message: (err as Error).message })
-    }
-  }, [sessionId, refresh])
+    },
+    [sessionId],
+  )
+
+  // 从回收站恢复文件（还原到原始位置）
+  const restoreFromTrash = useCallback(
+    async (entry: SftpEntry): Promise<void> => {
+      if (!sessionId) return
+      // 回收站文件名格式：{timestamp}_{originalName}
+      const trashName = entry.name
+      const underscoreIdx = trashName.indexOf('_')
+      const originalName = underscoreIdx > 0 ? trashName.substring(underscoreIdx + 1) : trashName
+      // 恢复到 /tmp/ 下（因为原始位置可能已不存在）
+      const restorePath = `/tmp/${originalName}`
+      try {
+        await sftpApi('rename', {
+          connectionId: sessionId,
+          from: entry.path,
+          to: restorePath,
+        })
+        refresh()
+        setAlertModal({ title: '恢复成功', message: `已将 "${originalName}" 恢复到 /tmp/` })
+      } catch (err) {
+        setAlertModal({ title: '恢复失败', message: (err as Error).message })
+      }
+    },
+    [sessionId, refresh],
+  )
 
   const handleDelete = useCallback(
     (entry: SftpEntry) => {
@@ -819,7 +882,10 @@ function SftpBrowserInner({
       }
       refresh()
     } catch (err) {
-      setAlertModal({ title: clipboard.mode === 'cut' ? '剪切失败' : '粘贴失败', message: (err as Error).message })
+      setAlertModal({
+        title: clipboard.mode === 'cut' ? '剪切失败' : '粘贴失败',
+        message: (err as Error).message,
+      })
     }
   }, [sessionId, clipboard, currentPath, refresh])
 
@@ -836,42 +902,48 @@ function SftpBrowserInner({
   }, [])
 
   // ─── 磁盘使用 ───
-  const handleDiskUsage = useCallback(async (entry: SftpEntry) => {
-    if (!sessionId) return
-    setDiskUsageEntry(entry)
-    setDiskUsageData(null)
-    try {
-      const data = await sftpApi<{
-        totalSize: number
-        fileCount: number
-        dirCount: number
-        largestFile?: string
-        largestSize: number
-      }>('disk-usage', { connectionId: sessionId, path: entry.path })
-      setDiskUsageData(data)
-    } catch (err) {
-      setAlertModal({ title: '获取磁盘使用失败', message: (err as Error).message })
-      setDiskUsageEntry(null)
-    }
-  }, [sessionId])
+  const handleDiskUsage = useCallback(
+    async (entry: SftpEntry) => {
+      if (!sessionId) return
+      setDiskUsageEntry(entry)
+      setDiskUsageData(null)
+      try {
+        const data = await sftpApi<{
+          totalSize: number
+          fileCount: number
+          dirCount: number
+          largestFile?: string
+          largestSize: number
+        }>('disk-usage', { connectionId: sessionId, path: entry.path })
+        setDiskUsageData(data)
+      } catch (err) {
+        setAlertModal({ title: '获取磁盘使用失败', message: (err as Error).message })
+        setDiskUsageEntry(null)
+      }
+    },
+    [sessionId],
+  )
 
   // ─── 文件哈希 ───
-  const handleFileHash = useCallback(async (entry: SftpEntry) => {
-    if (!sessionId) return
-    setHashEntry(entry)
-    setHashData(null)
-    try {
-      const data = await sftpApi<{
-        md5: string
-        sha1: string
-        sha256: string
-      }>('file-hash', { connectionId: sessionId, path: entry.path })
-      setHashData(data)
-    } catch (err) {
-      setAlertModal({ title: '获取文件哈希失败', message: (err as Error).message })
-      setHashEntry(null)
-    }
-  }, [sessionId])
+  const handleFileHash = useCallback(
+    async (entry: SftpEntry) => {
+      if (!sessionId) return
+      setHashEntry(entry)
+      setHashData(null)
+      try {
+        const data = await sftpApi<{
+          md5: string
+          sha1: string
+          sha256: string
+        }>('file-hash', { connectionId: sessionId, path: entry.path })
+        setHashData(data)
+      } catch (err) {
+        setAlertModal({ title: '获取文件哈希失败', message: (err as Error).message })
+        setHashEntry(null)
+      }
+    },
+    [sessionId],
+  )
 
   // ─── 批量操作 ───
   const batchMoveSelected = useCallback(async () => {
@@ -1274,7 +1346,17 @@ function SftpBrowserInner({
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selectedPaths, entries, clipboard, handleCopy, handleCut, handlePaste, selectAll, batchDelete, clearSelection])
+  }, [
+    selectedPaths,
+    entries,
+    clipboard,
+    handleCopy,
+    handleCut,
+    handlePaste,
+    selectAll,
+    batchDelete,
+    clearSelection,
+  ])
 
   // ─── 移动端禁用浏览器默认长按行为（兼容所有 Android 浏览器） ──
   // 只作用于 .sftp-file-entry（文件列表条目），不干预模态框/弹窗内容。
@@ -1293,7 +1375,11 @@ function SftpBrowserInner({
       if (!activeTouchEntry) return
       const sel = window.getSelection()
       if (sel && !sel.isCollapsed) {
-        try { sel.removeAllRanges() } catch { /* ignore */ }
+        try {
+          sel.removeAllRanges()
+        } catch {
+          /* ignore */
+        }
       }
     }
 
@@ -1302,7 +1388,11 @@ function SftpBrowserInner({
       setTimeout(() => {
         const sel = window.getSelection()
         if (sel && !sel.isCollapsed) {
-          try { sel.removeAllRanges() } catch { /* ignore */ }
+          try {
+            sel.removeAllRanges()
+          } catch {
+            /* ignore */
+          }
         }
       }, 50)
     }
@@ -1330,17 +1420,23 @@ function SftpBrowserInner({
     return { x: Math.max(0, x), y: Math.max(0, y) }
   }, [])
 
-  const handleEntryContextMenu = useCallback((e: React.MouseEvent, entry: SftpEntry) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setContextMenu({ ...clampMenuPosition(e.clientX, e.clientY), entry })
-  }, [clampMenuPosition])
+  const handleEntryContextMenu = useCallback(
+    (e: React.MouseEvent, entry: SftpEntry) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setContextMenu({ ...clampMenuPosition(e.clientX, e.clientY), entry })
+    },
+    [clampMenuPosition],
+  )
 
-  const handleEmptyContextMenu = useCallback((e: React.MouseEvent) => {
-    if (e.type !== 'contextmenu') return
-    e.preventDefault()
-    setContextMenu({ ...clampMenuPosition(e.clientX, e.clientY), entry: null })
-  }, [clampMenuPosition])
+  const handleEmptyContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.type !== 'contextmenu') return
+      e.preventDefault()
+      setContextMenu({ ...clampMenuPosition(e.clientX, e.clientY), entry: null })
+    },
+    [clampMenuPosition],
+  )
 
   // ─── 拖拽上传 ───
 
@@ -1516,7 +1612,11 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
     }
     return {
       dirs: sortEntriesBy(entries.filter(isDirLike), sortKey, sortDir),
-      files: sortEntriesBy(entries.filter((e) => !isDirLike(e)), sortKey, sortDir),
+      files: sortEntriesBy(
+        entries.filter((e) => !isDirLike(e)),
+        sortKey,
+        sortDir,
+      ),
     }
   }, [entries, allEntries, sortKey, sortDir])
 
@@ -1540,7 +1640,13 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         <div
           key={entry.path}
           className={`sftp-file-entry flex cursor-pointer items-center gap-2 px-2 py-1 text-xs transition-colors hover:bg-slate-700/30 ${isSelected ? 'bg-sky-900/20' : ''} ${isDir || (isSymlink && (entry.targetType === 'directory' || entry.targetType === 'unknown')) ? 'text-sky-300' : 'text-slate-300'}`}
-          style={{ height: 28, userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', touchAction: 'manipulation' as const }}
+          style={{
+            height: 28,
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            WebkitTouchCallout: 'none',
+            touchAction: 'manipulation' as const,
+          }}
           onClick={(e) => {
             // 点击复选框区域不触发打开
             if ((e.target as HTMLElement).closest('[data-select]')) return
@@ -1680,14 +1786,23 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
   // ─── 状态栏 ───
   const statusBar = useMemo(() => {
     const totalSize = entries.reduce((sum, e) => sum + (isDirLike(e) ? 0 : e.size), 0)
-    const sortLabel = sortKey === 'name' ? '名称' : sortKey === 'size' ? '大小' : sortKey === 'modified' ? '日期' : '类型'
+    const sortLabel =
+      sortKey === 'name'
+        ? '名称'
+        : sortKey === 'size'
+          ? '大小'
+          : sortKey === 'modified'
+            ? '日期'
+            : '类型'
     return (
       <div className="flex items-center justify-between border-t border-slate-700/30 px-2 py-0.5 text-[10px] text-slate-600">
         <span>
-          {sortedEntries.dirs.length} 目录 · {sortedEntries.files.length} 文件 · {formatSize(totalSize)}
+          {sortedEntries.dirs.length} 目录 · {sortedEntries.files.length} 文件 ·{' '}
+          {formatSize(totalSize)}
         </span>
         <span className="text-slate-700">
-          排序: {sortLabel}{sortDir === 'asc' ? ' ↑' : ' ↓'}
+          排序: {sortLabel}
+          {sortDir === 'asc' ? ' ↑' : ' ↓'}
           {clipboard && ` · 剪贴板: ${clipboard.paths.length} 项`}
         </span>
       </div>
@@ -1740,7 +1855,16 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         </button>
       </div>
     )
-  }, [selectedPaths, entries, selectAll, clearSelection, batchDelete, handleCopy, handleCut, batchMoveSelected])
+  }, [
+    selectedPaths,
+    entries,
+    selectAll,
+    clearSelection,
+    batchDelete,
+    handleCopy,
+    handleCut,
+    batchMoveSelected,
+  ])
 
   // ─── 面包屑导航 ───
   const breadcrumb = useMemo(() => {
@@ -1844,12 +1968,12 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         <div className="flex-1" />
         {/* 排序按钮 */}
         <div className="flex items-center gap-0">
-          {([
+          {[
             { key: 'name' as SortKey, label: '名称', icon: 'N' },
             { key: 'size' as SortKey, label: '大小', icon: 'S' },
             { key: 'modified' as SortKey, label: '日期', icon: 'D' },
             { key: 'type' as SortKey, label: '类型', icon: 'T' },
-          ]).map(({ key, label, icon }) => (
+          ].map(({ key, label, icon }) => (
             <button
               key={key}
               onClick={() => toggleSort(key)}
@@ -1861,7 +1985,10 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
               title={`按${label}排序${sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}`}
             >
               <span className="sm:hidden">{icon}</span>
-              <span className="hidden sm:inline">{label}{sortKey === key && (sortDir === 'asc' ? '↑' : '↓')}</span>
+              <span className="hidden sm:inline">
+                {label}
+                {sortKey === key && (sortDir === 'asc' ? '↑' : '↓')}
+              </span>
             </button>
           ))}
         </div>
@@ -1998,7 +2125,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
                 }
               }}
               onBlur={() => setPathEditMode(false)}
-              className="flex-1 rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-200 outline-none ring-1 ring-sky-500/50"
+              className="flex-1 rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-200 ring-1 ring-sky-500/50 outline-none"
               placeholder="输入路径后按 Enter 跳转"
             />
             <span
@@ -2099,7 +2226,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
               <>
                 <Folder size={32} />
                 <p className="mt-2 text-xs text-amber-600">无法加载目录</p>
-                <p className="mt-1 max-w-[240px] break-all text-[10px] text-slate-700">{error}</p>
+                <p className="mt-1 max-w-[240px] text-[10px] break-all text-slate-700">{error}</p>
                 <button
                   onClick={() => listDir(currentPath)}
                   className="mt-3 flex items-center gap-1 rounded border border-slate-700/50 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-700/50 hover:text-slate-300"
@@ -2147,10 +2274,15 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       <SftpContextMenu
         contextMenu={contextMenu}
         onOpen={(entry) => navigateTo(entry.path)}
-        onPreview={(entry) => { setPreviewEntry(entry) }}
+        onPreview={(entry) => {
+          setPreviewEntry(entry)
+        }}
         onOpenInEditor={openInEditor}
         onDownload={handleDownload}
-        onRename={(entry) => { setRenaming(entry.path); setRenameValue(entry.name) }}
+        onRename={(entry) => {
+          setRenaming(entry.path)
+          setRenameValue(entry.name)
+        }}
         onDelete={handleDelete}
         onChmod={(entry) => {
           setChmodEntry(entry)
@@ -2179,7 +2311,9 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             fallbackCopy(n)
           }
         }}
-        onFileInfo={(entry) => { setInfoEntry(entry) }}
+        onFileInfo={(entry) => {
+          setInfoEntry(entry)
+        }}
         onCopyFile={handleCopy}
         onCutFile={handleCut}
         onDiskUsage={handleDiskUsage}
@@ -2243,10 +2377,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       )}
 
       {/* ── 文件信息弹窗 ── */}
-      <FileInfoModal
-        entry={infoEntry}
-        onClose={() => setInfoEntry(null)}
-      />
+      <FileInfoModal entry={infoEntry} onClose={() => setInfoEntry(null)} />
 
       {/* ── Alert 弹窗 ── */}
       <AlertModal
@@ -2274,14 +2405,20 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       <DiskUsageModal
         entry={diskUsageEntry}
         data={diskUsageData}
-        onClose={() => { setDiskUsageEntry(null); setDiskUsageData(null) }}
+        onClose={() => {
+          setDiskUsageEntry(null)
+          setDiskUsageData(null)
+        }}
       />
 
       {/* ── 文件哈希弹窗 ── */}
       <HashModal
         entry={hashEntry}
         data={hashData}
-        onClose={() => { setHashEntry(null); setHashData(null) }}
+        onClose={() => {
+          setHashEntry(null)
+          setHashData(null)
+        }}
         onCopied={(label) => setAlertModal({ title: '已复制', message: `${label} 已复制到剪贴板` })}
       />
 

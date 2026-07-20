@@ -189,9 +189,7 @@ export const useAiStore = create<AiState>()(
         const session: AiChatSession = {
           id,
           title: '新对话',
-          messages: [
-            { role: 'system', content: buildSystemPrompt(context) },
-          ],
+          messages: [{ role: 'system', content: buildSystemPrompt(context) }],
           createdAt: now,
           updatedAt: now,
           context,
@@ -212,9 +210,7 @@ export const useAiStore = create<AiState>()(
         set((s) => {
           const remaining = s.sessions.filter((x) => x.id !== id)
           const newActive =
-            s.activeSessionId === id
-              ? remaining[0]?.id ?? null
-              : s.activeSessionId
+            s.activeSessionId === id ? (remaining[0]?.id ?? null) : s.activeSessionId
           return { sessions: remaining, activeSessionId: newActive }
         }),
 
@@ -239,8 +235,7 @@ export const useAiStore = create<AiState>()(
             if (x.id !== s.activeSessionId) return x
             const msgs = [...x.messages, { role: 'user' as const, content }]
             // 自动标题：第一条用户消息
-            const title =
-              x.title === '新对话' ? autoTitle(content) : x.title
+            const title = x.title === '新对话' ? autoTitle(content) : x.title
             return {
               ...x,
               messages: msgs.slice(-MAX_MESSAGES_PER_SESSION),
@@ -257,10 +252,7 @@ export const useAiStore = create<AiState>()(
             if (x.id !== s.activeSessionId) return x
             return {
               ...x,
-              messages: [
-                ...x.messages,
-                { role: 'assistant' as const, content: '' },
-              ],
+              messages: [...x.messages, { role: 'assistant' as const, content: '' }],
             }
           })
           return { sessions, isStreaming: true, streamingContent: '' }

@@ -86,11 +86,17 @@ export const usePluginStore = create<PluginState>()(
             : [...s.plugins, plugin]
 
           const commands = existing
-            ? [...s.commands.filter((c) => !existingCmdIds.has(c.id)), ...(manifest.commands?.map((c) => ({ ...c })) || [])]
+            ? [
+                ...s.commands.filter((c) => !existingCmdIds.has(c.id)),
+                ...(manifest.commands?.map((c) => ({ ...c })) || []),
+              ]
             : [...s.commands, ...(manifest.commands?.map((c) => ({ ...c })) || [])]
 
           const panels = existing
-            ? [...s.panels.filter((p) => !existingPanelIds.has(p.id)), ...(manifest.panels?.map((p) => ({ ...p })) || [])]
+            ? [
+                ...s.panels.filter((p) => !existingPanelIds.has(p.id)),
+                ...(manifest.panels?.map((p) => ({ ...p })) || []),
+              ]
             : [...s.panels, ...(manifest.panels?.map((p) => ({ ...p })) || [])]
 
           return { plugins, commands, panels }

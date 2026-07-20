@@ -112,7 +112,7 @@ html:not(.dark) {
   }
 
   /* file 输入恢复原生样式 — 移动端需要原生 UI 才能正确弹出文件选择器 */
-  input[type="file"] {
+  input[type='file'] {
     -webkit-appearance: auto;
     appearance: auto;
     background-color: transparent;
@@ -120,7 +120,7 @@ html:not(.dark) {
     padding: 0;
     color: inherit;
   }
-  input[type="file"]::file-selector-button {
+  input[type='file']::file-selector-button {
     background-color: #334155;
     color: #e2e8f0;
     border: 1px solid #475569;
@@ -132,15 +132,15 @@ html:not(.dark) {
     appearance: auto;
     transition: background-color 150ms;
   }
-  input[type="file"]::file-selector-button:hover {
+  input[type='file']::file-selector-button:hover {
     background-color: #475569;
   }
-  html:not(.dark) input[type="file"]::file-selector-button {
+  html:not(.dark) input[type='file']::file-selector-button {
     background-color: #e2e8f0;
     color: #334155;
     border-color: #cbd5e1;
   }
-  html:not(.dark) input[type="file"]::file-selector-button:hover {
+  html:not(.dark) input[type='file']::file-selector-button:hover {
     background-color: #cbd5e1;
   }
 
@@ -822,15 +822,20 @@ html:not(.dark) .markdown-preview pre.cm-code-block code {
   margin: 0.75rem 0;
 }
 
-.prose-agent input[type="checkbox"] {
+.prose-agent input[type='checkbox'] {
   accent-color: #0ea5e9;
   margin-right: 6px;
 }
 
 /* Agent 触发按钮动画 */
 @keyframes agent-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(14, 165, 233, 0); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(14, 165, 233, 0);
+  }
 }
 
 .agent-fab-pulse {

@@ -81,7 +81,8 @@ const SftpContextMenu = memo(function SftpContextMenu({
 }: SftpContextMenuProps) {
   if (!contextMenu) return null
 
-  const menuItem = 'flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700'
+  const menuItem =
+    'flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700'
 
   return (
     <div
@@ -94,26 +95,37 @@ const SftpContextMenu = memo(function SftpContextMenu({
           {isTrash ? (
             <>
               <button
-                onClick={() => { onRestore?.(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onRestore?.(contextMenu.entry!)
+                  onClose()
+                }}
                 className={`${menuItem} text-emerald-400`}
               >
                 <RotateCcw size={12} /> 恢复到 /tmp/
               </button>
               <div className="mx-2 my-1 border-t border-slate-700/50" />
               <button
-                onClick={() => { onDelete(contextMenu.entry!) }}
+                onClick={() => {
+                  onDelete(contextMenu.entry!)
+                }}
                 className={`${menuItem} text-red-400`}
               >
                 <Trash2 size={12} /> 永久删除
               </button>
               <button
-                onClick={() => { onCopyPath(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onCopyPath(contextMenu.entry!)
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Copy size={12} /> 复制路径
               </button>
               <button
-                onClick={() => { onFileInfo(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onFileInfo(contextMenu.entry!)
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Eye size={12} /> 文件信息
@@ -123,7 +135,10 @@ const SftpContextMenu = memo(function SftpContextMenu({
             <>
               {isDirLike(contextMenu.entry) ? (
                 <button
-                  onClick={() => { onOpen(contextMenu.entry!); onClose() }}
+                  onClick={() => {
+                    onOpen(contextMenu.entry!)
+                    onClose()
+                  }}
                   className={menuItem}
                 >
                   <Folder size={12} /> 打开
@@ -131,7 +146,10 @@ const SftpContextMenu = memo(function SftpContextMenu({
               ) : (
                 <>
                   <button
-                    onClick={() => { onPreview(contextMenu.entry!); onClose() }}
+                    onClick={() => {
+                      onPreview(contextMenu.entry!)
+                      onClose()
+                    }}
                     className={menuItem}
                   >
                     <Eye size={12} /> 预览
@@ -149,7 +167,9 @@ const SftpContextMenu = memo(function SftpContextMenu({
                     </button>
                   )}
                   <button
-                    onClick={() => { onDownload(contextMenu.entry!) }}
+                    onClick={() => {
+                      onDownload(contextMenu.entry!)
+                    }}
                     className={menuItem}
                   >
                     <Download size={12} /> 下载
@@ -158,71 +178,103 @@ const SftpContextMenu = memo(function SftpContextMenu({
               )}
               <div className="mx-2 my-1 border-t border-slate-700/50" />
               <button
-                onClick={() => { onRename(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onRename(contextMenu.entry!)
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Edit3 size={12} /> 重命名
               </button>
               <button
-                onClick={() => { onDelete(contextMenu.entry!) }}
+                onClick={() => {
+                  onDelete(contextMenu.entry!)
+                }}
                 className={`${menuItem} text-red-400`}
               >
                 <Trash2 size={12} /> 删除
               </button>
               <button
-                onClick={() => { onChmod(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onChmod(contextMenu.entry!)
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Edit3 size={12} /> 权限
               </button>
               <button
-                onClick={() => { onMove(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onMove(contextMenu.entry!)
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Edit3 size={12} /> 移动到…
               </button>
               <div className="mx-2 my-1 border-t border-slate-700/50" />
               <button
-                onClick={() => { onCopyPath(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onCopyPath(contextMenu.entry!)
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Copy size={12} /> 复制路径
               </button>
               <button
-                onClick={() => { onCopyName(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onCopyName(contextMenu.entry!)
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Copy size={12} /> 复制文件名
               </button>
               <button
-                onClick={() => { onFileInfo(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onFileInfo(contextMenu.entry!)
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Eye size={12} /> 文件信息
               </button>
               <div className="mx-2 my-1 border-t border-slate-700/50" />
               <button
-                onClick={() => { onCopyFile([contextMenu.entry!]); onClose() }}
+                onClick={() => {
+                  onCopyFile([contextMenu.entry!])
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Copy size={12} /> 复制文件
               </button>
               <button
-                onClick={() => { onCutFile([contextMenu.entry!]); onClose() }}
+                onClick={() => {
+                  onCutFile([contextMenu.entry!])
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <Edit3 size={12} /> 剪切文件
               </button>
               <div className="mx-2 my-1 border-t border-slate-700/50" />
               <button
-                onClick={() => { onDiskUsage(contextMenu.entry!); onClose() }}
+                onClick={() => {
+                  onDiskUsage(contextMenu.entry!)
+                  onClose()
+                }}
                 className={menuItem}
               >
                 <HardDrive size={12} /> 磁盘使用
               </button>
               {!isDirLike(contextMenu.entry!) && (
                 <button
-                  onClick={() => { onFileHash(contextMenu.entry!); onClose() }}
+                  onClick={() => {
+                    onFileHash(contextMenu.entry!)
+                    onClose()
+                  }}
                   className={menuItem}
                 >
                   <Binary size={12} /> 文件哈希
@@ -234,13 +286,19 @@ const SftpContextMenu = memo(function SftpContextMenu({
       ) : (
         <>
           <button
-            onClick={() => { onCreateFile(); onClose() }}
+            onClick={() => {
+              onCreateFile()
+              onClose()
+            }}
             className={menuItem}
           >
             <FilePlus size={12} /> 新建文件
           </button>
           <button
-            onClick={() => { onCreateDir(); onClose() }}
+            onClick={() => {
+              onCreateDir()
+              onClose()
+            }}
             className={menuItem}
           >
             <FolderPlus size={12} /> 新建文件夹
@@ -248,14 +306,20 @@ const SftpContextMenu = memo(function SftpContextMenu({
           <div className="mx-2 my-1 border-t border-slate-700/50" />
           {clipboard && (
             <button
-              onClick={() => { onPaste(); onClose() }}
+              onClick={() => {
+                onPaste()
+                onClose()
+              }}
               className={`${menuItem} text-amber-400`}
             >
               <Save size={12} /> 粘贴 {clipboardCount} 项
             </button>
           )}
           <button
-            onClick={() => { onRefresh(); onClose() }}
+            onClick={() => {
+              onRefresh()
+              onClose()
+            }}
             className={menuItem}
           >
             <RefreshCw size={12} /> 刷新

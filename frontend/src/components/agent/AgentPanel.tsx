@@ -136,7 +136,7 @@ const MessageItem = memo(function MessageItem({
             onExecute={onExecute}
           />
         ) : (
-          <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+          <div className="break-words whitespace-pre-wrap">{msg.content}</div>
         )}
       </div>
     </div>
@@ -211,9 +211,7 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
     return sessions.filter(
       (s) =>
         s.title.toLowerCase().includes(q) ||
-        s.messages.some(
-          (m) => m.role !== 'system' && m.content.toLowerCase().includes(q),
-        ),
+        s.messages.some((m) => m.role !== 'system' && m.content.toLowerCase().includes(q)),
     )
   }, [sessions, searchQuery])
 
@@ -273,9 +271,7 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
 
     try {
       // 获取最新的消息列表
-      const currentSession = useAiStore
-        .getState()
-        .sessions.find((x) => x.id === sessionId)
+      const currentSession = useAiStore.getState().sessions.find((x) => x.id === sessionId)
       if (!currentSession) return
 
       const stream = streamChat(
@@ -324,14 +320,11 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
 
   // ─── 重命名 ───
 
-  const startRename = useCallback(
-    (session: AiChatSession) => {
-      setEditingSessionId(session.id)
-      setEditTitle(session.title)
-      setMenuSessionId(null)
-    },
-    [],
-  )
+  const startRename = useCallback((session: AiChatSession) => {
+    setEditingSessionId(session.id)
+    setEditTitle(session.title)
+    setMenuSessionId(null)
+  }, [])
 
   const confirmRename = useCallback(() => {
     if (editingSessionId && editTitle.trim()) {
@@ -392,10 +385,8 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
             onClick={() => setShowSessionList(!showSessionList)}
             className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-300"
           >
-            <Brain size={14} className="shrink-0 text-wrench-400" />
-            <span className="min-w-0 flex-1 truncate">
-              {activeSession?.title || '新对话'}
-            </span>
+            <Brain size={14} className="text-wrench-400 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{activeSession?.title || '新对话'}</span>
             <MessageSquare size={10} className="shrink-0 text-slate-600" />
           </button>
         </div>
@@ -414,7 +405,7 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
               createSession(context)
               setShowSessionList(false)
             }}
-            className="rounded-md p-1 text-slate-500 hover:bg-slate-800 hover:text-wrench-400"
+            className="hover:text-wrench-400 rounded-md p-1 text-slate-500 hover:bg-slate-800"
             title="新建对话"
           >
             <Plus size={14} />
@@ -435,12 +426,15 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
           {/* 搜索栏 */}
           <div className="border-b border-slate-700/30 px-3 py-2">
             <div className="relative">
-              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
+              <Search
+                size={12}
+                className="absolute top-1/2 left-2 -translate-y-1/2 text-slate-500"
+              />
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="搜索对话..."
-                className="w-full rounded-md border border-slate-700/50 bg-slate-800/50 py-1.5 pl-7 pr-2 text-[11px] text-slate-300 placeholder-slate-500 focus:border-wrench-500 focus:outline-none"
+                className="focus:border-wrench-500 w-full rounded-md border border-slate-700/50 bg-slate-800/50 py-1.5 pr-2 pl-7 text-[11px] text-slate-300 placeholder-slate-500 focus:outline-none"
               />
             </div>
           </div>
@@ -470,7 +464,7 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
                         if (e.key === 'Escape') setEditingSessionId(null)
                       }}
                       autoFocus
-                      className="flex-1 rounded border border-wrench-500/50 bg-slate-800 px-1.5 py-0.5 text-[12px] text-slate-200 focus:outline-none"
+                      className="border-wrench-500/50 flex-1 rounded border bg-slate-800 px-1.5 py-0.5 text-[12px] text-slate-200 focus:outline-none"
                     />
                   ) : (
                     <button
@@ -530,9 +524,10 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
       {/* ── 消息列表 ── */}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {/* 欢迎消息 */}
-        {(!activeSession || activeSession.messages.filter((m) => m.role !== 'system').length === 0) && (
+        {(!activeSession ||
+          activeSession.messages.filter((m) => m.role !== 'system').length === 0) && (
           <div className="flex h-full flex-col items-center justify-center p-6">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-wrench-500/10">
+            <div className="bg-wrench-500/10 mb-4 flex h-12 w-12 items-center justify-center rounded-xl">
               <Brain size={24} className="text-wrench-400" />
             </div>
             <h3 className="mb-1 text-sm font-medium text-slate-300">Wrench AI Agent</h3>
@@ -552,7 +547,7 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
                     setInput(`帮我${item.label.replace(/\p{Emoji_Presentation}/gu, '').trim()}...`)
                     inputRef.current?.focus()
                   }}
-                  className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-2.5 text-left transition-colors hover:border-wrench-500/30 hover:bg-slate-800/60"
+                  className="hover:border-wrench-500/30 rounded-lg border border-slate-700/50 bg-slate-800/30 p-2.5 text-left transition-colors hover:bg-slate-800/60"
                 >
                   <div className="mb-1 text-sm">{item.icon}</div>
                   <div className="text-[11px] font-medium text-slate-300">{item.label}</div>
@@ -565,15 +560,15 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
 
         {/* 对话消息 — useMemo 避免每次渲染重新 filter */}
         {visibleMessages.map((msg, i) => (
-            <MessageItem
-              key={`${activeSessionId}-${i}`}
-              msg={msg}
-              index={i}
-              sessionId={activeSessionId}
-              extractCommands={extractCommands}
-              onExecute={executeCommand}
-            />
-          ))}
+          <MessageItem
+            key={`${activeSessionId}-${i}`}
+            msg={msg}
+            index={i}
+            sessionId={activeSessionId}
+            extractCommands={extractCommands}
+            onExecute={executeCommand}
+          />
+        ))}
 
         {/* 流式输出中 */}
         {isStreaming && (
@@ -608,7 +603,7 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
             onKeyDown={handleKeyDown}
             placeholder="描述你想要做的操作..."
             rows={1}
-            className="min-h-[44px] max-h-[120px] flex-1 resize-none rounded-xl border border-slate-700/50 bg-slate-800/50 px-3 py-2.5 text-[13px] text-slate-200 placeholder-slate-500 focus:border-wrench-500 focus:outline-none"
+            className="focus:border-wrench-500 max-h-[120px] min-h-[44px] flex-1 resize-none rounded-xl border border-slate-700/50 bg-slate-800/50 px-3 py-2.5 text-[13px] text-slate-200 placeholder-slate-500 focus:outline-none"
             style={{ fieldSizing: 'content' } as React.CSSProperties}
           />
           {isStreaming ? (
@@ -623,7 +618,7 @@ export default function AgentPanel({ context, onExecuteCommand }: Props) {
             <button
               onClick={sendMessage}
               disabled={!input.trim()}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-wrench-600 text-white hover:bg-wrench-500 disabled:opacity-40"
+              className="bg-wrench-600 hover:bg-wrench-500 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white disabled:opacity-40"
             >
               <Send size={14} />
             </button>

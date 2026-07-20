@@ -70,34 +70,42 @@ function CommandResultPanel({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       <div className="shrink-0 border-b border-slate-700/30 px-5 py-3">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="mb-1 flex items-center gap-2">
           <Terminal size={14} className="text-blue-400" />
           <span className="text-sm font-medium text-slate-200">{commandLabel}</span>
         </div>
         {commandDescription && (
-          <p className="text-[11px] text-slate-500 mt-0.5">{commandDescription}</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">{commandDescription}</p>
         )}
       </div>
       <div className="flex-1 overflow-auto p-5">
         {content ? (
-          <div className="relative group">
-            <pre className="whitespace-pre-wrap break-all text-[12px] leading-relaxed text-slate-300 font-mono bg-slate-900/50 rounded-lg border border-slate-700/30 p-4">
+          <div className="group relative">
+            <pre className="rounded-lg border border-slate-700/30 bg-slate-900/50 p-4 font-mono text-[12px] leading-relaxed break-all whitespace-pre-wrap text-slate-300">
               {content}
             </pre>
             <button
               onClick={handleCopy}
-              className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 rounded-md bg-slate-700/80 px-2 py-1 text-[10px] text-slate-300 hover:bg-slate-600/80"
+              className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-slate-700/80 px-2 py-1 text-[10px] text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-600/80"
             >
-              {copied ? (<><Check size={10} /> 已复制</>) : (<><Copy size={10} /> 复制</>)}
+              {copied ? (
+                <>
+                  <Check size={10} /> 已复制
+                </>
+              ) : (
+                <>
+                  <Copy size={10} /> 复制
+                </>
+              )}
             </button>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-slate-600">
+          <div className="flex h-full flex-col items-center justify-center text-slate-600">
             <CheckCircle size={32} className="mb-2 text-emerald-500/50" />
             <p className="text-sm">命令已执行</p>
-            <p className="text-[11px] mt-1">结果已写入编辑器</p>
+            <p className="mt-1 text-[11px]">结果已写入编辑器</p>
           </div>
         )}
       </div>
@@ -123,7 +131,13 @@ export default function PluginsPage() {
   const [activeCommand, setActiveCommand] = useState<string | null>(null)
   const [activePanel, setActivePanel] = useState<string | null>(null)
   // 命令执行结果缓存（不再遮盖面板，而是显示在面板区域上方）
-  const [commandResult, setCommandResult] = useState<{ pluginId: string; commandId: string; label: string; description: string; content: string } | null>(null)
+  const [commandResult, setCommandResult] = useState<{
+    pluginId: string
+    commandId: string
+    label: string
+    description: string
+    content: string
+  } | null>(null)
 
   const storePlugins = usePluginStore((s) => s.plugins)
   const enablePlugin = usePluginStore((s) => s.enablePlugin)
@@ -138,8 +152,12 @@ export default function PluginsPage() {
   const activePluginRef = useRef<string | null>(null)
 
   // 保持 refs 同步
-  useEffect(() => { activePanelRef.current = activePanel })
-  useEffect(() => { activePluginRef.current = activePlugin })
+  useEffect(() => {
+    activePanelRef.current = activePanel
+  })
+  useEffect(() => {
+    activePluginRef.current = activePlugin
+  })
 
   const enabledMap = useMemo(() => {
     const map: Record<string, boolean> = {}
@@ -150,7 +168,9 @@ export default function PluginsPage() {
   }, [storePlugins])
 
   const enabledMapRef = useRef(enabledMap)
-  useEffect(() => { enabledMapRef.current = enabledMap })
+  useEffect(() => {
+    enabledMapRef.current = enabledMap
+  })
 
   // ── 沙箱槽位 LRU 管理 ──
   const ensureSandboxSlot = useCallback(async (pluginId: string) => {
@@ -279,20 +299,17 @@ export default function PluginsPage() {
   }, [])
 
   // ── 渲染面板到目标容器 ──
-  const renderPanelTo = useCallback(
-    (pluginId: string, container: HTMLElement): boolean => {
-      const handle = pluginSandboxManager.getHandle(pluginId)
-      if (!handle) return false
-      const panels = handle.getRegisteredPanels()
-      if (panels.size === 0) return false
-      // 优先使用 activePanel 指定的面板，否则渲染第一个
-      const panelId = activePanelRef.current
-      const panel = (panelId && panels.get(panelId)) || panels.values().next().value
-      if (!panel) return false
-      return handle.renderPanelTo(panel.id, container)
-    },
-    [],
-  )
+  const renderPanelTo = useCallback((pluginId: string, container: HTMLElement): boolean => {
+    const handle = pluginSandboxManager.getHandle(pluginId)
+    if (!handle) return false
+    const panels = handle.getRegisteredPanels()
+    if (panels.size === 0) return false
+    // 优先使用 activePanel 指定的面板，否则渲染第一个
+    const panelId = activePanelRef.current
+    const panel = (panelId && panels.get(panelId)) || panels.values().next().value
+    if (!panel) return false
+    return handle.renderPanelTo(panel.id, container)
+  }, [])
 
   // ── 当 activePlugin 或 activePanel 变化时，渲染面板到桌面端右侧抽屉 ──
   useEffect(() => {
@@ -368,9 +385,10 @@ export default function PluginsPage() {
           commandId,
           label: cmd?.label || commandId,
           description: cmd?.description || '',
-          content: result && result.commandId === commandId
-            ? result.content
-            : `✅ ${cmd?.label || commandId} 已执行`,
+          content:
+            result && result.commandId === commandId
+              ? result.content
+              : `✅ ${cmd?.label || commandId} 已执行`,
         })
       })
     },
@@ -421,9 +439,10 @@ export default function PluginsPage() {
           commandId,
           label: cmd?.label || commandId,
           description: cmd?.description || '',
-          content: result && result.commandId === commandId
-            ? result.content
-            : `✅ ${cmd?.label || commandId} 已执行`,
+          content:
+            result && result.commandId === commandId
+              ? result.content
+              : `✅ ${cmd?.label || commandId} 已执行`,
         })
       })
     },
@@ -431,28 +450,34 @@ export default function PluginsPage() {
   )
 
   // ── 点击插件卡片（桌面端） → 激活并预加载沙箱 ──
-  const handlePluginActivate = useCallback(async (pluginId: string) => {
-    if (activePlugin === pluginId) {
-      setActivePlugin(null)
+  const handlePluginActivate = useCallback(
+    async (pluginId: string) => {
+      if (activePlugin === pluginId) {
+        setActivePlugin(null)
+        setActivePanel(null)
+        setSandboxReady(false)
+        return
+      }
+      setActivePlugin(pluginId)
       setActivePanel(null)
+      setActiveCommand(null)
+      setCommandResult(null)
       setSandboxReady(false)
-      return
-    }
-    setActivePlugin(pluginId)
-    setActivePanel(null)
-    setActiveCommand(null)
-    setCommandResult(null)
-    setSandboxReady(false)
-    await ensureSandboxSlot(pluginId)
-    // sandboxReady 将在 handleSandboxReady 中设置
-  }, [activePlugin, ensureSandboxSlot])
+      await ensureSandboxSlot(pluginId)
+      // sandboxReady 将在 handleSandboxReady 中设置
+    },
+    [activePlugin, ensureSandboxSlot],
+  )
 
   // ── 点击插件卡片（移动端） → 进入详情视图 ──
-  const handleMobilePluginClick = useCallback(async (pluginId: string) => {
-    setActivePlugin(pluginId)
-    setMobileView('detail')
-    await ensureSandboxSlot(pluginId)
-  }, [ensureSandboxSlot])
+  const handleMobilePluginClick = useCallback(
+    async (pluginId: string) => {
+      setActivePlugin(pluginId)
+      setMobileView('detail')
+      await ensureSandboxSlot(pluginId)
+    },
+    [ensureSandboxSlot],
+  )
 
   // ── 移动端打开面板 ──
   const handleMobileOpenPanel = useCallback(
@@ -600,7 +625,11 @@ export default function PluginsPage() {
           <div className="flex flex-wrap items-center gap-3">
             {mobileView !== 'list' && (
               <button
-                onClick={() => { setMobileView('list'); setActivePlugin(null); setActivePanel(null) }}
+                onClick={() => {
+                  setMobileView('list')
+                  setActivePlugin(null)
+                  setActivePanel(null)
+                }}
                 className="flex items-center gap-1 rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 lg:hidden"
               >
                 <ArrowLeft size={18} />
@@ -609,9 +638,11 @@ export default function PluginsPage() {
             <div className="flex items-center gap-2">
               <Puzzle size={20} className="text-blue-400" />
               <h2 className="text-base font-semibold text-slate-200 sm:text-lg">
-                {mobileView === 'panel' ? mobilePanelTitle :
-                 mobileView === 'detail' ? activePluginData?.name || '插件' :
-                 '插件'}
+                {mobileView === 'panel'
+                  ? mobilePanelTitle
+                  : mobileView === 'detail'
+                    ? activePluginData?.name || '插件'
+                    : '插件'}
               </h2>
             </div>
             {mobileView === 'list' && (
@@ -673,7 +704,6 @@ export default function PluginsPage() {
       {tab === 'installed' && (
         <div className="flex flex-1 overflow-hidden">
           <div className="flex flex-1 flex-col overflow-hidden">
-
             {/* ── 移动端：列表视图 ── */}
             {mobileView === 'list' && (
               <div className="flex flex-1 flex-col overflow-hidden lg:hidden">
@@ -681,16 +711,22 @@ export default function PluginsPage() {
                 {catalog.length > 0 && (
                   <div className="shrink-0 px-4 pt-3 sm:px-6">
                     <div className="relative">
-                      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <Search
+                        size={15}
+                        className="absolute top-1/2 left-3 -translate-y-1/2 text-slate-500"
+                      />
                       <input
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="搜索插件..."
-                        className="w-full rounded-lg border border-slate-700/50 bg-slate-900/50 py-2 pl-9 pr-3 text-xs text-slate-300 placeholder-slate-600 outline-none transition-colors focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-slate-700/50 bg-slate-900/50 py-2 pr-3 pl-9 text-xs text-slate-300 placeholder-slate-600 transition-colors outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
                       />
                       {searchQuery && (
-                        <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
+                        <button
+                          onClick={() => setSearchQuery('')}
+                          className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-600 hover:text-slate-400"
+                        >
                           <X size={14} />
                         </button>
                       )}
@@ -698,25 +734,37 @@ export default function PluginsPage() {
                   </div>
                 )}
 
-                {loading && catalog.length === 0 && <Skeleton type="card" rows={6} className="flex-1" />}
+                {loading && catalog.length === 0 && (
+                  <Skeleton type="card" rows={6} className="flex-1" />
+                )}
 
                 {error && !loading && (
                   <div className="flex flex-1 items-center justify-center">
                     <div className="text-center">
                       <AlertCircle size={40} className="mx-auto mb-3 text-red-400" />
                       <p className="text-sm text-red-400">{error}</p>
-                      <button onClick={handleReload} className="mt-4 rounded-lg bg-slate-800 px-4 py-2 text-xs text-slate-300 hover:bg-slate-700">重试</button>
+                      <button
+                        onClick={handleReload}
+                        className="mt-4 rounded-lg bg-slate-800 px-4 py-2 text-xs text-slate-300 hover:bg-slate-700"
+                      >
+                        重试
+                      </button>
                     </div>
                   </div>
                 )}
 
                 {!loading && !error && catalog.length === 0 && (
-                  <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-slate-700/50 m-4">
+                  <div className="m-4 flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-slate-700/50">
                     <div className="text-center">
                       <Puzzle size={48} className="mx-auto mb-3 text-slate-600" />
                       <p className="text-sm text-slate-500">没有安装任何插件</p>
-                      <p className="mt-1 text-xs text-slate-600">将插件放入 plugins/ 目录后自动识别</p>
-                      <button onClick={() => setTab('market')} className="mt-4 flex mx-auto items-center gap-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 px-4 py-2 text-xs text-blue-400 hover:bg-blue-600/30 transition-colors">
+                      <p className="mt-1 text-xs text-slate-600">
+                        将插件放入 plugins/ 目录后自动识别
+                      </p>
+                      <button
+                        onClick={() => setTab('market')}
+                        className="mx-auto mt-4 flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-600/20 px-4 py-2 text-xs text-blue-400 transition-colors hover:bg-blue-600/30"
+                      >
                         <Globe size={14} /> 浏览插件市场
                       </button>
                     </div>
@@ -730,7 +778,12 @@ export default function PluginsPage() {
                       <p className="text-sm text-slate-500">没有匹配的插件</p>
                       <p className="mt-1 text-xs text-slate-600">
                         尝试其他关键词，或
-                        <button onClick={() => setSearchQuery('')} className="text-blue-400 hover:text-blue-300">清除搜索</button>
+                        <button
+                          onClick={() => setSearchQuery('')}
+                          className="text-blue-400 hover:text-blue-300"
+                        >
+                          清除搜索
+                        </button>
                       </p>
                     </div>
                   </div>
@@ -748,7 +801,7 @@ export default function PluginsPage() {
                           <div
                             key={plugin.id}
                             onClick={() => handleMobilePluginClick(plugin.id)}
-                            className={`group relative flex flex-col rounded-xl border p-4 transition-all cursor-pointer ${
+                            className={`group relative flex cursor-pointer flex-col rounded-xl border p-4 transition-all ${
                               isActive
                                 ? 'border-blue-500/50 bg-blue-500/5 shadow-lg shadow-blue-500/5'
                                 : enabled
@@ -774,19 +827,30 @@ export default function PluginsPage() {
                               </div>
                             </div>
                             <div className="mb-1 flex items-center gap-2">
-                              <h3 className="text-sm font-semibold text-slate-200 truncate">{plugin.name}</h3>
-                              <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500 font-mono">v{plugin.version}</span>
+                              <h3 className="truncate text-sm font-semibold text-slate-200">
+                                {plugin.name}
+                              </h3>
+                              <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                                v{plugin.version}
+                              </span>
                             </div>
-                            <p className="mb-3 text-xs text-slate-500 line-clamp-2 leading-relaxed">{plugin.description}</p>
+                            <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-slate-500">
+                              {plugin.description}
+                            </p>
                             <div className="mb-3 flex items-center gap-3 text-[11px] text-slate-600">
                               <span className="flex items-center gap-1">
-                                <span className="h-1 w-1 rounded-full bg-slate-600" /> {plugin.author}
+                                <span className="h-1 w-1 rounded-full bg-slate-600" />{' '}
+                                {plugin.author}
                               </span>
                               {plugin.commands?.length > 0 && (
-                                <span className="flex items-center gap-1"><Command size={10} /> {plugin.commands.length} 命令</span>
+                                <span className="flex items-center gap-1">
+                                  <Command size={10} /> {plugin.commands.length} 命令
+                                </span>
                               )}
                               {plugin.panels?.length > 0 && (
-                                <span className="flex items-center gap-1"><Box size={10} /> {plugin.panels.length} 面板</span>
+                                <span className="flex items-center gap-1">
+                                  <Box size={10} /> {plugin.panels.length} 面板
+                                </span>
                               )}
                             </div>
                             {/* 命令快捷按钮 */}
@@ -796,23 +860,37 @@ export default function PluginsPage() {
                                   return (
                                     <button
                                       key={cmd.id}
-                                      onClick={(e) => { e.stopPropagation(); handleMobileExecuteCommand(plugin.id, cmd.id, cmd.label || cmd.id) }}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleMobileExecuteCommand(
+                                          plugin.id,
+                                          cmd.id,
+                                          cmd.label || cmd.id,
+                                        )
+                                      }}
                                       title={cmd.description || cmd.label || cmd.id}
-                                      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors bg-slate-700/50 text-slate-400 hover:bg-slate-600/50 hover:text-slate-200`}
+                                      className={`inline-flex items-center gap-1 rounded-md bg-slate-700/50 px-2 py-1 text-[11px] text-slate-400 transition-colors hover:bg-slate-600/50 hover:text-slate-200`}
                                     >
                                       {enabled && <Play size={10} className="shrink-0" />}
-                                      <span className="truncate max-w-[80px]">{cmd.label || cmd.id}</span>
+                                      <span className="max-w-[80px] truncate">
+                                        {cmd.label || cmd.id}
+                                      </span>
                                     </button>
                                   )
                                 })}
                                 {plugin.commands.length > 3 && (
-                                  <span className="flex items-center px-1.5 text-[10px] text-slate-600">+{plugin.commands.length - 3}</span>
+                                  <span className="flex items-center px-1.5 text-[10px] text-slate-600">
+                                    +{plugin.commands.length - 3}
+                                  </span>
                                 )}
                               </div>
                             )}
                             <div className="mt-auto flex items-center justify-between border-t border-slate-700/30 pt-3">
                               <button
-                                onClick={(e) => { e.stopPropagation(); handleToggle(plugin.id, enabled) }}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleToggle(plugin.id, enabled)
+                                }}
                                 disabled={!isReady && !sandboxReady}
                                 className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all ${
                                   enabled
@@ -823,7 +901,10 @@ export default function PluginsPage() {
                                 {enabled ? <Check size={12} /> : <X size={12} />}
                                 {enabled ? '已启用' : '已禁用'}
                               </button>
-                              <ChevronRight size={14} className={`text-slate-600 transition-transform group-hover:translate-x-0.5 ${isActive ? 'text-blue-400' : ''}`} />
+                              <ChevronRight
+                                size={14}
+                                className={`text-slate-600 transition-transform group-hover:translate-x-0.5 ${isActive ? 'text-blue-400' : ''}`}
+                              />
                             </div>
                           </div>
                         )
@@ -843,14 +924,22 @@ export default function PluginsPage() {
                       <Puzzle size={24} />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-slate-200">{activePluginData.name}</h3>
-                      <p className="text-[11px] text-slate-500">v{activePluginData.version} · {activePluginData.author}</p>
+                      <h3 className="text-sm font-semibold text-slate-200">
+                        {activePluginData.name}
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        v{activePluginData.version} · {activePluginData.author}
+                      </p>
                     </div>
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">{activePluginData.description}</p>
+                  <p className="text-xs leading-relaxed text-slate-400">
+                    {activePluginData.description}
+                  </p>
                   <div className="mt-3 flex items-center gap-3">
                     <button
-                      onClick={() => handleToggle(activePluginData.id, enabledMap[activePluginData.id] ?? false)}
+                      onClick={() =>
+                        handleToggle(activePluginData.id, enabledMap[activePluginData.id] ?? false)
+                      }
                       disabled={!sandboxReady}
                       className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                         enabledMap[activePluginData.id]
@@ -867,17 +956,25 @@ export default function PluginsPage() {
                 {/* 命令列表 */}
                 {activePluginData.commands && activePluginData.commands.length > 0 && (
                   <div className="px-4 py-3 sm:px-6">
-                    <h4 className="mb-2 text-[11px] font-medium text-slate-500 uppercase tracking-wider">命令</h4>
+                    <h4 className="mb-2 text-[11px] font-medium tracking-wider text-slate-500 uppercase">
+                      命令
+                    </h4>
                     <div className="space-y-1.5">
                       {activePluginData.commands.map((cmd) => {
                         const isActiveCmd = activeCommand === cmd.id
                         return (
                           <button
                             key={cmd.id}
-                            onClick={() => handleMobileExecuteCommand(activePluginData.id, cmd.id, cmd.label || cmd.id)}
+                            onClick={() =>
+                              handleMobileExecuteCommand(
+                                activePluginData.id,
+                                cmd.id,
+                                cmd.label || cmd.id,
+                              )
+                            }
                             className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                               isActiveCmd
-                                ? 'bg-wrench-500/20 text-wrench-300 ring-1 ring-wrench-500/30'
+                                ? 'bg-wrench-500/20 text-wrench-300 ring-wrench-500/30 ring-1'
                                 : enabledMap[activePluginData.id]
                                   ? 'bg-slate-800/50 text-slate-300 hover:bg-slate-700/50 hover:text-slate-100'
                                   : 'cursor-not-allowed bg-slate-900/30 text-slate-600'
@@ -886,7 +983,11 @@ export default function PluginsPage() {
                             <Play size={14} className="shrink-0" />
                             <div className="min-w-0 flex-1">
                               <div className="text-xs font-medium">{cmd.label || cmd.id}</div>
-                              {cmd.description && <div className="text-[11px] text-slate-500 truncate">{cmd.description}</div>}
+                              {cmd.description && (
+                                <div className="truncate text-[11px] text-slate-500">
+                                  {cmd.description}
+                                </div>
+                              )}
                             </div>
                             <ChevronRight size={14} className="shrink-0 text-slate-600" />
                           </button>
@@ -912,14 +1013,22 @@ export default function PluginsPage() {
                 {/* 面板列表 */}
                 {activePluginData.panels && activePluginData.panels.length > 0 && (
                   <div className="px-4 py-3 sm:px-6">
-                    <h4 className="mb-2 text-[11px] font-medium text-slate-500 uppercase tracking-wider">面板</h4>
+                    <h4 className="mb-2 text-[11px] font-medium tracking-wider text-slate-500 uppercase">
+                      面板
+                    </h4>
                     <div className="space-y-1.5">
                       {activePluginData.panels.map((panel) => {
                         const isActivePnl = activePanel === panel.id
                         return (
                           <button
                             key={panel.id}
-                            onClick={() => handleMobileOpenPanel(activePluginData.id, panel.title || panel.id, panel.id)}
+                            onClick={() =>
+                              handleMobileOpenPanel(
+                                activePluginData.id,
+                                panel.title || panel.id,
+                                panel.id,
+                              )
+                            }
                             className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                               isActivePnl
                                 ? 'bg-blue-500/20 text-blue-300 ring-1 ring-blue-500/30'
@@ -929,7 +1038,9 @@ export default function PluginsPage() {
                             }`}
                           >
                             <Box size={14} className="shrink-0" />
-                            <div className="min-w-0 flex-1"><div className="text-xs font-medium">{panel.title || panel.id}</div></div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-medium">{panel.title || panel.id}</div>
+                            </div>
                             <ChevronRight size={14} className="shrink-0 text-slate-600" />
                           </button>
                         )
@@ -940,11 +1051,22 @@ export default function PluginsPage() {
 
                 {/* 元信息 */}
                 <div className="px-4 py-3 sm:px-6">
-                  <h4 className="mb-2 text-[11px] font-medium text-slate-500 uppercase tracking-wider">信息</h4>
+                  <h4 className="mb-2 text-[11px] font-medium tracking-wider text-slate-500 uppercase">
+                    信息
+                  </h4>
                   <div className="space-y-2 rounded-lg bg-slate-800/30 px-3 py-2.5 text-[11px]">
-                    <div className="flex justify-between"><span className="text-slate-500">版本</span><span className="text-slate-300 font-mono">v{activePluginData.version}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">作者</span><span className="text-slate-300">{activePluginData.author}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">ID</span><span className="text-slate-300 font-mono">{activePluginData.id}</span></div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">版本</span>
+                      <span className="font-mono text-slate-300">v{activePluginData.version}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">作者</span>
+                      <span className="text-slate-300">{activePluginData.author}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">ID</span>
+                      <span className="font-mono text-slate-300">{activePluginData.id}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -963,22 +1085,35 @@ export default function PluginsPage() {
 
             {/* ── 桌面端：列表 + 右侧抽屉 ── */}
             {mobileView === 'list' && (
-              <div className="hidden lg:flex flex-1 overflow-hidden">
+              <div className="hidden flex-1 overflow-hidden lg:flex">
                 {/* 左侧插件列表 */}
-                <div className="flex flex-col overflow-hidden" style={{ width: '380px', minWidth: '320px', borderRight: '1px solid rgba(51,65,85,0.3)' }}>
+                <div
+                  className="flex flex-col overflow-hidden"
+                  style={{
+                    width: '380px',
+                    minWidth: '320px',
+                    borderRight: '1px solid rgba(51,65,85,0.3)',
+                  }}
+                >
                   {catalog.length > 0 && (
                     <div className="shrink-0 px-4 pt-3">
                       <div className="relative">
-                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                        <Search
+                          size={15}
+                          className="absolute top-1/2 left-3 -translate-y-1/2 text-slate-500"
+                        />
                         <input
                           type="text"
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                           placeholder="搜索插件..."
-                          className="w-full rounded-lg border border-slate-700/50 bg-slate-900/50 py-2 pl-9 pr-3 text-xs text-slate-300 placeholder-slate-600 outline-none transition-colors focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+                          className="w-full rounded-lg border border-slate-700/50 bg-slate-900/50 py-2 pr-3 pl-9 text-xs text-slate-300 placeholder-slate-600 transition-colors outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
                         />
                         {searchQuery && (
-                          <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400">
+                          <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-600 hover:text-slate-400"
+                          >
                             <X size={14} />
                           </button>
                         )}
@@ -986,25 +1121,37 @@ export default function PluginsPage() {
                     </div>
                   )}
 
-                  {loading && catalog.length === 0 && <Skeleton type="card" rows={6} className="flex-1" />}
+                  {loading && catalog.length === 0 && (
+                    <Skeleton type="card" rows={6} className="flex-1" />
+                  )}
 
                   {error && !loading && (
                     <div className="flex flex-1 items-center justify-center">
                       <div className="text-center">
                         <AlertCircle size={40} className="mx-auto mb-3 text-red-400" />
                         <p className="text-sm text-red-400">{error}</p>
-                        <button onClick={handleReload} className="mt-4 rounded-lg bg-slate-800 px-4 py-2 text-xs text-slate-300 hover:bg-slate-700">重试</button>
+                        <button
+                          onClick={handleReload}
+                          className="mt-4 rounded-lg bg-slate-800 px-4 py-2 text-xs text-slate-300 hover:bg-slate-700"
+                        >
+                          重试
+                        </button>
                       </div>
                     </div>
                   )}
 
                   {!loading && !error && catalog.length === 0 && (
-                    <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-slate-700/50 m-4">
+                    <div className="m-4 flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-slate-700/50">
                       <div className="text-center">
                         <Puzzle size={48} className="mx-auto mb-3 text-slate-600" />
                         <p className="text-sm text-slate-500">没有安装任何插件</p>
-                        <p className="mt-1 text-xs text-slate-600">将插件放入 plugins/ 目录后自动识别</p>
-                        <button onClick={() => setTab('market')} className="mt-4 flex mx-auto items-center gap-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 px-4 py-2 text-xs text-blue-400 hover:bg-blue-600/30 transition-colors">
+                        <p className="mt-1 text-xs text-slate-600">
+                          将插件放入 plugins/ 目录后自动识别
+                        </p>
+                        <button
+                          onClick={() => setTab('market')}
+                          className="mx-auto mt-4 flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-600/20 px-4 py-2 text-xs text-blue-400 transition-colors hover:bg-blue-600/30"
+                        >
                           <Globe size={14} /> 浏览插件市场
                         </button>
                       </div>
@@ -1022,7 +1169,7 @@ export default function PluginsPage() {
 
                   {/* 插件列表 */}
                   {filteredCatalog.length > 0 && (
-                    <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+                    <div className="flex-1 space-y-1.5 overflow-y-auto p-3">
                       {filteredCatalog.map((plugin) => {
                         const enabled = enabledMap[plugin.id] ?? false
                         const isActive = activePlugin === plugin.id
@@ -1041,16 +1188,23 @@ export default function PluginsPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium truncate">{plugin.name}</span>
-                                <span className="shrink-0 rounded bg-slate-800 px-1 py-0.5 text-[9px] text-slate-500 font-mono">v{plugin.version}</span>
+                                <span className="truncate text-xs font-medium">{plugin.name}</span>
+                                <span className="shrink-0 rounded bg-slate-800 px-1 py-0.5 font-mono text-[9px] text-slate-500">
+                                  v{plugin.version}
+                                </span>
                               </div>
-                              <div className="text-[11px] text-slate-600 truncate">{plugin.description}</div>
+                              <div className="truncate text-[11px] text-slate-600">
+                                {plugin.description}
+                              </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-1.5">
                               {isActive && sandboxReady && enabled && (
                                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
                               )}
-                              <ChevronRight size={14} className={`text-slate-600 ${isActive ? 'text-wrench-400' : ''}`} />
+                              <ChevronRight
+                                size={14}
+                                className={`text-slate-600 ${isActive ? 'text-wrench-400' : ''}`}
+                              />
                             </div>
                           </button>
                         )
@@ -1070,24 +1224,39 @@ export default function PluginsPage() {
                             <Puzzle size={20} />
                           </div>
                           <div className="min-w-0">
-                            <h3 className="text-sm font-semibold text-slate-200">{activePluginData.name}</h3>
-                            <p className="text-[11px] text-slate-500">v{activePluginData.version} · {activePluginData.author}</p>
+                            <h3 className="text-sm font-semibold text-slate-200">
+                              {activePluginData.name}
+                            </h3>
+                            <p className="text-[11px] text-slate-500">
+                              v{activePluginData.version} · {activePluginData.author}
+                            </p>
                           </div>
                           <div className="ml-auto">
                             <button
-                              onClick={() => handleToggle(activePluginData.id, enabledMap[activePluginData.id] ?? false)}
+                              onClick={() =>
+                                handleToggle(
+                                  activePluginData.id,
+                                  enabledMap[activePluginData.id] ?? false,
+                                )
+                              }
                               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                                 enabledMap[activePluginData.id]
                                   ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
                                   : 'bg-slate-800/50 text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
                               }`}
                             >
-                              {enabledMap[activePluginData.id] ? <Check size={14} /> : <X size={14} />}
+                              {enabledMap[activePluginData.id] ? (
+                                <Check size={14} />
+                              ) : (
+                                <X size={14} />
+                              )}
                               {enabledMap[activePluginData.id] ? '已启用' : '已禁用'}
                             </button>
                           </div>
                         </div>
-                        <p className="text-xs text-slate-400 leading-relaxed">{activePluginData.description}</p>
+                        <p className="text-xs leading-relaxed text-slate-400">
+                          {activePluginData.description}
+                        </p>
 
                         {/* 命令列表 */}
                         {activePluginData.commands && activePluginData.commands.length > 0 && (
@@ -1097,18 +1266,26 @@ export default function PluginsPage() {
                               return (
                                 <button
                                   key={cmd.id}
-                                  onClick={() => handleExecuteCommand(activePluginData.id, cmd.id, cmd.label || cmd.id)}
+                                  onClick={() =>
+                                    handleExecuteCommand(
+                                      activePluginData.id,
+                                      cmd.id,
+                                      cmd.label || cmd.id,
+                                    )
+                                  }
                                   title={cmd.description || cmd.label || cmd.id}
                                   className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
                                     isActiveCmd
-                                      ? 'bg-wrench-500/20 text-wrench-300 ring-1 ring-wrench-500/30'
+                                      ? 'bg-wrench-500/20 text-wrench-300 ring-wrench-500/30 ring-1'
                                       : enabledMap[activePluginData.id]
                                         ? 'bg-slate-700/50 text-slate-400 hover:bg-slate-600/50 hover:text-slate-200'
                                         : 'cursor-not-allowed bg-slate-800/30 text-slate-600'
                                   }`}
                                 >
                                   <Play size={10} className="shrink-0" />
-                                  <span className="truncate max-w-[120px]">{cmd.label || cmd.id}</span>
+                                  <span className="max-w-[120px] truncate">
+                                    {cmd.label || cmd.id}
+                                  </span>
                                 </button>
                               )
                             })}
@@ -1117,9 +1294,12 @@ export default function PluginsPage() {
                       </div>
 
                       {/* 右侧内容：命令结果（如果有）或 插件面板 */}
-                      <div className="flex-1 flex flex-col overflow-hidden">
+                      <div className="flex flex-1 flex-col overflow-hidden">
                         {commandResult && commandResult.pluginId === activePluginData.id && (
-                          <div className="shrink-0 border-b border-slate-700/30" style={{ maxHeight: '40%' }}>
+                          <div
+                            className="shrink-0 border-b border-slate-700/30"
+                            style={{ maxHeight: '40%' }}
+                          >
                             <CommandResultPanel
                               pluginName={activePluginData.name}
                               commandLabel={commandResult.label}
@@ -1158,4 +1338,3 @@ export default function PluginsPage() {
     </div>
   )
 }
-

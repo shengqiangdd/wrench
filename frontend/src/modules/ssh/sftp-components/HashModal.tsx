@@ -45,24 +45,23 @@ const HashModal = memo(function HashModal({ entry, data, onClose, onCopied }: Ha
             <Binary size={14} />
             <span className="truncate">文件哈希 — {entry.name}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="btn-icon text-slate-500 hover:text-slate-300"
-          >
+          <button onClick={onClose} className="btn-icon text-slate-500 hover:text-slate-300">
             <X size={14} />
           </button>
         </div>
         {data ? (
           <div className="space-y-2 text-xs text-slate-400">
-            {([
-              { label: 'MD5', value: data.md5 },
-              { label: 'SHA1', value: data.sha1 },
-              { label: 'SHA256', value: data.sha256 },
-            ] as const).map(({ label, value }) => (
+            {(
+              [
+                { label: 'MD5', value: data.md5 },
+                { label: 'SHA1', value: data.sha1 },
+                { label: 'SHA256', value: data.sha256 },
+              ] as const
+            ).map(({ label, value }) => (
               <div key={label}>
                 <div className="mb-0.5 text-[10px] font-medium text-slate-600">{label}</div>
                 <div
-                  className="cursor-pointer break-all rounded bg-slate-800 px-2 py-1 font-mono text-[10px] text-slate-300 hover:bg-slate-700"
+                  className="cursor-pointer rounded bg-slate-800 px-2 py-1 font-mono text-[10px] break-all text-slate-300 hover:bg-slate-700"
                   onClick={() => handleCopy(label, value)}
                   title="点击复制"
                 >

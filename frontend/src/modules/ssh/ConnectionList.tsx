@@ -256,9 +256,11 @@ export default function ConnectionList({ onConnect }: Props) {
                     ) : (
                       <FolderOpen size={12} className="shrink-0 text-slate-500" />
                     )}
-                    <span className={`text-[11px] font-medium tracking-wider uppercase ${
-                      key === '_quick' ? 'text-amber-500' : 'text-slate-500'
-                    }`}>
+                    <span
+                      className={`text-[11px] font-medium tracking-wider uppercase ${
+                        key === '_quick' ? 'text-amber-500' : 'text-slate-500'
+                      }`}
+                    >
                       {group.label}
                     </span>
                     <span className="text-[10px] text-slate-600">({items.length})</span>
@@ -268,78 +270,84 @@ export default function ConnectionList({ onConnect }: Props) {
                   {items.map((conn) => {
                     const isQuick = conn.id.startsWith(QUICK_PREFIX)
                     return (
-                    <div
-                      key={conn.id}
-                      className={`group flex items-center gap-2 rounded-lg border p-2.5 transition-colors ${
-                        isQuick
-                          ? 'border-dashed border-amber-600/30 hover:border-amber-600/50 hover:bg-amber-500/5'
-                          : 'border-slate-700/30 hover:border-slate-700 hover:bg-slate-800/50'
-                      }`}
-                    >
-                      {/* 状态指示器 */}
-                      <span
-                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
+                      <div
+                        key={conn.id}
+                        className={`group flex items-center gap-2 rounded-lg border p-2.5 transition-colors ${
                           isQuick
-                            ? 'bg-amber-500/10 text-amber-400'
-                            : isActive(conn.id)
-                              ? 'bg-emerald-500/10 text-emerald-400'
-                              : 'bg-slate-800 text-slate-500'
+                            ? 'border-dashed border-amber-600/30 hover:border-amber-600/50 hover:bg-amber-500/5'
+                            : 'border-slate-700/30 hover:border-slate-700 hover:bg-slate-800/50'
                         }`}
                       >
-                        {isQuick ? <Zap size={14} /> : isActive(conn.id) ? <PlugZap size={14} /> : <Terminal size={14} />}
-                      </span>
-
-                      {/* 连接信息 */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate text-sm font-medium text-slate-200">
-                            {conn.name}
-                          </span>
-                          <span
-                            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-                              isQuick
-                                ? 'bg-amber-500'
-                                : isActive(conn.id)
-                                  ? 'bg-emerald-500'
-                                  : 'bg-slate-600'
-                            }`}
-                          />
-                        </div>
-                        <div className="truncate text-[11px] text-slate-500">
-                          {conn.username}@{conn.host}:{conn.port}
-                        </div>
-                      </div>
-
-                      {/* 操作按钮：移动端始终显示，桌面端 hover 显示 */}
-                      <div className="flex gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                        <button
-                          onClick={() => handleConnect(conn.id)}
-                          className="btn-icon text-emerald-500 hover:bg-emerald-500/10"
-                          title="连接"
+                        {/* 状态指示器 */}
+                        <span
+                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
+                            isQuick
+                              ? 'bg-amber-500/10 text-amber-400'
+                              : isActive(conn.id)
+                                ? 'bg-emerald-500/10 text-emerald-400'
+                                : 'bg-slate-800 text-slate-500'
+                          }`}
                         >
-                          <PlugZap size={14} />
-                        </button>
-                        {!isQuick && (
+                          {isQuick ? (
+                            <Zap size={14} />
+                          ) : isActive(conn.id) ? (
+                            <PlugZap size={14} />
+                          ) : (
+                            <Terminal size={14} />
+                          )}
+                        </span>
+
+                        {/* 连接信息 */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-sm font-medium text-slate-200">
+                              {conn.name}
+                            </span>
+                            <span
+                              className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+                                isQuick
+                                  ? 'bg-amber-500'
+                                  : isActive(conn.id)
+                                    ? 'bg-emerald-500'
+                                    : 'bg-slate-600'
+                              }`}
+                            />
+                          </div>
+                          <div className="truncate text-[11px] text-slate-500">
+                            {conn.username}@{conn.host}:{conn.port}
+                          </div>
+                        </div>
+
+                        {/* 操作按钮：移动端始终显示，桌面端 hover 显示 */}
+                        <div className="flex gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                           <button
-                            onClick={() => {
-                              setEditId(conn.id)
-                              setShowForm(true)
-                            }}
-                            className="btn-icon text-slate-500 hover:text-slate-300"
-                            title="编辑"
+                            onClick={() => handleConnect(conn.id)}
+                            className="btn-icon text-emerald-500 hover:bg-emerald-500/10"
+                            title="连接"
                           >
-                            <Pencil size={14} />
+                            <PlugZap size={14} />
                           </button>
-                        )}
-                        <button
-                          onClick={() => deleteConnection(conn.id)}
-                          className="btn-icon text-red-400 hover:bg-red-500/10"
-                          title={isQuick ? '删除快速连接' : '删除'}
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                          {!isQuick && (
+                            <button
+                              onClick={() => {
+                                setEditId(conn.id)
+                                setShowForm(true)
+                              }}
+                              className="btn-icon text-slate-500 hover:text-slate-300"
+                              title="编辑"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => deleteConnection(conn.id)}
+                            className="btn-icon text-red-400 hover:bg-red-500/10"
+                            title={isQuick ? '删除快速连接' : '删除'}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
                     )
                   })}
                 </div>

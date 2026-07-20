@@ -48,8 +48,13 @@ export interface UseSshHostSelectorReturn {
 // ─── Module-level caches ───
 
 type ApiConn = {
-  id: string; name: string; host: string; port: number; username: string
-  password?: string; privateKey?: string
+  id: string
+  name: string
+  host: string
+  port: number
+  username: string
+  password?: string
+  privateKey?: string
 }
 let _apiCache: ApiConn[] | null = null
 let _apiPromise: Promise<ApiConn[]> | null = null
@@ -64,24 +69,36 @@ async function loadApiConnections(): Promise<ApiConn[]> {
   _apiPromise = (async () => {
     try {
       const res = await authedFetch('/api/connections')
-      const json = (await res.json()) as { success?: boolean; data?: Array<Record<string, unknown>> }
+      const json = (await res.json()) as {
+        success?: boolean
+        data?: Array<Record<string, unknown>>
+      }
       if (!json.success || !Array.isArray(json.data)) return []
       const list = json.data.map((c) => {
-        let password = '', privateKey = ''
+        let password = '',
+          privateKey = ''
         try {
           const cfg = JSON.parse((c.config as string) || '{}')
           password = cfg.password || ''
           privateKey = cfg.private_key || ''
-        } catch { /* */ }
+        } catch {
+          /* */
+        }
         return {
-          id: (c.id as string) || '', name: (c.name as string) || (c.host as string) || '',
-          host: (c.host as string) || '', port: (c.port as number) || 22,
-          username: (c.username as string) || '', password, privateKey,
+          id: (c.id as string) || '',
+          name: (c.name as string) || (c.host as string) || '',
+          host: (c.host as string) || '',
+          port: (c.port as number) || 22,
+          username: (c.username as string) || '',
+          password,
+          privateKey,
         }
       })
       _apiCache = list
       return list
-    } catch { return [] }
+    } catch {
+      return []
+    }
   })()
   return _apiPromise
 }
@@ -99,7 +116,9 @@ async function loadTestConfig(): Promise<TestCfg | null> {
         return c
       }
       return null
-    } catch { return null }
+    } catch {
+      return null
+    }
   })()
   return _testPromise
 }
@@ -109,7 +128,11 @@ async function loadTestConfig(): Promise<TestCfg | null> {
 export function useSshHostSelector(
   options: UseSshHostSelectorOptions = {},
 ): UseSshHostSelectorReturn {
-  const { autoConnect = true, loadApiConnections: loadApi = true, loadTestConfig: loadTest = true } = options
+  const {
+    autoConnect = true,
+    loadApiConnections: loadApi = true,
+    loadTestConfig: loadTest = true,
+  } = options
 
   const savedConnections = useSshStore((s) => s.connections)
   const sessions = useSshStore((s) => s.sessions)
@@ -128,10 +151,18 @@ export function useSshHostSelector(
   useEffect(() => {
     let cancelled = false
     if (savedConnections.length === 0) {
-      if (loadApi) loadApiConnections().then((c) => { if (!cancelled) setApiConnections(c) })
-      if (loadTest) loadTestConfig().then((c) => { if (!cancelled) setTestConfig(c) })
+      if (loadApi)
+        loadApiConnections().then((c) => {
+          if (!cancelled) setApiConnections(c)
+        })
+      if (loadTest)
+        loadTestConfig().then((c) => {
+          if (!cancelled) setTestConfig(c)
+        })
     }
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [savedConnections.length, loadApi, loadTest])
 
   // Merge & dedupe hosts
@@ -145,17 +176,40 @@ export function useSshHostSelector(
       result.push(h)
     }
     for (const c of savedConnections) {
-      add({ id: c.id, name: c.name || c.host, host: c.host, port: c.port,
-        username: c.username, password: c.password, privateKey: c.privateKey, source: 'saved' })
+      add({
+        id: c.id,
+        name: c.name || c.host,
+        host: c.host,
+        port: c.port,
+        username: c.username,
+        password: c.password,
+        privateKey: c.privateKey,
+        source: 'saved',
+      })
     }
     for (const c of apiConnections) {
-      add({ id: c.id, name: c.name || c.host, host: c.host, port: c.port,
-        username: c.username, password: c.password, privateKey: c.privateKey, source: 'api' })
+      add({
+        id: c.id,
+        name: c.name || c.host,
+        host: c.host,
+        port: c.port,
+        username: c.username,
+        password: c.password,
+        privateKey: c.privateKey,
+        source: 'api',
+      })
     }
     if (testConfig) {
       const id = `__tc__:${testConfig.host}:${testConfig.user}`
-      add({ id, name: `${testConfig.user}@${testConfig.host}`, host: testConfig.host,
-        port: 22, username: testConfig.user, password: testConfig.password, source: 'test-config' })
+      add({
+        id,
+        name: `${testConfig.user}@${testConfig.host}`,
+        host: testConfig.host,
+        port: 22,
+        username: testConfig.user,
+        password: testConfig.password,
+        source: 'test-config',
+      })
     }
     return result
   }, [savedConnections, apiConnections, testConfig])
@@ -207,8 +261,11 @@ export function useSshHostSelector(
       setError(null)
       try {
         const cid = await ensureSshConnection({
-          host: host.host, port: host.port, username: host.username,
-          password: host.password, privateKey: host.privateKey,
+          host: host.host,
+          port: host.port,
+          username: host.username,
+          password: host.password,
+          privateKey: host.privateKey,
         })
         if (!cancelled) setConnectionId(cid)
       } catch (err: unknown) {
@@ -221,7 +278,9 @@ export function useSshHostSelector(
       }
     }
     void run()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [selectedId, hosts, sessions, autoConnect])
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -233,7 +292,14 @@ export function useSshHostSelector(
   const clearError = useCallback(() => setError(null), [])
 
   return {
-    hosts, selectedId, setSelectedId, connectionId, connecting,
-    error, clearError, hostLabel, hasHosts: hosts.length > 0,
+    hosts,
+    selectedId,
+    setSelectedId,
+    connectionId,
+    connecting,
+    error,
+    clearError,
+    hostLabel,
+    hasHosts: hosts.length > 0,
   }
 }

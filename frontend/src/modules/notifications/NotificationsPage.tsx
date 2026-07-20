@@ -90,10 +90,13 @@ const ChannelCard = memo(function ChannelCard({
           <div>
             <button
               onClick={() => onEdit(channel)}
-              className="text-sm font-medium text-slate-200 hover:text-wrench-400 transition-colors flex items-center gap-1.5 group"
+              className="hover:text-wrench-400 group flex items-center gap-1.5 text-sm font-medium text-slate-200 transition-colors"
             >
               {channel.name}
-              <Pencil size={11} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500" />
+              <Pencil
+                size={11}
+                className="text-slate-500 opacity-0 transition-opacity group-hover:opacity-100"
+              />
             </button>
             <p className="mt-0.5 text-[11px] text-slate-500">{meta.label}</p>
           </div>
@@ -415,10 +418,10 @@ function AddEditChannelModal({ editingChannel, onClose, onSaved }: AddEditChanne
         <div className="space-y-4">
           {/* Name */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">名称</label>
+            <label className="mb-1 block text-xs font-medium text-slate-400">名称</label>
             <input
               type="text"
-              className="w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-wrench-500 focus:outline-none"
+              className="focus:border-wrench-500 w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
               placeholder="我的 Discord 渠道"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -427,9 +430,9 @@ function AddEditChannelModal({ editingChannel, onClose, onSaved }: AddEditChanne
 
           {/* Type */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">类型</label>
+            <label className="mb-1 block text-xs font-medium text-slate-400">类型</label>
             <select
-              className="w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 focus:border-wrench-500 focus:outline-none"
+              className="focus:border-wrench-500 w-full rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-200 focus:outline-none"
               value={type}
               onChange={(e) => handleTypeChange(e.target.value)}
             >
@@ -447,21 +450,24 @@ function AddEditChannelModal({ editingChannel, onClose, onSaved }: AddEditChanne
           {/* Enabled toggle */}
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-slate-400">启用</label>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <label className="relative inline-flex cursor-pointer items-center">
               <input
                 type="checkbox"
-                className="sr-only peer"
+                className="peer sr-only"
                 checked={enabled}
                 onChange={(e) => setEnabled(e.target.checked)}
               />
-              <div className="w-9 h-5 bg-slate-700 rounded-full peer peer-checked:bg-wrench-600 peer-focus:ring-2 peer-focus:ring-wrench-500/30 after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
+              <div className="peer peer-checked:bg-wrench-600 peer-focus:ring-wrench-500/30 h-5 w-9 rounded-full bg-slate-700 peer-focus:ring-2 after:absolute after:start-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full" />
             </label>
           </div>
         </div>
 
         {/* Actions */}
         <div className="mt-6 flex items-center justify-end gap-3">
-          <button onClick={onClose} className="rounded-lg border border-slate-600/50 px-4 py-2 text-sm text-slate-400 hover:bg-slate-700/50">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-600/50 px-4 py-2 text-sm text-slate-400 hover:bg-slate-700/50"
+          >
             取消
           </button>
           <button
@@ -592,7 +598,7 @@ export default function NotificationsPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-nav">
+      <div className="pb-nav flex-1 overflow-y-auto p-4 sm:p-6">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
@@ -637,8 +643,15 @@ export default function NotificationsPage() {
         <AddEditChannelModal
           key={editingChannel?.id ?? 'add'}
           editingChannel={editingChannel}
-          onClose={() => { setShowAddModal(false); setEditingChannel(null) }}
-          onSaved={() => { loadChannels(); setShowAddModal(false); setEditingChannel(null) }}
+          onClose={() => {
+            setShowAddModal(false)
+            setEditingChannel(null)
+          }}
+          onSaved={() => {
+            loadChannels()
+            setShowAddModal(false)
+            setEditingChannel(null)
+          }}
         />
       )}
 

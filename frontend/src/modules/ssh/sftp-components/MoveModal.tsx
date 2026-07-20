@@ -29,26 +29,29 @@ const MoveModal = memo(function MoveModal({
   const [dirEntries, setDirEntries] = useState<SftpEntry[]>([])
   const [loadingDirs, setLoadingDirs] = useState(false)
 
-  const loadDir = useCallback(async (path: string) => {
-    if (!sessionId) return
-    setLoadingDirs(true)
-    try {
-      const res = await fetch('/api/sftp/list', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connectionId: sessionId, path }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        // 只显示目录
-        setDirEntries((data as SftpEntry[]).filter((e) => e.type === 'directory'))
+  const loadDir = useCallback(
+    async (path: string) => {
+      if (!sessionId) return
+      setLoadingDirs(true)
+      try {
+        const res = await fetch('/api/sftp/list', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connectionId: sessionId, path }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          // 只显示目录
+          setDirEntries((data as SftpEntry[]).filter((e) => e.type === 'directory'))
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoadingDirs(false)
       }
-    } catch {
-      // ignore
-    } finally {
-      setLoadingDirs(false)
-    }
-  }, [sessionId])
+    },
+    [sessionId],
+  )
 
   useEffect(() => {
     loadDir(browsePath)
@@ -124,9 +127,7 @@ const MoveModal = memo(function MoveModal({
           </div>
         )}
 
-        <p className="mb-3 text-[10px] text-slate-600">
-          以 / 结尾表示移到目录内。
-        </p>
+        <p className="mb-3 text-[10px] text-slate-600">以 / 结尾表示移到目录内。</p>
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}

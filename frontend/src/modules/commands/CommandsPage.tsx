@@ -11,14 +11,8 @@ import type { QuickCommand } from './index'
 
 export default function CommandsPage() {
   // ── 统一主机选择器 ──
-  const {
-    hosts,
-    selectedId,
-    setSelectedId,
-    connectionId,
-    connecting,
-    hostLabel,
-  } = useSshHostSelector()
+  const { hosts, selectedId, setSelectedId, connectionId, connecting, hostLabel } =
+    useSshHostSelector()
 
   const {
     customCommands,
@@ -186,7 +180,8 @@ export default function CommandsPage() {
             >
               {hosts.map((h) => (
                 <option key={h.id} value={h.id}>
-                  {h.source === 'test-config' ? '⚡ ' : ''}{h.name}
+                  {h.source === 'test-config' ? '⚡ ' : ''}
+                  {h.name}
                 </option>
               ))}
             </select>
@@ -198,9 +193,7 @@ export default function CommandsPage() {
             <WifiOff size={10} /> 未连接
           </span>
         )}
-        {connecting && (
-          <span className="text-[10px] text-yellow-400">连接中...</span>
-        )}
+        {connecting && <span className="text-[10px] text-yellow-400">连接中...</span>}
         {hostLabel && hasConnection && (
           <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-500">
             {hostLabel}

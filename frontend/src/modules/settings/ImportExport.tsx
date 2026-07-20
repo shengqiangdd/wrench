@@ -109,12 +109,12 @@ const ImportExport = memo(function ImportExport() {
     }
   }, [importingFile, importMode])
 
-  const hasConflicts = preview && (
-    preview.connections.conflict > 0 ||
-    preview.alertRules.conflict > 0 ||
-    preview.vault.conflict > 0 ||
-    preview.notificationChannels.conflict > 0
-  )
+  const hasConflicts =
+    preview &&
+    (preview.connections.conflict > 0 ||
+      preview.alertRules.conflict > 0 ||
+      preview.vault.conflict > 0 ||
+      preview.notificationChannels.conflict > 0)
 
   return (
     <section>
@@ -236,10 +236,20 @@ const ImportExport = memo(function ImportExport() {
                 导入成功，正在刷新页面...
               </div>
               <div className="space-y-0.5 text-green-400/70">
-                <div>连接: 写入 {(importResult.connections as { imported: number })?.imported || 0} 项</div>
-                <div>告警规则: 写入 {(importResult.alertRules as { imported: number })?.imported || 0} 项</div>
-                <div>凭据: 写入 {(importResult.vault as { imported: number })?.imported || 0} 项</div>
-                <div>通知渠道: 写入 {(importResult.notificationChannels as { imported: number })?.imported || 0} 项</div>
+                <div>
+                  连接: 写入 {(importResult.connections as { imported: number })?.imported || 0} 项
+                </div>
+                <div>
+                  告警规则: 写入 {(importResult.alertRules as { imported: number })?.imported || 0}{' '}
+                  项
+                </div>
+                <div>
+                  凭据: 写入 {(importResult.vault as { imported: number })?.imported || 0} 项
+                </div>
+                <div>
+                  通知渠道: 写入{' '}
+                  {(importResult.notificationChannels as { imported: number })?.imported || 0} 项
+                </div>
                 <div>插件状态: 更新 {(importResult.plugins as number) || 0} 项</div>
               </div>
             </div>
@@ -270,14 +280,18 @@ const ImportExport = memo(function ImportExport() {
             </div>
 
             {/* 内容 */}
-            <div className="px-5 py-4 space-y-4">
+            <div className="space-y-4 px-5 py-4">
               {/* 模式提示 */}
-              <div className={`rounded-lg px-3 py-2 text-[11px] ${
-                importMode === 'merge'
-                  ? 'bg-emerald-500/10 text-emerald-400'
-                  : 'bg-amber-500/10 text-amber-400'
-              }`}>
-                {importMode === 'merge' ? '🔄 智能合并模式：跳过已存在的同名项' : '⚠️ 完全覆盖模式：清空现有数据后写入'}
+              <div
+                className={`rounded-lg px-3 py-2 text-[11px] ${
+                  importMode === 'merge'
+                    ? 'bg-emerald-500/10 text-emerald-400'
+                    : 'bg-amber-500/10 text-amber-400'
+                }`}
+              >
+                {importMode === 'merge'
+                  ? '🔄 智能合并模式：跳过已存在的同名项'
+                  : '⚠️ 完全覆盖模式：清空现有数据后写入'}
               </div>
 
               {/* 连接 */}
@@ -286,9 +300,11 @@ const ImportExport = memo(function ImportExport() {
                 total={preview.connections.total}
                 newCount={preview.connections.new}
                 conflict={preview.connections.conflict}
-                conflictDetail={preview.connections.conflictNames.length > 0
-                  ? `冲突项: ${preview.connections.conflictNames.slice(0, 3).join(', ')}${preview.connections.conflictNames.length > 3 ? '...' : ''}`
-                  : undefined}
+                conflictDetail={
+                  preview.connections.conflictNames.length > 0
+                    ? `冲突项: ${preview.connections.conflictNames.slice(0, 3).join(', ')}${preview.connections.conflictNames.length > 3 ? '...' : ''}`
+                    : undefined
+                }
               />
 
               {/* 告警规则 */}
@@ -318,7 +334,9 @@ const ImportExport = memo(function ImportExport() {
               {/* AI 配置 */}
               <div className="flex items-center justify-between rounded-lg bg-slate-800/50 px-3 py-2">
                 <span className="text-xs text-slate-400">AI 配置</span>
-                <span className={`text-[11px] ${preview.aiConfig.hasChanges ? 'text-blue-400' : 'text-slate-600'}`}>
+                <span
+                  className={`text-[11px] ${preview.aiConfig.hasChanges ? 'text-blue-400' : 'text-slate-600'}`}
+                >
                   {preview.aiConfig.hasChanges ? '将更新' : '无变化'}
                 </span>
               </div>
@@ -327,14 +345,20 @@ const ImportExport = memo(function ImportExport() {
               <div className="flex items-center justify-between rounded-lg bg-slate-800/50 px-3 py-2">
                 <span className="text-xs text-slate-400">插件状态</span>
                 <span className="text-[11px] text-slate-500">
-                  {preview.plugins.total} 个已启用{preview.plugins.enabled > 0 ? `，${preview.plugins.enabled} 个新增` : ''}
+                  {preview.plugins.total} 个已启用
+                  {preview.plugins.enabled > 0 ? `，${preview.plugins.enabled} 个新增` : ''}
                 </span>
               </div>
 
               {/* 冲突警告 */}
               {hasConflicts && importMode === 'merge' && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-400">
-                  ⚠️ 存在 {preview.connections.conflict + preview.alertRules.conflict + preview.vault.conflict + preview.notificationChannels.conflict} 个冲突项将被跳过
+                  ⚠️ 存在{' '}
+                  {preview.connections.conflict +
+                    preview.alertRules.conflict +
+                    preview.vault.conflict +
+                    preview.notificationChannels.conflict}{' '}
+                  个冲突项将被跳过
                 </div>
               )}
             </div>
@@ -407,27 +431,17 @@ function PreviewRow({
     <div className="rounded-lg bg-slate-800/50 px-3 py-2">
       <div className="flex items-center justify-between">
         <span className="text-xs text-slate-400">{title}</span>
-        <span className="text-[11px] text-slate-500">
-          共 {total} 项
-        </span>
+        <span className="text-[11px] text-slate-500">共 {total} 项</span>
       </div>
       <div className="mt-1 flex items-center gap-3 text-[10px]">
-        {newCount > 0 && (
-          <span className="text-emerald-400">+{newCount} 新增</span>
-        )}
-        {conflict > 0 && (
-          <span className="text-amber-400">⊘ {conflict} 跳过</span>
-        )}
+        {newCount > 0 && <span className="text-emerald-400">+{newCount} 新增</span>}
+        {conflict > 0 && <span className="text-amber-400">⊘ {conflict} 跳过</span>}
         {newCount === 0 && conflict === 0 && total > 0 && (
           <span className="text-slate-600">全部已存在</span>
         )}
-        {total === 0 && (
-          <span className="text-slate-600">无数据</span>
-        )}
+        {total === 0 && <span className="text-slate-600">无数据</span>}
       </div>
-      {conflictDetail && (
-        <p className="mt-1 text-[10px] text-slate-600">{conflictDetail}</p>
-      )}
+      {conflictDetail && <p className="mt-1 text-[10px] text-slate-600">{conflictDetail}</p>}
     </div>
   )
 }

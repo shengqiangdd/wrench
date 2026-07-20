@@ -40,7 +40,8 @@ async function safeWriteClipboard(text: string): Promise<boolean> {
     const textarea = document.createElement('textarea')
     textarea.value = text
     // 防止滚动条闪现
-    textarea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;'
+    textarea.style.cssText =
+      'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;'
     document.body.appendChild(textarea)
     textarea.focus()
     textarea.select()
@@ -155,7 +156,11 @@ export default function TerminalView({
   // ─── 桌面端：选中文本后浮现复制按钮 ───
   const [hasSelection, setHasSelection] = useState(false)
   // ─── 移动端：长按浮动菜单 ───
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    hasSelection: boolean
+  } | null>(null)
   // contextMenuRef 用于点击外部关闭
   const contextMenuRef = useRef<HTMLDivElement>(null)
   // ─── 移动端：选择文本模态框（textarea 让用户自由选择复制） ───
@@ -414,8 +419,6 @@ export default function TerminalView({
     container.addEventListener('touchend', handleLongPressEnd, { passive: true })
     container.addEventListener('touchcancel', handleLongPressEnd, { passive: true })
 
-
-
     // ─── 桌面端：监听文本选区变化，选中时浮现复制按钮 ───
     const handleSelectionChange = () => {
       const sel = window.getSelection()
@@ -476,14 +479,18 @@ export default function TerminalView({
         console.log(`[Terminal] Got token: ${token.substring(0, 20)}... (length=${token.length})`)
         console.log(`[Terminal] gen check: gen=${gen}, genRef.current=${genRef.current}`)
         if (gen !== genRef.current) {
-          console.warn(`[Terminal] gen mismatch! gen=${gen} !== genRef.current=${genRef.current}, aborting`)
+          console.warn(
+            `[Terminal] gen mismatch! gen=${gen} !== genRef.current=${genRef.current}, aborting`,
+          )
           clearTimeout(sshTimeout)
           return
         }
 
         console.log('[Terminal] Creating WsClient...')
         const termWs = createTerminalWsClient(token)
-        console.log(`[Terminal] Created WsClient, URL: ${termWs['url'].split('?')[0]}, status=${termWs['status']}`)
+        console.log(
+          `[Terminal] Created WsClient, URL: ${termWs['url'].split('?')[0]}, status=${termWs['status']}`,
+        )
         termWsRef.current = termWs
 
         // 注册事件处理器（在连接前注册，确保不遗漏）
@@ -592,7 +599,9 @@ export default function TerminalView({
           if (status === 'connected') {
             unsubRef.current?.()
             if (gen !== genRef.current) return
-            console.log(`[Terminal] ✅ WS connected, sending SSH connect to ${creds.host}:${creds.port}`)
+            console.log(
+              `[Terminal] ✅ WS connected, sending SSH connect to ${creds.host}:${creds.port}`,
+            )
             termWs.send({
               type: 'connect',
               connectionId,
@@ -976,7 +985,9 @@ export default function TerminalView({
                 e.preventDefault()
                 e.stopPropagation()
                 const text = getTerminalAllText()
-                console.log(`[Copy] 全选复制: text length=${text.length}, sample=${text.substring(0, 80)}`)
+                console.log(
+                  `[Copy] 全选复制: text length=${text.length}, sample=${text.substring(0, 80)}`,
+                )
                 const ok = await safeWriteClipboard(text)
                 console.log(`[Copy] 全选复制 result: ${ok}`)
                 setContextMenu(null)
@@ -1041,7 +1052,7 @@ export default function TerminalView({
                     document.execCommand('copy')
                   }
                 }}
-                className="rounded bg-wrench-600 px-3 py-1 text-xs font-medium text-white active:bg-wrench-700"
+                className="bg-wrench-600 active:bg-wrench-700 rounded px-3 py-1 text-xs font-medium text-white"
               >
                 全选复制
               </button>
@@ -1191,8 +1202,6 @@ export default function TerminalView({
           ))}
         </div>
       </div>
-
-
     </div>
   )
 }

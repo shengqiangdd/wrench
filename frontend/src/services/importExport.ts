@@ -333,13 +333,11 @@ export async function parseImportContent(content: string): Promise<ExportData | 
 export function previewImport(data: ExportData['data']): ImportPreview {
   // 连接去重：按 host+port+username 判断冲突
   const existingConns = connectionsList()
-  const existingConnKeys = new Set(
-    existingConns.map((c) => `${c.host}:${c.port}:${c.username}`),
-  )
+  const existingConnKeys = new Set(existingConns.map((c) => `${c.host}:${c.port}:${c.username}`))
   let connNew = 0
   let connConflict = 0
   const connConflictNames: string[] = []
-  for (const conn of (data.connections || [])) {
+  for (const conn of data.connections || []) {
     const key = `${conn.host}:${conn.port}:${conn.username}`
     if (existingConnKeys.has(key)) {
       connConflict++
@@ -351,12 +349,10 @@ export function previewImport(data: ExportData['data']): ImportPreview {
 
   // 告警规则去重：按 metric+threshold 判断
   const existingRules = alertRulesList()
-  const existingRuleKeys = new Set(
-    existingRules.map((r) => `${r.metric}:${r.threshold}`),
-  )
+  const existingRuleKeys = new Set(existingRules.map((r) => `${r.metric}:${r.threshold}`))
   let ruleNew = 0
   let ruleConflict = 0
-  for (const rule of (data.alertConfig?.rules || [])) {
+  for (const rule of data.alertConfig?.rules || []) {
     if (existingRuleKeys.has(`${rule.metric}:${rule.threshold}`)) {
       ruleConflict++
     } else {
@@ -369,7 +365,7 @@ export function previewImport(data: ExportData['data']): ImportPreview {
   const existingVaultKeys = new Set(existingVault.map((v) => `${v.name}:${v.kind}`))
   let vaultNew = 0
   let vaultConflict = 0
-  for (const entry of (data.vault || [])) {
+  for (const entry of data.vault || []) {
     if (existingVaultKeys.has(`${entry.name}:${entry.kind}`)) {
       vaultConflict++
     } else {
@@ -382,7 +378,7 @@ export function previewImport(data: ExportData['data']): ImportPreview {
   const existingChannelKeys = new Set(existingChannels.map((c) => `${c.name}:${c.type}`))
   let chNew = 0
   let chConflict = 0
-  for (const ch of (data.notificationChannels || [])) {
+  for (const ch of data.notificationChannels || []) {
     if (existingChannelKeys.has(`${ch.name}:${ch.type}`)) {
       chConflict++
     } else {
@@ -393,19 +389,14 @@ export function previewImport(data: ExportData['data']): ImportPreview {
   // AI 配置
   const aiStore = getStore('wrench-ai') as { config?: Record<string, unknown> } | null
   const aiChanged =
-    data.aiConfig &&
-    JSON.stringify(data.aiConfig) !== JSON.stringify(aiStore?.config || {})
+    data.aiConfig && JSON.stringify(data.aiConfig) !== JSON.stringify(aiStore?.config || {})
 
   // 插件
   const pluginStore = getStore('wrench-plugins') as {
     plugins?: Array<{ manifest: { id: string }; enabled: boolean }>
   } | null
-  const existingPluginIds = new Set(
-    pluginStore?.plugins?.map((p) => p.manifest.id) || [],
-  )
-  const pluginsNew = (data.enabledPlugins || []).filter(
-    (id) => !existingPluginIds.has(id),
-  ).length
+  const existingPluginIds = new Set(pluginStore?.plugins?.map((p) => p.manifest.id) || [])
+  const pluginsNew = (data.enabledPlugins || []).filter((id) => !existingPluginIds.has(id)).length
 
   return {
     connections: {
@@ -473,9 +464,7 @@ export async function importConfig(
   // ── SSH 连接 ──
   if (data.connections && Array.isArray(data.connections)) {
     const existingConns = mode === 'merge' ? connectionsList() : []
-    const existingKeys = new Set(
-      existingConns.map((c) => `${c.host}:${c.port}:${c.username}`),
-    )
+    const existingKeys = new Set(existingConns.map((c) => `${c.host}:${c.port}:${c.username}`))
     for (const conn of data.connections) {
       const key = `${conn.host}:${conn.port}:${conn.username}`
       if (mode === 'merge' && existingKeys.has(key)) {
@@ -491,9 +480,7 @@ export async function importConfig(
   // ── 告警规则 ──
   if (data.alertConfig?.rules && Array.isArray(data.alertConfig.rules)) {
     const existingRules = mode === 'merge' ? alertRulesList() : []
-    const existingKeys = new Set(
-      existingRules.map((r) => `${r.metric}:${r.threshold}`),
-    )
+    const existingKeys = new Set(existingRules.map((r) => `${r.metric}:${r.threshold}`))
     for (const rule of data.alertConfig.rules) {
       const key = `${rule.metric}:${rule.threshold}`
       if (mode === 'merge' && existingKeys.has(key)) {

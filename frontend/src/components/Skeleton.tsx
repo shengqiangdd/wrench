@@ -20,11 +20,7 @@ interface SkeletonProps {
 }
 
 function PulseBar({ className = '' }: { className?: string }) {
-  return (
-    <div
-      className={`animate-pulse rounded bg-slate-700/50 ${className}`}
-    />
-  )
+  return <div className={`animate-pulse rounded bg-slate-700/50 ${className}`} />
 }
 
 function TextSkeleton({ rows = 3 }: { rows?: number }) {

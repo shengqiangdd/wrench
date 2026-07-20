@@ -37,10 +37,7 @@ const DiskUsageModal = memo(function DiskUsageModal({ entry, data, onClose }: Di
             <HardDrive size={14} />
             <span className="truncate">磁盘使用 — {entry.name}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="btn-icon text-slate-500 hover:text-slate-300"
-          >
+          <button onClick={onClose} className="btn-icon text-slate-500 hover:text-slate-300">
             <X size={14} />
           </button>
         </div>

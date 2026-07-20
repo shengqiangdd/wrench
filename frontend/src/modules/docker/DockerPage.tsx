@@ -168,7 +168,8 @@ export default function DockerPage() {
               >
                 {hosts.map((h) => (
                   <option key={h.id} value={h.id}>
-                    {h.source === 'test-config' ? '⚡ ' : ''}{h.name}
+                    {h.source === 'test-config' ? '⚡ ' : ''}
+                    {h.name}
                   </option>
                 ))}
               </select>
@@ -277,7 +278,9 @@ export default function DockerPage() {
               />
             )}
             {tab === 'compose' && <DockerCompose connectionId={connectionId!} />}
-            {tab === 'monitor' && <DockerMonitor connectionId={connectionId!} containers={containers} />}
+            {tab === 'monitor' && (
+              <DockerMonitor connectionId={connectionId!} containers={containers} />
+            )}
           </Suspense>
         )}
       </div>
