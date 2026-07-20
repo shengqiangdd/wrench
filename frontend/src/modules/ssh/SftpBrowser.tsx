@@ -1651,6 +1651,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       selectedPaths,
       toggleSelect,
       isSelectMode,
+      isTouchDevice,
     ],
   )
 
