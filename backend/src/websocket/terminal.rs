@@ -331,14 +331,6 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
         return;
     }
 
-    // 🔧 发送 sftp-ready 事件，通知前端 SFTP 可用
-    // 前端的 ensureSftpSession 等待此事件来确认 SFTP 连接就绪
-    let sftp_ready = serde_json::json!({
-        "type": "sftp-ready",
-        "connectionId": connection_id,
-    });
-    let _ = socket.send(Message::Text(txt(sftp_ready.to_string()))).await;
-
     info!("Terminal session connected: {}", connection_id);
 
     // ─── Terminal I/O Loop with output batching ───
