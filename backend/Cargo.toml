@@ -71,7 +71,7 @@ lettre = { version = "0.11", features = ["tokio1-native-tls", "smtp-transport", 
 rusqlite = { version = "0.40", features = ["bundled", "backup"] }
 
 # Cron expression parsing
-cron = "0.15"
+cron = "0.17"
 
 # Auth
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
