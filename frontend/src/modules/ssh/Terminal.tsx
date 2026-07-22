@@ -752,6 +752,24 @@ export default function TerminalView({
         return false
       }
 
+      // 🔧 关键修复：Backspace/Delete — 阻止 xterm.js 本地处理，手动发送到服务端
+      // xterm.js 本地回显会与服务端回显冲突，导致删除时显示之前的旧内容
+      // 通过 term.input() 发送按键（内部调用 triggerDataEvent → 触发 onData），
+      // 同时返回 false 阻止 xterm.js 的本地缓冲区修改和光标移动
+      if (
+        type === 'keydown' &&
+        !ctrlKey &&
+        !shiftKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        (key === 'Backspace' || key === 'Delete')
+      ) {
+        // 发送对应的控制字符到服务端
+        const char = key === 'Backspace' ? '\x7f' : '\x1b[3~'
+        term.input(char)
+        return false
+      }
+
       return true
     })
 
