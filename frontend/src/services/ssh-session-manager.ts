@@ -685,34 +685,47 @@ class SshSessionManager {
     try {
       const decryptedConn = await decryptConnection(conn)
 
-      // 监听 sftp-ready 事件（后端在 SSH 连接成功后发送）
-      let sftpUnsub: (() => void) | null = null
-      const sftpReadyPromise = new Promise<boolean>((resolve) => {
-        const timer = setTimeout(() => {
-          sftpUnsub?.()
-          resolve(false)
-        }, 8000)
-        sftpUnsub = this.wsClient!.on('sftp-ready', (data: Record<string, unknown>) => {
-          if (data.connectionId === sessionId) {
-            clearTimeout(timer)
-            sftpUnsub?.()
-            resolve(true)
-          }
-        })
+      console.log(`[SshSessionManager] createSftpSession: host=${conn.host}, username=${conn.username}, hasPwd=${!!decryptedConn.password}, pwdLen=${decryptedConn.password?.length || 0}, hasKey=${!!decryptedConn.privateKey}`)
+
+      // 🔧 使用 REST API /api/ssh/ensure 创建 SSH 连接（不进入终端 I/O 循环）
+      const ensureBody = {
+        host: conn.host,
+        port: conn.port || 22,
+        username: conn.username,
+        password: decryptedConn.password || '',
+        privateKey: decryptedConn.privateKey || '',
+        sudoPassword: decryptedConn.sudoPassword || '',
+      }
+
+      const resp = await authedFetch('/api/ssh/ensure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ensureBody),
       })
 
-      await this.wsClient.request({
-        type: 'connect',
-        connectionId: sessionId,
-        host: conn.host,
-        port: conn.port,
-        username: conn.username,
-        password: decryptedConn.password,
-        privateKey: decryptedConn.privateKey,
-      })
+      const respText = await resp.text()
+      console.log(`[SshSessionManager] /api/ssh/ensure response: status=${resp.status}, body=${respText}`)
+
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}: ${respText}`)
+      }
+
+      const json = JSON.parse(respText) as {
+        success: boolean
+        data?: { connection_id?: string; connectionId?: string; host?: string; port?: number; username?: string }
+        error?: string
+        msg?: string
+      }
+
+      const backendConnId = json.data?.connection_id ?? json.data?.connectionId
+      if (!json.success || !backendConnId) {
+        throw new Error(json.error || json.msg || 'SSH connect failed')
+      }
+
+      console.log(`[SshSessionManager] SSH connected via REST, backend connId: ${backendConnId}`)
 
       useSshStore.getState().addSession({
-        id: sessionId,
+        id: backendConnId,
         connectionId,
         connectionName: conn.name,
         host: conn.host,
@@ -721,7 +734,7 @@ class SshSessionManager {
         terminalRows: 24,
       })
 
-      setSessionCredentials(sessionId, {
+      setSessionCredentials(backendConnId, {
         host: conn.host,
         port: conn.port,
         username: conn.username,
@@ -730,15 +743,8 @@ class SshSessionManager {
         sudoPassword: decryptedConn.sudoPassword,
       })
 
-      // 等待 SFTP 就绪
-      onStatus?.('等待 SFTP 就绪...')
-      const ready = await sftpReadyPromise
-      if (!ready) {
-        console.warn('[SshSessionManager] SFTP ready timeout')
-      }
-
-      this.sessions.set(sessionId, {
-        id: sessionId,
+      this.sessions.set(backendConnId, {
+        id: backendConnId,
         connectionId,
         type: 'sftp',
         status: 'connected',
@@ -752,13 +758,14 @@ class SshSessionManager {
       this.savePersistedState()
 
       onStatus?.('')
-      return sessionId
+      return backendConnId
     } catch (err) {
       // 记录失败
       const errorType = err instanceof Error ? err.message : 'unknown'
       this.recordConnectResult(false, errorType)
       onStatus?.('')
-      console.error('[SshSessionManager] SFTP connect failed:', err)
+      console.error('[SshSessionManager] SFTP createSession failed:', err)
+      onStatus?.(`连接失败: ${errorType}`)
       return null
     }
   }

@@ -433,11 +433,11 @@ function FileManagerInner() {
       connectingRef.current = true
       dispatch({ connecting: true })
 
-      // 🔧 修复：只清理同一主机的旧 sftp session（重连场景），
+      // 🔧 修复：只清理同一主机的旧 session（重连场景），
       // 不再断开其他主机的 session — 支持多主机并存
       for (const sess of currentSessions) {
-        if (sess.connectionId === connId && sess.id.startsWith('sftp_')) {
-          console.log(`[FileManager] Disconnecting old SFTP session: ${sess.id}`)
+        if (sess.connectionId === connId) {
+          console.log(`[FileManager] Disconnecting old session: ${sess.id}`)
           client.send({ type: 'disconnect', connectionId: sess.id })
           removeSession(sess.id)
         }
