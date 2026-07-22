@@ -1034,6 +1034,15 @@ export default function TerminalView({
           touchAction: 'none',
         }}
         onContextMenu={(e) => e.preventDefault()}
+        onPointerDown={(e) => {
+          // 移动端 tap 终端区域时，主动 focus 触发输入法键盘
+          // touch-action: none 会阻止浏览器的默认 tap→focus 行为，
+          // 导致 xterm.js 的 hidden textarea 无法获得焦点，输入法无法弹出。
+          // pointerdown 在 touchstart 之前触发，不会和自定义滚动冲突。
+          if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            terminalRef.current?.focus()
+          }
+        }}
       />
       {/* ─── 桌面端：选中文本后在右上角浮现复制按钮 ─── */}
       <button
