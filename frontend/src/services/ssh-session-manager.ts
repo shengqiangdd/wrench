@@ -468,14 +468,17 @@ class SshSessionManager {
     }
   ): Promise<string | null> {
     const { forceNew = false, onStatus } = options || {}
+    console.log(`[SshSessionManager] getOrCreateSftpSession called for connectionId=${connectionId}, forceNew=${forceNew}`)
 
     // 1. 检查是否有可复用的 SSH session
     if (!forceNew) {
       const existingSession = this.findReusableSession(connectionId)
       if (existingSession) {
+        console.log(`[SshSessionManager] Found reusable session: ${existingSession.id}, verifying SFTP...`)
         // 验证 SFTP 是否可用
         onStatus?.('检测到已有连接，验证 SFTP...')
         const sftpReady = await this.verifySftpReady(existingSession.id)
+        console.log(`[SshSessionManager] SFTP ready check result: ${sftpReady}`)
         if (sftpReady) {
           onStatus?.('SFTP 已就绪，复用现有连接')
 
@@ -494,6 +497,7 @@ class SshSessionManager {
     }
 
     // 2. 创建新的 SFTP session
+    console.log(`[SshSessionManager] No reusable session, creating new SFTP session for connectionId=${connectionId}`)
     return this.createSftpSession(connectionId, onStatus)
   }
 
@@ -660,7 +664,14 @@ class SshSessionManager {
   ): Promise<string | null> {
     const conns = useSshStore.getState().connections
     const conn = conns.find((c) => c.id === connectionId)
-    if (!conn || !this.wsClient) return null
+    if (!conn || !this.wsClient) {
+      console.error(`[SshSessionManager] createSftpSession failed: conn=${!!conn}, wsClient=${!!this.wsClient}`)
+      return null
+    }
+
+    console.log(`[SshSessionManager] createSftpSession for connectionId=${connectionId}, host=${conn.host}`)
+    console.log(`[SshSessionManager] Current internal sessions:`, Array.from(this.sessions.keys()))
+    console.log(`[SshSessionManager] Current store sessions:`, useSshStore.getState().sessions.map(s => s.id))
 
     // 检查连接池限制
     if (this.sessions.size >= this.poolConfig.maxPoolSize) {
