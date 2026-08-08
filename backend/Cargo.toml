@@ -83,7 +83,7 @@ rusqlite = { version = "0.40", features = ["bundled", "backup"] }
 cron = "0.15"
 
 # Auth
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 
 # Helpers
 bytes = "1.12"
