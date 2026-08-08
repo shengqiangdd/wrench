@@ -752,10 +752,12 @@ export default function TerminalView({
         return false
       }
 
-      // 🔧 关键修复：Backspace/Delete — 阻止 xterm.js 本地处理，手动发送到服务端
-      // xterm.js 本地回显会与服务端回显冲突，导致删除时显示之前的旧内容
-      // 通过 term.input() 发送按键（内部调用 triggerDataEvent → 触发 onData），
-      // 同时返回 false 阻止 xterm.js 的本地缓冲区修改和光标移动
+      // 🔧 关键修复：Backspace/Delete — 直接发送到服务端，不经过 term.input()
+      // term.input() 会同时做两件事：(1) 触发 onData 发送到服务端
+      // (2) 调用 parser.parse() 在本地解析处理（移动光标、修改缓冲区）
+      // 本地处理 + 服务端回显 = 双重操作，导致字符重叠
+      // 解决方案：跳过 term.input()，直接通过 WebSocket 发送到服务端，
+      // 由服务端回显驱动终端显示更新
       if (
         type === 'keydown' &&
         !ctrlKey &&
@@ -764,9 +766,11 @@ export default function TerminalView({
         !e.metaKey &&
         (key === 'Backspace' || key === 'Delete')
       ) {
-        // 发送对应的控制字符到服务端
         const char = key === 'Backspace' ? '\x7f' : '\x1b[3~'
-        term.input(char)
+        // 直接发送到服务端，不调用 term.input() 避免 xterm.js 本地解析
+        const encoded = btoa(unescape(encodeURIComponent(char)))
+        termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+        onTerminalData?.(encoded)
         return false
       }
 
