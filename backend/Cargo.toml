@@ -54,7 +54,7 @@ aes-gcm = { version = "0.11", features = ["getrandom"] }
 base64 = "0.22"
 sha2 = "0.10"
 hmac = "0.12"
-pbkdf2 = { version = "0.12", features = ["hmac"] }
+pbkdf2 = { version = "0.13", features = ["hmac"] }
 rand = "0.10"
 
 # SSH client
