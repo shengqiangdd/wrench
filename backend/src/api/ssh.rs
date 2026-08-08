@@ -6,7 +6,6 @@ use crate::app_state::AppState;
 use crate::response::ApiResponse;
 use crate::ssh::client::{ConnectRequest, SshConnection};
 use crate::ssh::SshSession;
-use crate::ssh::known_hosts::KnownHosts;
 
 /// Get SSH test configuration from environment variables (GET /api/ssh/test-config)
 pub async fn test_config() -> Json<serde_json::Value> {

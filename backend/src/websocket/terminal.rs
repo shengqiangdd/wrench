@@ -229,7 +229,7 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
         let username = msg.get("username").and_then(|v| v.as_str()).unwrap_or("");
         let password = msg.get("password").and_then(|v| v.as_str()).unwrap_or("");
         let private_key = msg.get("privateKey").and_then(|v| v.as_str()).unwrap_or("");
-        let known_hosts_path = msg.get("knownHostsPath").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
+        let known_hosts_path = msg.get("knownHostsPath").and_then(|v| v.as_str()).map(String::from);
         let strict_mode = msg.get("strictMode").and_then(|v| v.as_bool()).unwrap_or(false);
 
         if host.is_empty() || username.is_empty() {

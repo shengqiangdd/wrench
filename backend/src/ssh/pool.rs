@@ -54,7 +54,7 @@ impl client::Handler for SshHandler {
                     self.host,
                     self.port
                 );
-                Err(russh::Error::NoAuthMethods)
+                Err(russh::Error::NoAuthMethod)
             }
             Err(e) => {
                 tracing::error!(
@@ -63,7 +63,7 @@ impl client::Handler for SshHandler {
                     self.port,
                     e
                 );
-                Err(russh::Error::NoAuthMethods)
+                Err(russh::Error::NoAuthMethod)
             }
         }
     }
