@@ -251,7 +251,7 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
             host.to_string(),
             port,
             username.to_string(),
-            known_hosts_path,
+            known_hosts_path.clone(),
             strict_mode,
         );
 

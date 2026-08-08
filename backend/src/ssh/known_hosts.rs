@@ -13,7 +13,7 @@ pub struct KnownHosts {
 
 impl KnownHosts {
     /// Create a new KnownHosts instance.
-    /// 
+    ///
     /// # Arguments
     /// * `path` - Path to the known_hosts file (default: ~/.wrench/known_hosts)
     /// * `strict_mode` - If true, reject unknown hosts; if false, auto-accept with warning
@@ -26,10 +26,12 @@ impl KnownHosts {
         Self { path, strict_mode }
     }
 
-    /// Get the fingerprint of a public key in SHA256 format.
-    pub fn fingerprint(key: &PublicKey) -> String {
-        let hash = key.fingerprint();
-        format!("SHA256:{}", hash)
+    /// Get a stable string representation of a public key.
+    /// Uses the OpenSSH format (e.g. "ssh-ed25519 AAAA...") which is unique per key.
+    pub fn key_fingerprint(key: &PublicKey) -> String {
+        // ssh_key::PublicKey::to_string() produces a stable OpenSSH-format line
+        // e.g. "ssh-ed25519 AAAA..." — unique per key, no hash version issues
+        key.to_string()
     }
 
     /// Get the host identifier (ip:port format).
@@ -46,19 +48,19 @@ impl KnownHosts {
 
         let file = fs::File::open(&self.path)?;
         let reader = BufReader::new(file);
-        let target_fp = Self::fingerprint(key);
+        let target_fp = Self::key_fingerprint(key);
         let target_host = Self::host_key(host, port);
 
         for line in reader.lines() {
             let line = line?;
             let line = line.trim();
-            
+
             // Skip empty lines and comments
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
 
-            // Format: host:port fingerprint
+            // Format: host:port key_fingerprint
             if let Some((host_port, fp)) = line.split_once(' ') {
                 if host_port == target_host && fp == target_fp {
                     return Ok(true);
@@ -81,11 +83,11 @@ impl KnownHosts {
             .append(true)
             .open(&self.path)?;
 
-        let fingerprint = Self::fingerprint(key);
+        let fingerprint = Self::key_fingerprint(key);
         let host_key = Self::host_key(host, port);
 
         writeln!(file, "{} {}", host_key, fingerprint)?;
-        
+
         tracing::info!("Trusted host key: {} (fingerprint: {})", host_key, fingerprint);
         Ok(())
     }
@@ -125,7 +127,7 @@ impl KnownHosts {
     }
 
     /// Verify a host key and handle trust based on mode.
-    /// 
+    ///
     /// Returns:
     /// - Ok(true) if key is trusted or auto-accepted
     /// - Ok(false) if key is rejected (strict mode, unknown host)
@@ -146,7 +148,7 @@ impl KnownHosts {
             tracing::warn!(
                 "Strict mode: rejecting unknown host key for {} (fingerprint: {})",
                 Self::host_key(host, port),
-                Self::fingerprint(key)
+                Self::key_fingerprint(key)
             );
             return Ok(false);
         } else {
@@ -154,7 +156,7 @@ impl KnownHosts {
             tracing::warn!(
                 "Auto-accepting new host key for {} (fingerprint: {}). Consider adding to known_hosts for production.",
                 Self::host_key(host, port),
-                Self::fingerprint(key)
+                Self::key_fingerprint(key)
             );
             // Trust the new key
             self.trust(host, port, key)?;
@@ -176,7 +178,7 @@ impl KnownHosts {
         for line in reader.lines() {
             let line = line?;
             let line = line.trim();
-            
+
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
@@ -197,15 +199,6 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn test_fingerprint_format() {
-        // Test that fingerprint is in SHA256 format
-        // This is a placeholder test - real test would need an actual key
-        let key_str = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7T... test@key";
-        // In real usage, we'd parse the key and check fingerprint
-        assert!(true); // Placeholder
-    }
-
-    #[test]
     fn test_host_key_format() {
         assert_eq!(KnownHosts::host_key("192.168.1.1", 22), "192.168.1.1:22");
         assert_eq!(KnownHosts::host_key("example.com", 2222), "example.com:2222");
@@ -213,9 +206,8 @@ mod tests {
 
     #[test]
     fn test_known_hosts_file_parsing() {
-        // Test parsing of known_hosts file format
-        let content = "# Comment line\n192.168.1.1:22 SHA256:abc123\n10.0.0.1:2222 SHA256:def456\n";
-        
+        let content = "# Comment line\n192.168.1.1:22 ssh-ed25519 AAAA\n10.0.0.1:2222 ssh-rsa AAAA\n";
+
         let mut entries = Vec::new();
         for line in content.lines() {
             let line = line.trim();
@@ -229,48 +221,38 @@ mod tests {
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].0, "192.168.1.1:22");
-        assert_eq!(entries[0].1, "SHA256:abc123");
+        assert_eq!(entries[0].1, "ssh-ed25519 AAAA");
     }
 
     #[test]
     fn test_known_hosts_trust_and_verify() {
         let dir = tempdir().unwrap();
         let known_hosts_path = dir.path().join("known_hosts");
-        
-        let known_hosts = KnownHosts::new(Some(known_hosts_path.clone()), false);
-        
-        // Create a mock public key (in real usage, this would be an actual key)
-        // For testing, we'll use the file operations directly
-        
-        // Test trust operation
+
+        let _known_hosts = KnownHosts::new(Some(known_hosts_path.clone()), false);
+
         let host = "192.168.1.1";
         let port = 22;
-        let fingerprint = "SHA256:test123";
-        
-        // Manually write a test entry
+        let fingerprint = "ssh-ed25519 AAAA";
+
         fs::write(&known_hosts_path, format!("{}:{} {}\n", host, port, fingerprint)).unwrap();
-        
-        // Test list operation
-        let entries = known_hosts.list().unwrap();
+
+        let entries = KnownHosts::new(Some(known_hosts_path), false).list().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, "192.168.1.1:22");
-        assert_eq!(entries[0].1, "SHA256:test123");
+        assert_eq!(entries[0].1, "ssh-ed25519 AAAA");
     }
 
     #[test]
     fn test_known_hosts_remove() {
         let dir = tempdir().unwrap();
         let known_hosts_path = dir.path().join("known_hosts");
-        
-        // Write multiple entries
-        fs::write(&known_hosts_path, "192.168.1.1:22 SHA256:abc\n10.0.0.1:2222 SHA256:def\n").unwrap();
-        
+
+        fs::write(&known_hosts_path, "192.168.1.1:22 ssh-ed25519 ABC\n10.0.0.1:2222 ssh-rsa DEF\n").unwrap();
+
         let known_hosts = KnownHosts::new(Some(known_hosts_path.clone()), false);
-        
-        // Remove one entry
         known_hosts.remove("192.168.1.1", 22).unwrap();
-        
-        // Verify removal
+
         let entries = known_hosts.list().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, "10.0.0.1:2222");
@@ -280,15 +262,12 @@ mod tests {
     fn test_known_hosts_empty_file() {
         let dir = tempdir().unwrap();
         let known_hosts_path = dir.path().join("known_hosts");
-        
+
         let known_hosts = KnownHosts::new(Some(known_hosts_path.clone()), false);
-        
-        // Test with empty file
         fs::write(&known_hosts_path, "").unwrap();
         let entries = known_hosts.list().unwrap();
         assert_eq!(entries.len(), 0);
-        
-        // Test with non-existent file
+
         let known_hosts2 = KnownHosts::new(Some(dir.path().join("nonexistent")), false);
         let entries2 = known_hosts2.list().unwrap();
         assert_eq!(entries2.len(), 0);
@@ -298,11 +277,10 @@ mod tests {
     fn test_known_hosts_comments() {
         let dir = tempdir().unwrap();
         let known_hosts_path = dir.path().join("known_hosts");
-        
-        // Write file with comments
-        fs::write(&known_hosts_path, "# This is a comment\n192.168.1.1:22 SHA256:abc\n# Another comment\n").unwrap();
-        
-        let known_hosts = KnownHosts::new(Some(known_hosts_path.clone()), false);
+
+        fs::write(&known_hosts_path, "# This is a comment\n192.168.1.1:22 ssh-ed25519 ABC\n# Another comment\n").unwrap();
+
+        let known_hosts = KnownHosts::new(Some(known_hosts_path), false);
         let entries = known_hosts.list().unwrap();
         assert_eq!(entries.len(), 1);
     }
@@ -311,13 +289,11 @@ mod tests {
     fn test_known_hosts_strict_mode() {
         let dir = tempdir().unwrap();
         let known_hosts_path = dir.path().join("known_hosts");
-        
-        // Test strict mode = true (should reject unknown hosts)
+
         let known_hosts_strict = KnownHosts::new(Some(known_hosts_path.clone()), true);
         assert!(known_hosts_strict.strict_mode);
-        
-        // Test strict mode = false (should auto-accept)
-        let known_hosts_auto = KnownHosts::new(Some(known_hosts_path.clone()), false);
+
+        let known_hosts_auto = KnownHosts::new(Some(known_hosts_path), false);
         assert!(!known_hosts_auto.strict_mode);
     }
 }

@@ -52,7 +52,7 @@ thiserror = "2.0"
 # Crypto
 aes-gcm = { version = "0.11", features = ["getrandom"] }
 base64 = "0.22"
-sha2 = "0.11"
+sha2 = "0.10"
 hmac = "0.12"
 pbkdf2 = { version = "0.12", features = ["hmac"] }
 rand = "0.10"

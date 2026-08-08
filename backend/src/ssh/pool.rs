@@ -93,7 +93,7 @@ impl SshSession {
         host: String,
         port: u16,
         username: String,
-        known_hosts_path: Option<std::path::PathBuf>,
+        known_hosts_path: Option<String>,
         strict_mode: bool,
     ) -> Self {
         Self {
@@ -108,8 +108,9 @@ impl SshSession {
     }
 
     /// Create an SshHandler with known_hosts verification configured.
-    fn create_handler(&self, known_hosts_path: Option<std::path::PathBuf>, strict_mode: bool) -> SshHandler {
-        let known_hosts = KnownHosts::new(known_hosts_path, strict_mode);
+    fn create_handler(&self, known_hosts_path: Option<String>, strict_mode: bool) -> SshHandler {
+        let path = known_hosts_path.map(std::path::PathBuf::from);
+        let known_hosts = KnownHosts::new(path, strict_mode);
         SshHandler {
             known_hosts,
             host: self.host.clone(),
@@ -158,7 +159,7 @@ impl SshSession {
     pub async fn connect_password(
         &self,
         password: &str,
-        known_hosts_path: Option<std::path::PathBuf>,
+        known_hosts_path: Option<String>,
         strict_mode: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = Self::build_config();
@@ -198,7 +199,7 @@ impl SshSession {
         &self,
         private_key_pem: &str,
         passphrase: Option<&str>,
-        known_hosts_path: Option<std::path::PathBuf>,
+        known_hosts_path: Option<String>,
         strict_mode: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = Self::build_config();
