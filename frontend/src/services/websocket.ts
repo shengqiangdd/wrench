@@ -774,6 +774,10 @@ export function getWsClientSync(): WsClient {
 
 /**
  * 为 SSH 终端创建独立的 WsClient 实例。
+ *
+ * @deprecated Token in URL query parameter is insecure (exposed in server logs,
+ * browser history, proxy logs). Will migrate to first-message auth in a future release.
+ * Backend currently accepts both header and query param (with deprecation warning).
  */
 export function createTerminalWsClient(token: string): WsClient {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'

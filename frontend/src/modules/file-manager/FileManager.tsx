@@ -405,7 +405,7 @@ function FileManagerInner() {
   const connectAndSftp = useCallback(
     async (connId: string) => {
       // 使用 getState() 获取最新状态，避免闭包快照问题
-      const conn = useSshStore.getState().connections.find((c) => c.id === connId)
+      const conn = useSshStore.getState().getConnectionById(connId)
       const client = wsClientRef.current
       const currentSessions = useSshStore.getState().sessions  // 🔧 实时获取 sessions
       

@@ -14,6 +14,18 @@ use tokio::sync::Mutex;
 
 use crate::app_state::{AlertEntry, AuditEntry};
 
+/// Whitelist of known tables for `list_table_counts`.
+/// Prevents dynamic SQL injection even though names currently come from sqlite_master.
+const ALLOWED_TABLES: &[&str] = &[
+    "audit_logs",
+    "alerts",
+    "vault_entries",
+    "notification_channels",
+    "ssh_connections",
+    "scheduled_tasks",
+    "task_execution_history",
+];
+
 /// Shared database handle.
 #[derive(Clone)]
 pub struct Database {
@@ -91,6 +103,12 @@ impl Database {
                 conn.execute_batch(SCHEMA_V4)?;
                 conn.pragma_update(None, "user_version", 4)?;
                 tracing::info!("DB migration V4 applied (scheduler)");
+            }
+
+            if version < 5 {
+                conn.execute_batch(SCHEMA_V5)?;
+                conn.pragma_update(None, "user_version", 5)?;
+                tracing::info!("DB migration V5 applied (vault plaintext index)");
             }
 
             Ok::<_, anyhow::Error>(())
@@ -213,11 +231,11 @@ impl Database {
 
     // ─── Vault ──────────────────────────────────────────────────
 
-    /// List all vault entries.
+    /// List all vault entries (metadata only — no encrypted_value for perf).
     pub async fn list_vault_entries(&self) -> anyhow::Result<Vec<VaultEntry>> {
         self.exec(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, kind, encrypted_value, tags, created_at, updated_at
+                "SELECT id, name, kind, name_plain, kind_plain, '', tags, created_at, updated_at
                  FROM vault_entries ORDER BY updated_at DESC",
             )?;
 
@@ -226,10 +244,12 @@ impl Database {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     kind: row.get(2)?,
-                    encrypted_value: row.get(3)?,
-                    tags: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    name_plain: row.get(3)?,
+                    kind_plain: row.get(4)?,
+                    encrypted_value: row.get(5)?,
+                    tags: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             })?;
 
@@ -242,12 +262,12 @@ impl Database {
         .await
     }
 
-    /// Get a single vault entry by ID.
+    /// Get a single vault entry by ID (with encrypted_value for decryption).
     pub async fn get_vault_entry(&self, entry_id: &str) -> anyhow::Result<Option<VaultEntry>> {
         let id = entry_id.to_string();
         self.exec(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, name, kind, encrypted_value, tags, created_at, updated_at
+                "SELECT id, name, kind, name_plain, kind_plain, encrypted_value, tags, created_at, updated_at
                  FROM vault_entries WHERE id = ?1",
             )?;
 
@@ -256,10 +276,12 @@ impl Database {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     kind: row.get(2)?,
-                    encrypted_value: row.get(3)?,
-                    tags: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
+                    name_plain: row.get(3)?,
+                    kind_plain: row.get(4)?,
+                    encrypted_value: row.get(5)?,
+                    tags: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             })?;
 
@@ -273,6 +295,8 @@ impl Database {
         let id = entry.id.clone();
         let name = entry.name.clone();
         let kind = entry.kind.clone();
+        let name_plain = entry.name_plain.clone();
+        let kind_plain = entry.kind_plain.clone();
         let enc_val = entry.encrypted_value.clone();
         let tags = entry.tags.clone();
         let created_at = entry.created_at.clone();
@@ -280,9 +304,9 @@ impl Database {
 
         self.exec(move |conn| {
             conn.execute(
-                "INSERT INTO vault_entries (id, name, kind, encrypted_value, tags, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![id, name, kind, enc_val, tags, created_at, updated_at],
+                "INSERT INTO vault_entries (id, name, kind, name_plain, kind_plain, encrypted_value, tags, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![id, name, kind, name_plain, kind_plain, enc_val, tags, created_at, updated_at],
             )?;
             Ok(())
         })
@@ -294,15 +318,17 @@ impl Database {
         let id = entry.id.clone();
         let name = entry.name.clone();
         let kind = entry.kind.clone();
+        let name_plain = entry.name_plain.clone();
+        let kind_plain = entry.kind_plain.clone();
         let enc_val = entry.encrypted_value.clone();
         let tags = entry.tags.clone();
         let updated_at = entry.updated_at.clone();
 
         self.exec(move |conn| {
             let affected = conn.execute(
-                "UPDATE vault_entries SET name=?2, kind=?3, encrypted_value=?4, tags=?5, updated_at=?6
+                "UPDATE vault_entries SET name=?2, kind=?3, name_plain=?4, kind_plain=?5, encrypted_value=?6, tags=?7, updated_at=?8
                  WHERE id=?1",
-                rusqlite::params![id, name, kind, enc_val, tags, updated_at],
+                rusqlite::params![id, name, kind, name_plain, kind_plain, enc_val, tags, updated_at],
             )?;
             Ok(affected > 0)
         })
@@ -703,6 +729,10 @@ impl Database {
     }
 
     /// List all tables and their row counts (for system maintenance UI).
+    ///
+    /// Only returns counts for tables in the `ALLOWED_TABLES` whitelist.
+    /// Unknown tables are skipped with a warning to prevent SQL injection
+    /// even though names currently come from `sqlite_master`.
     pub async fn list_table_counts(&self) -> anyhow::Result<Vec<(String, i64)>> {
         self.exec(|conn| {
             let mut stmt = conn.prepare(
@@ -712,6 +742,10 @@ impl Database {
 
             let mut tables = Vec::new();
             for name in &table_names {
+                if !ALLOWED_TABLES.contains(&name.as_str()) {
+                    tracing::warn!("Skipping unknown table not in whitelist: {}", name);
+                    continue;
+                }
                 let count: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM \"{}\"", name), [], |row| row.get(0))?;
                 tables.push((name.clone(), count));
             }
@@ -729,6 +763,8 @@ pub struct VaultEntry {
     pub id: String,
     pub name: String,
     pub kind: String, // ssh_key | api_key | password | note
+    pub name_plain: String,  // plaintext name for index queries (V5+)
+    pub kind_plain: String,  // plaintext kind for index queries (V5+)
     pub encrypted_value: String,
     pub tags: String, // JSON array
     pub created_at: String,
@@ -852,6 +888,13 @@ CREATE TABLE IF NOT EXISTS ssh_connections (
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL
 );
+"#;
+
+const SCHEMA_V5: &str = r#"
+-- Plaintext index columns for vault list queries (avoids O(n) decrypt)
+ALTER TABLE vault_entries ADD COLUMN name_plain TEXT NOT NULL DEFAULT '';
+ALTER TABLE vault_entries ADD COLUMN kind_plain TEXT NOT NULL DEFAULT '';
+UPDATE vault_entries SET name_plain = name, kind_plain = kind;
 "#;
 
 const SCHEMA_V4: &str = r#"
@@ -1016,6 +1059,8 @@ mod tests {
             id: id.to_string(),
             name: name.to_string(),
             kind: kind.to_string(),
+            name_plain: name.to_string(),
+            kind_plain: kind.to_string(),
             encrypted_value: value.to_string(),
             tags: "[]".to_string(),
             created_at: "2026-07-03T10:00:00Z".to_string(),
@@ -1097,6 +1142,92 @@ mod tests {
             db.delete_notification_channel("ch1").await.unwrap();
             let list3 = db.list_notification_channels().await.unwrap();
             assert_eq!(list3.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_vault_plaintext_index_fields() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(test_db());
+
+        rt.block_on(async {
+            let e1 = sample_vault_entry("v1", "My SSH Key", "ssh_key", "encrypted-data-1");
+            let e2 = sample_vault_entry("v2", "My API Key", "api_key", "encrypted-data-2");
+
+            db.insert_vault_entry(&e1).await.unwrap();
+            db.insert_vault_entry(&e2).await.unwrap();
+
+            // list_vault_entries should populate name_plain and kind_plain
+            let list = db.list_vault_entries().await.unwrap();
+            assert_eq!(list.len(), 2);
+
+            let first = &list[0]; // sorted by updated_at DESC, both have same timestamp, order is insert-dependent
+            let second = &list[1];
+
+            // Both should have plaintext fields populated
+            for entry in &[first, second] {
+                assert!(!entry.name_plain.is_empty(), "name_plain should be populated");
+                assert!(!entry.kind_plain.is_empty(), "kind_plain should be populated");
+                // list_vault_entries should NOT load encrypted_value (empty string)
+                assert!(entry.encrypted_value.is_empty(), "encrypted_value should be empty in list query");
+            }
+
+            // Verify name/kind match
+            let names: Vec<&str> = list.iter().map(|e| e.name_plain.as_str()).collect();
+            assert!(names.contains(&"My SSH Key"));
+            assert!(names.contains(&"My API Key"));
+
+            // get_vault_entry should still return encrypted_value
+            let full = db.get_vault_entry("v1").await.unwrap().unwrap();
+            assert_eq!(full.name_plain, "My SSH Key");
+            assert_eq!(full.kind_plain, "ssh_key");
+            assert!(!full.encrypted_value.is_empty(), "encrypted_value should be present in get query");
+        });
+    }
+
+    #[test]
+    fn test_vault_update_syncs_plaintext_fields() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(test_db());
+
+        rt.block_on(async {
+            let e1 = sample_vault_entry("v1", "Old Name", "ssh_key", "encrypted-data");
+            db.insert_vault_entry(&e1).await.unwrap();
+
+            // Update name and kind
+            let updated = VaultEntry {
+                id: "v1".into(),
+                name: "New Name".into(),
+                kind: "api_key".into(),
+                name_plain: "New Name".into(),
+                kind_plain: "api_key".into(),
+                ..e1
+            };
+            db.update_vault_entry(&updated).await.unwrap();
+
+            let list = db.list_vault_entries().await.unwrap();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].name_plain, "New Name");
+            assert_eq!(list[0].kind_plain, "api_key");
+        });
+    }
+
+    #[test]
+    fn test_db_schema_version_5() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let db = Database::open_in_memory().await.unwrap();
+            // Verify schema version is at least 5
+            let version: i32 = db
+                .exec(|conn| {
+                    let v: i32 = conn
+                        .pragma_query_value(None, "user_version", |row| row.get(0))
+                        .unwrap_or(0);
+                    Ok(v)
+                })
+                .await
+                .unwrap();
+            assert!(version >= 5, "Expected schema version >= 5, got {}", version);
         });
     }
 }

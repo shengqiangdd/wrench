@@ -17,7 +17,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
   const addConnection = useSshStore((s) => s.addConnection)
   const updateConnection = useSshStore((s) => s.updateConnection)
 
-  const existing = editId ? connections.find((c) => c.id === editId) : null
+  const existing = editId ? useSshStore.getState().getConnectionById(editId) : null
 
   const [name, setName] = useState(existing?.name || '')
   const [host, setHost] = useState(existing?.host || '')

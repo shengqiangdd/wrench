@@ -19,9 +19,25 @@ use crate::ssh::SshSession;
 /// Timeout for SSH connect + auth operations (15 seconds)
 const SSH_CONNECT_TIMEOUT_SECS: u64 = 15;
 
+/// Maximum incoming WebSocket message size for terminal operations (64KB).
+const MAX_WS_MESSAGE_SIZE: usize = 64 * 1024;
+
+/// Maximum incoming WebSocket message size for SFTP operations (1MB).
+/// SFTP file transfers need larger messages for base64-encoded content.
+const MAX_SFTP_MESSAGE_SIZE: usize = 1024 * 1024;
+
 /// Helper to convert string to Utf8Bytes
 fn txt(s: String) -> axum::extract::ws::Utf8Bytes {
     axum::extract::ws::Utf8Bytes::from(s)
+}
+
+/// Safely escape a string for shell execution using POSIX single-quote rules.
+/// Wraps the string in single quotes, escaping any embedded single quotes.
+/// This prevents command injection via special characters in container IDs or shell paths.
+///
+/// Example: `it's a "test"` → `'it'\''s a "test"'`
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// Pre-allocate a JSON message buffer for terminal output.
@@ -73,6 +89,31 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     loop {
         match socket.recv().await {
             Some(Ok(Message::Text(text))) => {
+                // Enforce message size limits to prevent memory exhaustion attacks.
+                // Terminal messages: 64KB max. SFTP messages: 1MB max (base64 file content).
+                if text.len() > MAX_WS_MESSAGE_SIZE {
+                    // Check if this is an SFTP message (which allows up to 1MB)
+                    let is_sftp = serde_json::from_str::<serde_json::Value>(&text)
+                        .ok()
+                        .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(|t| t == "sftp"))
+                        .unwrap_or(false);
+
+                    if !is_sftp || text.len() > MAX_SFTP_MESSAGE_SIZE {
+                        warn!(
+                            "WebSocket message too large: {} bytes (max: {} terminal, {} sftp)",
+                            text.len(),
+                            MAX_WS_MESSAGE_SIZE,
+                            MAX_SFTP_MESSAGE_SIZE
+                        );
+                        let err = serde_json::json!({
+                            "type": "error",
+                            "message": "Message too large"
+                        });
+                        let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+                        continue;
+                    }
+                }
+
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
                     let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -188,6 +229,8 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
         let username = msg.get("username").and_then(|v| v.as_str()).unwrap_or("");
         let password = msg.get("password").and_then(|v| v.as_str()).unwrap_or("");
         let private_key = msg.get("privateKey").and_then(|v| v.as_str()).unwrap_or("");
+        let known_hosts_path = msg.get("knownHostsPath").and_then(|v| v.as_str()).map(std::path::PathBuf::from);
+        let strict_mode = msg.get("strictMode").and_then(|v| v.as_bool()).unwrap_or(false);
 
         if host.is_empty() || username.is_empty() {
             let err = serde_json::json!({
@@ -203,7 +246,14 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
 
         tracing::info!("Creating new SshSession: {}@{}:{} (password_len={}, key_len={})", username, host, port, password.len(), private_key.len());
 
-        let new_session = SshSession::new(connection_id.clone(), host.to_string(), port, username.to_string());
+        let new_session = SshSession::new(
+            connection_id.clone(),
+            host.to_string(),
+            port,
+            username.to_string(),
+            known_hosts_path,
+            strict_mode,
+        );
 
         if password.is_empty() && private_key.is_empty() {
             let err = serde_json::json!({
@@ -220,7 +270,7 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
         if !password.is_empty() {
             match timeout(
                 Duration::from_secs(SSH_CONNECT_TIMEOUT_SECS),
-                new_session.connect_password(password),
+                new_session.connect_password(password, known_hosts_path.clone(), strict_mode),
             )
             .await
             {
@@ -255,7 +305,7 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
         } else if !private_key.is_empty() {
             match timeout(
                 Duration::from_secs(SSH_CONNECT_TIMEOUT_SECS),
-                new_session.connect_key(private_key, None),
+                new_session.connect_key(private_key, None, known_hosts_path.clone(), strict_mode),
             )
             .await
             {
@@ -679,9 +729,8 @@ async fn handle_logtail_start(socket: &mut WebSocket, state: &Arc<AppState>, msg
         }
     };
 
-    // Build the tail command (using our stream_exec)
-    let escaped_path = log_path.replace('\'', "'\\''");
-    let cmd = format!("tail -n {} -f '{}' 2>&1", n, escaped_path);
+    // Build the tail command using shell_escape for safe quoting
+    let cmd = format!("tail -n {} -f {} 2>&1", n, shell_escape(&log_path));
 
     // Open SSH exec channel for streaming
     let mut channel = match session.stream_exec(&cmd, 132, 60).await {
@@ -869,10 +918,12 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg:
         }
     };
 
-    // Build docker exec command
-    let esc_id = container_id.replace('\'', "'\\''");
-    let esc_shell = shell.replace('\'', "'\\''");
-    let cmd = format!("docker exec -it '{}' '{}'", esc_id, esc_shell);
+    // Build docker exec command using shell_escape for safe quoting
+    let cmd = format!(
+        "docker exec -it {} {}",
+        shell_escape(&container_id),
+        shell_escape(&shell)
+    );
 
     // Open SSH exec channel with PTY for docker exec
     let mut channel = match session.stream_exec(&cmd, cols, rows).await {

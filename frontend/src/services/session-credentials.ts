@@ -42,11 +42,10 @@ export async function resolveSessionCredentials(
   //    延迟导入避免循环依赖
   const { useSshStore, decryptConnection } = await import('../stores/ssh-store')
   const sessions = useSshStore.getState().sessions
-  const connections = useSshStore.getState().connections
   const session = sessions.find((s) => s.id === sessionId)
   if (!session) return undefined
 
-  const conn = connections.find((c) => c.id === session.connectionId)
+  const conn = useSshStore.getState().getConnectionById(session.connectionId)
   if (!conn) return undefined
 
   try {

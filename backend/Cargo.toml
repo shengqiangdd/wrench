@@ -4,11 +4,17 @@ version = "0.1.0"
 edition = "2024"
 description = "Wrench Backend - Rust server management platform"
 
-# ── 开发环境：关闭增量编译，大幅减小 target/ 体积 ──
-# 增量编译为每次编译保存快照，长期积累可达 10GB+；
-# 关闭后每次全量编译约多 10-30 秒，但 target/ 保持精简。
+# ── 编译策略：控制 target/ 体积（历史峰值 21GB）──
+# 详细配置见 .cargo/config.toml，此处仅覆盖 profile 参数。
+# 原则：关闭增量编译 + strip 符号 + 最小 debug info
+
 [profile.dev]
 incremental = false
+strip = "symbols"
+debug = 0
+
+[profile.dev.package."*"]
+opt-level = 2
 
 [profile.release]
 opt-level = 3
@@ -16,10 +22,11 @@ lto = "thin"
 codegen-units = 16
 strip = "symbols"
 panic = "abort"
+incremental = false
 
 [dependencies]
 # Web framework
-axum = { version = "0.8", features = ["ws", "json", "macros"] }
+axum = { version = "0.8", features = ["ws", "json", "macros", "tokio"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.7", features = ["trace", "cors", "compression-gzip", "request-id", "fs"] }
@@ -46,6 +53,8 @@ thiserror = "2.0"
 aes-gcm = { version = "0.11", features = ["getrandom"] }
 base64 = "0.22"
 sha2 = "0.11"
+hmac = "0.12"
+pbkdf2 = { version = "0.12", features = ["hmac"] }
 rand = "0.10"
 
 # SSH client
@@ -81,6 +90,10 @@ bytes = "1.12"
 futures-util = "0.3"
 dashmap = "6"
 parking_lot = "0.12"
+dirs = "5"
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints.clippy]
 # Allow struct update syntax with Default::default() — cleaner than listing every field

@@ -405,11 +405,24 @@ pub struct VaultEntryDetail {
     pub updated_at: String,
 }
 
+/// Single vault entry summary (metadata only — no value, no decrypt needed)
+#[derive(Serialize)]
+pub struct VaultEntrySummary {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub tags: Vec<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
 /// List vault entries response
 #[derive(Serialize)]
 pub struct VaultListResponse {
     pub total: usize,
-    pub entries: Vec<VaultEntryDetail>,
+    pub entries: Vec<VaultEntrySummary>,
 }
 
 /// Vault types response

@@ -542,7 +542,7 @@ class SshSessionManager {
           storeSession.status === 'connected') {
         // 转换为 SessionInfo 格式
         const type = storeSession.id.startsWith('sftp_') ? 'sftp' : 'ssh'
-        const conn = useSshStore.getState().connections.find(c => c.id === connectionId)
+        const conn = useSshStore.getState().getConnectionById(connectionId)
         return {
           id: storeSession.id,
           connectionId,
@@ -582,8 +582,7 @@ class SshSessionManager {
     connectionId: string,
     onStatus?: (msg: string) => void
   ): Promise<string | null> {
-    const conns = useSshStore.getState().connections
-    const conn = conns.find((c) => c.id === connectionId)
+    const conn = useSshStore.getState().getConnectionById(connectionId)
     if (!conn || !this.wsClient) return null
 
     // 检查连接池限制
@@ -660,8 +659,7 @@ class SshSessionManager {
     connectionId: string,
     onStatus?: (msg: string) => void
   ): Promise<string | null> {
-    const conns = useSshStore.getState().connections
-    const conn = conns.find((c) => c.id === connectionId)
+    const conn = useSshStore.getState().getConnectionById(connectionId)
     if (!conn || !this.wsClient) {
       console.error(`[SshSessionManager] createSftpSession failed: conn=${!!conn}, wsClient=${!!this.wsClient}`)
       return null

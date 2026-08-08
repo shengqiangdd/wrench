@@ -6,6 +6,7 @@ use crate::app_state::AppState;
 use crate::response::ApiResponse;
 use crate::ssh::client::{ConnectRequest, SshConnection};
 use crate::ssh::SshSession;
+use crate::ssh::known_hosts::KnownHosts;
 
 /// Get SSH test configuration from environment variables (GET /api/ssh/test-config)
 pub async fn test_config() -> Json<serde_json::Value> {
@@ -72,12 +73,23 @@ pub async fn connect_ssh(
     let port = body.port.unwrap_or(22);
     let username = body.username;
 
-    let session = SshSession::new(connection_id.clone(), host.clone(), port, username.clone());
+    // Configuration for known_hosts verification
+    let known_hosts_path = body.known_hosts_path.clone();
+    let strict_mode = body.strict_mode.unwrap_or(false);
+
+    let session = SshSession::new(
+        connection_id.clone(),
+        host.clone(),
+        port,
+        username.clone(),
+        known_hosts_path,
+        strict_mode,
+    );
 
     // Try password auth first, then key auth
     if let Some(password) = &body.password {
         if !password.is_empty() {
-            match session.connect_password(password).await {
+            match session.connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false)).await {
                 Ok(()) => {
                     save_connection(&state, &connection_id, &host, port, &username, session, body.sudo_password.clone()).await;
                     return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
@@ -91,7 +103,7 @@ pub async fn connect_ssh(
 
     // Try key auth
     if let Some(private_key) = &body.private_key {
-        if !private_key.is_empty() && session.connect_key(private_key, None).await.is_ok() {
+        if !private_key.is_empty() && session.connect_key(private_key, None, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false)).await.is_ok() {
             save_connection(&state, &connection_id, &host, port, &username, session, body.sudo_password.clone()).await;
             return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
         }
@@ -183,12 +195,24 @@ pub async fn ensure_connection(
 
     // No existing connection — create new one (reuse connect_ssh logic)
     let connection_id = uuid::Uuid::new_v4().to_string();
-    let session = SshSession::new(connection_id.clone(), host.clone(), port, username.clone());
+    
+    // Configuration for known_hosts verification
+    let known_hosts_path = body.known_hosts_path.clone();
+    let strict_mode = body.strict_mode.unwrap_or(false);
+
+    let session = SshSession::new(
+        connection_id.clone(),
+        host.clone(),
+        port,
+        username.clone(),
+        known_hosts_path,
+        strict_mode,
+    );
 
     // Try password auth first, then key auth
     if let Some(password) = &body.password {
         if !password.is_empty() {
-            match session.connect_password(password).await {
+            match session.connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false)).await {
                 Ok(()) => {
                     save_connection(&state, &connection_id, &host, port, &username, session, body.sudo_password.clone()).await;
                     return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
@@ -201,7 +225,7 @@ pub async fn ensure_connection(
     }
 
     if let Some(private_key) = &body.private_key {
-        if !private_key.is_empty() && session.connect_key(private_key, None).await.is_ok() {
+        if !private_key.is_empty() && session.connect_key(private_key, None, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false)).await.is_ok() {
             save_connection(&state, &connection_id, &host, port, &username, session, body.sudo_password.clone()).await;
             return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
         }

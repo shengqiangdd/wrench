@@ -239,9 +239,10 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Listening on http://{addr}/");
 
     // Run server with graceful shutdown on SIGTERM/SIGINT
+    // Use into_make_service_with_connect_info to support ConnectInfo<SocketAddr> in middleware
     tracing::info!("Server started. Use Ctrl+C or 'docker stop' to gracefully shut down.");
     eprintln!("[wrench] Server is now accepting connections.");
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(wait_for_shutdown(shutdown_notify))
         .await?;
 

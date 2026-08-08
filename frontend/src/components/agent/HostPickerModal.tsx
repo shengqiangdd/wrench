@@ -35,7 +35,7 @@ export default function HostPickerModal({ command, onClose, onExecute }: Props) 
   const handleSelect = useCallback(
     (connId: string) => {
       setExecuting(connId)
-      const conn = connections.find((c) => c.id === connId)
+      const conn = useSshStore.getState().getConnectionById(connId)
       onExecute(connId, conn)
     },
     [onExecute, connections],

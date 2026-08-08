@@ -69,10 +69,8 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request<Bo
         return next.run(req).await;
     }
 
-    // Try to extract token from either:
-    // 1. Authorization: Bearer <token> header (REST API)
-    // 2. ?token=<token> query parameter (WebSocket upgrade)
-    let token = req
+    // Extract token from Authorization header (preferred, secure).
+    let token_from_header = req
         .headers()
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -83,20 +81,33 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request<Bo
             } else {
                 None
             }
-        })
-        .or_else(|| {
-            // Try query parameter (for WebSocket upgrade requests)
-            req.uri().query().and_then(|q| {
-                q.split('&').find_map(|pair| {
-                    let mut parts = pair.splitn(2, '=');
-                    if parts.next()? == "token" {
-                        parts.next().map(|v| v.to_string())
-                    } else {
-                        None
-                    }
-                })
+        });
+
+    // DEPRECATED: query parameter fallback for WebSocket upgrade requests.
+    // Browser WebSocket API does not support custom headers, so query param
+    // is the only option during the transition period. It will be replaced
+    // by first-message authentication in a future release.
+    let token = if let Some(t) = token_from_header {
+        Some(t)
+    } else {
+        let qt = req.uri().query().and_then(|q| {
+            q.split('&').find_map(|pair| {
+                let mut parts = pair.splitn(2, '=');
+                if parts.next()? == "token" {
+                    parts.next().map(|v| v.to_string())
+                } else {
+                    None
+                }
             })
         });
+        if qt.is_some() {
+            tracing::warn!(
+                "[auth] {} {} — DEPRECATED: Token via query parameter is insecure (exposed in server logs, browser history, proxy logs). Migrate to Authorization header or first-message auth.",
+                method, uri
+            );
+        }
+        qt
+    };
 
     match token {
         Some(t) if validate_token(&state, &t) => {
@@ -111,7 +122,6 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request<Bo
             // Enhanced diagnostics: try to decode the JWT to identify the exact failure reason
             let has_jwt_service = state.jwt_service.read().is_some();
             let token_preview = if t.len() > 20 { format!("{}...{}", &t[..10], &t[t.len()-5..]) } else { t.clone() };
-            let jwt_secret_len = state.config.jwt_secret.len();
 
             // Try to manually decode to find failure reason
             let decode_hint = if let Some(service) = state.jwt_service.read().as_ref() {
@@ -124,8 +134,8 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request<Bo
             };
 
             tracing::warn!(
-                "[auth] {} {} — REJECTED token_len={} upgrade={} preview=[{}] jwt_secret_len={} jwt_service={} hint=[{}]",
-                method, uri, t.len(), is_upgrade, token_preview, jwt_secret_len, has_jwt_service, decode_hint
+                "[auth] {} {} — REJECTED token_len={} upgrade={} preview=[{}] jwt_service={} hint=[{}]",
+                method, uri, t.len(), is_upgrade, token_preview, has_jwt_service, decode_hint
             );
             let body = serde_json::json!({
                 "error": "Unauthorized: invalid or expired token. Call POST /api/ws-token first."

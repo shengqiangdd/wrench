@@ -1,0 +1,28 @@
+# ── Wrench 编译策略：控制 target/ 体积 ──
+# 目标：避免 Rust 编译缓存撑爆硬盘（历史峰值 21GB）
+
+[build]
+# 集中 target 目录到项目外层，方便统一清理
+# target 会在 wrench/ 根目录下而非每个 crate 各一份
+target-dir = "../target"
+
+[profile.dev]
+# 关闭增量编译（每次省 5-15GB 累积）
+incremental = false
+# dev 模式也 strip，减少 .rlib 体积
+strip = "symbols"
+# 减少 debug info 生成
+debug = 0
+
+[profile.dev.package."*"]
+# 第三方依赖 dev 模式也优化编译速度
+opt-level = 2
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+strip = "symbols"
+panic = "abort"
+# release 编译也关闭增量
+incremental = false

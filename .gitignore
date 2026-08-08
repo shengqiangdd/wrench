@@ -15,6 +15,7 @@ frontend/public/sw.js
 frontend/public/workbox-*.js
 
 # Rust build artifacts
+target/
 backend/target/
 
 # frontend symlink (auto-created by start-local.sh / restart-local.sh)

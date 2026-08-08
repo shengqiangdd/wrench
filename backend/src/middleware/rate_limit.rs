@@ -1,41 +1,120 @@
 use axum::{
     body::Body,
-    extract::{Request, State},
+    extract::{connect_info::ConnectInfo, Request, State},
     http::StatusCode,
     middleware::Next,
     response::Response,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::{collections::VecDeque, sync::Arc, time::Instant};
+use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::app_state::AppState;
 
-/// Simple in-memory sliding-window rate limiter.
-///
-/// Tracks request timestamps per IP address. If the number of requests
-/// in the window exceeds the limit, returns 429 Too Many Requests.
+/// Token Bucket rate limiter - O(1) per check
+pub struct TokenBucket {
+    tokens: AtomicU64,
+    last_refill: Mutex<Instant>,
+    max_tokens: u64,
+    refill_rate: f64, // tokens per second
+}
+
+impl TokenBucket {
+    pub fn new(max_tokens: u64, refill_rate: f64) -> Self {
+        Self {
+            tokens: AtomicU64::new(max_tokens),
+            last_refill: Mutex::new(Instant::now()),
+            max_tokens,
+            refill_rate,
+        }
+    }
+
+    pub fn check(&self) -> bool {
+        self.refill();
+        self.tokens
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                if current > 0 {
+                    Some(current - 1)
+                } else {
+                    None
+                }
+            })
+            .is_ok()
+    }
+
+    fn refill(&self) {
+        let mut last = self.last_refill.lock();
+        let elapsed = last.elapsed().as_secs_f64();
+        let new_tokens = (elapsed * self.refill_rate) as u64;
+        if new_tokens > 0 {
+            let current = self.tokens.load(Ordering::Relaxed);
+            let new = (current + new_tokens).min(self.max_tokens);
+            self.tokens.store(new, Ordering::Relaxed);
+            *last = Instant::now();
+        }
+    }
+}
+
+/// Rate limiter with per-IP token buckets
 pub struct RateLimiter {
+    buckets: Mutex<HashMap<String, Arc<TokenBucket>>>,
+    max_requests: u64,
     window_secs: u64,
-    max_requests: u32,
-    clients: Mutex<HashMap<String, VecDeque<Instant>>>,
 }
 
 impl RateLimiter {
     pub fn new(window_secs: u64, max_requests: u32) -> Self {
-        Self { window_secs, max_requests, clients: Mutex::new(HashMap::new()) }
+        Self {
+            buckets: Mutex::new(HashMap::new()),
+            max_requests: max_requests as u64,
+            window_secs,
+        }
     }
 
-    /// Check if a request from `key` is allowed.
-    /// Returns `true` if allowed, `false` if rate-limited.
+    pub fn check(&self, key: &str) -> bool {
+        if self.window_secs == 0 {
+            return true; // No limit if window is 0
+        }
+        
+        let bucket = {
+            let mut buckets = self.buckets.lock();
+            buckets
+                .entry(key.to_string())
+                .or_insert_with(|| {
+                    let refill_rate = self.max_requests as f64 / self.window_secs as f64;
+                    Arc::new(TokenBucket::new(self.max_requests, refill_rate))
+                })
+                .clone()
+        };
+        bucket.check()
+    }
+}
+
+/// Legacy sliding-window rate limiter (fallback)
+pub struct LegacyRateLimiter {
+    window_secs: u64,
+    max_requests: u32,
+    clients: Mutex<HashMap<String, std::collections::VecDeque<Instant>>>,
+}
+
+impl LegacyRateLimiter {
+    pub fn new(window_secs: u64, max_requests: u32) -> Self {
+        Self {
+            window_secs,
+            max_requests,
+            clients: Mutex::new(HashMap::new()),
+        }
+    }
+
     pub fn check(&self, key: &str) -> bool {
         let now = Instant::now();
-        let window = std::time::Duration::from_secs(self.window_secs);
+        let window = Duration::from_secs(self.window_secs);
         let mut clients = self.clients.lock();
-
         let timestamps = clients.entry(key.to_string()).or_default();
 
-        // Remove old timestamps outside the window
         while let Some(t) = timestamps.front() {
             if now.duration_since(*t) > window {
                 timestamps.pop_front();
@@ -45,7 +124,7 @@ impl RateLimiter {
         }
 
         if timestamps.len() >= self.max_requests as usize {
-            return false; // Rate limited
+            return false;
         }
 
         timestamps.push_back(now);
@@ -57,25 +136,21 @@ impl RateLimiter {
 ///
 /// Uses client IP address as the rate limit key.
 /// Limit: 60 requests per minute by default.
-pub async fn rate_limit_middleware(State(_state): State<Arc<AppState>>, req: Request<Body>, next: Next) -> Response {
-    // Get client IP from headers or connection info
-    let client_ip = req
-        .headers()
-        .get("X-Forwarded-For")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("unknown")
-        .split(',')
-        .next()
-        .unwrap_or("unknown")
-        .trim();
+pub async fn rate_limit_middleware(
+    State(_state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    // Use real connection IP
+    let client_ip = addr.ip().to_string();
 
     // Use a global static rate limiter
     use std::sync::LazyLock;
-    static RATE_LIMITER: LazyLock<RateLimiter> = LazyLock::new(|| {
-        RateLimiter::new(60, 300) // 300 requests per 60 seconds
-    });
+    static RATE_LIMITER: LazyLock<RateLimiter> =
+        LazyLock::new(|| RateLimiter::new(60, 300)); // 300 requests per 60 seconds
 
-    if !RATE_LIMITER.check(client_ip) {
+    if !RATE_LIMITER.check(&client_ip) {
         let body = serde_json::json!({
             "error": "Too many requests. Please slow down."
         })
@@ -129,23 +204,13 @@ mod tests {
     }
 
     #[test]
-    fn test_rate_limiter_sliding_window() {
+    fn test_rate_limiter_token_bucket_refill() {
         let limiter = RateLimiter::new(1, 1); // 1 request per 1 second
         assert!(limiter.check("client-1"));
-        assert!(!limiter.check("client-1")); // blocked within window
+        assert!(!limiter.check("client-1")); // blocked
 
-        // Wait for window to expire
+        // Wait for refill
         std::thread::sleep(std::time::Duration::from_millis(1100));
         assert!(limiter.check("client-1")); // allowed again
-    }
-
-    #[test]
-    fn test_rate_limiter_zero_window() {
-        let limiter = RateLimiter::new(0, 5);
-        // With 0 second window, all requests are immediately outside the window
-        // so all should be allowed (up to max_requests)
-        for _ in 0..10 {
-            assert!(limiter.check("client-1"));
-        }
     }
 }

@@ -111,6 +111,10 @@ export async function authedFetch(url: string, options: RequestInit = {}): Promi
 
 /**
  * 构建带 WebSocket 认证的 URL
+ *
+ * @deprecated Token in URL query parameter is insecure (exposed in server logs,
+ * browser history, proxy logs). Will migrate to first-message auth in a future release.
+ * Backend currently accepts both header and query param (with deprecation warning).
  */
 export async function buildWsUrl(path: string): Promise<string> {
   const token = await getToken()

@@ -77,6 +77,7 @@ function localToRow(conn: SshConnection) {
 interface SshState {
   // 连接配置
   connections: SshConnection[]
+  connectionMap: Map<string, SshConnection>  // 新增：O(1) 查找索引
   selectedConnectionId: string | null
 
   // 活跃会话
@@ -106,12 +107,16 @@ interface SshState {
   // SFTP 操作
   setCurrentSftpPath: (path: string) => void
   setCurrentSftpEntries: (entries: SftpEntry[]) => void
+
+  // 新增方法
+  getConnectionById: (id: string) => SshConnection | undefined
 }
 
 export const useSshStore = create<SshState>()(
   persist(
     (set, _get) => ({
       connections: [],
+      connectionMap: new Map(),
       selectedConnectionId: null,
       sessions: [],
       currentSftpPath: '/',
@@ -122,11 +127,19 @@ export const useSshStore = create<SshState>()(
         if (!isDbReady()) return
         const rows = connectionsList()
         const connections = rows.map(rowToLocal)
-        set({ connections, dbLoaded: true })
+        const connectionMap = new Map(connections.map(c => [c.id, c]))
+        set({ connections, connectionMap, dbLoaded: true })
       },
 
       addConnection: (conn) => {
-        set((s) => ({ connections: [...s.connections, conn] }))
+        set((s) => {
+          const newMap = new Map(s.connectionMap)
+          newMap.set(conn.id, conn)
+          return {
+            connections: [...s.connections, conn],
+            connectionMap: newMap
+          }
+        })
         // Persist to client SQLite
         if (isDbReady()) {
           connectionsUpsert(localToRow(conn))
@@ -137,18 +150,27 @@ export const useSshStore = create<SshState>()(
         set((s) => {
           const updated = s.connections.map((c) => (c.id === id ? { ...c, ...data } : c))
           const conn = updated.find((c) => c.id === id)
+          const newMap = new Map(s.connectionMap)
+          if (conn) {
+            newMap.set(id, conn)
+          }
           if (conn && isDbReady()) {
             connectionsUpsert(localToRow(conn))
           }
-          return { connections: updated }
+          return { connections: updated, connectionMap: newMap }
         })
       },
 
       deleteConnection: (id) => {
-        set((s) => ({
-          connections: s.connections.filter((c) => c.id !== id),
-          selectedConnectionId: s.selectedConnectionId === id ? null : s.selectedConnectionId,
-        }))
+        set((s) => {
+          const newMap = new Map(s.connectionMap)
+          newMap.delete(id)
+          return {
+            connections: s.connections.filter((c) => c.id !== id),
+            connectionMap: newMap,
+            selectedConnectionId: s.selectedConnectionId === id ? null : s.selectedConnectionId,
+          }
+        })
         if (isDbReady()) {
           connectionsDelete(id)
         }
@@ -170,6 +192,11 @@ export const useSshStore = create<SshState>()(
 
       setCurrentSftpPath: (path) => set({ currentSftpPath: path }),
       setCurrentSftpEntries: (entries) => set({ currentSftpEntries: entries }),
+
+      // 新增 O(1) 查找方法
+      getConnectionById: (id) => {
+        return useSshStore.getState().connectionMap.get(id)
+      },
     }),
     {
       name: 'wrench-ssh',
@@ -188,9 +215,11 @@ export const useSshStore = create<SshState>()(
         }
         const state = raw.state || raw
         const connections = (state.connections || []) as SshConnection[]
+        const connectionMap = new Map(connections.map(c => [c.id, c]))
         return {
           ...current,
           connections,
+          connectionMap,
           selectedConnectionId: state.selectedConnectionId ?? null,
         }
       },
@@ -203,7 +232,8 @@ export const refreshSshStore = () => {
   if (isDbReady()) {
     const rows = connectionsList()
     const connections = rows.map(rowToLocal)
-    useSshStore.setState({ connections, dbLoaded: true })
+    const connectionMap = new Map(connections.map(c => [c.id, c]))
+    useSshStore.setState({ connections, connectionMap, dbLoaded: true })
   }
 }
 

@@ -6,6 +6,8 @@ use russh::client;
 use russh::keys::key::PrivateKeyWithHashAlg;
 use russh_sftp::client::SftpSession;
 
+use crate::ssh::known_hosts::KnownHosts;
+
 /// A connected SSH session wrapper around russh.
 pub struct SshSession {
     pub connection_id: String,
@@ -21,18 +23,49 @@ pub struct SshSession {
 // Default idle timeout: 30 minutes
 const IDLE_TIMEOUT_SECS: u64 = 1800;
 
-/// Minimal `client::Handler` — required by russh but mostly unused for simple exec.
+/// SSH handler with host key verification.
 #[derive(Clone)]
-pub struct SshHandler;
+pub struct SshHandler {
+    known_hosts: KnownHosts,
+    host: String,
+    port: u16,
+}
 
 impl client::Handler for SshHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKey,
+        server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        // Use known_hosts verification instead of unconditional trust
+        match self.known_hosts.verify(&self.host, self.port, server_public_key) {
+            Ok(true) => {
+                tracing::debug!(
+                    "Host key verified for {}:{}",
+                    self.host,
+                    self.port
+                );
+                Ok(true)
+            }
+            Ok(false) => {
+                tracing::warn!(
+                    "Host key verification failed for {}:{} (strict mode)",
+                    self.host,
+                    self.port
+                );
+                Err(russh::Error::NoAuthMethods)
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Error verifying host key for {}:{}: {}",
+                    self.host,
+                    self.port,
+                    e
+                );
+                Err(russh::Error::NoAuthMethods)
+            }
+        }
     }
 
     async fn auth_banner(
@@ -46,7 +79,23 @@ impl client::Handler for SshHandler {
 }
 
 impl SshSession {
-    pub fn new(connection_id: String, host: String, port: u16, username: String) -> Self {
+    /// Create a new SSH session with known_hosts verification.
+    /// 
+    /// # Arguments
+    /// * `connection_id` - Unique connection identifier
+    /// * `host` - SSH server hostname or IP
+    /// * `port` - SSH server port
+    /// * `username` - SSH username
+    /// * `known_hosts_path` - Optional path to known_hosts file
+    /// * `strict_mode` - If true, reject unknown hosts; if false, auto-accept
+    pub fn new(
+        connection_id: String,
+        host: String,
+        port: u16,
+        username: String,
+        known_hosts_path: Option<std::path::PathBuf>,
+        strict_mode: bool,
+    ) -> Self {
         Self {
             connection_id,
             host,
@@ -55,6 +104,16 @@ impl SshSession {
             handle: Arc::new(Mutex::new(None)),
             last_used: Arc::new(Mutex::new(Instant::now())),
             sftp_cache: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Create an SshHandler with known_hosts verification configured.
+    fn create_handler(&self, known_hosts_path: Option<std::path::PathBuf>, strict_mode: bool) -> SshHandler {
+        let known_hosts = KnownHosts::new(known_hosts_path, strict_mode);
+        SshHandler {
+            known_hosts,
+            host: self.host.clone(),
+            port: self.port,
         }
     }
 
@@ -91,9 +150,19 @@ impl SshSession {
     }
 
     /// Connect using password authentication.
-    pub async fn connect_password(&self, password: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// 
+    /// # Arguments
+    /// * `password` - SSH password
+    /// * `known_hosts_path` - Optional path to known_hosts file
+    /// * `strict_mode` - If true, reject unknown hosts; if false, auto-accept
+    pub async fn connect_password(
+        &self,
+        password: &str,
+        known_hosts_path: Option<std::path::PathBuf>,
+        strict_mode: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = Self::build_config();
-        let handler = SshHandler;
+        let handler = self.create_handler(known_hosts_path, strict_mode);
 
         let mut handle = client::connect(config, (self.host.as_str(), self.port), handler).await?;
         let auth_result = handle.authenticate_password(&self.username, password).await?;
@@ -119,13 +188,21 @@ impl SshSession {
     }
 
     /// Connect using public key authentication.
+    /// 
+    /// # Arguments
+    /// * `private_key_pem` - PEM-encoded private key
+    /// * `passphrase` - Optional passphrase for encrypted keys
+    /// * `known_hosts_path` - Optional path to known_hosts file
+    /// * `strict_mode` - If true, reject unknown hosts; if false, auto-accept
     pub async fn connect_key(
         &self,
         private_key_pem: &str,
         passphrase: Option<&str>,
+        known_hosts_path: Option<std::path::PathBuf>,
+        strict_mode: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config = Self::build_config();
-        let handler = SshHandler;
+        let handler = self.create_handler(known_hosts_path, strict_mode);
 
         let mut handle = client::connect(config, (self.host.as_str(), self.port), handler).await?;
 

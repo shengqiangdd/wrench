@@ -32,7 +32,7 @@ use axum::{
 use std::sync::Arc;
 use tower::Layer;
 use tower::ServiceBuilder;
-use tower_http::{compression::CompressionLayer, cors::CorsLayer, services::ServeDir, trace::TraceLayer};
+use tower_http::{compression::CompressionLayer, services::ServeDir, trace::TraceLayer};
 use tracing::info;
 
 /// Serve the SPA index.html with a service-worker-unregister script injected.
@@ -113,18 +113,8 @@ fn has_hash_in_path(path: &str) -> bool {
 }
 
 pub async fn build_app(state: Arc<AppState>) -> Router {
-    // CORS configuration
-    let cors = if state.config.cors_origins.is_empty() {
-        CorsLayer::permissive()
-    } else {
-        let origins: Vec<_> = state
-            .config
-            .cors_origins
-            .iter()
-            .map(|o| o.parse::<axum::http::HeaderValue>().unwrap())
-            .collect();
-        CorsLayer::new().allow_origin(origins)
-    };
+    // CORS configuration — uses secure defaults when origins not configured
+    let cors = middleware::cors::create_cors_layer(&state.config.cors_origins);
 
     // ─── Authentication + Rate-limit middleware layer ───
     let auth_layer = ServiceBuilder::new()
@@ -142,6 +132,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
             middleware::rate_limit::rate_limit_middleware
                 as fn(
                     _: axum::extract::State<Arc<AppState>>,
+                    _: axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>,
                     _: axum::http::Request<Body>,
                     _: axum_middleware::Next,
                 ) -> _,
@@ -251,7 +242,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         // Compress JSON API responses on-the-fly (gzip, min-size 512 bytes)
         .layer(CompressionLayer::new());
 
-    // ─── Protected WebSocket routes (auth via query token) ───
+    // ─── Protected WebSocket routes (auth via Authorization header or deprecated query param) ───
     // Build a separate auth layer for WS (ServiceBuilder doesn't clone)
     let ws_auth_layer = ServiceBuilder::new().layer(axum_middleware::from_fn_with_state(
         state.clone(),

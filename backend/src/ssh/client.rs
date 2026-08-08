@@ -41,6 +41,10 @@ pub struct ConnectRequest {
     pub password: Option<String>,
     pub private_key: Option<String>,
     pub sudo_password: Option<String>,
+    /// Optional path to known_hosts file for host key verification
+    pub known_hosts_path: Option<String>,
+    /// If true, reject unknown hosts; if false, auto-accept with warning
+    pub strict_mode: Option<bool>,
 }
 
 /// SSH connection result

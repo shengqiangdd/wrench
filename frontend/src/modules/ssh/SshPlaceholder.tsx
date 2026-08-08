@@ -47,7 +47,7 @@ export default function SshPlaceholder() {
       // 使用 useSshStore.getState() 而非闭包中的 connections，
       // 因为快速连接流程中 store.addConnection() 后 React 可能未重渲染，
       // 导致 connections.find() 找不到新添加的连接
-      const conn = useSshStore.getState().connections.find((c) => c.id === connectionId)
+      const conn = useSshStore.getState().getConnectionById(connectionId)
       if (!conn) return null
 
       const sessionId = targetSessionId || `sess_${connectionId}_${Date.now()}`
