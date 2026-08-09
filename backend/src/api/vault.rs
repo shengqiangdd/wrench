@@ -318,6 +318,7 @@ fn get_vault_key(state: &AppState) -> Result<[u8; 32], AppError> {
 ///
 /// Returns `None` if JWT_SECRET is empty. Used during migration to decrypt
 /// entries that were encrypted with the old `Sha256::digest()` KDF.
+#[allow(dead_code)]
 fn get_vault_legacy_key(state: &AppState) -> Option<[u8; 32]> {
     let secret = &state.config.jwt_secret;
     if secret.is_empty() {

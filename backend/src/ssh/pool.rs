@@ -93,8 +93,8 @@ impl SshSession {
         host: String,
         port: u16,
         username: String,
-        known_hosts_path: Option<String>,
-        strict_mode: bool,
+        _known_hosts_path: Option<String>,
+        _strict_mode: bool,
     ) -> Self {
         Self {
             connection_id,
