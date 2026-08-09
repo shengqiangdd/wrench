@@ -316,4 +316,3 @@ async fn cmd_db_restore(input: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-// test incremental build
