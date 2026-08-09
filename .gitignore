@@ -1,8 +1,8 @@
-# 依赖
+# Dependencies
 node_modules/
 .nodeenv/
 
-# 构建产物
+# Build output
 dist/
 build/
 out/
@@ -18,10 +18,10 @@ frontend/public/workbox-*.js
 target/
 backend/target/
 
-# frontend symlink (auto-created by start-local.sh / restart-local.sh)
+# frontend symlink (auto-created by start-local.sh)
 backend/frontend
 
-# 环境变量
+# Environment variables
 .env
 .env.local
 .env.*.local
@@ -34,13 +34,13 @@ backend/frontend
 *.sqlite-shm
 *.sqlite-wal
 
-# 日志
+# Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# 系统文件
+# OS files
 .DS_Store
 Thumbs.db
 
@@ -51,7 +51,7 @@ Thumbs.db
 *.swo
 *~
 
-# 测试/截图/临时文件
+# Tests / screenshots / temp files
 frontend/test-results/
 screenshots/
 screenshot.png
@@ -59,8 +59,17 @@ _push.py
 bridge/
 memory/
 tests/
+tmp/
 
-# 二进制/构建产物
+# Local-only scripts (not shipped in repo)
+scripts/
+deploy*.py
+start-local.sh
+restart-local.sh
+Dockerfile.nodocker
+package-lock.json
+
+# Legacy / misc
 backend/core
 backend/plugins
 check_cmds.py
