@@ -6,35 +6,17 @@ FROM node:22-alpine AS frontend-builder
 ARG BUILD_HASH=0
 WORKDIR /app
 
-# 依赖缓存（package-lock.json 不变则跳过）
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 RUN --mount=type=cache,target=/root/.npm cd frontend && npm ci
 
-# 源码变更 → 重新构建
 COPY frontend/ ./frontend/
 ENV VITE_BUILD_HASH=${BUILD_HASH}
 RUN BUILD_HASH=${BUILD_HASH} cd frontend && npm run build
 
 # ============================================
-# Stage 2: Rust 依赖预编译（cargo-chef）
+# Stage 2: Build Rust backend（依赖预编译 + 增量源码编译）
 # ============================================
-# cargo-chef 分析 Cargo.lock 生成「recipe」，只重建变化的依赖
-# 依赖不变时此层 100% 命中缓存（~0s）
-FROM rust:1.96-slim-bookworm AS chef
-RUN cargo install cargo-chef
-WORKDIR /app
-
-# ============================================
-# Stage 3: 依赖 recipe 生成
-# ============================================
-FROM chef AS planner
-COPY backend/ ./
-RUN cargo chef prepare --recipe-path recipe.json
-
-# ============================================
-# Stage 4: 依赖编译（仅当 Cargo.toml/Cargo.lock 变化时重跑）
-# ============================================
-FROM chef AS builder
+FROM rust:1.96-slim-bookworm AS rust-builder
 
 ENV CARGO_NET_RETRY=5
 ENV CARGO_HTTP_TIMEOUT=120
@@ -45,21 +27,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# 复制 recipe 并编译依赖
-COPY --from=planner /app/recipe.json recipe.json
+WORKDIR /app
 
-# 编译依赖（持久化 cargo 编译缓存到 BuildKit cache mount）
+# --- Step 1: 仅复制依赖清单，预编译依赖 ---
+COPY backend/Cargo.toml backend/Cargo.lock* ./
+
+# 创建 dummy src 用于 cargo 解析依赖树
+RUN mkdir -p src/api src/websocket src/ssh src/docker src/models src/middleware src/utils src/db/migrations && \
+    echo 'fn main() {}' > src/main.rs && \
+    for d in api websocket ssh docker models middleware utils db db/migrations; do \
+      touch "src/$d/mod.rs"; \
+    done
+
+# 编译依赖（依赖不变时此层命中缓存，~0s）
+# 去掉 || true，让错误暴露出来
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo chef cook --release --recipe-path recipe.json 2>/dev/null || true
+    cargo build --release 2>/dev/null
 
-# --- 到这里为止，所有依赖已编译好 ---
-# 下面只编译业务代码（增量编译，通常 5-15s）
-
+# --- Step 2: 复制实际源码，增量编译 ---
 COPY backend/src/ ./src/
 RUN touch src/main.rs
 
-# 编译最终二进制（只重编译 src/ 变化的部分）
+# 仅重编译业务代码（依赖已缓存，通常 5-15s）
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release && \
@@ -74,7 +64,7 @@ RUN BINARY_SIZE=$(stat -c%s /tmp/wrench-backend) && \
     echo "Binary size OK"
 
 # ============================================
-# Stage 5: 运行时镜像（不变时 100% 缓存命中）
+# Stage 3: 运行时镜像
 # ============================================
 FROM debian:12-slim
 
@@ -95,7 +85,7 @@ RUN groupadd -r wrench && useradd -r -g wrench -m -d /app wrench
 WORKDIR /app
 RUN mkdir -p /data plugins && chown wrench:wrench /app /app/plugins /data
 
-COPY --from=builder /tmp/wrench-backend /app/wrench
+COPY --from=rust-builder /tmp/wrench-backend /app/wrench
 COPY --from=frontend-builder /app/frontend/dist/ /app/frontend/dist/
 COPY plugins/ ./plugins
 COPY backend/.env.example /app/.env.example
