@@ -172,6 +172,9 @@ export default function TerminalView({
   const lastArrowKeyTime = useRef(0)
   // 其他快捷键防抖 ref
   const lastShortcutTime = useRef(0)
+  // 🔧 防止 Backspace/Delete 被 onData 重复发送的标记
+  // keydown 拦截已手动发送后，onData 应跳过该字符
+  const skipNextOnDataRef = useRef(false)
   // 用 ref 避免 event handler 中的闭包过期
   const onConnectedRef = useRef(onConnected)
   const onDisconnectedRef = useRef(onDisconnected)
@@ -758,6 +761,11 @@ export default function TerminalView({
       // 本地处理 + 服务端回显 = 双重操作，导致字符重叠
       // 解决方案：跳过 term.input()，直接通过 WebSocket 发送到服务端，
       // 由服务端回显驱动终端显示更新
+      //
+      // 🔧 二次修复：移动端虚拟键盘会同时触发 keydown 和 onData，
+      // 导致删除字符被发送两次（keydown 拦截一次 + onData 又一次）。
+      // 解决方案：keydown 拦截后设置 skipNextOnDataRef 标记，
+      // onData 处理器中检测到标记后跳过该字符。
       if (
         type === 'keydown' &&
         !ctrlKey &&
@@ -771,6 +779,8 @@ export default function TerminalView({
         const encoded = btoa(unescape(encodeURIComponent(char)))
         termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
         onTerminalData?.(encoded)
+        // 标记跳过下一次 onData，防止移动端双重发送
+        skipNextOnDataRef.current = true
         return false
       }
 
@@ -778,6 +788,12 @@ export default function TerminalView({
     })
 
     term.onData((data) => {
+      // 🔧 防止 Backspace/Delete 被重复发送
+      // 如果 keydown 已经手动处理了该字符，跳过 onData 的重复发送
+      if (skipNextOnDataRef.current) {
+        skipNextOnDataRef.current = false
+        return
+      }
       // 将用户输入以 base64 编码发送
       const encoded = btoa(unescape(encodeURIComponent(data)))
       termWsRef.current?.send({
