@@ -47,9 +47,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 # --- Step 2: 复制实际源码，增量编译 ---
 COPY backend/src/ ./src/
-RUN touch src/main.rs
 
-# 仅重编译业务代码（依赖已缓存，通常 5-15s）
+# 仅重编译业务代码（依赖已缓存，cargo 自动检测文件变化）
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release && \
