@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createRoot } from 'react-dom/client'
+import { createRoot, type Root } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { useAppStore } from '../../stores/app-store'
 import Sidebar from '../../components/layout/Sidebar'
@@ -15,6 +15,8 @@ function setAppState(partial: Record<string, unknown>) {
 
 const mockSetActiveNav = vi.fn()
 const mockToggleSidebar = vi.fn()
+
+const mountedRoots: Root[] = []
 
 beforeEach(() => {
   setAppState({
@@ -34,6 +36,16 @@ afterEach(() => {
     toggleSidebar: () => {},
     sshSessions: [],
   })
+  // 必须先 unmount React root，否则 react-dom 调度器的异步任务
+  // 会在 jsdom 环境销毁后访问 window，产生 unhandled errors
+  for (const r of mountedRoots) {
+    try {
+      r.unmount()
+    } catch {
+      // 环境已关闭时忽略
+    }
+  }
+  mountedRoots.length = 0
   document.body.innerHTML = ''
 })
 
@@ -41,6 +53,7 @@ function render(el: React.ReactNode) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
+  mountedRoots.push(root)
   flushSync(() => root.render(el))
   return {
     container,
