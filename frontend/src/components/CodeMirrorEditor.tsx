@@ -20,11 +20,12 @@ import {
 import { autocompletion, completionKeymap, closeBrackets } from '@codemirror/autocomplete'
 import { searchKeymap } from '@codemirror/search'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { Eye, EyeOff, Loader2, Save, Download, Sparkles, X, Check, Copy } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Save, Download, Sparkles, X, Check, Copy, Wand2 } from 'lucide-react'
 import MarkdownPreview from './MarkdownPreview'
 import { useFileStore } from '../stores/file-store'
 import { useAiStore } from '../stores/ai-store'
 import { getWsClientSync } from '../services/websocket'
+import { formatCode } from '../utils/format-code'
 
 // ── UTF-8 安全的 base64 编码 ──
 // btoa() 只能处理 Latin-1 字符，中文/日文/emoji 会损坏
@@ -126,6 +127,8 @@ export default function CodeMirrorEditor() {
   const [aiActionName, setAiActionName] = useState<AiCodeAction | null>(null)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [markdownPreview, setMarkdownPreview] = useState(false)
+  const [formatting, setFormatting] = useState(false)
+  const [formatMsg, setFormatMsg] = useState<string | null>(null)
   const isMarkdown =
     activeTab?.language === 'markdown' ||
     activeTab?.name.endsWith('.md') ||
@@ -274,6 +277,43 @@ export default function CodeMirrorEditor() {
     navigator.clipboard?.writeText?.(aiResult.modified)
   }, [aiResult])
 
+  // ─── 格式化 ───
+  const formatDocument = useCallback(async () => {
+    const view = viewRef.current
+    const tab = activeTab
+    if (!view || !tab || tab.language === 'image') return
+
+    setFormatting(true)
+    setFormatMsg(null)
+
+    const doc = view.state.doc.toString()
+    const sel = view.state.selection.main
+    const selection = sel.empty ? undefined : { from: sel.from, to: sel.to }
+
+    try {
+      const res = await formatCode(doc, tab.language, selection)
+      if (!res.ok) {
+        setFormatMsg(res.error)
+        setTimeout(() => setFormatMsg(null), 4000)
+        return
+      }
+      if (res.unchanged) {
+        setFormatMsg('已格式化')
+        setTimeout(() => setFormatMsg(null), 2000)
+        return
+      }
+      // formatted 始终是完整文档（选区格式化时选区外保持不变），直接整体替换
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: res.formatted } })
+      setFormatMsg(selection ? '已格式化选区' : '已格式化')
+      setTimeout(() => setFormatMsg(null), 2000)
+    } catch (err) {
+      setFormatMsg('格式化失败: ' + (err as Error).message)
+      setTimeout(() => setFormatMsg(null), 4000)
+    } finally {
+      setFormatting(false)
+    }
+  }, [activeTab])
+
   // 初始化编辑器（语言包动态加载）
   useEffect(() => {
     if (!containerRef.current || !activeTab) return
@@ -317,6 +357,13 @@ export default function CodeMirrorEditor() {
               key: 'Mod-s',
               run: () => {
                 saveFile()
+                return true
+              },
+            },
+            {
+              key: 'Mod-Shift-f',
+              run: () => {
+                formatDocument()
                 return true
               },
             },
@@ -422,8 +469,23 @@ export default function CodeMirrorEditor() {
         <span className="flex items-center gap-1 text-[10px] text-slate-600">
           {langLoading && <Loader2 size={10} className="animate-spin" />}
           {activeTab.language}
+          {formatMsg && (
+            <span
+              className={`ml-2 ${formatMsg.includes('失败') || formatMsg.includes('暂不支持') ? 'text-red-400' : 'text-emerald-400'}`}
+            >
+              {formatMsg}
+            </span>
+          )}
         </span>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => formatDocument()}
+            disabled={formatting || activeTab.language === 'image'}
+            className="btn-icon text-slate-500 hover:text-slate-300 disabled:opacity-30"
+            title="格式化 (Ctrl+Shift+F)"
+          >
+            {formatting ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+          </button>
           {aiConfig.enabled && aiConfig.apiKey && (
             <div className="relative">
               <button
