@@ -2148,7 +2148,12 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
               // 路径很深时，中间的项用省略号缩短
               const isLast = i === breadcrumb.length - 1
               const isFirst = i === 0
-              const isEllipsis = breadcrumb.length > 5 && !isFirst && !isLast && i !== 1 && i !== breadcrumb.length - 2
+              const isEllipsis =
+                breadcrumb.length > 5 &&
+                !isFirst &&
+                !isLast &&
+                i !== 1 &&
+                i !== breadcrumb.length - 2
               if (isEllipsis && i === 2) {
                 return (
                   <span key="ellipsis" className="flex items-center">
@@ -2163,7 +2168,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
                   <span className="mx-0.5 text-slate-700">/</span>
                   <button
                     onClick={() => navigateTo(crumb.path)}
-                    className={`shrink-0 truncate rounded px-0.5 py-0 hover:text-slate-300 max-w-[120px] ${
+                    className={`max-w-[120px] shrink-0 truncate rounded px-0.5 py-0 hover:text-slate-300 ${
                       isLast ? 'text-slate-400' : 'text-slate-600'
                     }`}
                     title={crumb.path}

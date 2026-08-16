@@ -38,7 +38,7 @@ export default function HostPickerModal({ command, onClose, onExecute }: Props) 
       const conn = useSshStore.getState().getConnectionById(connId)
       onExecute(connId, conn)
     },
-    [onExecute, connections],
+    [onExecute],
   )
 
   return (

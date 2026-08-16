@@ -940,7 +940,10 @@ export default function TerminalView({
     }
 
     toolbar.addEventListener('contextmenu', blockContextMenu, true)
-    toolbar.addEventListener('touchstart', handleToolbarTouchStart, { capture: true, passive: false })
+    toolbar.addEventListener('touchstart', handleToolbarTouchStart, {
+      capture: true,
+      passive: false,
+    })
     toolbar.addEventListener('touchend', handleToolbarTouchEnd, { capture: true, passive: true })
     toolbar.addEventListener('touchcancel', handleToolbarTouchEnd, { capture: true, passive: true })
 
@@ -1243,13 +1246,15 @@ export default function TerminalView({
       <div
         ref={toolbarRef}
         className="flex shrink-0 flex-col border-t border-slate-700/30 bg-slate-900/95 md:hidden"
-        style={{
-          // 禁用长按选中复制（快捷键按钮不需要）
-          userSelect: 'none',
-          WebkitUserSelect: 'none',
-          WebkitTouchCallout: 'none',
-          touchAction: 'manipulation',
-        } as React.CSSProperties}
+        style={
+          {
+            // 禁用长按选中复制（快捷键按钮不需要）
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            WebkitTouchCallout: 'none',
+            touchAction: 'manipulation',
+          } as React.CSSProperties
+        }
       >
         {/* 第一行：控制键 */}
         <div className="flex gap-px px-0.5 pt-0.5">

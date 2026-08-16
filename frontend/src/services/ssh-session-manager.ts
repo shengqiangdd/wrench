@@ -147,7 +147,6 @@ class SshSessionManager {
     const sorted = [...persisted].sort((a, b) => b.lastUsed - a.lastUsed)
     const toWarmup = sorted.slice(0, this.warmupConfig.maxConnections)
 
-
     for (const state of toWarmup) {
       // 跳过已有活跃 session 的连接
       if (this.hasActiveSession(state.connectionId)) continue
@@ -202,19 +201,18 @@ class SshSessionManager {
     for (const state of states) {
       existingMap.set(state.connectionId, state)
     }
-    const merged = [...existingMap.values()]
-      .sort((a, b) => b.lastUsed - a.lastUsed)
-      .slice(0, 10)
+    const merged = [...existingMap.values()].sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 10)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
   }
 
   /**
    * 从持久化状态恢复 session（应用启动时调用）
+   *
+   * 实际恢复/预热逻辑由 performWarmup() 实现（setWsClient -> scheduleWarmup 触发），
+   * 此方法保留作为状态恢复的入口占位。
    */
   private restorePersistedState() {
-    const persisted = this.loadPersistedState()
-    if (persisted.length > 0) {
-    }
+    // 预热逻辑见 performWarmup()
   }
 
   /**
@@ -261,7 +259,7 @@ class SshSessionManager {
     const now = Date.now()
     const toEvict: string[] = []
 
-    for (const [id, session] of this.sessions) {
+    for (const [id] of this.sessions) {
       // 从持久化记录中获取 lastUsed
       const persisted = this.loadPersistedState()
       const record = persisted.find((p) => p.sessionId === id)
@@ -301,7 +299,7 @@ class SshSessionManager {
     // 驱逐最旧的连接，直到池大小符合限制
     const excess = sorted.length - this.poolConfig.maxPoolSize
     for (let i = 0; i < excess; i++) {
-      const [id, session] = sorted[i]!
+      const [id] = sorted[i]!
       if (this.wsClient) {
         this.wsClient.send({ type: 'disconnect', connectionId: id })
       }
@@ -365,7 +363,9 @@ class SshSessionManager {
           const fails = (this._healthFailures.get(id) || 0) + 1
           this._healthFailures.set(id, fails)
           if (fails >= 2) {
-            console.warn(`[SshSessionManager] Health check failed ${fails}x for ${session.host}, removing`)
+            console.warn(
+              `[SshSessionManager] Health check failed ${fails}x for ${session.host}, removing`,
+            )
             toRemove.push(id)
           }
         } else {
@@ -446,7 +446,7 @@ class SshSessionManager {
     options?: {
       forceNew?: boolean
       onStatus?: (msg: string) => void
-    }
+    },
   ): Promise<string | null> {
     const { forceNew = false, onStatus } = options || {}
 
@@ -476,7 +476,7 @@ class SshSessionManager {
     options?: {
       forceNew?: boolean
       onStatus?: (msg: string) => void
-    }
+    },
   ): Promise<string | null> {
     const { forceNew = false, onStatus } = options || {}
 
@@ -513,21 +513,24 @@ class SshSessionManager {
    * 确保能复用 SSH 页面创建的连接
    */
   private findReusableSession(connectionId: string): SessionInfo | null {
-
     // 1. 优先在 SshSessionManager 内部查找 SSH session（功能更完整）
     for (const [, session] of this.sessions) {
-      if (session.connectionId === connectionId && 
-          session.type === 'ssh' && 
-          session.status === 'connected') {
+      if (
+        session.connectionId === connectionId &&
+        session.type === 'ssh' &&
+        session.status === 'connected'
+      ) {
         return session
       }
     }
 
     // 2. 其次在 SshSessionManager 内部查找 SFTP session
     for (const [, session] of this.sessions) {
-      if (session.connectionId === connectionId && 
-          session.type === 'sftp' && 
-          session.status === 'connected') {
+      if (
+        session.connectionId === connectionId &&
+        session.type === 'sftp' &&
+        session.status === 'connected'
+      ) {
         return session
       }
     }
@@ -536,10 +539,9 @@ class SshSessionManager {
     //    SSH 页面创建的 session 不在 SshSessionManager.sessions 中，
     //    但它们是有效的、可复用的连接
     const storeSessions = useSshStore.getState().sessions
-    
+
     for (const storeSession of storeSessions) {
-      if (storeSession.connectionId === connectionId && 
-          storeSession.status === 'connected') {
+      if (storeSession.connectionId === connectionId && storeSession.status === 'connected') {
         // 转换为 SessionInfo 格式
         const type = storeSession.id.startsWith('sftp_') ? 'sftp' : 'ssh'
         const conn = useSshStore.getState().getConnectionById(connectionId)
@@ -580,7 +582,7 @@ class SshSessionManager {
    */
   private async createSshSession(
     connectionId: string,
-    onStatus?: (msg: string) => void
+    onStatus?: (msg: string) => void,
   ): Promise<string | null> {
     const conn = useSshStore.getState().getConnectionById(connectionId)
     if (!conn || !this.wsClient) return null
@@ -657,14 +659,15 @@ class SshSessionManager {
    */
   private async createSftpSession(
     connectionId: string,
-    onStatus?: (msg: string) => void
+    onStatus?: (msg: string) => void,
   ): Promise<string | null> {
     const conn = useSshStore.getState().getConnectionById(connectionId)
     if (!conn || !this.wsClient) {
-      console.error(`[SshSessionManager] createSftpSession failed: conn=${!!conn}, wsClient=${!!this.wsClient}`)
+      console.error(
+        `[SshSessionManager] createSftpSession failed: conn=${!!conn}, wsClient=${!!this.wsClient}`,
+      )
       return null
     }
-
 
     // 检查连接池限制
     if (this.sessions.size >= this.poolConfig.maxPoolSize) {
@@ -672,7 +675,6 @@ class SshSessionManager {
       this.evictExcessConnections()
     }
 
-    const sessionId = `sftp_${connectionId}_${Date.now()}`
     onStatus?.('正在连接 SFTP...')
 
     try {

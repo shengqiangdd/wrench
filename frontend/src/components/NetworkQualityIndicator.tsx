@@ -33,10 +33,14 @@ function getStatusColor(status: WsStatus, rtt: number): string {
 
 function getStatusLabel(status: WsStatus): string {
   switch (status) {
-    case 'connected': return '已连接'
-    case 'connecting': return '连接中...'
-    case 'reconnecting': return '重连中...'
-    case 'disconnected': return '已断开'
+    case 'connected':
+      return '已连接'
+    case 'connecting':
+      return '连接中...'
+    case 'reconnecting':
+      return '重连中...'
+    case 'disconnected':
+      return '已断开'
   }
 }
 
@@ -98,7 +102,7 @@ function NetworkQualityIndicatorInner() {
 
       {/* 展开面板 */}
       {expanded && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-slate-700/50 bg-slate-900 p-3 shadow-xl">
+        <div className="absolute top-full right-0 z-50 mt-1 w-56 rounded-lg border border-slate-700/50 bg-slate-900 p-3 shadow-xl">
           <div className="mb-2 flex items-center gap-2 text-xs font-medium text-slate-300">
             <Activity size={12} />
             连接质量
@@ -114,9 +118,7 @@ function NetworkQualityIndicatorInner() {
             {/* 延迟 */}
             <div className="flex items-center justify-between">
               <span className="text-slate-500">延迟</span>
-              <span className="text-slate-300">
-                {stats.rtt > 0 ? `${stats.rtt}ms` : '-'}
-              </span>
+              <span className="text-slate-300">{stats.rtt > 0 ? `${stats.rtt}ms` : '-'}</span>
             </div>
 
             {/* 连接池 */}

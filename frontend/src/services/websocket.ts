@@ -122,9 +122,7 @@ export class WsClient {
   /** 获取最近的平均 RTT（毫秒），用于网络质量监控 */
   get averageRtt(): number {
     if (this._rttSamples.length === 0) return 0
-    return Math.round(
-      this._rttSamples.reduce((a, b) => a + b, 0) / this._rttSamples.length,
-    )
+    return Math.round(this._rttSamples.reduce((a, b) => a + b, 0) / this._rttSamples.length)
   }
 
   /** 获取当前心跳间隔（毫秒） */

@@ -17,14 +17,12 @@
  */
 
 import { useEffect, useCallback, useRef, useReducer, useState, useMemo, memo } from 'react'
-import { authedFetch } from '../../services/auth'
 import { FileCode2, X, PanelLeftClose, PanelLeft, Loader2, ChevronDown } from 'lucide-react'
-import { useSshStore, decryptConnection } from '../../stores/ssh-store'
+import { useSshStore } from '../../stores/ssh-store'
 import { useAppStore } from '../../stores/app-store'
 import { useFileStore } from '../../stores/file-store'
 import { getWsClientSync, WsClient } from '../../services/websocket'
 import { sshSessionManager } from '../../services/ssh-session-manager'
-import { setSessionCredentials } from '../../services/session-credentials'
 import SftpBrowser from '../ssh/SftpBrowser'
 import CodeMirrorEditor from '../../components/CodeMirrorEditor'
 import { ConfirmModal } from '../../components/ConfirmModal'
@@ -249,9 +247,8 @@ function FileManagerInner() {
 
     // 优先查找已有的 SSH session（功能更完整）
     const existingSshSession = sessArr.find(
-      (s) => s.connectionId === cached.connId && 
-             s.status === 'connected' && 
-             !s.id.startsWith('sftp_'),
+      (s) =>
+        s.connectionId === cached.connId && s.status === 'connected' && !s.id.startsWith('sftp_'),
     )
 
     if (existingSshSession) {
@@ -280,7 +277,6 @@ function FileManagerInner() {
     const sid = await ensureSftpSession(cached.connId, sessArr, addSession, client, (msg) => {
       if (msg) dispatch({ statusMsg: msg })
     })
-    
 
     if (sid) {
       setFmState({
@@ -315,7 +311,6 @@ function FileManagerInner() {
   // 当 sessions 变化且当前 session 无效时自动重试
   // 解决 Zustand persist 异步恢复的问题
   useEffect(() => {
-    
     // 🔧 修复：如果正在连接中，不干预（避免 connectAndSftp 的竞态覆盖）
     if (connectingRef.current) {
       return
@@ -334,7 +329,10 @@ function FileManagerInner() {
     if (fmState.connId && sessions.length > 0 && wsClientRef.current) {
       // 🔧 修复：检查是否有可复用的 SSH session（从 SSH 页面已连接的）
       const existingSshSession = sessions.find(
-        (s) => s.connectionId === fmState.connId && s.status === 'connected' && !s.id.startsWith('sftp_'),
+        (s) =>
+          s.connectionId === fmState.connId &&
+          s.status === 'connected' &&
+          !s.id.startsWith('sftp_'),
       )
 
       if (existingSshSession) {
@@ -349,7 +347,8 @@ function FileManagerInner() {
       // 🔧 修复：如果当前 fmState 已有有效的 sftp session 在 sessions 中，
       // 不再重试（避免 sessions 变化导致的无意义重连）
       const hasValidSftpSession = sessions.some(
-        (s) => s.connectionId === fmState.connId && s.status === 'connected' && s.id.startsWith('sftp_'),
+        (s) =>
+          s.connectionId === fmState.connId && s.status === 'connected' && s.id.startsWith('sftp_'),
       )
       if (hasValidSftpSession) {
         return
@@ -361,7 +360,7 @@ function FileManagerInner() {
         if (mountedRef.current && !connectingRef.current) tryRestoreSession()
       }, 800)
     }
-  }, [sessions, fmState.sessionId, fmState.connId, tryRestoreSession, wsReady])
+  }, [sessions, fmState, tryRestoreSession, wsReady, setFmState])
 
   // 无任何已知连接（首次打开，且有主机）时自动连接第一个
   const connectAndSftpRef = useRef<((connId: string) => Promise<string | undefined>) | null>(null)
@@ -407,8 +406,8 @@ function FileManagerInner() {
       // 使用 getState() 获取最新状态，避免闭包快照问题
       const conn = useSshStore.getState().getConnectionById(connId)
       const client = wsClientRef.current
-      const currentSessions = useSshStore.getState().sessions  // 🔧 实时获取 sessions
-      
+      const currentSessions = useSshStore.getState().sessions // 🔧 实时获取 sessions
+
       if (!conn || !client || connectingRef.current) {
         return
       }
@@ -429,7 +428,6 @@ function FileManagerInner() {
       const sid = await ensureSftpSession(connId, currentSessions, addSession, client, (msg) => {
         if (msg) dispatch({ statusMsg: msg })
       })
-      
 
       if (sid) {
         const currentCache = useAppStore.getState().fmSftpState.pathCache
@@ -448,7 +446,7 @@ function FileManagerInner() {
       dispatch({ connecting: false })
       return
     },
-    [addSession, removeSession, setFmState],  // 🔧 移除 sessions 依赖
+    [addSession, removeSession, setFmState], // 🔧 移除 sessions 依赖
   )
 
   // 同步 ref 供 useEffect 使用（避免 hook 顺序问题）
