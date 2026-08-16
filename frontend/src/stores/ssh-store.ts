@@ -77,7 +77,7 @@ function localToRow(conn: SshConnection) {
 interface SshState {
   // 连接配置
   connections: SshConnection[]
-  connectionMap: Map<string, SshConnection>  // 新增：O(1) 查找索引
+  connectionMap: Map<string, SshConnection> // 新增：O(1) 查找索引
   selectedConnectionId: string | null
 
   // 活跃会话
@@ -114,7 +114,7 @@ interface SshState {
 
 export const useSshStore = create<SshState>()(
   persist(
-    (set, _get) => ({
+    (set, get) => ({
       connections: [],
       connectionMap: new Map(),
       selectedConnectionId: null,
@@ -127,7 +127,7 @@ export const useSshStore = create<SshState>()(
         if (!isDbReady()) return
         const rows = connectionsList()
         const connections = rows.map(rowToLocal)
-        const connectionMap = new Map(connections.map(c => [c.id, c]))
+        const connectionMap = new Map(connections.map((c) => [c.id, c]))
         set({ connections, connectionMap, dbLoaded: true })
       },
 
@@ -137,7 +137,7 @@ export const useSshStore = create<SshState>()(
           newMap.set(conn.id, conn)
           return {
             connections: [...s.connections, conn],
-            connectionMap: newMap
+            connectionMap: newMap,
           }
         })
         // Persist to client SQLite
@@ -193,9 +193,9 @@ export const useSshStore = create<SshState>()(
       setCurrentSftpPath: (path) => set({ currentSftpPath: path }),
       setCurrentSftpEntries: (entries) => set({ currentSftpEntries: entries }),
 
-      // 新增 O(1) 查找方法
+      // 新增 O(1) 查找方法（用 get 而非 useSshStore.getState()，避免自身初始化循环引用）
       getConnectionById: (id) => {
-        return useSshStore.getState().connectionMap.get(id)
+        return get().connectionMap.get(id)
       },
     }),
     {
@@ -215,7 +215,7 @@ export const useSshStore = create<SshState>()(
         }
         const state = raw.state || raw
         const connections = (state.connections || []) as SshConnection[]
-        const connectionMap = new Map(connections.map(c => [c.id, c]))
+        const connectionMap = new Map(connections.map((c) => [c.id, c]))
         return {
           ...current,
           connections,
@@ -232,7 +232,7 @@ export const refreshSshStore = () => {
   if (isDbReady()) {
     const rows = connectionsList()
     const connections = rows.map(rowToLocal)
-    const connectionMap = new Map(connections.map(c => [c.id, c]))
+    const connectionMap = new Map(connections.map((c) => [c.id, c]))
     useSshStore.setState({ connections, connectionMap, dbLoaded: true })
   }
 }
