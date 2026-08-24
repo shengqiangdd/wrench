@@ -121,7 +121,14 @@ function languageLabel(language: string): string {
 /** 该语言是否支持格式化 */
 export function isFormatSupported(language: string): boolean {
   const lang = (language || '').toLowerCase()
-  if (lang === 'xml' || lang === 'toml' || lang === 'ini' || lang === 'conf' || lang === 'dotenv' || lang === 'nginx')
+  if (
+    lang === 'xml' ||
+    lang === 'toml' ||
+    lang === 'ini' ||
+    lang === 'conf' ||
+    lang === 'dotenv' ||
+    lang === 'nginx'
+  )
     return true
   return Boolean(PRETTIER_PARSERS[lang])
 }
