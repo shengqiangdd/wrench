@@ -106,6 +106,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
   graphql: 'GraphQL',
   angular: 'Angular',
   glimmer: 'Handlebars',
+  nginx: 'Nginx',
   toml: 'TOML',
   ini: 'INI',
   conf: '配置',
@@ -120,7 +121,7 @@ function languageLabel(language: string): string {
 /** 该语言是否支持格式化 */
 export function isFormatSupported(language: string): boolean {
   const lang = (language || '').toLowerCase()
-  if (lang === 'xml' || lang === 'toml' || lang === 'ini' || lang === 'conf' || lang === 'dotenv')
+  if (lang === 'xml' || lang === 'toml' || lang === 'ini' || lang === 'conf' || lang === 'dotenv' || lang === 'nginx')
     return true
   return Boolean(PRETTIER_PARSERS[lang])
 }
@@ -405,6 +406,63 @@ export function formatDotenv(code: string): string | null {
   }
 }
 
+/**
+ * Nginx 配置格式化（block-based，非纯 key=value）：
+ * - 指令缩进按 `{` / `}` 层级
+ * - 注释 `#` 后统一加一个空格
+ * - 空行去重
+ */
+export function formatNginx(code: string): string | null {
+  try {
+    const lines = code.split('\n')
+    const result: string[] = []
+    let depth = 0
+    const pad = (n: number) => '  '.repeat(n)
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) {
+        if (result.length > 0 && result[result.length - 1] !== '') {
+          result.push('')
+        }
+        continue
+      }
+
+      // 注释：统一格式 "# comment"
+      if (trimmed.startsWith('#')) {
+        const afterHash = trimmed.slice(1)
+        result.push(pad(depth) + '#' + (afterHash.startsWith(' ') ? afterHash : ' ' + afterHash))
+        continue
+      }
+
+      // 闭合块 "}" — 先减层级
+      if (trimmed === '}') {
+        depth = Math.max(0, depth - 1)
+        result.push(pad(depth) + '}')
+        continue
+      }
+
+      // 包含开块 "directive ... {" — 指令行 + 开括号同行
+      if (trimmed.endsWith('{')) {
+        result.push(pad(depth) + trimmed)
+        depth += 1
+        continue
+      }
+
+      // 其他指令
+      result.push(pad(depth) + trimmed)
+    }
+
+    while (result.length > 0 && result[result.length - 1] === '') {
+      result.pop()
+    }
+
+    return result.join('\n') + '\n'
+  } catch {
+    return null
+  }
+}
+
 // ─── 主入口 ───
 
 /**
@@ -479,6 +537,14 @@ export async function formatCode(
       return { ok: true, formatted, unchanged: formatted === code }
     }
     return { ok: false, error: `${languageLabel(lang)} 解析失败` }
+  }
+
+  if (lang === 'nginx') {
+    const formatted = formatNginx(code)
+    if (formatted !== null) {
+      return { ok: true, formatted, unchanged: formatted === code }
+    }
+    return { ok: false, error: 'Nginx 配置解析失败' }
   }
 
   if (lang === 'dotenv') {
