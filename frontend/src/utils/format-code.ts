@@ -57,6 +57,13 @@ const PRETTIER_PARSERS: Record<string, { parser: string; plugins: string[] }> = 
   mdx: { parser: 'mdx', plugins: ['prettier/plugins/markdown'] },
   yaml: { parser: 'yaml', plugins: ['prettier/plugins/yaml'] },
   yml: { parser: 'yaml', plugins: ['prettier/plugins/yaml'] },
+  graphql: { parser: 'graphql', plugins: ['prettier/plugins/graphql'] },
+  angular: {
+    parser: 'angular',
+    plugins: ['prettier/plugins/html', 'prettier/plugins/glimmer'],
+  },
+  glimmer: { parser: 'glimmer', plugins: ['prettier/plugins/glimmer'] },
+  xml: { parser: 'xml', plugins: [] },
 }
 
 /** 支持"仅格式化选区"（片段格式化）的语言 */
@@ -72,6 +79,10 @@ const RANGE_CAPABLE = new Set([
   'less',
   'markdown',
   'mdx',
+  'graphql',
+  'angular',
+  'glimmer',
+  'xml',
 ])
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -92,6 +103,13 @@ const LANGUAGE_LABELS: Record<string, string> = {
   yaml: 'YAML',
   yml: 'YAML',
   xml: 'XML',
+  graphql: 'GraphQL',
+  angular: 'Angular',
+  glimmer: 'Handlebars',
+  toml: 'TOML',
+  ini: 'INI',
+  conf: '配置',
+  dotenv: 'dotenv',
   text: '文本',
 }
 
@@ -102,7 +120,9 @@ function languageLabel(language: string): string {
 /** 该语言是否支持格式化 */
 export function isFormatSupported(language: string): boolean {
   const lang = (language || '').toLowerCase()
-  return lang === 'xml' || Boolean(PRETTIER_PARSERS[lang])
+  if (lang === 'xml' || lang === 'toml' || lang === 'ini' || lang === 'conf' || lang === 'dotenv')
+    return true
+  return Boolean(PRETTIER_PARSERS[lang])
 }
 
 // ─── Prettier 懒加载 ───
@@ -129,6 +149,8 @@ const PRETTIER_PLUGIN_LOADERS: Record<string, () => Promise<unknown>> = {
   'prettier/plugins/postcss': () => import('prettier/plugins/postcss'),
   'prettier/plugins/markdown': () => import('prettier/plugins/markdown'),
   'prettier/plugins/yaml': () => import('prettier/plugins/yaml'),
+  'prettier/plugins/graphql': () => import('prettier/plugins/graphql'),
+  'prettier/plugins/glimmer': () => import('prettier/plugins/glimmer'),
 }
 
 async function loadPrettier(config: {
@@ -244,6 +266,145 @@ export function formatXml(code: string, indentSize = 2): string | null {
   }
 }
 
+// ─── 内置回退：配置文件格式 ───
+
+/** TOML 简单格式化：按 section 分组，key=value 对齐缩进 */
+export function formatToml(code: string): string | null {
+  try {
+    const lines = code.split('\n')
+    const result: string[] = []
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) {
+        if (result.length > 0 && result[result.length - 1] !== '') {
+          result.push('')
+        }
+        continue
+      }
+
+      // [section] 或 [[array]]
+      if (/^\[+.*\]+$/.test(trimmed)) {
+        if (result.length > 0 && result[result.length - 1] !== '') {
+          result.push('')
+        }
+        result.push(trimmed)
+        continue
+      }
+
+      // key = value / key = [inline] / key = "string"
+      const kvMatch = /^([\w.-]+)\s*=\s*(.*)$/.exec(trimmed)
+      if (kvMatch) {
+        result.push(`${kvMatch[1]} = ${kvMatch[2]}`)
+        continue
+      }
+
+      // 注释或其他行原样保留
+      result.push(trimmed)
+    }
+
+    // 去除末尾多余空行
+    while (result.length > 0 && result[result.length - 1] === '') {
+      result.pop()
+    }
+
+    return result.join('\n') + '\n'
+  } catch {
+    return null
+  }
+}
+
+/** INI/conf 简单格式化：section 对齐，key=value 间距统一 */
+export function formatIni(code: string): string | null {
+  try {
+    const lines = code.split('\n')
+    const result: string[] = []
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) {
+        if (result.length > 0 && result[result.length - 1] !== '') {
+          result.push('')
+        }
+        continue
+      }
+
+      // 注释行原样保留
+      if (trimmed.startsWith(';') || trimmed.startsWith('#')) {
+        result.push(trimmed)
+        continue
+      }
+
+      // [section]
+      if (/^\[.*\]$/.test(trimmed)) {
+        if (result.length > 0 && result[result.length - 1] !== '') {
+          result.push('')
+        }
+        result.push(trimmed)
+        continue
+      }
+
+      // key = value
+      const kvMatch = /^([\w.-]+)\s*[=:]\s*(.*)$/.exec(trimmed)
+      if (kvMatch) {
+        result.push(`${kvMatch[1]} = ${kvMatch[2]}`)
+        continue
+      }
+
+      result.push(trimmed)
+    }
+
+    while (result.length > 0 && result[result.length - 1] === '') {
+      result.pop()
+    }
+
+    return result.join('\n') + '\n'
+  } catch {
+    return null
+  }
+}
+
+/** dotenv 简单格式化：去重空行、注释对齐 */
+export function formatDotenv(code: string): string | null {
+  try {
+    const lines = code.split('\n')
+    const result: string[] = []
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) {
+        if (result.length > 0 && result[result.length - 1] !== '') {
+          result.push('')
+        }
+        continue
+      }
+
+      // 注释
+      if (trimmed.startsWith('#')) {
+        result.push(trimmed)
+        continue
+      }
+
+      // KEY=VALUE
+      const kvMatch = /^([\w.-]+)\s*=\s*(.*)$/.exec(trimmed)
+      if (kvMatch) {
+        result.push(`${kvMatch[1]}=${kvMatch[2]}`)
+        continue
+      }
+
+      result.push(trimmed)
+    }
+
+    while (result.length > 0 && result[result.length - 1] === '') {
+      result.pop()
+    }
+
+    return result.join('\n') + '\n'
+  } catch {
+    return null
+  }
+}
+
 // ─── 主入口 ───
 
 /**
@@ -284,7 +445,14 @@ export async function formatCode(
       })
       return { ok: true, formatted, unchanged: formatted === code }
     } catch (prettierErr) {
-      // Prettier 解析失败时，JSON 族语言回退到原生格式化
+      // Prettier 解析失败时，XML 回退到原生格式化
+      if (lang === 'xml') {
+        const fallback = formatXml(code)
+        if (fallback !== null) {
+          return { ok: true, formatted: fallback, unchanged: fallback === code }
+        }
+      }
+      // JSON 族语言回退到原生格式化
       if (lang === 'json' || lang === 'jsonc' || lang === 'json5') {
         const fallback = formatJsonNative(code)
         if (fallback !== null) {
@@ -296,12 +464,29 @@ export async function formatCode(
     }
   }
 
-  if (lang === 'xml') {
-    const formatted = formatXml(code)
+  // ─── 内置回退：配置文件格式 ───
+  if (lang === 'toml') {
+    const formatted = formatToml(code)
     if (formatted !== null) {
       return { ok: true, formatted, unchanged: formatted === code }
     }
-    return { ok: false, error: 'XML 解析失败' }
+    return { ok: false, error: 'TOML 解析失败' }
+  }
+
+  if (lang === 'ini' || lang === 'conf') {
+    const formatted = formatIni(code)
+    if (formatted !== null) {
+      return { ok: true, formatted, unchanged: formatted === code }
+    }
+    return { ok: false, error: `${languageLabel(lang)} 解析失败` }
+  }
+
+  if (lang === 'dotenv') {
+    const formatted = formatDotenv(code)
+    if (formatted !== null) {
+      return { ok: true, formatted, unchanged: formatted === code }
+    }
+    return { ok: false, error: 'dotenv 解析失败' }
   }
 
   return { ok: false, error: `暂不支持格式化 ${languageLabel(lang)} 文件` }
