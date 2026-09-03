@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
+import { WebglAddon } from '@xterm/addon-webgl'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import { Search, X, ChevronUp, ChevronDown, Copy } from 'lucide-react'
 import { createTerminalWsClient, type WsClient } from '../../services/websocket'
@@ -267,6 +269,30 @@ export default function TerminalView({
 
     const container = containerRef.current
     term.open(container)
+
+    // ─── GPU 加速渲染（WebGL2 → fallback canvas）───
+    // WebGL 渲染器比默认 canvas 渲染器快 10x+，移动端滚动更流畅
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => {
+        // WebGL 上下文丢失时自动降级，避免白屏
+        webgl.dispose()
+      })
+      term.loadAddon(webgl)
+    } catch {
+      // WebGL2 不可用（低端设备 / 隐私模式），使用默认 canvas 渲染
+    }
+
+    // ─── Unicode 11 宽字符支持 ───
+    // 默认 unicode 版本对部分 CJK/Emoji 字符宽度计算不准确，
+    // 导致光标偏移、行末截断。Unicode 11 修正了这些问题。
+    try {
+      const unicode11 = new Unicode11Addon()
+      term.loadAddon(unicode11)
+      term.unicode.activeVersion = '11'
+    } catch {
+      // 静默降级到默认 unicode 版本
+    }
 
     // ─── 阻止终端容器的默认浏览器行为 ───
     // 长按方向键时浏览器可能触发右键菜单或文本选择
