@@ -177,6 +177,17 @@ export default function TerminalView({
   // 🔧 防止 Backspace/Delete 被 onData 重复发送的标记
   // keydown 拦截已手动发送后，onData 应跳过该字符
   const skipNextOnDataRef = useRef(false)
+  // ─── 自动滚动管理 ───
+  const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const userScrolledUpRef = useRef(false)
+  // ─── 长时间运行命令检测 ───
+  const [longRunning, setLongRunning] = useState<{ lines: number; seconds: number } | null>(null)
+  const outputTrackerRef = useRef({
+    burstLines: 0,
+    burstStart: 0,
+    lastWriteTime: 0,
+    checkTimer: null as ReturnType<typeof setTimeout> | null,
+  })
   // 用 ref 避免 event handler 中的闭包过期
   const onConnectedRef = useRef(onConnected)
   const onDisconnectedRef = useRef(onDisconnected)
@@ -239,6 +250,10 @@ export default function TerminalView({
     genRef.current += 1
     const gen = genRef.current
     disposedRef.current = false
+    // 重置滚动状态
+    userScrolledUpRef.current = false
+    setUserScrolledUp(false)
+    setLongRunning(null)
 
     const term = new XTerm({
       cursorBlink: true,
@@ -309,6 +324,19 @@ export default function TerminalView({
     xtermViewport?.addEventListener('contextmenu', preventContextMenu)
     xtermScreen?.addEventListener('selectstart', preventSelectStart)
     xtermViewport?.addEventListener('selectstart', preventSelectStart)
+
+    // ─── 自动滚动管理：检测用户是否在查看历史 ───
+    const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null
+    const checkScrollPosition = () => {
+      if (!viewport) return
+      const atBottom = viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 2
+      const scrolledUp = !atBottom
+      if (scrolledUp !== userScrolledUpRef.current) {
+        userScrolledUpRef.current = scrolledUp
+        setUserScrolledUp(scrolledUp)
+      }
+    }
+    viewport?.addEventListener('scroll', checkScrollPosition)
 
     // ─── 自定义触摸滚动处理器（含惯性滚动） ───
     // xterm.js 的 .xterm-screen 覆盖在 .xterm-viewport 之上，
@@ -501,6 +529,39 @@ export default function TerminalView({
     terminalRef.current = term
     fitAddonRef.current = fitAddon
 
+    // ─── 输出追踪：检测长时间运行的命令 ───
+    const trackOutput = (data: string) => {
+      const tracker = outputTrackerRef.current
+      const now = Date.now()
+      const lineCount = (data.match(/\r?\n/g) || []).length + 1
+
+      if (!tracker.burstStart || now - tracker.lastWriteTime > 3000) {
+        tracker.burstLines = lineCount
+        tracker.burstStart = now
+      } else {
+        tracker.burstLines += lineCount
+      }
+      tracker.lastWriteTime = now
+
+      if (!tracker.checkTimer) {
+        tracker.checkTimer = setTimeout(() => {
+          tracker.checkTimer = null
+          if (disposedRef.current || gen !== genRef.current) return
+          const elapsed = (Date.now() - tracker.burstStart) / 1000
+          const idle = Date.now() - tracker.lastWriteTime > 3000
+          if (idle || tracker.burstLines < 50) {
+            setLongRunning(null)
+            tracker.burstLines = 0
+            tracker.burstStart = 0
+          } else if (elapsed >= 5 && tracker.burstLines / elapsed > 100) {
+            setLongRunning({ lines: tracker.burstLines, seconds: Math.floor(elapsed) })
+          } else {
+            setLongRunning(null)
+          }
+        }, 2000)
+      }
+    }
+
     // ─── 创建独立 WebSocket 连接用于此终端 ───
     // 后端 handle_terminal_connect 会阻塞整个 WS 主循环，
     // 因此每个终端必须有自己的 WS 连接以支持多主机同时连接。
@@ -594,9 +655,23 @@ export default function TerminalView({
           const raw = msg.data as string
           try {
             const decoded = decodeURIComponent(escape(atob(raw)))
-            if (!disposedRef.current) term.write(decoded)
+            if (!disposedRef.current) {
+              term.write(decoded, () => {
+                if (!userScrolledUpRef.current && !disposedRef.current) {
+                  term.scrollToBottom()
+                }
+              })
+              trackOutput(decoded)
+            }
           } catch {
-            if (!disposedRef.current) term.write(raw)
+            if (!disposedRef.current) {
+              term.write(raw, () => {
+                if (!userScrolledUpRef.current && !disposedRef.current) {
+                  term.scrollToBottom()
+                }
+              })
+              trackOutput(raw)
+            }
           }
         })
 
@@ -820,6 +895,9 @@ export default function TerminalView({
         skipNextOnDataRef.current = false
         return
       }
+      // 用户输入时自动滚到底部，确保看到命令输出
+      userScrolledUpRef.current = false
+      setUserScrolledUp(false)
       // 将用户输入以 base64 编码发送
       const encoded = btoa(unescape(encodeURIComponent(data)))
       termWsRef.current?.send({
@@ -903,6 +981,13 @@ export default function TerminalView({
       container.removeEventListener('touchend', handleLongPressEnd)
       container.removeEventListener('touchcancel', handleLongPressEnd)
       document.removeEventListener('selectionchange', handleSelectionChange)
+      // 移除滚动位置监听器
+      viewport?.removeEventListener('scroll', checkScrollPosition)
+      // 清理输出追踪定时器
+      if (outputTrackerRef.current.checkTimer) {
+        clearTimeout(outputTrackerRef.current.checkTimer)
+        outputTrackerRef.current.checkTimer = null
+      }
       // 移除阻止默认行为的监听器
       container.removeEventListener('contextmenu', preventContextMenu)
       container.removeEventListener('selectstart', preventSelectStart)
@@ -1122,6 +1207,28 @@ export default function TerminalView({
         <Copy size={12} />
         <span>复制</span>
       </button>
+
+      {/* ─── "回到底部"浮动按钮 ─── */}
+      {userScrolledUp && (
+        <button
+          onClick={() => {
+            userScrolledUpRef.current = false
+            setUserScrolledUp(false)
+            terminalRef.current?.scrollToBottom()
+          }}
+          className="absolute right-3 bottom-28 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-slate-700/90 text-slate-300 shadow-lg backdrop-blur-sm transition-all hover:bg-slate-600 hover:text-white md:bottom-6"
+          title="回到底部"
+        >
+          <ChevronDown size={16} />
+        </button>
+      )}
+
+      {/* ─── 长时间运行命令提示条 ─── */}
+      {longRunning && (
+        <div className="pointer-events-none absolute top-1 left-1/2 z-10 -translate-x-1/2 rounded-full bg-slate-800/90 px-3 py-1 text-[11px] text-slate-400 shadow-lg backdrop-blur-sm">
+          ⏳ 命令执行中... (已输出 {longRunning.lines} 行, {longRunning.seconds}s)
+        </div>
+      )}
 
       {/* ─── 移动端：长按浮动上下文菜单 ─── */}
       {contextMenu && (
