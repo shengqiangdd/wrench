@@ -391,14 +391,10 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
 
     info!("Terminal session connected: {}", connection_id);
 
-    // ─── Terminal I/O Loop with output batching ───
-    // Batching reduces WebSocket message count by accumulating SSH output
-    // and flushing on size threshold (8KB) or time interval (16ms).
-    // 使用更短的刷新间隔和更小的缓冲区，减少历史命令和Tab补全的显示延迟。
-    let flush_timer = tokio::time::sleep(std::time::Duration::from_millis(16));
-    tokio::pin!(flush_timer);
-    let mut output_buffer: Vec<u8> = Vec::new();
-
+    // ─── Terminal I/O Loop — immediate send for low latency ───
+    // Removed output batching: each SSH output chunk is sent immediately
+    // as a WebSocket message. This eliminates the 16ms flush timer delay
+    // that caused noticeable lag during interactive typing and tab completion.
     loop {
         tokio::select! {
             // Incoming from WebSocket (user keystrokes / resize)
@@ -454,54 +450,27 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
                 }
             }
 
-            // Outgoing to WebSocket (SSH terminal output via channel.wait())
-            // Data is accumulated in output_buffer and flushed in batch
+            // Outgoing to WebSocket (SSH terminal output) — send immediately
             msg = channel.wait() => {
                 use russh::ChannelMsg;
                 match msg {
                     Some(ChannelMsg::Data { ref data }) => {
-                        output_buffer.extend_from_slice(data);
-                        // Flush immediately if buffer exceeds 8KB threshold
-                        // 使用更小的阈值减少显示延迟，特别是对于历史命令和Tab补全
-                        if output_buffer.len() > 8_192 {
-                            let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buffer);
-                            output_buffer.clear();
-                            let output = build_terminal_output_msg(&connection_id, &encoded);
-                            if socket.send(Message::Text(output)).await.is_err() {
-                                break;
-                            }
+                        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
+                        let output = build_terminal_output_msg(&connection_id, &encoded);
+                        if socket.send(Message::Text(output)).await.is_err() {
+                            break;
                         }
                     }
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
-                        // Flush remaining buffered data before break
-                        send_buffered_data(&mut output_buffer, socket, &connection_id).await;
                         info!("SSH channel closed (connection: {})", connection_id);
                         break;
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
-                        // Flush remaining buffered data before break
-                        send_buffered_data(&mut output_buffer, socket, &connection_id).await;
                         info!("SSH shell exited with status: {}", exit_status);
                         break;
                     }
                     _ => {}
                 }
-            }
-
-            // Periodic flush timer — ensures max 16ms latency for small chunks
-            // 更短的刷新间隔减少历史命令和Tab补全的显示延迟
-            _ = &mut flush_timer => {
-                if !output_buffer.is_empty() {
-                    let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buffer);
-                    output_buffer.clear();
-                    let output = build_terminal_output_msg(&connection_id, &encoded);
-                    if socket.send(Message::Text(output)).await.is_err() {
-                        break;
-                    }
-                }
-                flush_timer.as_mut().reset(
-                    tokio::time::Instant::now() + std::time::Duration::from_millis(16)
-                );
             }
         }
     }
@@ -955,13 +924,7 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg:
 
     let mut exit_code: Option<u32> = None;
 
-    // ─── Docker Shell I/O Loop with output batching ───
-    // Batching reduces WebSocket message count by accumulating docker exec output
-    // and flushing on size threshold (16KB) or time interval (50ms).
-    let flush_timer = tokio::time::sleep(std::time::Duration::from_millis(50));
-    tokio::pin!(flush_timer);
-    let mut output_buffer: Vec<u8> = Vec::new();
-
+    // ─── Docker Shell I/O Loop — immediate send for low latency ───
     loop {
         tokio::select! {
             // Incoming from WebSocket (user input / resize)
@@ -1015,52 +978,27 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg:
                 }
             }
 
-            // Outgoing to WebSocket (docker exec output via channel.wait())
-            // Data is accumulated in output_buffer and flushed in batch
+            // Outgoing to WebSocket (docker exec output) — send immediately
             msg = channel.wait() => {
                 match msg {
                     Some(russh::ChannelMsg::Data { ref data }) => {
-                        output_buffer.extend_from_slice(data);
-                        // Flush immediately if buffer exceeds 16KB threshold
-                        if output_buffer.len() > 16_384 {
-                            let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buffer);
-                            output_buffer.clear();
-                            let output = build_docker_output_msg(&connection_id, &container_id, &encoded);
-                            if socket.send(Message::Text(output)).await.is_err() {
-                                break;
-                            }
+                        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
+                        let output = build_docker_output_msg(&connection_id, &container_id, &encoded);
+                        if socket.send(Message::Text(output)).await.is_err() {
+                            break;
                         }
                     }
                     Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => {
-                        // Flush remaining buffered data before break
-                        send_buffered_docker_output(&mut output_buffer, socket, &connection_id, &container_id).await;
                         info!("Docker shell channel closed (container: {})", container_id);
                         break;
                     }
                     Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
-                        // Flush remaining buffered data before break
-                        send_buffered_docker_output(&mut output_buffer, socket, &connection_id, &container_id).await;
                         info!("Docker shell exited with status: {}", exit_status);
                         exit_code = Some(exit_status);
                         break;
                     }
                     _ => {}
                 }
-            }
-
-            // Periodic flush timer — ensures max 50ms latency for small chunks
-            _ = &mut flush_timer => {
-                if !output_buffer.is_empty() {
-                    let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buffer);
-                    output_buffer.clear();
-                    let output = build_docker_output_msg(&connection_id, &container_id, &encoded);
-                    if socket.send(Message::Text(output)).await.is_err() {
-                        break;
-                    }
-                }
-                flush_timer.as_mut().reset(
-                    tokio::time::Instant::now() + std::time::Duration::from_millis(50)
-                );
             }
         }
     }
@@ -1084,28 +1022,4 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg:
 
 // ─── Output batching helper functions ───
 
-/// Flush any buffered terminal output data as a single WebSocket message.
-/// Used when a channel is closing to ensure no data is lost.
-async fn send_buffered_data(buffer: &mut Vec<u8>, socket: &mut WebSocket, connection_id: &str) {
-    if !buffer.is_empty() {
-        let encoded = base64::engine::general_purpose::STANDARD.encode(buffer.as_slice());
-        buffer.clear();
-        let output = build_terminal_output_msg(connection_id, &encoded);
-        let _ = socket.send(Message::Text(output)).await;
-    }
-}
 
-/// Flush any buffered docker shell output data as a single WebSocket message.
-async fn send_buffered_docker_output(
-    buffer: &mut Vec<u8>,
-    socket: &mut WebSocket,
-    connection_id: &str,
-    container_id: &str,
-) {
-    if !buffer.is_empty() {
-        let encoded = base64::engine::general_purpose::STANDARD.encode(buffer.as_slice());
-        buffer.clear();
-        let output = build_docker_output_msg(connection_id, container_id, &encoded);
-        let _ = socket.send(Message::Text(output)).await;
-    }
-}

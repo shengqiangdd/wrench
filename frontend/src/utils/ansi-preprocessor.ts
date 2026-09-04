@@ -13,7 +13,6 @@
  *    - \x1b[2K (擦除整行)
  *    - \x1b[?25l/h (光标隐藏/显示)
  * 2. 将独立的 \r（后无 \n）转换为 \n
- * 3. 折叠连续相同行（≥3 次相同内容合并为 "[重复 N 次]" 标记）
  */
 
 // 匹配光标上移/下移 N 行：ESC [ N A/B（N 可多位数，Docker Compose 常用 1-10）
@@ -31,9 +30,6 @@ const ANSI_CURSOR_VIS_REGEX = /\x1b\[\?25[hl]/g
 
 // 匹配独立的 \r 后面没有 \n 的情况（用于转换为 \n）
 const CR_ONLY_REGEX = /\r(?!\n)/g
-
-// 连续相同行折叠阈值
-const FOLD_THRESHOLD = 3
 
 /**
  * 从字符串中剥离 Docker Compose 进度相关的 ANSI 控制序列。
@@ -68,46 +64,6 @@ function normalizeLineEndings(data: string): string {
 }
 
 /**
- * 折叠连续相同的行（≥3 次）。
- * 返回折叠后的文本。
- */
-function foldRepeatedLines(data: string): string {
-  const lines = data.split('\n')
-  if (lines.length < FOLD_THRESHOLD) return data
-
-  const result: string[] = []
-  let i = 0
-
-  while (i < lines.length) {
-    const line = lines[i]!
-    let count = 1
-
-    // 向前扫描连续相同的行
-    while (
-      i + count < lines.length &&
-      lines[i + count] === line &&
-      line.trim().length > 0 // 跳过空行的折叠
-    ) {
-      count++
-    }
-
-    if (count >= FOLD_THRESHOLD) {
-      result.push(line)
-      result.push(`\x1b[90m[重复 ${count} 次]\x1b[0m`)
-      i += count
-    } else {
-      // 不够阈值，原样输出
-      for (let j = 0; j < count; j++) {
-        result.push(lines[i + j]!)
-      }
-      i += count
-    }
-  }
-
-  return result.join('\n')
-}
-
-/**
  * 预处理 ANSI 终端输出，优化 Docker Compose 等进度输出模式。
  *
  * @param data - 原始终端输出数据
@@ -119,9 +75,6 @@ export function preprocessAnsiOutput(data: string): string {
 
   // 步骤 2：统一换行符
   result = normalizeLineEndings(result)
-
-  // 步骤 3：折叠连续重复行
-  result = foldRepeatedLines(result)
 
   return result
 }
