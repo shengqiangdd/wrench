@@ -7,6 +7,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import { Search, X, ChevronUp, ChevronDown, Copy } from 'lucide-react'
 import { createTerminalWsClient, type WsClient } from '../../services/websocket'
+import { preprocessAnsiOutput } from '../../utils/ansi-preprocessor'
 import { getToken } from '../../services/auth'
 import { on } from '../../services/event-bus'
 
@@ -262,7 +263,7 @@ export default function TerminalView({
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, monospace",
       theme: TERMINAL_THEME,
       allowTransparency: true,
-      scrollback: 5000,
+      scrollback: 3000,
       tabStopWidth: 4,
       // 移动端优化
       screenReaderMode: false,
@@ -654,7 +655,7 @@ export default function TerminalView({
 
           const raw = msg.data as string
           try {
-            const decoded = decodeURIComponent(escape(atob(raw)))
+            const decoded = preprocessAnsiOutput(decodeURIComponent(escape(atob(raw))))
             if (!disposedRef.current) {
               term.write(decoded, () => {
                 if (!userScrolledUpRef.current && !disposedRef.current) {
@@ -665,12 +666,13 @@ export default function TerminalView({
             }
           } catch {
             if (!disposedRef.current) {
-              term.write(raw, () => {
+              const filtered = preprocessAnsiOutput(raw)
+              term.write(filtered, () => {
                 if (!userScrolledUpRef.current && !disposedRef.current) {
                   term.scrollToBottom()
                 }
               })
-              trackOutput(raw)
+              trackOutput(filtered)
             }
           }
         })
