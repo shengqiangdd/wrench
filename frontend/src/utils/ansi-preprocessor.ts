@@ -16,8 +16,12 @@
  * 3. 折叠连续相同行（≥3 次相同内容合并为 "[重复 N 次]" 标记）
  */
 
-// 匹配光标上移/下移 N 行：ESC [ N A/B (N=1..9，Docker Compose 常用 1-4)
-const CURSOR_MOVEUpDown_REGEX = /\x1b\[[1-9][AB]/g
+// 匹配光标上移/下移 N 行：ESC [ N A/B（N 可多位数，Docker Compose 常用 1-10）
+// 实测 compose v2.40 会输出连续 \x1b[1A×10 序列
+const CURSOR_MOVEUpDown_REGEX = /\x1b\[[0-9]+[AB]/g
+
+// 匹配光标水平定位：ESC [ N G（含 \x1b[0G 回到列0，compose 进度条重绘核心序列）
+const CURSOR_COLUMN_REGEX = /\x1b\[[0-9]*[G]/g
 
 // 匹配擦除整行：ESC [ 2 K
 const ERASE_LINE_REGEX = /\x1b\[2K/g
@@ -42,8 +46,11 @@ function stripProgressSequences(data: string): string {
   result = result.replace(ANSI_CURSOR_VIS_REGEX, '')
 
   // 光标上移/下移 N 行（Docker Compose 进度条核心序列）
-  // Docker Compose v2 使用 \x1b[4A 上移4行、\x1b[2A 上移2行等
+  // Docker Compose v2 使用 \x1b[10A 上移10行等（多位数 + 连续多个单步序列）
   result = result.replace(CURSOR_MOVEUpDown_REGEX, '')
+
+  // 光标水平定位到列 N（\x1b[0G 等，compose 每次重绘进度行都会用）
+  result = result.replace(CURSOR_COLUMN_REGEX, '')
 
   // 擦除整行
   result = result.replace(ERASE_LINE_REGEX, '')
