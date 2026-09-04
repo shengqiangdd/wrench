@@ -418,10 +418,13 @@ export default function SshPlaceholder() {
         />
       )}
 
-      {/* 左侧连接列表（移动端全屏侧边栏，桌面端常驻） */}
+      {/* 左侧连接列表（移动端全屏侧边栏，桌面端常驻）。
+          注意：关闭时 pointer-events 只能在移动端禁用，桌面端 lg 下必须保持可点击，
+          否则内联 pointerEvents:none 会让「快速连接/新建连接」在桌面端也点不动
+         （Playwright 点击报 terminal div intercepts pointer events）。 */}
       <div
-        className={`fixed inset-y-0 left-0 z-40 w-[85vw] max-w-[300px] border-r border-slate-700/50 bg-slate-950 transition-transform duration-200 ease-out lg:relative lg:z-auto lg:w-auto lg:flex-none lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} `}
-        style={{ pointerEvents: sidebarOpen ? 'auto' : 'none' }}
+        className={`fixed inset-y-0 left-0 z-40 w-[85vw] max-w-[300px] border-r border-slate-700/50 bg-slate-950 transition-transform duration-200 ease-out lg:relative lg:z-auto lg:w-auto lg:flex-none lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:pointer-events-auto'} `}
+        style={{ pointerEvents: sidebarOpen ? 'auto' : undefined }}
       >
         <div className="flex h-full flex-col">
           <div className="flex items-center justify-between border-b border-slate-700/50 px-3 py-1.5">
