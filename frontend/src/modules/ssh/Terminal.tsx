@@ -7,7 +7,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import { Search, X, ChevronUp, ChevronDown, Copy } from 'lucide-react'
 import { createTerminalWsClient, type WsClient } from '../../services/websocket'
-import { preprocessAnsiOutput } from '../../utils/ansi-preprocessor'
+import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
 import { getToken } from '../../services/auth'
 import { on } from '../../services/event-bus'
 
@@ -530,6 +530,9 @@ export default function TerminalView({
     terminalRef.current = term
     fitAddonRef.current = fitAddon
 
+    // 跨 WebSocket 分片拼接未完成 ESC/CSI；光标序列原样交给 xterm.js
+    const ansiBuf = new AnsiStreamBuffer()
+
     // ─── 输出追踪：检测长时间运行的命令 ───
     const trackOutput = (data: string) => {
       const tracker = outputTrackerRef.current
@@ -561,6 +564,17 @@ export default function TerminalView({
           }
         }, 2000)
       }
+    }
+
+    const writePty = (chunk: string) => {
+      const ready = ansiBuf.push(chunk)
+      if (!ready || disposedRef.current) return
+      term.write(ready, () => {
+        if (!userScrolledUpRef.current && !disposedRef.current) {
+          term.scrollToBottom()
+        }
+      })
+      trackOutput(ready)
     }
 
     // ─── 创建独立 WebSocket 连接用于此终端 ───
@@ -655,25 +669,9 @@ export default function TerminalView({
 
           const raw = msg.data as string
           try {
-            const decoded = preprocessAnsiOutput(decodeURIComponent(escape(atob(raw))))
-            if (!disposedRef.current) {
-              term.write(decoded, () => {
-                if (!userScrolledUpRef.current && !disposedRef.current) {
-                  term.scrollToBottom()
-                }
-              })
-              trackOutput(decoded)
-            }
+            writePty(decodeURIComponent(escape(atob(raw))))
           } catch {
-            if (!disposedRef.current) {
-              const filtered = preprocessAnsiOutput(raw)
-              term.write(filtered, () => {
-                if (!userScrolledUpRef.current && !disposedRef.current) {
-                  term.scrollToBottom()
-                }
-              })
-              trackOutput(filtered)
-            }
+            writePty(raw)
           }
         })
 
@@ -685,6 +683,7 @@ export default function TerminalView({
           connectedRef.current = true
           // 清除 [连接中] 提示行，替换为 [已连接] 确认
           if (!disposedRef.current) {
+            ansiBuf.reset()
             // 清除 [连接中] 等状态行，让 SSH banner/prompt 从第一行开始
             term.clear()
             term.scrollToBottom()

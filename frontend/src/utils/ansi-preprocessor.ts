@@ -1,80 +1,151 @@
 /**
- * ANSI 输出预处理过滤器
+ * ANSI 流缓冲（透传 + 跨分片拼接）
  *
- * 解决 Docker Compose v2 进度输出在 xterm.js 中导致页面重复增长的问题。
- * Docker Compose 使用 \r + \x1b[NA (光标上移N行) + \x1b[2K (擦除行) 组合
- * 来制作多行动画进度条，但 SSH 小分片传输 + \r\n 与光标移动序列冲突
- * 会产生大量重复行。
+ * 设计对齐 VS Code / ttyd / xterm.js 自身：终端仿真器负责解释 CSI/OSC，
+ * 上层不要剥光标、不要把 `\r` 改成 `\n`。Docker Compose 多行进度条依赖
+ * `\x1b[NA` 上移 + `\x1b[2K` 擦行 + `\x1b[NG` 列定位在原地重绘；剥掉这些
+ * 序列后每一帧都会变成新行，进度条会爆炸性增长。
  *
- * 策略：
- * 1. 剥离光标移动/擦除等控制序列
- *    - \x1b[NA (光标上移 N 行，N=1..9)
- *    - \x1b[NB (光标下移 N 行)
- *    - \x1b[2K (擦除整行)
- *    - \x1b[?25l/h (光标隐藏/显示)
- * 2. 将独立的 \r（后无 \n）转换为 \n
+ * xterm.js 的 EscapeSequenceParser 本身跨 write() 有状态，多数分片已经安全。
+ * 这里仍做一层 chunk 边界保护：若本片以未完成的 ESC/CSI/OSC/DCS 结尾，
+ * 先攒着，等后续字节凑齐再一次性交给 xterm，避免个别集成路径把半截
+ * CSI 当普通字符打印。
  */
 
-// 匹配光标上移/下移 N 行：ESC [ N A/B（N 可多位数，Docker Compose 常用 1-10）
-// 实测 compose v2.40 会输出连续 \x1b[1A×10 序列
-const CURSOR_MOVEUpDown_REGEX = /\x1b\[[0-9]+[AB]/g
+const ESC = 0x1b
+const BEL = 0x07
+const MAX_PENDING = 8192
 
-// 匹配光标水平定位：ESC [ N G（含 \x1b[0G 回到列0，compose 进度条重绘核心序列）
-const CURSOR_COLUMN_REGEX = /\x1b\[[0-9]*[G]/g
+function consumeEscape(data: string, i: number): number {
+  // i 指向 ESC。返回序列结束后的下标；未完成返回 -1。
+  if (i + 1 >= data.length) return -1
+  const next = data.charCodeAt(i + 1)
 
-// 匹配擦除整行：ESC [ 2 K
-const ERASE_LINE_REGEX = /\x1b\[2K/g
+  // CSI: ESC [ params intermediates final
+  if (next === 0x5b) {
+    let j = i + 2
+    while (j < data.length) {
+      const c = data.charCodeAt(j)
+      if (c >= 0x30 && c <= 0x3f) {
+        j++
+        continue
+      }
+      break
+    }
+    while (j < data.length) {
+      const c = data.charCodeAt(j)
+      if (c >= 0x20 && c <= 0x2f) {
+        j++
+        continue
+      }
+      break
+    }
+    if (j >= data.length) return -1
+    const c = data.charCodeAt(j)
+    if (c >= 0x40 && c <= 0x7e) return j + 1
+    return j + 1
+  }
 
-// 匹配光标隐藏/显示：ESC [?25l / ESC [?25h
-const ANSI_CURSOR_VIS_REGEX = /\x1b\[\?25[hl]/g
+  // OSC: ESC ] ... BEL | ST(ESC \)
+  if (next === 0x5d) {
+    return consumeStringSeq(data, i + 2)
+  }
 
-// 匹配独立的 \r 后面没有 \n 的情况（用于转换为 \n）
-const CR_ONLY_REGEX = /\r(?!\n)/g
+  // DCS ESC P / SOS ESC X / PM ESC ^ / APC ESC _
+  if (next === 0x50 || next === 0x58 || next === 0x5e || next === 0x5f) {
+    return consumeStringSeq(data, i + 2)
+  }
 
-/**
- * 从字符串中剥离 Docker Compose 进度相关的 ANSI 控制序列。
- * 保留正常显示用的 ANSI 序列（颜色、样式等），只剥离影响布局的序列。
- */
-function stripProgressSequences(data: string): string {
-  let result = data
+  // nF: ESC intermediates final
+  if (next >= 0x20 && next <= 0x2f) {
+    let j = i + 1
+    while (j < data.length) {
+      const c = data.charCodeAt(j)
+      if (c >= 0x20 && c <= 0x2f) {
+        j++
+        continue
+      }
+      if (c >= 0x30 && c <= 0x7e) return j + 1
+      return j + 1
+    }
+    return -1
+  }
 
-  // 光标隐藏/显示
-  result = result.replace(ANSI_CURSOR_VIS_REGEX, '')
+  // 2-byte ESC Fp/Fe
+  if (next >= 0x30 && next <= 0x7e) return i + 2
+  return i + 2
+}
 
-  // 光标上移/下移 N 行（Docker Compose 进度条核心序列）
-  // Docker Compose v2 使用 \x1b[10A 上移10行等（多位数 + 连续多个单步序列）
-  result = result.replace(CURSOR_MOVEUpDown_REGEX, '')
+function consumeStringSeq(data: string, j: number): number {
+  while (j < data.length) {
+    const c = data.charCodeAt(j)
+    if (c === BEL) return j + 1
+    if (c === ESC) {
+      if (j + 1 >= data.length) return -1
+      if (data.charCodeAt(j + 1) === 0x5c) return j + 2 // ST
+      return j // OSC 被新的 ESC 取消，外层从这里重新解析
+    }
+    j++
+  }
+  return -1
+}
 
-  // 光标水平定位到列 N（\x1b[0G 等，compose 每次重绘进度行都会用）
-  result = result.replace(CURSOR_COLUMN_REGEX, '')
+/** 返回应暂存的起始下标；全部完整则 -1 */
+export function findIncompleteEscapeStart(data: string): number {
+  let i = 0
+  while (i < data.length) {
+    const esc = data.indexOf('\x1b', i)
+    if (esc === -1) return -1
+    const end = consumeEscape(data, esc)
+    if (end < 0) return esc
+    if (end === esc) {
+      i = esc + 1
+      continue
+    }
+    i = end
+  }
+  return -1
+}
 
-  // 擦除整行
-  result = result.replace(ERASE_LINE_REGEX, '')
+export class AnsiStreamBuffer {
+  private pending = ''
 
-  return result
+  reset(): void {
+    this.pending = ''
+  }
+
+  /** 已攒但尚未凑齐的尾部（测试用） */
+  getPending(): string {
+    return this.pending
+  }
+
+  /**
+   * 喂入一片 PTY 输出。返回可以立刻交给 xterm.write() 的完整前缀；
+   * 未完成的 ESC 留在内部，下一片再拼。
+   */
+  push(chunk: string): string {
+    if (!chunk) return ''
+    const data = this.pending + chunk
+    const cut = findIncompleteEscapeStart(data)
+    if (cut < 0) {
+      this.pending = ''
+      return data
+    }
+    const ready = data.slice(0, cut)
+    this.pending = data.slice(cut)
+    if (this.pending.length > MAX_PENDING) {
+      const flushed = this.pending
+      this.pending = ''
+      return ready + flushed
+    }
+    return ready
+  }
 }
 
 /**
- * 将独立的 \r（后无 \n）转换为 \n。
- * Docker Compose 用 \r 回到行首再写入新内容，
- * 在 SSH 小分片传输时可能与后续 \n 组合产生重复行。
- */
-function normalizeLineEndings(data: string): string {
-  return data.replace(CR_ONLY_REGEX, '\n')
-}
-
-/**
- * 预处理 ANSI 终端输出，优化 Docker Compose 等进度输出模式。
- *
- * @param data - 原始终端输出数据
- * @returns 处理后的数据
+ * 无状态透传（单片完整数据）。跨分片请用 {@link AnsiStreamBuffer}。
+ * 保留此函数以免旧调用点误剥光标。
  */
 export function preprocessAnsiOutput(data: string): string {
-  // 步骤 1：剥离进度相关的光标控制序列
-  let result = stripProgressSequences(data)
-
-  // 步骤 2：统一换行符
-  result = normalizeLineEndings(result)
-
-  return result
+  return data
 }

@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { X, Maximize2 } from 'lucide-react'
 import { createTerminalWsClient, type WsClient } from '../../services/websocket'
+import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
 import { getToken } from '../../services/auth'
 
 const TERMINAL_THEME = {
@@ -78,6 +79,7 @@ export default function DockerTerminal({
 
     // ─── Async init: get JWT from backend → create WS → connect ───
     const reqId = `docker-shell-${containerId}`
+    const ansiBuf = new AnsiStreamBuffer()
 
     const initDockerTerminal = async () => {
       try {
@@ -88,14 +90,20 @@ export default function DockerTerminal({
         const readyOff = client.on('docker_shell_ready', (msg) => {
           if (msg.connectionId !== connectionId && msg.requestId !== reqId) return
           connectedRef.current = true
+          ansiBuf.reset()
           term.focus()
           setTimeout(() => fitAddon.fit(), 200)
         })
 
         const outputOff = client.on('docker_shell_output', (msg) => {
           if (msg.connectionId !== connectionId) return
-          const data = atob(msg.data as string)
-          term.write(data)
+          try {
+            const ready = ansiBuf.push(atob(msg.data as string))
+            if (ready) term.write(ready)
+          } catch {
+            const ready = ansiBuf.push(String(msg.data ?? ''))
+            if (ready) term.write(ready)
+          }
         })
 
         const closedOff = client.on('docker_shell_closed', (msg) => {
