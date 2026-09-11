@@ -5,7 +5,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
-import { Search, X, ChevronUp, ChevronDown, Copy } from 'lucide-react'
+import { Search, X, ChevronUp, ChevronDown, Copy, AlignLeft } from 'lucide-react'
 import { createTerminalWsClient, type WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
 import { getToken } from '../../services/auth'
@@ -134,6 +134,14 @@ const TERMINAL_THEME = {
   brightWhite: '#f1f5f9',
 }
 
+/**
+ * 编码"往 PTY 写一行命令"的字节。
+ * 前导空格：配合 shell 的 HISTCONTROL=ignorespace 不污染 history。
+ */
+function encodePtyLine(line: string): string {
+  return btoa(unescape(encodeURIComponent(` ${line}\r`)))
+}
+
 export default function TerminalView({
   connectionId,
   sessionId,
@@ -181,6 +189,26 @@ export default function TerminalView({
   // ─── 自动滚动管理 ───
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
+  // ─── compose 纯文本进度开关（仅本会话注入 COMPOSE_PROGRESS=plain）───
+  const [composePlain, setComposePlain] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('wrench_ssh_compose_plain') === '1'
+    } catch {
+      return false
+    }
+  })
+  const composePlainRef = useRef(composePlain)
+  // ─── 移动端快捷键工具栏收起状态（收起＝把行数还给终端）───
+  const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('wrench_ssh_toolbar_collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+  // ─── 终端内轻提示（开关反馈）───
+  const [hint, setHint] = useState<string | null>(null)
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // ─── 长时间运行命令检测 ───
   const [longRunning, setLongRunning] = useState<{ lines: number; seconds: number } | null>(null)
   const outputTrackerRef = useRef({
@@ -243,6 +271,13 @@ export default function TerminalView({
 
     vv.addEventListener('resize', handleResize)
     return () => vv.removeEventListener('resize', handleResize)
+  }, [])
+
+  // 轻提示定时器清理
+  useEffect(() => {
+    return () => {
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -693,6 +728,18 @@ export default function TerminalView({
           }
           term.focus()
           onConnectedRef.current?.()
+          // 新会话的环境变量需要重新注入：恢复 compose plain 进度开关
+          if (composePlainRef.current) {
+            setTimeout(() => {
+              if (!disposedRef.current && connectedRef.current) {
+                termWsRef.current?.send({
+                  type: 'exec',
+                  connectionId,
+                  data: encodePtyLine('export COMPOSE_PROGRESS=plain'),
+                })
+              }
+            }, 800)
+          }
         })
 
         termWs.on('disconnected', () => {
@@ -1130,6 +1177,53 @@ export default function TerminalView({
     }
   }, [getTerminalAllText])
 
+  /** 往当前 PTY 会话写入一行命令（返回是否已送出） */
+  const injectPtyLine = (line: string): boolean => {
+    const ws = termWsRef.current
+    if (!ws || !connectedRef.current) return false
+    const encoded = encodePtyLine(line)
+    ws.send({ type: 'exec', connectionId, data: encoded })
+    onTerminalData?.(encoded)
+    return true
+  }
+
+  /** 终端内轻提示（2.5s 自动消失） */
+  const showHint = (text: string) => {
+    setHint(text)
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
+    hintTimerRef.current = setTimeout(() => setHint(null), 2500)
+  }
+
+  /**
+   * 切换 compose 纯文本进度（COMPOSE_PROGRESS=plain）。
+   *
+   * 背景：compose 的动画进度块行数 B = 1 + 服务数，块重绘需要终端有 B+1 行；
+   * 终端行数恰好等于 B 时每帧就会往 scrollback 丢一行（表现为"一直在加行"）。
+   * plain 模式是纯追加日志，不做块重绘，任何行数下都不会出现该问题。
+   */
+  const toggleComposePlain = () => {
+    const next = !composePlain
+    setComposePlain(next)
+    composePlainRef.current = next
+    try {
+      localStorage.setItem('wrench_ssh_compose_plain', next ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+    if (!connectedRef.current) {
+      showHint(next ? 'plain 进度已开启（连接后自动生效）' : 'plain 进度已关闭')
+      return
+    }
+    if (longRunning) {
+      showHint('命令执行中，切换将在下次连接生效')
+      return
+    }
+    const ok = injectPtyLine(next ? 'export COMPOSE_PROGRESS=plain' : 'unset COMPOSE_PROGRESS')
+    if (ok) {
+      showHint(next ? 'compose 进度：纯文本（不再整块重绘）' : 'compose 进度：恢复动画')
+    }
+  }
+
   return (
     <div className={`group relative flex flex-col ${className}`} style={{ minHeight: 0 }}>
       {/* 搜索面板 */}
@@ -1202,17 +1296,40 @@ export default function TerminalView({
           }
         }}
       />
-      {/* ─── 桌面端：选中文本后在右上角浮现复制按钮 ─── */}
-      <button
-        onClick={handleCopyAction}
-        className={`absolute top-1 right-1 z-10 flex items-center gap-1 rounded bg-slate-800/90 px-2 py-1 text-[11px] text-slate-300 shadow-lg backdrop-blur-sm transition-all duration-150 hover:bg-slate-700 hover:text-white md:flex ${
-          hasSelection ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0'
-        }`}
-        title="复制选中文本 (Ctrl+Shift+C)"
-      >
-        <Copy size={12} />
-        <span>复制</span>
-      </button>
+      {/* ─── 右上角悬浮控制：compose plain 进度开关 + 选中文本复制按钮 ─── */}
+      <div className="pointer-events-none absolute top-1 right-1 z-10 flex flex-col items-end gap-1">
+        <button
+          onClick={toggleComposePlain}
+          className={`pointer-events-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] shadow-lg backdrop-blur-sm transition-all duration-150 ${
+            composePlain
+              ? 'bg-emerald-600/90 text-white hover:bg-emerald-500'
+              : 'bg-slate-800/90 text-slate-400 hover:bg-slate-700 hover:text-white'
+          }`}
+          title={
+            composePlain
+              ? 'compose 进度：纯文本（当前会话已 export COMPOSE_PROGRESS=plain）——点击恢复动画'
+              : 'compose 进度切纯文本：在当前会话执行 export COMPOSE_PROGRESS=plain，终端行数放不下动画进度块时使用'
+          }
+        >
+          <AlignLeft size={12} />
+          <span className="font-mono">plain</span>
+        </button>
+        <button
+          onClick={handleCopyAction}
+          className={`pointer-events-auto flex items-center gap-1 rounded bg-slate-800/90 px-2 py-1 text-[11px] text-slate-300 shadow-lg backdrop-blur-sm transition-all duration-150 hover:bg-slate-700 hover:text-white ${
+            hasSelection ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0'
+          }`}
+          title="复制选中文本 (Ctrl+Shift+C)"
+        >
+          <Copy size={12} />
+          <span>复制</span>
+        </button>
+        {hint && (
+          <span className="max-w-[70vw] rounded bg-slate-800/95 px-2 py-1 text-right text-[10px] leading-snug text-slate-300 shadow-lg backdrop-blur-sm">
+            {hint}
+          </span>
+        )}
+      </div>
 
       {/* ─── "回到底部"浮动按钮 ─── */}
       {userScrolledUp && (
@@ -1395,8 +1512,35 @@ export default function TerminalView({
           } as React.CSSProperties
         }
       >
+        {/* 顶部细条：收起/展开快捷键（收起＝把约 5 行还给终端，缓解 compose 进度块放不下）*/}
+        <div className="flex items-center gap-2 px-1 pt-0.5">
+          <button
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              const next = !toolbarCollapsed
+              setToolbarCollapsed(next)
+              try {
+                localStorage.setItem('wrench_ssh_toolbar_collapsed', next ? '1' : '0')
+              } catch {
+                /* ignore */
+              }
+              e.currentTarget.blur()
+              containerRef.current?.focus()
+            }}
+            className="flex h-6 items-center gap-1 rounded bg-slate-800/80 px-2 font-mono text-[10px] text-slate-300 active:bg-slate-700 active:text-white"
+            style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
+            title={toolbarCollapsed ? '展开快捷键工具栏' : '收起快捷键工具栏，把行数还给终端'}
+          >
+            {toolbarCollapsed ? '▲ 快捷键' : '▼ 收起'}
+          </button>
+          {composePlain && (
+            <span className="font-mono text-[10px] text-emerald-400">COMPOSE_PROGRESS=plain</span>
+          )}
+        </div>
+        {/* 快捷键三行：收起时整体 display:none（不卸载 DOM，保留长按拦截）*/}
         {/* 第一行：控制键 */}
-        <div className="flex gap-px px-0.5 pt-0.5">
+        <div className={`${toolbarCollapsed ? 'hidden' : 'flex'} gap-px px-0.5 pt-0.5`}>
           {(
             [
               ['ESC', '\x1b'],
@@ -1430,7 +1574,7 @@ export default function TerminalView({
           ))}
         </div>
         {/* 第二行：方向键 + Home/End（支持连续按，防抖间隔更短） */}
-        <div className="flex gap-px px-0.5 pt-0.5">
+        <div className={`${toolbarCollapsed ? 'hidden' : 'flex'} gap-px px-0.5 pt-0.5`}>
           {(
             [
               ['Hom', '\x1b[H'],
@@ -1465,7 +1609,7 @@ export default function TerminalView({
           ))}
         </div>
         {/* 第三行：翻页 + 编辑 */}
-        <div className="flex gap-px px-0.5 pt-0.5 pb-0.5">
+        <div className={`${toolbarCollapsed ? 'hidden' : 'flex'} gap-px px-0.5 pt-0.5 pb-0.5`}>
           {(
             [
               ['PG↑', '\x1b[5~'],
