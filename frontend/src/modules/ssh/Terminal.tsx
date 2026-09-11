@@ -190,14 +190,21 @@ export default function TerminalView({
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
   // ─── compose 纯文本进度开关（仅本会话注入 COMPOSE_PROGRESS=plain）───
+  // 默认开启：compose 的动画进度块要靠 ESC[1A 逐帧"上移回块首"重绘，块高 = 服务数+1。
+  // 窄终端下每行还会折行（44 列时 20 个服务的块≈40 物理行），只要块放不下，上移就会错位，
+  // 每帧往下堆一行：实测 21 行×44 列跑一次 20 服务 pull，往 scrollback 丢了 5047 行重复块；
+  // plain 则是纯 \r\n 追加日志（实测 0 个转义序列），任何尺寸都稳定。
   const [composePlain, setComposePlain] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('wrench_ssh_compose_plain') === '1'
+      const v = localStorage.getItem('wrench_ssh_compose_plain')
+      return v === null ? true : v === '1'
     } catch {
-      return false
+      return true
     }
   })
   const composePlainRef = useRef(composePlain)
+  // 用户是否已在本次连接里敲过键（自动注入 plain 前用它避让）
+  const userTypedRef = useRef(false)
   // ─── 移动端快捷键工具栏收起状态（收起＝把行数还给终端）───
   const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => {
     try {
@@ -209,6 +216,12 @@ export default function TerminalView({
   // ─── 终端内轻提示（开关反馈）───
   const [hint, setHint] = useState<string | null>(null)
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 终端内轻提示（2.5s 自动消失）——声明在连接 effect 之前，供其中的自动注入逻辑使用 */
+  const showHint = (text: string) => {
+    setHint(text)
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
+    hintTimerRef.current = setTimeout(() => setHint(null), 2500)
+  }
   // ─── 长时间运行命令检测 ───
   const [longRunning, setLongRunning] = useState<{ lines: number; seconds: number } | null>(null)
   const outputTrackerRef = useRef({
@@ -728,17 +741,34 @@ export default function TerminalView({
           }
           term.focus()
           onConnectedRef.current?.()
-          // 新会话的环境变量需要重新注入：恢复 compose plain 进度开关
+          // 新会话的环境变量不会自动带过来：把 compose plain 进度开关重新注入一次。
+          // 等 250ms 让 shell 打完提示符；若这段时间里用户已经动手输入则跳过，
+          // 避免把 export 行插进他没敲完的命令里（跳过时给个提示，让他手动点 plain）。
+          userTypedRef.current = false
           if (composePlainRef.current) {
             setTimeout(() => {
-              if (!disposedRef.current && connectedRef.current) {
-                termWsRef.current?.send({
-                  type: 'exec',
-                  connectionId,
-                  data: encodePtyLine('export COMPOSE_PROGRESS=plain'),
-                })
+              if (disposedRef.current || !connectedRef.current) return
+              if (userTypedRef.current) {
+                showHint('plain 未自动注入（你已在输入）· 点右上 plain 手动开启')
+                return
               }
-            }, 800)
+              termWsRef.current?.send({
+                type: 'exec',
+                connectionId,
+                data: encodePtyLine('export COMPOSE_PROGRESS=plain'),
+              })
+              // 首次自动注入时说明一下默认行为（老用户会注意到变化）
+              try {
+                if (localStorage.getItem('wrench_ssh_plain_hint_shown') !== '1') {
+                  localStorage.setItem('wrench_ssh_plain_hint_shown', '1')
+                  showHint(
+                    'compose 进度默认纯文本：动画进度块在行/列不足时会重复堆叠 · 点右上 plain 可恢复动画',
+                  )
+                }
+              } catch {
+                /* ignore */
+              }
+            }, 250)
           }
         })
 
@@ -942,6 +972,8 @@ export default function TerminalView({
     })
 
     term.onData((data) => {
+      // 用户在本次连接里敲过键 → 自动注入不再打扰他（见 on('connected') 里的 plain 注入）
+      userTypedRef.current = true
       // 🔧 防止 Backspace/Delete 被重复发送
       // 如果 keydown 已经手动处理了该字符，跳过 onData 的重复发送
       if (skipNextOnDataRef.current) {
@@ -1187,13 +1219,6 @@ export default function TerminalView({
     return true
   }
 
-  /** 终端内轻提示（2.5s 自动消失） */
-  const showHint = (text: string) => {
-    setHint(text)
-    if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
-    hintTimerRef.current = setTimeout(() => setHint(null), 2500)
-  }
-
   /**
    * 切换 compose 纯文本进度（COMPOSE_PROGRESS=plain）。
    *
@@ -1296,15 +1321,22 @@ export default function TerminalView({
           }
         }}
       />
-      {/* ─── 右上角悬浮控制：compose plain 进度开关 + 选中文本复制按钮 ─── */}
+      {/* ─── 右上角悬浮控制：compose plain 进度开关 + 快捷键栏收起 + 选中文本复制 ─── */}
       <div className="pointer-events-none absolute top-1 right-1 z-10 flex flex-col items-end gap-1">
         <button
-          onClick={toggleComposePlain}
+          onPointerDown={(e) => {
+            // 移动端用 pointerdown：这个容器外层 touchAction 为 none，
+            // 合成 click 在部分移动浏览器上会被吞掉（与下方快捷键按钮一致的处理）
+            e.preventDefault()
+            e.stopPropagation()
+            toggleComposePlain()
+          }}
           className={`pointer-events-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] shadow-lg backdrop-blur-sm transition-all duration-150 ${
             composePlain
               ? 'bg-emerald-600/90 text-white hover:bg-emerald-500'
               : 'bg-slate-800/90 text-slate-400 hover:bg-slate-700 hover:text-white'
           }`}
+          style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
           title={
             composePlain
               ? 'compose 进度：纯文本（当前会话已 export COMPOSE_PROGRESS=plain）——点击恢复动画'
@@ -1313,6 +1345,33 @@ export default function TerminalView({
         >
           <AlignLeft size={12} />
           <span className="font-mono">plain</span>
+        </button>
+        <button
+          onPointerDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            const next = !toolbarCollapsed
+            setToolbarCollapsed(next)
+            try {
+              localStorage.setItem('wrench_ssh_toolbar_collapsed', next ? '1' : '0')
+            } catch {
+              /* ignore */
+            }
+          }}
+          className={`pointer-events-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] shadow-lg backdrop-blur-sm transition-all duration-150 md:hidden ${
+            toolbarCollapsed
+              ? 'bg-sky-600/90 text-white hover:bg-sky-500'
+              : 'bg-slate-800/90 text-slate-400 hover:bg-slate-700 hover:text-white'
+          }`}
+          style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
+          title={
+            toolbarCollapsed
+              ? '展开快捷键栏'
+              : '收起快捷键栏，把约 5 行还给终端（compose 进度块需要足够行数）'
+          }
+        >
+          {toolbarCollapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          <span>键栏</span>
         </button>
         <button
           onClick={handleCopyAction}
@@ -1339,7 +1398,9 @@ export default function TerminalView({
             setUserScrolledUp(false)
             terminalRef.current?.scrollToBottom()
           }}
-          className="absolute right-3 bottom-28 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-slate-700/90 text-slate-300 shadow-lg backdrop-blur-sm transition-all hover:bg-slate-600 hover:text-white md:bottom-6"
+          className={`absolute right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-slate-700/90 text-slate-300 shadow-lg backdrop-blur-sm transition-all hover:bg-slate-600 hover:text-white md:bottom-6 ${
+            toolbarCollapsed ? 'bottom-6' : 'bottom-28'
+          }`}
           title="回到底部"
         >
           <ChevronDown size={16} />
@@ -1512,33 +1573,9 @@ export default function TerminalView({
           } as React.CSSProperties
         }
       >
-        {/* 顶部细条：收起/展开快捷键（收起＝把约 5 行还给终端，缓解 compose 进度块放不下）*/}
-        <div className="flex items-center gap-2 px-1 pt-0.5">
-          <button
-            onPointerDown={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              const next = !toolbarCollapsed
-              setToolbarCollapsed(next)
-              try {
-                localStorage.setItem('wrench_ssh_toolbar_collapsed', next ? '1' : '0')
-              } catch {
-                /* ignore */
-              }
-              e.currentTarget.blur()
-              containerRef.current?.focus()
-            }}
-            className="flex h-6 items-center gap-1 rounded bg-slate-800/80 px-2 font-mono text-[10px] text-slate-300 active:bg-slate-700 active:text-white"
-            style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
-            title={toolbarCollapsed ? '展开快捷键工具栏' : '收起快捷键工具栏，把行数还给终端'}
-          >
-            {toolbarCollapsed ? '▲ 快捷键' : '▼ 收起'}
-          </button>
-          {composePlain && (
-            <span className="font-mono text-[10px] text-emerald-400">COMPOSE_PROGRESS=plain</span>
-          )}
-        </div>
-        {/* 快捷键三行：收起时整体 display:none（不卸载 DOM，保留长按拦截）*/}
+        {/* 快捷键三行：收起时整体 display:none（不卸载 DOM，保留长按拦截）
+            收起开关放在右上角悬浮芯片（⌨ 键栏）里，这样展开态不额外占行，
+            与改造前的高度完全一致；收起后这 3 行连同边框一起还给终端。*/}
         {/* 第一行：控制键 */}
         <div className={`${toolbarCollapsed ? 'hidden' : 'flex'} gap-px px-0.5 pt-0.5`}>
           {(
