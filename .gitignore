@@ -75,3 +75,6 @@ backend/plugins
 check_cmds.py
 test-plugins.js
 test-plugins-browser.js
+
+# session-local TODO notes
+*_TODO.md
