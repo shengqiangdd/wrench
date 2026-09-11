@@ -248,6 +248,9 @@ export default function TerminalView({
   useEffect(() => {
     if (!containerRef.current) return
 
+    // 输出追踪对象引用（对象本身不重建，捕获一份供 cleanup 使用）
+    const outputTracker = outputTrackerRef.current
+
     genRef.current += 1
     const gen = genRef.current
     disposedRef.current = false
@@ -987,9 +990,9 @@ export default function TerminalView({
       // 移除滚动位置监听器
       viewport?.removeEventListener('scroll', checkScrollPosition)
       // 清理输出追踪定时器
-      if (outputTrackerRef.current.checkTimer) {
-        clearTimeout(outputTrackerRef.current.checkTimer)
-        outputTrackerRef.current.checkTimer = null
+      if (outputTracker.checkTimer) {
+        clearTimeout(outputTracker.checkTimer)
+        outputTracker.checkTimer = null
       }
       // 移除阻止默认行为的监听器
       container.removeEventListener('contextmenu', preventContextMenu)

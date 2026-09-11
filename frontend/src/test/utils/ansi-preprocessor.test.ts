@@ -7,6 +7,11 @@ import {
 
 const CSI = '\x1b['
 
+/** 统计子串出现次数（避免在正则里写字面控制字符） */
+function countSubstring(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1
+}
+
 describe('findIncompleteEscapeStart', () => {
   it('完整文本无 ESC → -1', () => {
     expect(findIncompleteEscapeStart('hello\r\nworld')).toBe(-1)
@@ -78,8 +83,8 @@ describe('AnsiStreamBuffer', () => {
     }).join('')
     const out = buf.push(frames)
     expect(out).toBe(frames)
-    expect((out.match(/\x1b\[3A/g) || []).length).toBe(5)
-    expect((out.match(/\x1b\[2K/g) || []).length).toBe(15)
+    expect(countSubstring(out, `${CSI}3A`)).toBe(5)
+    expect(countSubstring(out, `${CSI}2K`)).toBe(15)
   })
 
   it('reset 丢弃 pending', () => {
