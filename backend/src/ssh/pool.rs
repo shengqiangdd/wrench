@@ -350,15 +350,15 @@ impl SshSession {
     }
 
     /// Resize the PTY for an active shell channel.
+    /// Must use `window_change` (SSH_MSG_CHANNEL_REQUEST "window-change"); calling
+    /// `request_pty` again on an established channel does nothing.
     pub async fn resize_pty(
         &self,
         channel: &russh::Channel<client::Msg>,
         cols: u32,
         rows: u32,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        channel
-            .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
-            .await?;
+        channel.window_change(cols, rows, 0, 0).await?;
         Ok(())
     }
 

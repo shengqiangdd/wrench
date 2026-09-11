@@ -746,6 +746,8 @@ export default function TerminalView({
               password: creds.password || '',
               privateKey: creds.privateKey || '',
               sudoPassword: creds.sudoPassword || '',
+              cols: term.cols,
+              rows: term.rows,
             })
           } else if (status === 'disconnected') {
             if (!startedRef) {

@@ -421,9 +421,14 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
                                 "resize" => {
                                     let new_cols = parsed.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as u32;
                                     let new_rows = parsed.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as u32;
-                                    let _ = channel
-                                        .request_pty(false, "xterm-256color", new_cols, new_rows, 0, 0, &[])
-                                        .await;
+                                    // PTY is already open: request_pty on an established
+                                    // channel is a no-op. Use window_change so the remote
+                                    // pty actually adopts the new size.
+                                    if let Err(e) = channel.window_change(new_cols, new_rows, 0, 0).await {
+                                        info!("SSH window_change failed: {:?}", e);
+                                    } else {
+                                        tracing::debug!("SSH window_change applied: {}x{}", new_cols, new_rows);
+                                    }
                                 }
                                 "ping" => {
                                     let pong = serde_json::json!({"type":"pong"});
@@ -951,9 +956,11 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg:
                                 "docker_shell_resize" => {
                                     let new_cols = parsed.get("cols").and_then(|v| v.as_u64()).unwrap_or(120) as u32;
                                     let new_rows = parsed.get("rows").and_then(|v| v.as_u64()).unwrap_or(40) as u32;
-                                    let _ = channel
-                                        .request_pty(false, "xterm-256color", new_cols, new_rows, 0, 0, &[])
-                                        .await;
+                                    if let Err(e) = channel.window_change(new_cols, new_rows, 0, 0).await {
+                                        info!("Docker shell window_change failed: {:?}", e);
+                                    } else {
+                                        tracing::debug!("Docker shell window_change applied: {}x{}", new_cols, new_rows);
+                                    }
                                 }
                                 "docker_shell_close" | "close" | "disconnect" => {
                                     info!("Docker shell close requested");
