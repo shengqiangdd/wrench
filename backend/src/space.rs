@@ -105,13 +105,21 @@ fn hex(bytes: &[u8]) -> String {
     out
 }
 
-/// 从请求头里取出空间码：`X-Space-Code` 优先于 cookie。
-pub fn code_from_headers(headers: &HeaderMap) -> Option<String> {
-    if let Some(raw) = headers.get(SPACE_HEADER).and_then(|v| v.to_str().ok())
-        && let Some(code) = normalize_code(raw)
-    {
-        return Some(code);
-    }
+/// 请求里携带的空间码的解析结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PresentedCode {
+    /// 没有携带任何空间码
+    Absent,
+    /// 携带了可用的空间码（请求头优先于 cookie）
+    Valid(String),
+    /// 携带了空间码但格式不合法（头与 cookie 都不合法时才可能到这里）
+    ///
+    /// 这种情况必须报错而不是静默新建空间：用户拼错码时会得到 400 + 失效标记，
+    /// 而不是「看起来正常但换了个空空间、数据像丢了」。
+    Malformed,
+}
+
+fn cookie_code(headers: &HeaderMap) -> Option<String> {
     let jar = headers.get_all(header::COOKIE);
     for value in jar.iter() {
         let Ok(text) = value.to_str() else { continue };
@@ -130,37 +138,60 @@ pub fn code_from_headers(headers: &HeaderMap) -> Option<String> {
     None
 }
 
+/// 从请求头里取出空间码：`X-Space-Code` 优先于 cookie。
+pub fn code_from_headers(headers: &HeaderMap) -> PresentedCode {
+    let header_raw = headers.get(SPACE_HEADER).and_then(|v| v.to_str().ok());
+    if let Some(raw) = header_raw {
+        if let Some(code) = normalize_code(raw) {
+            return PresentedCode::Valid(code);
+        }
+        // 请求头里的码不合法：只要 cookie 里还有可用的码就继续用它
+        if let Some(code) = cookie_code(headers) {
+            return PresentedCode::Valid(code);
+        }
+        return PresentedCode::Malformed;
+    }
+    match cookie_code(headers) {
+        Some(code) => PresentedCode::Valid(code),
+        None => PresentedCode::Absent,
+    }
+}
+
 /// 解析（必要时创建）当前请求所属的空间。
 ///
 /// * 带了空间码且命中 → `Existing`
-/// * 带了空间码但不存在 → `InvalidCode`（**不静默新建**，否则拼错会悄悄换空间）
-/// * 没有空间码 → 新建（仅限已通过门认证的请求；未认证的调用方不会被调用到）
+/// * 带了空间码但不存在/格式不合法 → `InvalidCode`（**不静默新建**，否则拼错会悄悄换空间）
+/// * 完全没有空间码 → 新建（仅限已通过门认证的请求；未认证的调用方不会被调用到）
 pub async fn resolve_or_create(state: &Arc<AppState>, headers: &HeaderMap) -> SpaceOutcome {
     let Some(db) = state.db.as_ref() else {
         return SpaceOutcome::Unavailable;
     };
 
-    if let Some(code) = code_from_headers(headers) {
-        match db.find_space_by_code_hash(&hash_code(&code)).await {
-            Ok(Some(space)) => {
-                maybe_touch(db, &space).await;
-                return SpaceOutcome::Existing(space);
-            }
-            Ok(None) => return SpaceOutcome::InvalidCode,
-            Err(err) => {
-                tracing::error!("[space] lookup failed: {err}");
-                return SpaceOutcome::Unavailable;
-            }
+    let code = match code_from_headers(headers) {
+        PresentedCode::Valid(code) => code,
+        PresentedCode::Malformed => return SpaceOutcome::InvalidCode,
+        PresentedCode::Absent => return create_space(state).await,
+    };
+
+    match db.find_space_by_code_hash(&hash_code(&code)).await {
+        Ok(Some(space)) => {
+            maybe_touch(db, &space).await;
+            SpaceOutcome::Existing(space)
+        }
+        Ok(None) => SpaceOutcome::InvalidCode,
+        Err(err) => {
+            tracing::error!("[space] lookup failed: {err}");
+            SpaceOutcome::Unavailable
         }
     }
-
-    create_space(state).await
 }
 
 /// 解析**已存在**的空间（不创建）——用于登录等门外的审计归属。
 pub async fn resolve_existing(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Space> {
     let db = state.db.as_ref()?;
-    let code = code_from_headers(headers)?;
+    let PresentedCode::Valid(code) = code_from_headers(headers) else {
+        return None;
+    };
     db.find_space_by_code_hash(&hash_code(&code)).await.ok().flatten()
 }
 
@@ -258,4 +289,84 @@ pub fn cookie_header_value(code: &str, secure: bool) -> String {
         v.push_str("; Secure");
     }
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    const CODE: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const OTHER: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+    fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        for (k, v) in pairs {
+            h.insert(
+                axum::http::HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                HeaderValue::from_str(v).unwrap(),
+            );
+        }
+        h
+    }
+
+    fn cookie_header(code: &str) -> String {
+        format!("{SPACE_COOKIE}={code}")
+    }
+
+    #[test]
+    fn normalize_code_cleans_and_rejects() {
+        // 允许粘贴带分隔符/大写的码
+        let with_seps = format!("{}:{}", &CODE[..32].to_uppercase(), &CODE[32..]);
+        assert_eq!(normalize_code(&with_seps).as_deref(), Some(CODE));
+        // 长度不对 / 非十六进制一律拒绝
+        assert!(normalize_code("abc").is_none());
+        assert!(normalize_code(&"z".repeat(SPACE_CODE_LEN)).is_none());
+    }
+
+    #[test]
+    fn absent_code_when_nothing_presented() {
+        assert_eq!(code_from_headers(&headers(&[])), PresentedCode::Absent);
+    }
+
+    #[test]
+    fn header_code_is_used() {
+        assert_eq!(
+            code_from_headers(&headers(&[(SPACE_HEADER, CODE)])),
+            PresentedCode::Valid(CODE.into())
+        );
+    }
+
+    #[test]
+    fn header_code_wins_over_cookie() {
+        let h = headers(&[(SPACE_HEADER, CODE), ("cookie", &cookie_header(OTHER))]);
+        assert_eq!(code_from_headers(&h), PresentedCode::Valid(CODE.into()));
+    }
+
+    #[test]
+    fn cookie_is_used_when_header_absent() {
+        let h = headers(&[("cookie", &cookie_header(CODE))]);
+        assert_eq!(code_from_headers(&h), PresentedCode::Valid(CODE.into()));
+    }
+
+    #[test]
+    fn malformed_header_falls_back_to_cookie() {
+        // 客户端存的码坏了，但 cookie 还有效 → 继续用 cookie，不要打扰用户
+        let h = headers(&[(SPACE_HEADER, "not-a-code"), ("cookie", &cookie_header(CODE))]);
+        assert_eq!(code_from_headers(&h), PresentedCode::Valid(CODE.into()));
+    }
+
+    #[test]
+    fn malformed_header_without_cookie_is_an_error() {
+        // 只带了一个坏码：必须报错，而不是静默新建一个空空间（否则数据看起来「丢了」）
+        let h = headers(&[(SPACE_HEADER, "not-a-code")]);
+        assert_eq!(code_from_headers(&h), PresentedCode::Malformed);
+
+        let h = headers(&[("cookie", &cookie_header("garbage"))]);
+        assert_eq!(
+            code_from_headers(&h),
+            PresentedCode::Absent,
+            "坏 cookie 视为没有码（浏览器会自动清掉脏 cookie）"
+        );
+    }
 }
