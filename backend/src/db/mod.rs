@@ -124,6 +124,12 @@ impl Database {
                 tracing::info!("DB migration V6 applied (per-visitor spaces)");
             }
 
+            if version < 7 {
+                conn.execute_batch(SCHEMA_V7)?;
+                conn.pragma_update(None, "user_version", 7)?;
+                tracing::info!("DB migration V7 applied (space-scoped primary keys)");
+            }
+
             Ok::<_, anyhow::Error>(())
         })
         .await
@@ -430,7 +436,7 @@ impl Database {
             conn.execute(
                 "INSERT INTO notification_channels (id, name, channel_type, config, enabled, created_at, updated_at, space_id)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-                 ON CONFLICT(id) DO UPDATE SET
+                 ON CONFLICT(space_id, id) DO UPDATE SET
                     name=excluded.name, channel_type=excluded.channel_type, config=excluded.config,
                     enabled=excluded.enabled, updated_at=excluded.updated_at",
                 rusqlite::params![id, name, ctype, config, enabled, created_at, updated_at, space],
@@ -804,12 +810,11 @@ impl Database {
             c.execute(
                 "INSERT INTO ssh_connections (id, name, host, port, username, auth_type, config, sort_order, created_at, updated_at, space_id)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-                 ON CONFLICT(id) DO UPDATE SET
+                 ON CONFLICT(space_id, id) DO UPDATE SET
                     name=excluded.name, host=excluded.host, port=excluded.port,
                     username=excluded.username, auth_type=excluded.auth_type,
                     config=excluded.config, sort_order=excluded.sort_order,
-                    updated_at=excluded.updated_at
-                 WHERE ssh_connections.space_id = excluded.space_id",
+                    updated_at=excluded.updated_at",
                 rusqlite::params![id, name, host, port, username, auth_type, config, sort_order, created_at, updated_at, space],
             )?;
             Ok(())
@@ -1249,6 +1254,82 @@ CREATE INDEX IF NOT EXISTS idx_tasks_space        ON scheduled_tasks(space_id, i
 CREATE INDEX IF NOT EXISTS idx_task_hist_space    ON task_execution_history(space_id, task_id, id DESC);
 "#;
 
+const SCHEMA_V7: &str = r#"
+-- ── V7：客户端提供的 id 改为「空间内唯一」────────────────────
+-- V6 给业务表加了 space_id，但 `ssh_connections` / `vault_entries` /
+-- `notification_channels` 的主键仍是**全局唯一**的 `id`。后果：
+--   * 两个空间用到同一个 id 时，后写入的那条被静默丢弃（接口随后报 500），
+--     用户「保存主机/凭据」会莫名失败；
+--   * `notification_channels` 的 upsert 没有空间守卫，猜到别人的 id 就能
+--     **改写到别人的行**（跨空间越权写）。
+-- 改成复合主键 `(space_id, id)` 后，id 只在自己空间内唯一，
+-- 既不会互相覆盖，也不会因为重名而写不进去。
+-- `alerts` / `scheduled_tasks` / `task_execution_history` / `audit_logs`
+-- 的主键是自增 INTEGER，天然不冲突，无需重建。
+
+CREATE TABLE IF NOT EXISTS ssh_connections_v7 (
+    id          TEXT    NOT NULL,
+    name        TEXT    NOT NULL,
+    host        TEXT    NOT NULL,
+    port        INTEGER NOT NULL DEFAULT 22,
+    username    TEXT    NOT NULL DEFAULT 'root',
+    auth_type   TEXT    NOT NULL DEFAULT 'password',
+    config      TEXT    NOT NULL DEFAULT '{}',
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL,
+    space_id    TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (space_id, id)
+);
+INSERT OR REPLACE INTO ssh_connections_v7
+    (id, name, host, port, username, auth_type, config, sort_order, created_at, updated_at, space_id)
+    SELECT id, name, host, port, username, auth_type, config, sort_order, created_at, updated_at, space_id
+    FROM ssh_connections;
+DROP TABLE ssh_connections;
+ALTER TABLE ssh_connections_v7 RENAME TO ssh_connections;
+CREATE INDEX IF NOT EXISTS idx_ssh_conn_space ON ssh_connections(space_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS vault_entries_v7 (
+    id              TEXT    NOT NULL,
+    name            TEXT    NOT NULL,
+    kind            TEXT    NOT NULL DEFAULT 'password',
+    encrypted_value TEXT    NOT NULL,
+    tags            TEXT    NOT NULL DEFAULT '[]',
+    created_at      TEXT    NOT NULL,
+    updated_at      TEXT    NOT NULL,
+    name_plain      TEXT    NOT NULL DEFAULT '',
+    kind_plain      TEXT    NOT NULL DEFAULT '',
+    space_id        TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (space_id, id)
+);
+INSERT OR REPLACE INTO vault_entries_v7
+    (id, name, kind, encrypted_value, tags, created_at, updated_at, name_plain, kind_plain, space_id)
+    SELECT id, name, kind, encrypted_value, tags, created_at, updated_at, name_plain, kind_plain, space_id
+    FROM vault_entries;
+DROP TABLE vault_entries;
+ALTER TABLE vault_entries_v7 RENAME TO vault_entries;
+CREATE INDEX IF NOT EXISTS idx_vault_space_name ON vault_entries(space_id, name_plain);
+
+CREATE TABLE IF NOT EXISTS notification_channels_v7 (
+    id           TEXT    NOT NULL,
+    name         TEXT    NOT NULL,
+    channel_type TEXT    NOT NULL,
+    config       TEXT    NOT NULL DEFAULT '{}',
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT    NOT NULL,
+    updated_at   TEXT    NOT NULL,
+    space_id     TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (space_id, id)
+);
+INSERT OR REPLACE INTO notification_channels_v7
+    (id, name, channel_type, config, enabled, created_at, updated_at, space_id)
+    SELECT id, name, channel_type, config, enabled, created_at, updated_at, space_id
+    FROM notification_channels;
+DROP TABLE notification_channels;
+ALTER TABLE notification_channels_v7 RENAME TO notification_channels;
+CREATE INDEX IF NOT EXISTS idx_notif_space ON notification_channels(space_id);
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1559,7 +1640,7 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let db = Database::open_in_memory().await.unwrap();
-            // Verify schema version is at least 5
+            // Verify schema version is at least 7 (V7 = 空间内唯一主键)
             let version: i32 = db
                 .exec(|conn| {
                     let v: i32 = conn
@@ -1569,7 +1650,7 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            assert!(version >= 5, "Expected schema version >= 5, got {}", version);
+            assert!(version >= 7, "Expected schema version >= 7, got {}", version);
         });
     }
 }

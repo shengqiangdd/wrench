@@ -20,6 +20,12 @@
   并把一次性认领码打到启动日志；在网页里粘贴即把这些数据收归自己名下（认领后码即失效）。
 - **跨空间 ID 碰撞不能越权** — 所有 upsert 的 `ON CONFLICT` 都带
   `WHERE <table>.space_id = excluded.space_id`，猜到别人的 id 也改不到别人的行。
+- **同 id 在各自空间内独立存在** — `ssh_connections` / `vault_entries` /
+  `notification_channels` 的主键从全局 `id` 改为复合主键 `(space_id, id)`（`SCHEMA_V7`
+  重建三张表）。此前两个空间用到同一个 id 时，后写入的那条会被静默丢弃
+  （「保存主机」报 500 `Failed to verify saved connection`），而通知渠道的 upsert
+  没有空间守卫，甚至能**改写到别人的行**。`alerts` / `scheduled_tasks` /
+  `task_execution_history` / `audit_logs` 用自增主键，天然不冲突，无需重建。
 - **移除 `/api/system/db-download`** — 整库下载在多人共用下等于把所有人的凭据与 Vault 一次性
   交出去，端点已彻底删除（集成测试断言返回 404，而不是 401）。
 - **没有数据库时失败关闭** — 空间隔离依赖持久化存储，`DATABASE_URL` 打不开时受保护接口一律

@@ -116,19 +116,51 @@ async fn cross_space_upsert_cannot_overwrite_another_spaces_row() {
     db.upsert_ssh_connection(&ssh_conn("same-id", "A 的主机"), A)
         .await
         .unwrap();
-    // B 用同一个 id 写入：不得覆盖 A 的行（ON CONFLICT ... WHERE space_id 守卫）
-    let mut intruder = ssh_conn("same-id", "被 B 篡改");
-    intruder.host = "6.6.6.6".into();
-    db.upsert_ssh_connection(&intruder, B).await.unwrap();
+    // B 用同一个 id 写入：不得覆盖 A 的行；**同时 B 自己那条必须真的写进去**。
+    // （V7 之前 id 是全局主键，B 的写入被静默丢弃，接口随后报 500
+    //   「Failed to verify saved connection」）
+    let mut other = ssh_conn("same-id", "B 自己的主机");
+    other.host = "6.6.6.6".into();
+    db.upsert_ssh_connection(&other, B).await.unwrap();
 
     let a = db.list_ssh_connections(A).await.unwrap();
     assert_eq!(a.len(), 1);
     assert_eq!(a[0].name, "A 的主机", "跨空间同 id 写入不能改到别人的行");
     assert_eq!(a[0].host, "10.0.0.1");
-    assert!(
-        db.list_ssh_connections(B).await.unwrap().is_empty(),
-        "B 也没能拿到 A 的行（写入被忽略，而不是变成共享）"
-    );
+
+    let b = db.list_ssh_connections(B).await.unwrap();
+    assert_eq!(b.len(), 1, "同 id 在 B 空间必须能独立存在");
+    assert_eq!(b[0].name, "B 自己的主机");
+    assert_eq!(b[0].host, "6.6.6.6");
+}
+
+#[tokio::test]
+async fn same_id_in_two_spaces_writes_into_own_space_only() {
+    let db = Database::open_in_memory().await.unwrap();
+
+    // 凭据：V7 之前是裸 INSERT，撞全局主键直接 500
+    db.insert_vault_entry(&vault_entry("same-v", "A 的密钥"), A)
+        .await
+        .unwrap();
+    db.insert_vault_entry(&vault_entry("same-v", "B 的密钥"), B)
+        .await
+        .unwrap();
+    assert_eq!(db.list_vault_entries(A).await.unwrap()[0].name_plain, "A 的密钥");
+    assert_eq!(db.list_vault_entries(B).await.unwrap()[0].name_plain, "B 的密钥");
+
+    // 通知渠道：V7 之前 upsert 的 ON CONFLICT(id) 没有空间守卫，B 会**覆盖** A 的行
+    db.upsert_notification_channel(&channel("same-n", "A 的频道"), A)
+        .await
+        .unwrap();
+    db.upsert_notification_channel(&channel("same-n", "B 的频道"), B)
+        .await
+        .unwrap();
+    let a = db.list_notification_channels(A).await.unwrap();
+    let b = db.list_notification_channels(B).await.unwrap();
+    assert_eq!(a.len(), 1);
+    assert_eq!(a[0].name, "A 的频道", "同 id 不得跨空间改写别人这一行");
+    assert_eq!(b.len(), 1);
+    assert_eq!(b[0].name, "B 的频道");
 }
 
 #[tokio::test]
@@ -282,4 +314,36 @@ async fn space_codes_are_stored_as_hashes() {
     db.set_space_code_hash("s1", &new_hash).await.unwrap();
     assert!(db.find_space_by_code_hash(&hash).await.unwrap().is_none());
     assert!(db.find_space_by_code_hash(&new_hash).await.unwrap().is_some());
+}
+
+/// 结构门禁：带客户端 id 的三张表必须以 `(space_id, id)` 为主键。
+///
+/// 只要有人把主键改回全局 `id`，跨空间就会重新出现「静默丢写 / 越权改写」，
+/// 这条测试会立刻报红 —— 这类问题不该靠人眼审查。
+#[tokio::test]
+async fn space_scoped_tables_use_space_scoped_primary_keys() {
+    let db = Database::open_in_memory().await.unwrap();
+
+    let ddl: String = db
+        .exec(|conn| {
+            let mut all = String::new();
+            for table in ["ssh_connections", "vault_entries", "notification_channels"] {
+                let one: String = conn.query_row(
+                    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    params![table],
+                    |row| row.get(0),
+                )?;
+                all.push_str(&one);
+                all.push('\n');
+            }
+            Ok(all)
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        ddl.matches("PRIMARY KEY (space_id, id)").count(),
+        3,
+        "三张表都必须是空间内唯一主键，实际 DDL：\n{ddl}"
+    );
 }
