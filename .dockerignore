@@ -30,9 +30,9 @@ AGENTS.md
 .env
 .env.*
 *.log
-screenshots/
-memory/
-tests/
-bridge/
-_push.py
-editorconfig
+/screenshots/
+/memory/
+/tests/
+/bridge/
+/_push.py
+.editorconfig
