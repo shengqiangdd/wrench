@@ -97,6 +97,14 @@ describe('AccountSection · 我的空间', () => {
       expect(container.textContent).toContain('本浏览器没有保存空间码')
     })
     expect(container.querySelector('[data-testid="space-code"]')).toBeNull()
+
+    // 没码时也必须能拿到一个「可保存的新码」：否则数据虽在，却永远搬不到别的设备上
+    const rotate = container.querySelector<HTMLButtonElement>('[data-testid="space-rotate"]')
+    expect(rotate).not.toBeNull()
+    rotate!.click()
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="space-code"]')?.textContent).toBe('rotated-code-xyz')
+    })
     cleanup()
   })
 

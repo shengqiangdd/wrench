@@ -14,6 +14,7 @@ import {
   setSpaceCode,
   setReloadPageForTests,
   setupPassword,
+  verifySession,
   wasSpaceReset,
 } from '../../services/auth'
 
@@ -230,5 +231,42 @@ describe('进入 / 切换空间', () => {
     // 退出后受保护请求会要求重新登录
     stubFetch(async () => jsonResponse({}, 200))
     await expect(authedFetch('/api/connections')).rejects.toThrow()
+  })
+})
+
+describe('启动路径必须捕获空间码（verifySession 早于 fetch 拦截器）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+    reloadCount = 0
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('登录后首次 /auth/me 会把一次性下发的空间码落到本地', async () => {
+    stubFetch(async () => jsonResponse({ token: 't', expiresIn: 3600 }))
+    await login('correct-password')
+    expect(getSpaceCode()).toBeNull()
+
+    // 这一枪发生在 initAuthFetch() 安装之前，服务端正是在这里建空间并下发空间码；
+    // 不在这里捕获 → cookie 已落地 → 之后永远不会再发 → 用户再也看不到自己的码。
+    stubFetch(async () => jsonResponse({ authenticated: true }, 200, { 'x-space-code': 'fresh-code-1' }))
+    expect(await verifySession()).toBe(true)
+
+    expect(getSpaceCode()).toBe('fresh-code-1')
+  })
+
+  it('空间码失效时清码并刷新一次，而不是把用户卡在 400', async () => {
+    stubFetch(async () => jsonResponse({ token: 't', expiresIn: 3600 }))
+    await login('correct-password')
+    setSpaceCode('dead-code')
+
+    stubFetch(async () => jsonResponse({ error: 'invalid space code' }, 400, { 'x-space-invalid': '1' }))
+    expect(await verifySession()).toBe(false)
+
+    expect(getSpaceCode()).toBeNull()
+    expect(reloadCount).toBe(1)
   })
 })

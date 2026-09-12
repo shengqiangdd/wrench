@@ -338,10 +338,22 @@ function SpaceSection() {
             </button>
           </div>
         ) : (
-          <p className="mb-3 text-[11px] text-amber-400">
-            本浏览器没有保存空间码（可能是清过缓存或换了浏览器）。如果这是你自己的空间，
-            请在下面粘贴当初保存的码；否则继续使用会新建一个空空间。
-          </p>
+          <div className="mb-3 flex items-start gap-2">
+            <p className="flex-1 text-[11px] text-amber-400">
+              本浏览器没有保存空间码（清过缓存或换过浏览器）。如果这是你自己的空间，
+              点右边「生成新码」拿一个可以保存的新凭据（<span className="text-amber-200">数据不会丢</span>
+              ）；如果是从别的设备搬过来，在下面粘贴当初保存的码。
+            </p>
+            <button
+              data-testid="space-rotate"
+              onClick={() => void doRotate()}
+              disabled={busy}
+              className="flex shrink-0 items-center gap-1 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700/50 disabled:opacity-50"
+            >
+              <RefreshCw size={12} />
+              生成新码
+            </button>
+          </div>
         )}
 
         <div className="mb-2 text-xs text-slate-400">用空间码进入</div>

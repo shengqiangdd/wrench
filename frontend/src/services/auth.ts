@@ -402,6 +402,12 @@ export async function verifySession(): Promise<boolean> {
     const resp = await fetch('/api/auth/me', {
       headers: { Accept: 'application/json', Authorization: `Bearer ${session.token}` },
     })
+    // ⚠️ 这一步跑在 `initAuthFetch()` 之前（AuthGate 的启动顺序），而「首次访问建空间」
+    // 恰好就发生在这个请求上：不在这里捕获，一次性下发的空间码就永远丢了 ——
+    // cookie 已经落地，之后每个请求都会命中「已有空间」，服务端不会再重发明文码。
+    // 漏掉它的表现是：功能正常，但用户永远看不到自己的空间码，也搬不到别的设备上。
+    captureSpaceCode(resp)
+    if (handleInvalidSpace(resp)) return false
     if (resp.status === 401 || resp.status === 403) {
       clearToken()
       return false

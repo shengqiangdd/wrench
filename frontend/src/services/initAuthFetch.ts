@@ -37,9 +37,17 @@ export function initAuthFetch(): () => void {
     const url = new URL(request.url, window.location.origin)
     const path = url.pathname
 
-    // 只拦截 /api/ 路径，跳过公开端点
-    if (!path.startsWith('/api/') || PUBLIC_PATHS.has(path)) {
+    if (!path.startsWith('/api/')) {
       return originalFetch(request)
+    }
+
+    // 公开端点不需要注入令牌，但仍然要看一眼响应头：空间码/失效标记是
+    // 「一次性下发、错过就没有」的东西，任何一条 /api/ 响应都不该被浪费。
+    if (PUBLIC_PATHS.has(path)) {
+      const resp = await originalFetch(request)
+      captureSpaceCode(resp)
+      handleInvalidSpace(resp)
+      return resp
     }
 
     try {
