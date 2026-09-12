@@ -23,18 +23,17 @@ use crate::response::ApiResponse;
 /// generic format (`request` as f64).
 fn is_free_model(pricing: &serde_json::Value) -> bool {
     // Try "prompt" field first (OpenRouter format: "0" as string)
-    if let Some(prompt) = pricing.get("prompt").and_then(|v| v.as_str()) {
-        if let Ok(val) = prompt.parse::<f64>() {
-            if val > 0.0 {
-                return false;
-            }
-        }
+    if let Some(prompt) = pricing.get("prompt").and_then(|v| v.as_str())
+        && let Ok(val) = prompt.parse::<f64>()
+        && val > 0.0
+    {
+        return false;
     }
     // Fallback to "request" field (generic format)
-    if let Some(req) = pricing.get("request").and_then(|v| v.as_f64()) {
-        if req > 0.0 {
-            return false;
-        }
+    if let Some(req) = pricing.get("request").and_then(|v| v.as_f64())
+        && req > 0.0
+    {
+        return false;
     }
     // If neither field exists or both are 0, treat as free
     true

@@ -86,57 +86,56 @@ pub async fn connect_ssh(
     );
 
     // Try password auth first, then key auth
-    if let Some(password) = &body.password {
-        if !password.is_empty() {
-            match session
-                .connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false))
-                .await
-            {
-                Ok(()) => {
-                    save_connection(
-                        &state,
-                        &connection_id,
-                        &host,
-                        port,
-                        &username,
-                        session,
-                        body.sudo_password.clone(),
-                    )
-                    .await;
-                    return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
-                }
-                Err(e) => {
-                    tracing::error!("Password auth failed for {}@{}:{}: {}", username, host, port, e);
-                }
+    if let Some(password) = &body.password
+        && !password.is_empty()
+    {
+        match session
+            .connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false))
+            .await
+        {
+            Ok(()) => {
+                save_connection(
+                    &state,
+                    &connection_id,
+                    &host,
+                    port,
+                    &username,
+                    session,
+                    body.sudo_password.clone(),
+                )
+                .await;
+                return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
+            }
+            Err(e) => {
+                tracing::error!("Password auth failed for {}@{}:{}: {}", username, host, port, e);
             }
         }
     }
 
     // Try key auth
-    if let Some(private_key) = &body.private_key {
-        if !private_key.is_empty()
-            && session
-                .connect_key(
-                    private_key,
-                    None,
-                    body.known_hosts_path.clone(),
-                    body.strict_mode.unwrap_or(false),
-                )
-                .await
-                .is_ok()
-        {
-            save_connection(
-                &state,
-                &connection_id,
-                &host,
-                port,
-                &username,
-                session,
-                body.sudo_password.clone(),
+    if let Some(private_key) = &body.private_key
+        && !private_key.is_empty()
+        && session
+            .connect_key(
+                private_key,
+                None,
+                body.known_hosts_path.clone(),
+                body.strict_mode.unwrap_or(false),
             )
-            .await;
-            return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
-        }
+            .await
+            .is_ok()
+    {
+        save_connection(
+            &state,
+            &connection_id,
+            &host,
+            port,
+            &username,
+            session,
+            body.sudo_password.clone(),
+        )
+        .await;
+        return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
     }
 
     ApiResponse::error(401, "SSH authentication failed")
@@ -209,17 +208,18 @@ pub async fn ensure_connection(
     // Check for existing active connection with same host+port+username
     for entry in state.connections.iter() {
         let conn = entry.value();
-        if conn.host == host && conn.port == port && conn.username == username {
-            if let Some(session) = &conn.session {
-                if session.is_connected().await {
-                    return ApiResponse::success(SshConnectResponse {
-                        connection_id: conn.connection_id.clone(),
-                        host: conn.host.clone(),
-                        port: conn.port,
-                        username: conn.username.clone(),
-                    });
-                }
-            }
+        if conn.host == host
+            && conn.port == port
+            && conn.username == username
+            && let Some(session) = &conn.session
+            && session.is_connected().await
+        {
+            return ApiResponse::success(SshConnectResponse {
+                connection_id: conn.connection_id.clone(),
+                host: conn.host.clone(),
+                port: conn.port,
+                username: conn.username.clone(),
+            });
         }
     }
 
@@ -240,62 +240,61 @@ pub async fn ensure_connection(
     );
 
     // Try password auth first, then key auth
-    if let Some(password) = &body.password {
-        if !password.is_empty() {
-            match session
-                .connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false))
-                .await
-            {
-                Ok(()) => {
-                    save_connection(
-                        &state,
-                        &connection_id,
-                        &host,
-                        port,
-                        &username,
-                        session,
-                        body.sudo_password.clone(),
-                    )
-                    .await;
-                    return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "ensure_connection: Password auth failed for {}@{}:{}: {}",
-                        username,
-                        host,
-                        port,
-                        e
-                    );
-                }
+    if let Some(password) = &body.password
+        && !password.is_empty()
+    {
+        match session
+            .connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false))
+            .await
+        {
+            Ok(()) => {
+                save_connection(
+                    &state,
+                    &connection_id,
+                    &host,
+                    port,
+                    &username,
+                    session,
+                    body.sudo_password.clone(),
+                )
+                .await;
+                return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
+            }
+            Err(e) => {
+                tracing::error!(
+                    "ensure_connection: Password auth failed for {}@{}:{}: {}",
+                    username,
+                    host,
+                    port,
+                    e
+                );
             }
         }
     }
 
-    if let Some(private_key) = &body.private_key {
-        if !private_key.is_empty()
-            && session
-                .connect_key(
-                    private_key,
-                    None,
-                    body.known_hosts_path.clone(),
-                    body.strict_mode.unwrap_or(false),
-                )
-                .await
-                .is_ok()
-        {
-            save_connection(
-                &state,
-                &connection_id,
-                &host,
-                port,
-                &username,
-                session,
-                body.sudo_password.clone(),
+    if let Some(private_key) = &body.private_key
+        && !private_key.is_empty()
+        && session
+            .connect_key(
+                private_key,
+                None,
+                body.known_hosts_path.clone(),
+                body.strict_mode.unwrap_or(false),
             )
-            .await;
-            return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
-        }
+            .await
+            .is_ok()
+    {
+        save_connection(
+            &state,
+            &connection_id,
+            &host,
+            port,
+            &username,
+            session,
+            body.sudo_password.clone(),
+        )
+        .await;
+        return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
     }
 
     ApiResponse::error(401, "SSH authentication failed")

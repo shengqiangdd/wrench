@@ -46,10 +46,10 @@ pub async fn dispatch_alert(
     let config: Value = serde_json::from_str(&channel.config).map_err(|e| format!("Invalid channel config: {}", e))?;
 
     // Check alert filters (optional)
-    if let Some(filters) = config.get("alert_filters") {
-        if !should_send_alert(filters, level, metric) {
-            return Ok(false);
-        }
+    if let Some(filters) = config.get("alert_filters")
+        && !should_send_alert(filters, level, metric)
+    {
+        return Ok(false);
     }
 
     let body = format_alert_message(level, metric, host, message);
@@ -69,20 +69,19 @@ pub async fn dispatch_alert(
 /// Check if an alert should be sent based on the channel's filter configuration.
 fn should_send_alert(filters: &Value, level: &AlertLevel, metric: &str) -> bool {
     // Check level filter
-    if let Some(levels) = filters.get("levels").and_then(|v| v.as_array()) {
-        if !levels
+    if let Some(levels) = filters.get("levels").and_then(|v| v.as_array())
+        && !levels
             .iter()
             .any(|l| l.as_str().is_some_and(|s| AlertLevel::parse_level(s) == *level))
-        {
-            return false;
-        }
+    {
+        return false;
     }
 
     // Check metric filter
-    if let Some(metrics) = filters.get("metrics").and_then(|v| v.as_array()) {
-        if !metrics.iter().any(|m| m.as_str().is_some_and(|s| metric.contains(s))) {
-            return false;
-        }
+    if let Some(metrics) = filters.get("metrics").and_then(|v| v.as_array())
+        && !metrics.iter().any(|m| m.as_str().is_some_and(|s| metric.contains(s)))
+    {
+        return false;
     }
 
     true

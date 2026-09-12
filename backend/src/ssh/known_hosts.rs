@@ -66,10 +66,11 @@ impl KnownHosts {
             }
 
             // Format: host:port key_fingerprint
-            if let Some((host_port, fp)) = line.split_once(' ') {
-                if host_port == target_host && fp == target_fp {
-                    return Ok(true);
-                }
+            if let Some((host_port, fp)) = line.split_once(' ')
+                && host_port == target_host
+                && fp == target_fp
+            {
+                return Ok(true);
             }
         }
 
@@ -105,13 +106,14 @@ impl KnownHosts {
             return Ok(());
         }
 
-        let file = fs::File::open(&self.path)?;
-        let reader = BufReader::new(file);
+        // 一次性读入：known_hosts 很小，且这样能避免 `lines().filter_map(Result::ok)`
+        // 在持续读错误时永不结束（clippy::lines_filter_map_ok）。读失败即报错返回，
+        // 不会在下面的覆写里悄悄截断文件。
+        let content = fs::read_to_string(&self.path)?;
         let target_host = Self::host_key(host, port);
 
-        let lines: Vec<String> = reader
+        let lines: Vec<&str> = content
             .lines()
-            .filter_map(|line| line.ok())
             .filter(|line| {
                 let line = line.trim();
                 if line.is_empty() || line.starts_with('#') {
@@ -157,7 +159,7 @@ impl KnownHosts {
                 Self::host_key(host, port),
                 Self::key_fingerprint(key)
             );
-            return Ok(false);
+            Ok(false)
         } else {
             // Auto-accept with warning
             tracing::warn!(
@@ -167,7 +169,7 @@ impl KnownHosts {
             );
             // Trust the new key
             self.trust(host, port, key)?;
-            return Ok(true);
+            Ok(true)
         }
     }
 

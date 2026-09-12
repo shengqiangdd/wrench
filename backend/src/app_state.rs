@@ -184,15 +184,15 @@ impl AppState {
                 }
 
                 // Dispatch notifications for critical & warning alerts
-                if level == "critical" || level == "warning" {
-                    if let Ok(channels) = db.list_notification_channels().await {
-                        let alert_level = crate::notify::AlertLevel::parse_level(&level);
-                        for ch in channels {
-                            if !ch.enabled {
-                                continue;
-                            }
-                            let _ = crate::notify::dispatch_alert(&ch, &alert_level, &metric, &host, &message).await;
+                if (level == "critical" || level == "warning")
+                    && let Ok(channels) = db.list_notification_channels().await
+                {
+                    let alert_level = crate::notify::AlertLevel::parse_level(&level);
+                    for ch in channels {
+                        if !ch.enabled {
+                            continue;
                         }
+                        let _ = crate::notify::dispatch_alert(&ch, &alert_level, &metric, &host, &message).await;
                     }
                 }
             });

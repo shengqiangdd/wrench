@@ -11,6 +11,4 @@ pub use known_hosts::KnownHosts;
 pub use pool::SshSession;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-}
+mod tests {}

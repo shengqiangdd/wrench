@@ -6,10 +6,10 @@ use crate::app_state::AppState;
 use crate::response::ApiResponse;
 
 fn get_session(state: &Arc<AppState>, connection_id: &str) -> Option<Arc<crate::ssh::SshSession>> {
-    if !connection_id.is_empty() {
-        if let Some(c) = state.connections.get(connection_id) {
-            return c.session.clone();
-        }
+    if !connection_id.is_empty()
+        && let Some(c) = state.connections.get(connection_id)
+    {
+        return c.session.clone();
     }
     // fallback: 第一个有 session 的连接
     for entry in state.connections.iter() {

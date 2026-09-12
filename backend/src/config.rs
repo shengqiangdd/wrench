@@ -164,12 +164,11 @@ fn resolve_auth_password(database_url: Option<&str>) -> Option<String> {
 /// 密码文件默认位置：优先与数据库同目录（容器内 `/data`，是持久卷），
 /// 否则退回 `~/.wrench/auth_password`，避免在仓库目录里落盘明文密码。
 fn default_password_file(database_url: Option<&str>) -> PathBuf {
-    if let Some(db) = database_url {
-        if let Some(dir) = Path::new(db).parent() {
-            if !dir.as_os_str().is_empty() {
-                return dir.join("auth_password");
-            }
-        }
+    if let Some(db) = database_url
+        && let Some(dir) = Path::new(db).parent()
+        && !dir.as_os_str().is_empty()
+    {
+        return dir.join("auth_password");
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(".wrench").join("auth_password")
@@ -193,10 +192,10 @@ fn generate_password_file(path: &Path) -> Result<String, String> {
         .map_err(|e| format!("随机数生成失败: {e:?}"))?;
     let password = URL_SAFE_NO_PAD.encode(bytes);
 
-    if let Some(dir) = path.parent() {
-        if !dir.as_os_str().is_empty() {
-            std::fs::create_dir_all(dir).map_err(|e| format!("创建目录 {} 失败: {e}", dir.display()))?;
-        }
+    if let Some(dir) = path.parent()
+        && !dir.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(dir).map_err(|e| format!("创建目录 {} 失败: {e}", dir.display()))?;
     }
     std::fs::write(path, format!("{password}\n")).map_err(|e| format!("写入 {} 失败: {e}", path.display()))?;
 

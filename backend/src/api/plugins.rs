@@ -30,12 +30,11 @@ pub async fn list_plugins(State(state): State<Arc<AppState>>) -> ApiResponse<Vec
             if !js_path.exists() {
                 continue;
             }
-            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-                if let Ok(manifest) = serde_json::from_str::<PluginManifest>(&content) {
-                    if seen_ids.insert(manifest.id.clone()) {
-                        plugins.push(manifest);
-                    }
-                }
+            if let Ok(content) = std::fs::read_to_string(&manifest_path)
+                && let Ok(manifest) = serde_json::from_str::<PluginManifest>(&content)
+                && seen_ids.insert(manifest.id.clone())
+            {
+                plugins.push(manifest);
             }
         }
     }

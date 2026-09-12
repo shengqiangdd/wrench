@@ -75,27 +75,27 @@ async fn map_vault_entry_decrypted(
     }
 
     // Fallback: try legacy v1 key for migration
-    if let Some(legacy) = legacy_key {
-        if let Ok(plaintext) = crypto::decrypt(&e.encrypted_value, legacy) {
-            // Re-encrypt with the new v2 key
-            if let Ok(re_encrypted) = crypto::encrypt(&plaintext, vault_key) {
-                let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%:z").to_string();
-                let updated = VaultEntry {
-                    id: e.id.clone(),
-                    name: e.name.clone(),
-                    kind: e.kind.clone(),
-                    name_plain: e.name_plain.clone(),
-                    kind_plain: e.kind_plain.clone(),
-                    encrypted_value: re_encrypted,
-                    tags: e.tags.clone(),
-                    created_at: e.created_at.clone(),
-                    updated_at: now,
-                };
-                // Best-effort migration — log but don't fail on DB errors
-                let _ = db.update_vault_entry(&updated).await;
-            }
-            return plaintext;
+    if let Some(legacy) = legacy_key
+        && let Ok(plaintext) = crypto::decrypt(&e.encrypted_value, legacy)
+    {
+        // Re-encrypt with the new v2 key
+        if let Ok(re_encrypted) = crypto::encrypt(&plaintext, vault_key) {
+            let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%:z").to_string();
+            let updated = VaultEntry {
+                id: e.id.clone(),
+                name: e.name.clone(),
+                kind: e.kind.clone(),
+                name_plain: e.name_plain.clone(),
+                kind_plain: e.kind_plain.clone(),
+                encrypted_value: re_encrypted,
+                tags: e.tags.clone(),
+                created_at: e.created_at.clone(),
+                updated_at: now,
+            };
+            // Best-effort migration — log but don't fail on DB errors
+            let _ = db.update_vault_entry(&updated).await;
         }
+        return plaintext;
     }
 
     "***DECRYPT_FAILED***".into()

@@ -104,7 +104,7 @@ pub async fn file_hash(session: &Arc<SshSession>, path: &str) -> Result<FileHash
     let lines: Vec<&str> = result.stdout.trim().lines().collect();
     Ok(FileHash {
         path: path.to_string(),
-        md5: lines.get(0).unwrap_or(&"").to_string(),
+        md5: lines.first().unwrap_or(&"").to_string(),
         sha1: lines.get(1).unwrap_or(&"").to_string(),
         sha256: lines.get(2).unwrap_or(&"").to_string(),
     })
@@ -128,9 +128,8 @@ pub async fn batch_delete(
         })
         .collect();
 
-    if sudo_password.is_some() {
+    if let Some(sudo_pwd) = sudo_password {
         // Use sudo for batch delete
-        let sudo_pwd = sudo_password.unwrap();
         let cmd = format!("echo {} | sudo -S sh -c '{}' 2>&1", shell_escape(sudo_pwd), rm_cmds.join("; "));
         let result = crate::ssh::executor::execute_command(session, &cmd).await;
         match result {

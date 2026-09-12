@@ -105,7 +105,7 @@ pub async fn get_all_health(State(state): State<Arc<AppState>>) -> Result<ApiRes
         let key = (conn.host.clone(), conn.port, conn.username.clone());
         let has_session = conn.session.is_some();
         let dominated = match best.get(&key) {
-            Some((_, existing)) => !existing.session.is_some() && has_session,
+            Some((_, existing)) => existing.session.is_none() && has_session,
             None => true,
         };
         if dominated {
@@ -216,19 +216,19 @@ fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
             }
         }
 
-        if let Some(mem_pct) = h.mem_percent {
-            if mem_pct > 90.0 {
-                state.add_alert(AlertEntry {
-                    id: format!("mem-{}-{}", h.id, chrono::Utc::now().timestamp()),
-                    timestamp: now.clone(),
-                    level: if mem_pct > 95.0 { "critical" } else { "warning" }.into(),
-                    host: h.host.clone(),
-                    metric: "memory".into(),
-                    message: format!("Memory usage {:.1}%", mem_pct),
-                    value: mem_pct,
-                    threshold: 90.0,
-                });
-            }
+        if let Some(mem_pct) = h.mem_percent
+            && mem_pct > 90.0
+        {
+            state.add_alert(AlertEntry {
+                id: format!("mem-{}-{}", h.id, chrono::Utc::now().timestamp()),
+                timestamp: now.clone(),
+                level: if mem_pct > 95.0 { "critical" } else { "warning" }.into(),
+                host: h.host.clone(),
+                metric: "memory".into(),
+                message: format!("Memory usage {:.1}%", mem_pct),
+                value: mem_pct,
+                threshold: 90.0,
+            });
         }
 
         for disk in &h.disks {
