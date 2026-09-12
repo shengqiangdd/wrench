@@ -8,6 +8,7 @@ import '@xterm/xterm/css/xterm.css'
 import { Search, X, ChevronUp, ChevronDown, Copy, AlignLeft } from 'lucide-react'
 import { createSessionWsClient, type WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
+import { isAtShellPrompt } from '../../utils/shell-prompt'
 import { on } from '../../services/event-bus'
 
 /** 安全读取剪贴板（WebView 中 navigator.clipboard 可能为 undefined） */
@@ -204,6 +205,8 @@ export default function TerminalView({
   const composePlainRef = useRef(composePlain)
   // 用户是否已在本次连接里敲过键（自动注入 plain 前用它避让）
   const userTypedRef = useRef(false)
+  // 自动注入 plain 的"等提示符出现"轮询定时器
+  const plainInjectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // ─── 移动端快捷键工具栏收起状态（收起＝把行数还给终端）───
   const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => {
     try {
@@ -729,14 +732,34 @@ export default function TerminalView({
           term.focus()
           onConnectedRef.current?.()
           // 新会话的环境变量不会自动带过来：把 compose plain 进度开关重新注入一次。
-          // 等 250ms 让 shell 打完提示符；若这段时间里用户已经动手输入则跳过，
-          // 避免把 export 行插进他没敲完的命令里（跳过时给个提示，让他手动点 plain）。
+          //
+          // ⚠️ 这等于"替用户打字"，所以必须先确认他正坐在 shell 提示符上：
+          //   · 全屏 TUI（vim/htop/less → xterm alternate buffer）里注入会打进 TUI；
+          //   · ssh/sudo 密码提示里注入会把命令行当密码敲进去。
+          // 因此改为轮询探测提示符：探测不到就**不注入**，只给一次提示，
+          // 用户可随时点右上 plain 芯片手动开启（功能不会因此丢失）。
           userTypedRef.current = false
+          if (plainInjectTimerRef.current) clearTimeout(plainInjectTimerRef.current)
           if (composePlainRef.current) {
-            setTimeout(() => {
-              if (disposedRef.current || !connectedRef.current) return
+            const MAX_TRIES = 15
+            const RETRY_MS = 600
+            const tryInject = (n: number) => {
+              plainInjectTimerRef.current = null
+              if (disposedRef.current || !connectedRef.current || gen !== genRef.current) return
+              if (!composePlainRef.current) return
               if (userTypedRef.current) {
                 showHint('plain 未自动注入（你已在输入）· 点右上 plain 手动开启')
+                return
+              }
+              const t = terminalRef.current
+              if (!t) return
+              if (!isAtShellPrompt(t.buffer.active)) {
+                // TUI 里 / 提示符还没打出来：等下一轮；超时后只提示，绝不硬注入
+                if (n < MAX_TRIES) {
+                  plainInjectTimerRef.current = setTimeout(() => tryInject(n + 1), RETRY_MS)
+                } else {
+                  showHint('未检测到 shell 提示符，plain 未自动注入 · 点右上 plain 手动开启')
+                }
                 return
               }
               termWsRef.current?.send({
@@ -755,7 +778,8 @@ export default function TerminalView({
               } catch {
                 /* ignore */
               }
-            }, 250)
+            }
+            plainInjectTimerRef.current = setTimeout(() => tryInject(0), 250)
           }
         })
 
@@ -1058,6 +1082,11 @@ export default function TerminalView({
       if (outputTracker.checkTimer) {
         clearTimeout(outputTracker.checkTimer)
         outputTracker.checkTimer = null
+      }
+      // 清理"等 shell 提示符"轮询定时器
+      if (plainInjectTimerRef.current) {
+        clearTimeout(plainInjectTimerRef.current)
+        plainInjectTimerRef.current = null
       }
       // 移除阻止默认行为的监听器
       container.removeEventListener('contextmenu', preventContextMenu)
