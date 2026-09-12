@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -39,13 +39,7 @@ pub async fn list_hosts(State(state): State<Arc<AppState>>) -> ApiResponse<Vec<H
                 Some(s) => s.is_connected().await,
                 None => false,
             };
-            HostEntry {
-                id,
-                host,
-                port,
-                username,
-                connected,
-            }
+            HostEntry { id, host, port, username, connected }
         })
         .collect();
 

@@ -8,7 +8,7 @@
 //!   DELETE /api/notifications/:id      — Delete channel
 //!   POST   /api/notifications/test/:id — Send test alert
 
-use axum::{extract::Path, extract::State, Json};
+use axum::{Json, extract::Path, extract::State};
 use std::sync::Arc;
 
 use crate::api_types::{NotificationChannelEntry, NotificationChannelsResponse};

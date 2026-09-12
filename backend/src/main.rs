@@ -1,12 +1,12 @@
 #![allow(clippy::needless_update)]
 
-use wrench_backend::build_app;
-use wrench_backend::config::AppConfig;
-use wrench_backend::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use wrench_backend::AppState;
+use wrench_backend::build_app;
+use wrench_backend::config::AppConfig;
 
 fn print_usage() {
     eprintln!("Usage: wrench-backend [OPTIONS]");
@@ -315,4 +315,3 @@ async fn cmd_db_restore(input: &PathBuf) -> anyhow::Result<()> {
 
     Ok(())
 }
-

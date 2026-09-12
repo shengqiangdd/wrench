@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use base64::Engine;
 use std::sync::Arc;
 
@@ -13,7 +13,10 @@ fn get_session(state: &AppState, conn_id: &str) -> Option<(String, String, Arc<S
     let host = entry.host.clone();
     let username = entry.username.clone();
     let sudo_password = entry.sudo_password.clone();
-    entry.session.as_ref().map(|s| (host, username, s.clone(), sudo_password))
+    entry
+        .session
+        .as_ref()
+        .map(|s| (host, username, s.clone(), sudo_password))
 }
 
 /// Extract string field from JSON body with a default.
@@ -245,7 +248,12 @@ pub async fn sftp_chmod(
     let path = s(&body, "path");
     let permissions = match body["permissions"].as_u64() {
         Some(p) => p as u32,
-        None => return Json(ApiResponse::error(10, "Missing 'permissions' field (numeric octal, e.g. 493 for 0755)")),
+        None => {
+            return Json(ApiResponse::error(
+                10,
+                "Missing 'permissions' field (numeric octal, e.g. 493 for 0755)",
+            ));
+        }
     };
 
     let (host, username, session, sudo_password) = match get_session(&state, &connection_id) {

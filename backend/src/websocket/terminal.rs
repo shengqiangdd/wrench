@@ -2,19 +2,19 @@ use std::sync::Arc;
 
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
 };
 use base64::Engine as _;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use tracing::{info, warn};
 
 use crate::app_state::AppState;
 use crate::models::{SftpRequest, SftpResponse};
-use crate::ssh::client::SshConnection;
 use crate::ssh::SshSession;
+use crate::ssh::client::SshConnection;
 
 /// Timeout for SSH connect + auth operations (15 seconds)
 const SSH_CONNECT_TIMEOUT_SECS: u64 = 15;
@@ -42,10 +42,7 @@ fn shell_escape(s: &str) -> String {
 
 /// Pre-allocate a JSON message buffer for terminal output.
 /// Avoids repeated serde_json::json! macro allocations in hot paths.
-fn build_terminal_output_msg(
-    connection_id: &str,
-    data: &str,
-) -> axum::extract::ws::Utf8Bytes {
+fn build_terminal_output_msg(connection_id: &str, data: &str) -> axum::extract::ws::Utf8Bytes {
     // Use string concatenation instead of json! macro for hot path
     let mut buf = String::with_capacity(128 + data.len());
     buf.push_str(r#"{"type":"data","connectionId":""#);
@@ -56,11 +53,7 @@ fn build_terminal_output_msg(
     txt(buf)
 }
 
-fn build_docker_output_msg(
-    connection_id: &str,
-    container_id: &str,
-    data: &str,
-) -> axum::extract::ws::Utf8Bytes {
+fn build_docker_output_msg(connection_id: &str, container_id: &str, data: &str) -> axum::extract::ws::Utf8Bytes {
     let mut buf = String::with_capacity(200 + data.len());
     buf.push_str(r#"{"type":"docker_shell_output","connectionId":""#);
     buf.push_str(connection_id);
@@ -207,13 +200,27 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
     let rows = msg.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as u32;
 
     // Debug: log message fields (redact password)
-    let has_password = msg.get("password").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
-    let has_key = msg.get("privateKey").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+    let has_password = msg
+        .get("password")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    let has_key = msg
+        .get("privateKey")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
     let msg_host = msg.get("host").and_then(|v| v.as_str()).unwrap_or("");
     let msg_user = msg.get("username").and_then(|v| v.as_str()).unwrap_or("");
     tracing::info!(
         "WS connect msg: conn_id={}, host={}, user={}, has_password={}, has_key={}, cols={}, rows={}",
-        connection_id, msg_host, msg_user, has_password, has_key, cols, rows
+        connection_id,
+        msg_host,
+        msg_user,
+        has_password,
+        has_key,
+        cols,
+        rows
     );
 
     // ─── Resolve or create SSH session ───
@@ -244,7 +251,14 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
             return;
         }
 
-        tracing::info!("Creating new SshSession: {}@{}:{} (password_len={}, key_len={})", username, host, port, password.len(), private_key.len());
+        tracing::info!(
+            "Creating new SshSession: {}@{}:{} (password_len={}, key_len={})",
+            username,
+            host,
+            port,
+            password.len(),
+            private_key.len()
+        );
 
         let new_session = SshSession::new(
             connection_id.clone(),
@@ -277,7 +291,14 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
                 Ok(Ok(())) => {
                     tracing::info!("connect_password succeeded for {}@{}:{}", username, host, port);
                     // Verify handle was set
-                    tracing::info!("handle after connect: {}", if new_session.is_connected().await { "SOME" } else { "NONE" });
+                    tracing::info!(
+                        "handle after connect: {}",
+                        if new_session.is_connected().await {
+                            "SOME"
+                        } else {
+                            "NONE"
+                        }
+                    );
                 } // success
                 Ok(Err(e)) => {
                     let err = serde_json::json!({
@@ -312,7 +333,14 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
                 Ok(Ok(())) => {
                     tracing::info!("connect_password succeeded for {}@{}:{}", username, host, port);
                     // Verify handle was set
-                    tracing::info!("handle after connect: {}", if new_session.is_connected().await { "SOME" } else { "NONE" });
+                    tracing::info!(
+                        "handle after connect: {}",
+                        if new_session.is_connected().await {
+                            "SOME"
+                        } else {
+                            "NONE"
+                        }
+                    );
                 } // success
                 Ok(Err(e)) => {
                     let err = serde_json::json!({
@@ -340,13 +368,24 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
         }
 
         let session_arc = Arc::new(new_session);
-        tracing::info!("session_arc handle: {}", if session_arc.is_connected().await { "SOME" } else { "NONE" });
+        tracing::info!(
+            "session_arc handle: {}",
+            if session_arc.is_connected().await {
+                "SOME"
+            } else {
+                "NONE"
+            }
+        );
         let mut conn = SshConnection::new(
             connection_id.clone(),
             host.to_string(),
             port,
             username.to_string(),
-            if !password.is_empty() { "password".into() } else { "key".into() },
+            if !password.is_empty() {
+                "password".into()
+            } else {
+                "key".into()
+            },
         );
         conn.set_session(session_arc.clone());
         state.connections.insert(connection_id.clone(), conn);
@@ -355,7 +394,12 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
     };
 
     // Open interactive shell
-    tracing::debug!("Opening shell for connection_id={}, cols={}, rows={}", connection_id, cols, rows);
+    tracing::debug!(
+        "Opening shell for connection_id={}, cols={}, rows={}",
+        connection_id,
+        cols,
+        rows
+    );
     let mut channel = match session.open_shell(cols, rows).await {
         Ok(ch) => ch,
         Err(e) => {
@@ -893,11 +937,7 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg:
     };
 
     // Build docker exec command using shell_escape for safe quoting
-    let cmd = format!(
-        "docker exec -it {} {}",
-        shell_escape(&container_id),
-        shell_escape(&shell)
-    );
+    let cmd = format!("docker exec -it {} {}", shell_escape(&container_id), shell_escape(&shell));
 
     // Open SSH exec channel with PTY for docker exec
     let mut channel = match session.stream_exec(&cmd, cols, rows).await {
@@ -1028,5 +1068,3 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg:
 }
 
 // ─── Output batching helper functions ───
-
-

@@ -19,15 +19,15 @@ pub mod utils;
 pub use app_state::AppState;
 
 use axum::{
+    Router,
     body::Body,
     http::{
-        header::{CACHE_CONTROL, CONTENT_TYPE},
         StatusCode,
+        header::{CACHE_CONTROL, CONTENT_TYPE},
     },
     middleware as axum_middleware,
     response::Response,
     routing::get,
-    Router,
 };
 use std::sync::Arc;
 use tower::Layer;
@@ -180,10 +180,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/docker/prune", axum::routing::post(api::docker::prune_images))
         .route("/docker/history", axum::routing::post(api::docker::image_history))
         .route("/docker/stats", axum::routing::post(api::docker::container_stats))
-        .route(
-            "/docker/stats/all",
-            axum::routing::post(api::docker::container_stats_all),
-        )
+        .route("/docker/stats/all", axum::routing::post(api::docker::container_stats_all))
         .route("/docker/exec", axum::routing::post(api::docker::exec_container))
         .route("/docker/compose", axum::routing::post(api::docker::compose_list))
         .route("/docker/compose/action", axum::routing::post(api::docker::compose_action))
@@ -243,13 +240,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
 
     // Combine public + login + protected API routes under /api
     let api_routes = Router::new()
-        .nest(
-            "/api",
-            Router::new()
-                .merge(public_api)
-                .merge(login_api)
-                .merge(protected_api),
-        )
+        .nest("/api", Router::new().merge(public_api).merge(login_api).merge(protected_api))
         .layer(cors.clone())
         .layer(TraceLayer::new_for_http())
         // Compress JSON API responses on-the-fly (gzip, min-size 512 bytes)

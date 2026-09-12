@@ -1,7 +1,7 @@
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
 };
@@ -26,9 +26,7 @@ async fn handle_docker_stats_socket(mut socket: WebSocket) {
         "message": "Docker stats WebSocket is deprecated. Use REST API /api/docker/stats instead."
     });
     let _ = socket
-        .send(Message::Text(
-            serde_json::to_string(&msg).unwrap().into(),
-        ))
+        .send(Message::Text(serde_json::to_string(&msg).unwrap().into()))
         .await;
     let _ = socket.send(Message::Close(None)).await;
 }

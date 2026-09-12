@@ -1,11 +1,11 @@
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use std::sync::Arc;
 
 use crate::api_types::{SshConnectResponse, SshDisconnectRequest, SshExecRequest, SshExecResponse};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
-use crate::ssh::client::{ConnectRequest, SshConnection};
 use crate::ssh::SshSession;
+use crate::ssh::client::{ConnectRequest, SshConnection};
 
 /// Get SSH test configuration from environment variables (GET /api/ssh/test-config)
 pub async fn test_config() -> Json<serde_json::Value> {
@@ -88,9 +88,21 @@ pub async fn connect_ssh(
     // Try password auth first, then key auth
     if let Some(password) = &body.password {
         if !password.is_empty() {
-            match session.connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false)).await {
+            match session
+                .connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false))
+                .await
+            {
                 Ok(()) => {
-                    save_connection(&state, &connection_id, &host, port, &username, session, body.sudo_password.clone()).await;
+                    save_connection(
+                        &state,
+                        &connection_id,
+                        &host,
+                        port,
+                        &username,
+                        session,
+                        body.sudo_password.clone(),
+                    )
+                    .await;
                     return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
                 }
                 Err(e) => {
@@ -102,8 +114,27 @@ pub async fn connect_ssh(
 
     // Try key auth
     if let Some(private_key) = &body.private_key {
-        if !private_key.is_empty() && session.connect_key(private_key, None, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false)).await.is_ok() {
-            save_connection(&state, &connection_id, &host, port, &username, session, body.sudo_password.clone()).await;
+        if !private_key.is_empty()
+            && session
+                .connect_key(
+                    private_key,
+                    None,
+                    body.known_hosts_path.clone(),
+                    body.strict_mode.unwrap_or(false),
+                )
+                .await
+                .is_ok()
+        {
+            save_connection(
+                &state,
+                &connection_id,
+                &host,
+                port,
+                &username,
+                session,
+                body.sudo_password.clone(),
+            )
+            .await;
             return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
         }
     }
@@ -194,7 +225,7 @@ pub async fn ensure_connection(
 
     // No existing connection — create new one (reuse connect_ssh logic)
     let connection_id = uuid::Uuid::new_v4().to_string();
-    
+
     // Configuration for known_hosts verification
     let known_hosts_path = body.known_hosts_path.clone();
     let strict_mode = body.strict_mode.unwrap_or(false);
@@ -211,21 +242,58 @@ pub async fn ensure_connection(
     // Try password auth first, then key auth
     if let Some(password) = &body.password {
         if !password.is_empty() {
-            match session.connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false)).await {
+            match session
+                .connect_password(password, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false))
+                .await
+            {
                 Ok(()) => {
-                    save_connection(&state, &connection_id, &host, port, &username, session, body.sudo_password.clone()).await;
+                    save_connection(
+                        &state,
+                        &connection_id,
+                        &host,
+                        port,
+                        &username,
+                        session,
+                        body.sudo_password.clone(),
+                    )
+                    .await;
                     return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
                 }
                 Err(e) => {
-                    tracing::error!("ensure_connection: Password auth failed for {}@{}:{}: {}", username, host, port, e);
+                    tracing::error!(
+                        "ensure_connection: Password auth failed for {}@{}:{}: {}",
+                        username,
+                        host,
+                        port,
+                        e
+                    );
                 }
             }
         }
     }
 
     if let Some(private_key) = &body.private_key {
-        if !private_key.is_empty() && session.connect_key(private_key, None, body.known_hosts_path.clone(), body.strict_mode.unwrap_or(false)).await.is_ok() {
-            save_connection(&state, &connection_id, &host, port, &username, session, body.sudo_password.clone()).await;
+        if !private_key.is_empty()
+            && session
+                .connect_key(
+                    private_key,
+                    None,
+                    body.known_hosts_path.clone(),
+                    body.strict_mode.unwrap_or(false),
+                )
+                .await
+                .is_ok()
+        {
+            save_connection(
+                &state,
+                &connection_id,
+                &host,
+                port,
+                &username,
+                session,
+                body.sudo_password.clone(),
+            )
+            .await;
             return ApiResponse::success(SshConnectResponse { connection_id, host, port, username });
         }
     }

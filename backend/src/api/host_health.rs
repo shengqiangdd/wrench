@@ -3,7 +3,7 @@
 //! Runs a single combined SSH command per host to collect CPU, memory, disk,
 //! network, processes, and IO data in one shot. Frontend only renders.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use std::sync::Arc;
 
 use crate::app_state::AppState;
@@ -94,9 +94,7 @@ pub struct ProcInfo {
 }
 
 /// Get health status for all connected hosts (GET /api/hosts/health)
-pub async fn get_all_health(
-    State(state): State<Arc<AppState>>,
-) -> Result<ApiResponse<Vec<HostHealth>>, AppError> {
+pub async fn get_all_health(State(state): State<Arc<AppState>>) -> Result<ApiResponse<Vec<HostHealth>>, AppError> {
     // Deduplicate by (host, port, username) — multiple sessions to the same
     // host (e.g. multiple SSH terminal tabs) should only produce one health entry.
     // Prefer the entry that has a live session.
@@ -195,9 +193,7 @@ pub async fn get_all_health(
 /// 自动告警
 fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
     use crate::app_state::AlertEntry;
-    let now = chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-        .to_string();
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
 
     for h in results {
         if !h.connected {
@@ -297,10 +293,7 @@ pub async fn diagnose_host(
         ));
     }
     for d in &health.disks {
-        lines.push(format!(
-            "- Disk {}: {} used ({}/{})",
-            d.mount, d.percent, d.used, d.total
-        ));
+        lines.push(format!("- Disk {}: {} used ({}/{})", d.mount, d.percent, d.used, d.total));
     }
     if let Some(procs) = health.processes {
         lines.push(format!("- Processes: {}", procs));
@@ -321,13 +314,11 @@ pub async fn diagnose_host(
     };
 
     let health_value = serde_json::to_value(&health).unwrap_or_default();
-    Ok(ApiResponse::success(
-        crate::api_types::DiagnoseResponse {
-            health: health_value,
-            raw_report: health_text,
-            ai_diagnosis,
-        },
-    ))
+    Ok(ApiResponse::success(crate::api_types::DiagnoseResponse {
+        health: health_value,
+        raw_report: health_text,
+        ai_diagnosis,
+    }))
 }
 
 // ─── 单条 SSH 命令采集全部数据 ───
@@ -369,10 +360,7 @@ async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData
         .map_err(|e| format!("SSH exec failed: {}", e))?;
 
     if result.exit_code != 0 && result.stdout.is_empty() {
-        return Err(format!(
-            "Command failed with exit code {}: {}",
-            result.exit_code, result.stderr
-        ));
+        return Err(format!("Command failed with exit code {}: {}", result.exit_code, result.stderr));
     }
 
     let stdout = &result.stdout;
@@ -541,10 +529,7 @@ async fn get_ai_diagnosis(api_key: &str, health_report: &str) -> Result<String, 
         return Err(format!("API returned status {}", resp.status()));
     }
 
-    let body: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("JSON parse error: {}", e))?;
+    let body: serde_json::Value = resp.json().await.map_err(|e| format!("JSON parse error: {}", e))?;
 
     Ok(body["choices"][0]["message"]["content"]
         .as_str()

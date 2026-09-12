@@ -207,9 +207,7 @@ pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec
 
         let results = futures_util::future::join_all(symlink_futures).await;
 
-        for (idx, (_path, target_type, link_target, size, perm_str)) in
-            symlink_indices.iter().zip(results)
-        {
+        for (idx, (_path, target_type, link_target, size, perm_str)) in symlink_indices.iter().zip(results) {
             let entry = &mut entries[*idx];
             if let Some(tt) = target_type {
                 entry.target_type = Some(tt);
@@ -235,11 +233,7 @@ pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec
         };
         let ao = type_order(&a.r#type);
         let bo = type_order(&b.r#type);
-        if ao != bo {
-            ao.cmp(&bo)
-        } else {
-            a.name.cmp(&b.name)
-        }
+        if ao != bo { ao.cmp(&bo) } else { a.name.cmp(&b.name) }
     });
 
     Ok(entries)
@@ -361,12 +355,14 @@ async fn sudo_upload(
         tmp_b64,
     );
 
-    let result = crate::ssh::executor::execute_command(session, &cmd).await
+    let result = crate::ssh::executor::execute_command(session, &cmd)
+        .await
         .map_err(|e| format!("sudo upload failed: {}", e))?;
     if result.exit_code != 0 {
         let stderr = result.stderr.trim();
         // Filter out sudo password prompt noise
-        let clean_err = stderr.lines()
+        let clean_err = stderr
+            .lines()
             .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
             .collect::<Vec<_>>()
             .join("\n");
@@ -460,11 +456,13 @@ async fn sudo_rm(
         flag,
         shell_escape(remote_path),
     );
-    let result = crate::ssh::executor::execute_command(session, &cmd).await
+    let result = crate::ssh::executor::execute_command(session, &cmd)
+        .await
         .map_err(|e| format!("sudo rm failed: {}", e))?;
     if result.exit_code != 0 {
         let stderr = result.stderr.trim();
-        let clean_err = stderr.lines()
+        let clean_err = stderr
+            .lines()
             .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
             .collect::<Vec<_>>()
             .join("\n");
@@ -501,21 +499,19 @@ pub async fn create_dir(
 }
 
 /// Create directory via `sudo mkdir -p`.
-async fn sudo_mkdir(
-    session: &Arc<SshSession>,
-    remote_path: &str,
-    sudo_password: &str,
-) -> Result<(), String> {
+async fn sudo_mkdir(session: &Arc<SshSession>, remote_path: &str, sudo_password: &str) -> Result<(), String> {
     let cmd = format!(
         "echo {} | sudo -S mkdir -p {} 2>&1",
         shell_escape(sudo_password),
         shell_escape(remote_path),
     );
-    let result = crate::ssh::executor::execute_command(session, &cmd).await
+    let result = crate::ssh::executor::execute_command(session, &cmd)
+        .await
         .map_err(|e| format!("sudo mkdir failed: {}", e))?;
     if result.exit_code != 0 {
         let stderr = result.stderr.trim();
-        let clean_err = stderr.lines()
+        let clean_err = stderr
+            .lines()
             .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
             .collect::<Vec<_>>()
             .join("\n");
@@ -553,23 +549,20 @@ pub async fn rename(
 }
 
 /// Rename/move via `sudo mv`.
-async fn sudo_mv(
-    session: &Arc<SshSession>,
-    from: &str,
-    to: &str,
-    sudo_password: &str,
-) -> Result<(), String> {
+async fn sudo_mv(session: &Arc<SshSession>, from: &str, to: &str, sudo_password: &str) -> Result<(), String> {
     let cmd = format!(
         "echo {} | sudo -S mv {} {} 2>&1",
         shell_escape(sudo_password),
         shell_escape(from),
         shell_escape(to),
     );
-    let result = crate::ssh::executor::execute_command(session, &cmd).await
+    let result = crate::ssh::executor::execute_command(session, &cmd)
+        .await
         .map_err(|e| format!("sudo mv failed: {}", e))?;
     if result.exit_code != 0 {
         let stderr = result.stderr.trim();
-        let clean_err = stderr.lines()
+        let clean_err = stderr
+            .lines()
             .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
             .collect::<Vec<_>>()
             .join("\n");
@@ -614,20 +607,26 @@ pub async fn chmod_via_ssh(
     }
     // Fallback to sudo chmod
     if let Some(pwd) = sudo_password {
-        tracing::info!("chmod failed ({}), trying sudo chmod for '{}'", result.stderr.trim(), remote_path);
+        tracing::info!(
+            "chmod failed ({}), trying sudo chmod for '{}'",
+            result.stderr.trim(),
+            remote_path
+        );
         let sudo_cmd = format!(
             "echo {} | sudo -S chmod {} {} 2>&1",
             shell_escape(pwd),
             octal,
             shell_escape(remote_path),
         );
-        let sudo_result = crate::ssh::executor::execute_command(session, &sudo_cmd).await
+        let sudo_result = crate::ssh::executor::execute_command(session, &sudo_cmd)
+            .await
             .map_err(|e| format!("sudo chmod failed: {}", e))?;
         if sudo_result.exit_code == 0 {
             return Ok(());
         }
         let stderr = sudo_result.stderr.trim();
-        let clean_err = stderr.lines()
+        let clean_err = stderr
+            .lines()
             .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
             .collect::<Vec<_>>()
             .join("\n");
@@ -681,11 +680,7 @@ mod tests {
     #[test]
     fn test_attrs_to_entry_directory() {
         // Directory: S_IFDIR = 0o040000, permissions 0o40755
-        let attrs = FileAttributes {
-            permissions: Some(0o40755),
-            size: Some(4096),
-            ..FileAttributes::default()
-        };
+        let attrs = FileAttributes { permissions: Some(0o40755), size: Some(4096), ..FileAttributes::default() };
 
         let entry = attrs_to_entry("subdir".into(), "/home/user", &attrs);
         assert_eq!(entry.name, "subdir");
@@ -761,11 +756,7 @@ mod tests {
 
     #[test]
     fn test_attrs_to_entry_owner_group_defaults() {
-        let attrs = FileAttributes {
-            permissions: Some(0o100644),
-            size: Some(128),
-            ..FileAttributes::default()
-        };
+        let attrs = FileAttributes { permissions: Some(0o100644), size: Some(128), ..FileAttributes::default() };
         let entry = attrs_to_entry("noowner.txt".into(), "/tmp", &attrs);
         assert_eq!(entry.owner, "");
         assert_eq!(entry.group, "");

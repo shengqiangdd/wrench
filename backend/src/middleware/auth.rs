@@ -12,11 +12,7 @@ use crate::utils::jwt::{Claims, SCOPE_API, SCOPE_WS};
 
 /// 路径所需能力：`/ws*` 需要 `ws`，其余 REST 接口需要 `api`。
 fn required_scope(uri: &str) -> &'static str {
-    if uri.starts_with("/ws") {
-        SCOPE_WS
-    } else {
-        SCOPE_API
-    }
+    if uri.starts_with("/ws") { SCOPE_WS } else { SCOPE_API }
 }
 
 fn json_error(status: StatusCode, message: &str) -> Response {
@@ -44,9 +40,7 @@ fn fingerprint_matches(state: &Arc<AppState>, claims: &Claims) -> bool {
     match state.config.auth_password.as_deref() {
         // 未配置口令时由调用方提前返回 503（fail-closed），这里保守判否
         None => false,
-        Some(password) => {
-            claims.pwd_fp == crate::utils::jwt::password_fingerprint(&state.config.jwt_secret, password)
-        }
+        Some(password) => claims.pwd_fp == crate::utils::jwt::password_fingerprint(&state.config.jwt_secret, password),
     }
 }
 
@@ -161,7 +155,8 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, mut req: Reques
         if qt.is_some() {
             tracing::warn!(
                 "[auth] {} {} — DEPRECATED: Token via query parameter is insecure (exposed in server logs, browser history, proxy logs). Migrate to Authorization header or first-message auth.",
-                method, uri
+                method,
+                uri
             );
         }
         qt
@@ -170,12 +165,7 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, mut req: Reques
     match token {
         // 遗留一次性 WS token —— 仅 WS 路径可用，避免被 REST 请求提前消耗
         Some(t) if required == SCOPE_WS && validate_token(&state, &t) => {
-            tracing::info!(
-                "[auth] {} {} — one-time WS token OK (upgrade={})",
-                method,
-                uri,
-                is_upgrade
-            );
+            tracing::info!("[auth] {} {} — one-time WS token OK (upgrade={})", method, uri, is_upgrade);
             next.run(req).await
         }
         Some(t) => match validate_jwt(&state, &t) {
@@ -237,7 +227,11 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, mut req: Reques
                 // Try to manually decode to find failure reason
                 let decode_hint = if let Some(service) = state.jwt_service.read().as_ref() {
                     match service.verify(&t) {
-                        Ok(claims) => format!("signature OK, exp={}, now={}", claims.claims.exp, chrono::Utc::now().timestamp() as u64),
+                        Ok(claims) => format!(
+                            "signature OK, exp={}, now={}",
+                            claims.claims.exp,
+                            chrono::Utc::now().timestamp() as u64
+                        ),
                         Err(e) => format!("verify failed: {:?}", e),
                     }
                 } else {
@@ -246,7 +240,13 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, mut req: Reques
 
                 tracing::warn!(
                     "[auth] {} {} — REJECTED token_len={} upgrade={} preview=[{}] jwt_service={} hint=[{}]",
-                    method, uri, t.len(), is_upgrade, token_preview, has_jwt_service, decode_hint
+                    method,
+                    uri,
+                    t.len(),
+                    is_upgrade,
+                    token_preview,
+                    has_jwt_service,
+                    decode_hint
                 );
                 json_error(
                     StatusCode::UNAUTHORIZED,
@@ -401,16 +401,12 @@ mod tests {
         let (state, service) = state_with_jwt_service("test-jwt-secret");
 
         // 已过期
-        let expired = service
-            .sign(&Claims::new("owner".into(), SCOPE_API_WS, 0))
-            .unwrap();
+        let expired = service.sign(&Claims::new("owner".into(), SCOPE_API_WS, 0)).unwrap();
         assert!(validate_jwt(&state, &expired).is_none());
 
         // 伪造签名（不同密钥）必须被拒绝
         let attacker = JwtService::from_secret("attacker-secret").unwrap();
-        let forged = attacker
-            .sign(&Claims::new("owner".into(), SCOPE_API_WS, 3600))
-            .unwrap();
+        let forged = attacker.sign(&Claims::new("owner".into(), SCOPE_API_WS, 3600)).unwrap();
         assert!(validate_jwt(&state, &forged).is_none());
 
         // jwt_service 未初始化时一律拒绝

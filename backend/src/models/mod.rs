@@ -89,10 +89,12 @@ impl SftpResponse {
         self.size = Some(entry.size as u64);
         self.is_dir = Some(entry.r#type == "directory");
         self.permissions = Some(entry.permissions.clone());
-        self.modified = Some(chrono::DateTime::from_timestamp(entry.modify_time, 0)
-            .unwrap_or_default()
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string());
+        self.modified = Some(
+            chrono::DateTime::from_timestamp(entry.modify_time, 0)
+                .unwrap_or_default()
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+        );
         self
     }
 }

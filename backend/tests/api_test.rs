@@ -1,6 +1,6 @@
+use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use axum::Router;
 use std::path::PathBuf;
 /// Integration tests for Wrench backend.
 ///

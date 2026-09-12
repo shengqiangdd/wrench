@@ -79,7 +79,9 @@ impl AppConfig {
 
         let openrouter_api_key = std::env::var("OPENROUTER_API_KEY").ok();
         let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
-            eprintln!("⚠️  WARNING: JWT_SECRET not set — generating random key. This will invalidate all tokens on restart.");
+            eprintln!(
+                "⚠️  WARNING: JWT_SECRET not set — generating random key. This will invalidate all tokens on restart."
+            );
             eprintln!("   Set JWT_SECRET in your environment for persistent authentication.");
             uuid::Uuid::new_v4().to_string()
         });
@@ -176,18 +178,14 @@ fn default_password_file(database_url: Option<&str>) -> PathBuf {
 fn read_password_file(path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     let pw = content.trim().to_string();
-    if pw.is_empty() {
-        None
-    } else {
-        Some(pw)
-    }
+    if pw.is_empty() { None } else { Some(pw) }
 }
 
 /// 生成 256 位随机密码，以 0600 权限写入 `path`。
 fn generate_password_file(path: &Path) -> Result<String, String> {
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-    use rand::rngs::SysRng;
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use rand::TryRng;
+    use rand::rngs::SysRng;
 
     let mut bytes = [0u8; 32];
     SysRng

@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::{connect_info::ConnectInfo, Request, State},
+    extract::{Request, State, connect_info::ConnectInfo},
     http::StatusCode,
     middleware::Next,
     response::Response,
@@ -8,8 +8,8 @@ use axum::{
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::app_state::AppState;
@@ -36,11 +36,7 @@ impl TokenBucket {
         self.refill();
         self.tokens
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
-                if current > 0 {
-                    Some(current - 1)
-                } else {
-                    None
-                }
+                if current > 0 { Some(current - 1) } else { None }
             })
             .is_ok()
     }
@@ -78,7 +74,7 @@ impl RateLimiter {
         if self.window_secs == 0 {
             return true; // No limit if window is 0
         }
-        
+
         let bucket = {
             let mut buckets = self.buckets.lock();
             buckets
@@ -102,11 +98,7 @@ pub struct LegacyRateLimiter {
 
 impl LegacyRateLimiter {
     pub fn new(window_secs: u64, max_requests: u32) -> Self {
-        Self {
-            window_secs,
-            max_requests,
-            clients: Mutex::new(HashMap::new()),
-        }
+        Self { window_secs, max_requests, clients: Mutex::new(HashMap::new()) }
     }
 
     pub fn check(&self, key: &str) -> bool {
@@ -147,8 +139,7 @@ pub async fn rate_limit_middleware(
 
     // Use a global static rate limiter
     use std::sync::LazyLock;
-    static RATE_LIMITER: LazyLock<RateLimiter> =
-        LazyLock::new(|| RateLimiter::new(60, 300)); // 300 requests per 60 seconds
+    static RATE_LIMITER: LazyLock<RateLimiter> = LazyLock::new(|| RateLimiter::new(60, 300)); // 300 requests per 60 seconds
 
     if !RATE_LIMITER.check(&client_ip) {
         let body = serde_json::json!({

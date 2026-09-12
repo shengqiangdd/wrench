@@ -11,7 +11,7 @@
 //!   DELETE /api/vault/:id      — Delete an entry
 //!   GET    /api/vault/types    — List supported entry types
 
-use axum::{extract::Path, extract::State, Json};
+use axum::{Json, extract::Path, extract::State};
 use std::sync::Arc;
 
 use crate::api_types::{VaultEntryDetail, VaultEntrySummary, VaultListResponse, VaultTypeInfo, VaultTypesResponse};
@@ -79,9 +79,7 @@ async fn map_vault_entry_decrypted(
         if let Ok(plaintext) = crypto::decrypt(&e.encrypted_value, legacy) {
             // Re-encrypt with the new v2 key
             if let Ok(re_encrypted) = crypto::encrypt(&plaintext, vault_key) {
-                let now = chrono::Local::now()
-                    .format("%Y-%m-%dT%H:%M:%S%:z")
-                    .to_string();
+                let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%:z").to_string();
                 let updated = VaultEntry {
                     id: e.id.clone(),
                     name: e.name.clone(),

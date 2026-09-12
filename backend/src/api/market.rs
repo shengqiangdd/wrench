@@ -92,9 +92,7 @@ pub async fn get_market_index(State(state): State<Arc<AppState>>) -> impl IntoRe
                 continue;
             }
             if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-                if let Ok(manifest) =
-                    serde_json::from_str::<crate::models::PluginManifest>(&content)
-                {
+                if let Ok(manifest) = serde_json::from_str::<crate::models::PluginManifest>(&content) {
                     if !seen_ids.insert(manifest.id.clone()) {
                         continue; // 跳过重复 ID
                     }

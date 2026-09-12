@@ -1,11 +1,11 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm,
+    aead::{Aead, KeyInit},
 };
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use pbkdf2::pbkdf2_hmac;
-use rand::rngs::SysRng;
 use rand::TryRng;
+use rand::rngs::SysRng;
 use sha2::Sha256;
 
 // ── Key Derivation ──────────────────────────────────────────────────────────
@@ -67,16 +67,15 @@ pub fn verify_password(input: &str, expected: &str) -> bool {
 ///
 /// Returns base64-encoded ciphertext with nonce prepended.
 pub fn encrypt(plaintext: &str, key: &[u8; 32]) -> Result<String, String> {
-    let key = aes_gcm::Key::<Aes256Gcm>::try_from(key.as_slice())
-        .map_err(|_| "Invalid key length")?;
+    let key = aes_gcm::Key::<Aes256Gcm>::try_from(key.as_slice()).map_err(|_| "Invalid key length")?;
     let cipher = Aes256Gcm::new(&key);
 
     // Generate random 12-byte nonce
     let mut nonce_bytes = [0u8; 12];
-    SysRng.try_fill_bytes(&mut nonce_bytes)
+    SysRng
+        .try_fill_bytes(&mut nonce_bytes)
         .map_err(|e| format!("Failed to generate nonce: {:?}", e))?;
-    let nonce = aes_gcm::Nonce::try_from(nonce_bytes.as_slice())
-        .map_err(|_| "Invalid nonce length")?;
+    let nonce = aes_gcm::Nonce::try_from(nonce_bytes.as_slice()).map_err(|_| "Invalid nonce length")?;
 
     let ciphertext = cipher
         .encrypt(&nonce, plaintext.as_bytes())
@@ -101,10 +100,8 @@ pub fn decrypt(encrypted: &str, key: &[u8; 32]) -> Result<String, String> {
     }
 
     let (nonce_bytes, ciphertext) = combined.split_at(12);
-    let nonce = aes_gcm::Nonce::try_from(nonce_bytes)
-        .map_err(|_| "Invalid nonce length")?;
-    let key = aes_gcm::Key::<Aes256Gcm>::try_from(key.as_slice())
-        .map_err(|_| "Invalid key length")?;
+    let nonce = aes_gcm::Nonce::try_from(nonce_bytes).map_err(|_| "Invalid nonce length")?;
+    let key = aes_gcm::Key::<Aes256Gcm>::try_from(key.as_slice()).map_err(|_| "Invalid key length")?;
 
     let cipher = Aes256Gcm::new(&key);
     let plaintext = cipher

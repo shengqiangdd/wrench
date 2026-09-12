@@ -55,11 +55,7 @@ pub fn validate_connection_params(
         errors.push(format!("Invalid username: {}", username));
     }
 
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
+    if errors.is_empty() { Ok(()) } else { Err(errors) }
 }
 
 /// Detect command injection attempts.

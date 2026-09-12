@@ -494,8 +494,19 @@ impl Database {
                 "INSERT INTO scheduled_tasks (name, description, cron_expr, task_type, task_config,
                  target_host_id, enabled, last_run_at, next_run_at, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                rusqlite::params![name, description, cron_expr, task_type, task_config,
-                    target_host_id, enabled, last_run_at, next_run_at, now, now],
+                rusqlite::params![
+                    name,
+                    description,
+                    cron_expr,
+                    task_type,
+                    task_config,
+                    target_host_id,
+                    enabled,
+                    last_run_at,
+                    next_run_at,
+                    now,
+                    now
+                ],
             )?;
             Ok(conn.last_insert_rowid())
         })
@@ -521,8 +532,19 @@ impl Database {
                  task_type=?4, task_config=?5, target_host_id=?6, enabled=?7,
                  last_run_at=?8, next_run_at=?9, updated_at=?10
                  WHERE id=?11",
-                rusqlite::params![name, description, cron_expr, task_type, task_config,
-                    target_host_id, enabled, last_run_at, next_run_at, now, task_id],
+                rusqlite::params![
+                    name,
+                    description,
+                    cron_expr,
+                    task_type,
+                    task_config,
+                    target_host_id,
+                    enabled,
+                    last_run_at,
+                    next_run_at,
+                    now,
+                    task_id
+                ],
             )?;
             Ok(affected > 0)
         })
@@ -762,9 +784,9 @@ impl Database {
 pub struct VaultEntry {
     pub id: String,
     pub name: String,
-    pub kind: String, // ssh_key | api_key | password | note
-    pub name_plain: String,  // plaintext name for index queries (V5+)
-    pub kind_plain: String,  // plaintext kind for index queries (V5+)
+    pub kind: String,       // ssh_key | api_key | password | note
+    pub name_plain: String, // plaintext name for index queries (V5+)
+    pub kind_plain: String, // plaintext kind for index queries (V5+)
     pub encrypted_value: String,
     pub tags: String, // JSON array
     pub created_at: String,
@@ -805,8 +827,8 @@ pub struct ScheduledTask {
     pub name: String,
     pub description: String,
     pub cron_expr: String,
-    pub task_type: String,          // ssh_exec | script
-    pub task_config: String,         // JSON config
+    pub task_type: String,   // ssh_exec | script
+    pub task_config: String, // JSON config
     pub target_host_id: Option<String>,
     pub enabled: bool,
     pub last_run_at: Option<String>,
@@ -820,7 +842,7 @@ pub struct ScheduledTask {
 pub struct TaskExecution {
     pub id: i64,
     pub task_id: i64,
-    pub status: String,     // running | success | failed
+    pub status: String, // running | success | failed
     pub output: Option<String>,
     pub error_message: Option<String>,
     pub started_at: String,
@@ -1169,7 +1191,10 @@ mod tests {
                 assert!(!entry.name_plain.is_empty(), "name_plain should be populated");
                 assert!(!entry.kind_plain.is_empty(), "kind_plain should be populated");
                 // list_vault_entries should NOT load encrypted_value (empty string)
-                assert!(entry.encrypted_value.is_empty(), "encrypted_value should be empty in list query");
+                assert!(
+                    entry.encrypted_value.is_empty(),
+                    "encrypted_value should be empty in list query"
+                );
             }
 
             // Verify name/kind match
@@ -1181,7 +1206,10 @@ mod tests {
             let full = db.get_vault_entry("v1").await.unwrap().unwrap();
             assert_eq!(full.name_plain, "My SSH Key");
             assert_eq!(full.kind_plain, "ssh_key");
-            assert!(!full.encrypted_value.is_empty(), "encrypted_value should be present in get query");
+            assert!(
+                !full.encrypted_value.is_empty(),
+                "encrypted_value should be present in get query"
+            );
         });
     }
 

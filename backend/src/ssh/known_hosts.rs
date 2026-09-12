@@ -1,7 +1,7 @@
+use russh::keys::PublicKey;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use russh::keys::PublicKey;
 
 /// Known hosts verification for SSH connections.
 /// Prevents MITM attacks by verifying host keys against a trusted store.
@@ -41,7 +41,12 @@ impl KnownHosts {
 
     /// Check if a host key is trusted.
     /// Returns Ok(true) if trusted, Ok(false) if not found, Err if file error.
-    pub fn is_trusted(&self, host: &str, port: u16, key: &PublicKey) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn is_trusted(
+        &self,
+        host: &str,
+        port: u16,
+        key: &PublicKey,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         if !self.path.exists() {
             return Ok(false);
         }
@@ -72,16 +77,18 @@ impl KnownHosts {
     }
 
     /// Add a host key to the trusted store.
-    pub fn trust(&self, host: &str, port: u16, key: &PublicKey) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub fn trust(
+        &self,
+        host: &str,
+        port: u16,
+        key: &PublicKey,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Ensure directory exists
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)?;
+        let mut file = fs::OpenOptions::new().create(true).append(true).open(&self.path)?;
 
         let fingerprint = Self::key_fingerprint(key);
         let host_key = Self::host_key(host, port);
@@ -278,7 +285,11 @@ mod tests {
         let dir = tempdir().unwrap();
         let known_hosts_path = dir.path().join("known_hosts");
 
-        fs::write(&known_hosts_path, "# This is a comment\n192.168.1.1:22 ssh-ed25519 ABC\n# Another comment\n").unwrap();
+        fs::write(
+            &known_hosts_path,
+            "# This is a comment\n192.168.1.1:22 ssh-ed25519 ABC\n# Another comment\n",
+        )
+        .unwrap();
 
         let known_hosts = KnownHosts::new(Some(known_hosts_path), false);
         let entries = known_hosts.list().unwrap();

@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use std::sync::Arc;
 
 use crate::api_types::{GrepResponse, LogScanResult, LogSource, LogTailResponse};
@@ -40,7 +40,8 @@ pub async fn scan_log_sources(
         Some(s) => s,
         None => {
             // 无连接时全部标记不存在
-            let results: Vec<LogScanResult> = paths.into_iter()
+            let results: Vec<LogScanResult> = paths
+                .into_iter()
                 .map(|p| LogScanResult { path: p, size: String::new(), exists: false })
                 .collect();
             return ApiResponse::success(results);
@@ -60,10 +61,9 @@ pub async fn scan_log_sources(
 
     // 1. 先用 find 发现真实文件
     let mut found_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    if let Ok(Ok((stdout, _, _))) = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        session.exec(find_cmd),
-    ).await {
+    if let Ok(Ok((stdout, _, _))) =
+        tokio::time::timeout(std::time::Duration::from_secs(10), session.exec(find_cmd)).await
+    {
         for line in stdout.lines() {
             let path = line.trim().to_string();
             if !path.is_empty() && path.starts_with('/') {
@@ -74,17 +74,17 @@ pub async fn scan_log_sources(
 
     // 2. 用一条命令批量获取所有已发现文件的大小
     if !found_map.is_empty() {
-        let size_cmd = found_map.keys()
+        let size_cmd = found_map
+            .keys()
             .map(|p| {
                 let ep = sq(p);
                 format!("du -sh {ep} 2>/dev/null")
             })
             .collect::<Vec<_>>()
             .join("; ");
-        if let Ok(Ok((stdout, _, _))) = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            session.exec(&size_cmd),
-        ).await {
+        if let Ok(Ok((stdout, _, _))) =
+            tokio::time::timeout(std::time::Duration::from_secs(10), session.exec(&size_cmd)).await
+        {
             for line in stdout.lines() {
                 // "4.0K    /var/log/foo.log"
                 let parts: Vec<&str> = line.splitn(2, '\t').collect();
@@ -100,22 +100,23 @@ pub async fn scan_log_sources(
     }
 
     // 3. 也检查前端传来的预定义路径（可能 find 没覆盖到的，如 dmesg, btmp, wtmp）
-    let check_paths: Vec<String> = paths.iter()
+    let check_paths: Vec<String> = paths
+        .iter()
         .filter(|p| !found_map.contains_key(p.as_str()))
         .cloned()
         .collect();
     if !check_paths.is_empty() {
-        let check_cmd = check_paths.iter()
+        let check_cmd = check_paths
+            .iter()
             .map(|p| {
                 let ep = sq(p);
                 format!("[ -e {ep} ] && du -sh {ep} 2>/dev/null || true")
             })
             .collect::<Vec<_>>()
             .join("; ");
-        if let Ok(Ok((stdout, _, _))) = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            session.exec(&check_cmd),
-        ).await {
+        if let Ok(Ok((stdout, _, _))) =
+            tokio::time::timeout(std::time::Duration::from_secs(10), session.exec(&check_cmd)).await
+        {
             for line in stdout.lines() {
                 let parts: Vec<&str> = line.splitn(2, '\t').collect();
                 if parts.len() == 2 {
@@ -163,7 +164,8 @@ pub async fn tail_log(
             // 最简方案：|| 链式降级，兼容 BusyBox
             let cmd = format!(
                 "tail -n {lines} {p} 2>/dev/null || sudo -n tail -n {lines} {p} 2>/dev/null || echo '--- 读取失败（文件不存在或无权限） ---'",
-                p = p, lines = lines
+                p = p,
+                lines = lines
             );
             match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                 Ok(Ok((stdout, _, _))) => {
@@ -208,7 +210,8 @@ pub async fn grep_log(
             let pth = sq(path);
             let cmd = format!(
                 "grep -i {pat} {pth} 2>/dev/null | tail -200 || sudo -n grep -i {pat} {pth} 2>/dev/null | tail -200 || echo '--- 搜索失败（文件不存在或无权限） ---'",
-                pat = pat, pth = pth
+                pat = pat,
+                pth = pth
             );
             match tokio::time::timeout(std::time::Duration::from_secs(15), s.exec(&cmd)).await {
                 Ok(Ok((stdout, _, _))) => {
@@ -244,10 +247,7 @@ pub async fn list_sources(
             "! -name 'btmp*' ! -name 'wtmp*' ! -name 'lastlog' ",
             "2>/dev/null | head -30"
         );
-        if let Ok(Ok((stdout, _, _))) = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            s.exec(cmd),
-        ).await {
+        if let Ok(Ok((stdout, _, _))) = tokio::time::timeout(std::time::Duration::from_secs(10), s.exec(cmd)).await {
             for line in stdout.lines() {
                 let path = line.trim().to_string();
                 if !path.is_empty() && path.starts_with('/') {

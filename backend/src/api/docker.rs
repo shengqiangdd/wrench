@@ -1,11 +1,10 @@
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::api_types::{
-    DockerComposeListResponse, DockerComposeProject,
-    DockerComposeService, DockerContainerInfo, DockerContainerStats, DockerDiagnoseResponse,
-    DockerExecResponse, DockerPsResponse, DockerStatsResponse,
+    DockerComposeListResponse, DockerComposeProject, DockerComposeService, DockerContainerInfo, DockerContainerStats,
+    DockerDiagnoseResponse, DockerExecResponse, DockerPsResponse, DockerStatsResponse,
 };
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
@@ -183,7 +182,11 @@ async fn docker_exec(state: &Arc<AppState>, connection_id: &str, docker_args: &[
                 tracing::info!("Fallback succeeded, stdout_len={}", out2.len());
                 return Ok(out2);
             }
-            tracing::warn!("Fallback also failed: exit_code={} stderr={}", code2, err2.chars().take(300).collect::<String>());
+            tracing::warn!(
+                "Fallback also failed: exit_code={} stderr={}",
+                code2,
+                err2.chars().take(300).collect::<String>()
+            );
         }
     }
 
@@ -492,7 +495,10 @@ pub async fn exec_container(
     };
     let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     match docker_exec(&state, &req.connection_id, &args_ref).await {
-        Ok(data) => ApiResponse::success(crate::api_types::DockerExecResultResponse { data: clean_ansi_output(&data), exit_code: 0 }),
+        Ok(data) => ApiResponse::success(crate::api_types::DockerExecResultResponse {
+            data: clean_ansi_output(&data),
+            exit_code: 0,
+        }),
         Err(e) => ApiResponse::error(-1, &e),
     }
 }
@@ -587,13 +593,7 @@ pub async fn container_stats_all(
     State(state): State<Arc<AppState>>,
     Json(req): Json<BatchStatsRequest>,
 ) -> ApiResponse<DockerStatsResponse> {
-    match docker_exec(
-        &state,
-        &req.connection_id,
-        &["stats", "--no-stream", "--format", "json"],
-    )
-    .await
-    {
+    match docker_exec(&state, &req.connection_id, &["stats", "--no-stream", "--format", "json"]).await {
         Ok(data) => {
             let stats = parse_docker_stats(&data);
             ApiResponse::success(DockerStatsResponse { stats })
@@ -610,10 +610,7 @@ pub async fn compose_list(
     // 如果有 filePath，直接返回该文件
     if let Some(file_path) = &req.file_path {
         let path = std::path::Path::new(file_path);
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown");
+        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
         return ApiResponse::success(DockerComposeListResponse {
             projects: vec![DockerComposeProject {
                 id: String::new(),
@@ -648,11 +645,7 @@ fn clean_ansi_output(s: &str) -> String {
     let re2 = regex::Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap();
     let cleaned = re2.replace_all(&cleaned, "");
     // Normalize \r\n → \n, strip standalone \r, strip trailing whitespace
-    cleaned
-        .replace("\r\n", "\n")
-        .replace('\r', "")
-        .trim()
-        .to_string()
+    cleaned.replace("\r\n", "\n").replace('\r', "").trim().to_string()
 }
 
 /// POST /api/docker/compose/action
@@ -726,13 +719,9 @@ pub async fn docker_diagnose(
     let running = containers.iter().filter(|c| c.state == "running").count();
 
     // Test docker stats
-    let raw_stats = docker_exec(
-        &state,
-        conn_id,
-        &["stats", "--no-stream", "--format", "json"],
-    )
-    .await
-    .unwrap_or_else(|e| format!("ERROR: {}", e));
+    let raw_stats = docker_exec(&state, conn_id, &["stats", "--no-stream", "--format", "json"])
+        .await
+        .unwrap_or_else(|e| format!("ERROR: {}", e));
 
     // Test docker images
     let raw_images = docker_exec(&state, conn_id, &["images", "--format", "json"])

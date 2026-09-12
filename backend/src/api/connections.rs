@@ -9,8 +9,8 @@ use crate::db::SshConnection;
 use crate::error::AppError;
 use crate::response::ApiResponse;
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

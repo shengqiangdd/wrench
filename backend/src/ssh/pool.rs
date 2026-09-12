@@ -34,45 +34,25 @@ pub struct SshHandler {
 impl client::Handler for SshHandler {
     type Error = russh::Error;
 
-    async fn check_server_key(
-        &mut self,
-        server_public_key: &russh::keys::PublicKey,
-    ) -> Result<bool, Self::Error> {
+    async fn check_server_key(&mut self, server_public_key: &russh::keys::PublicKey) -> Result<bool, Self::Error> {
         // Use known_hosts verification instead of unconditional trust
         match self.known_hosts.verify(&self.host, self.port, server_public_key) {
             Ok(true) => {
-                tracing::debug!(
-                    "Host key verified for {}:{}",
-                    self.host,
-                    self.port
-                );
+                tracing::debug!("Host key verified for {}:{}", self.host, self.port);
                 Ok(true)
             }
             Ok(false) => {
-                tracing::warn!(
-                    "Host key verification failed for {}:{} (strict mode)",
-                    self.host,
-                    self.port
-                );
+                tracing::warn!("Host key verification failed for {}:{} (strict mode)", self.host, self.port);
                 Err(russh::Error::NoAuthMethod)
             }
             Err(e) => {
-                tracing::error!(
-                    "Error verifying host key for {}:{}: {}",
-                    self.host,
-                    self.port,
-                    e
-                );
+                tracing::error!("Error verifying host key for {}:{}: {}", self.host, self.port, e);
                 Err(russh::Error::NoAuthMethod)
             }
         }
     }
 
-    async fn auth_banner(
-        &mut self,
-        banner: &str,
-        _session: &mut client::Session,
-    ) -> Result<(), Self::Error> {
+    async fn auth_banner(&mut self, banner: &str, _session: &mut client::Session) -> Result<(), Self::Error> {
         tracing::debug!("SSH auth banner: {banner}");
         Ok(())
     }
@@ -80,7 +60,7 @@ impl client::Handler for SshHandler {
 
 impl SshSession {
     /// Create a new SSH session with known_hosts verification.
-    /// 
+    ///
     /// # Arguments
     /// * `connection_id` - Unique connection identifier
     /// * `host` - SSH server hostname or IP
@@ -111,11 +91,7 @@ impl SshSession {
     fn create_handler(&self, known_hosts_path: Option<String>, strict_mode: bool) -> SshHandler {
         let path = known_hosts_path.map(std::path::PathBuf::from);
         let known_hosts = KnownHosts::new(path, strict_mode);
-        SshHandler {
-            known_hosts,
-            host: self.host.clone(),
-            port: self.port,
-        }
+        SshHandler { known_hosts, host: self.host.clone(), port: self.port }
     }
 
     /// Update the last-used timestamp (call after every operation).
@@ -151,7 +127,7 @@ impl SshSession {
     }
 
     /// Connect using password authentication.
-    /// 
+    ///
     /// # Arguments
     /// * `password` - SSH password
     /// * `known_hosts_path` - Optional path to known_hosts file
@@ -181,7 +157,9 @@ impl SshSession {
             };
             tracing::error!(
                 "Password auth rejected by {}@{}:{}. Remaining methods: {}",
-                self.username, self.host, self.port,
+                self.username,
+                self.host,
+                self.port,
                 remaining,
             );
             Err(format!("Password authentication rejected by server (remaining methods: {})", remaining).into())
@@ -189,7 +167,7 @@ impl SshSession {
     }
 
     /// Connect using public key authentication.
-    /// 
+    ///
     /// # Arguments
     /// * `private_key_pem` - PEM-encoded private key
     /// * `passphrase` - Optional passphrase for encrypted keys
