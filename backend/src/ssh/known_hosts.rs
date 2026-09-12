@@ -1,7 +1,11 @@
 use russh::keys::PublicKey;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// 临时文件名序号：保证同一进程内并发覆写时临时文件不互相覆盖。
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Known hosts verification for SSH connections.
 /// Prevents MITM attacks by verifying host keys against a trusted store.
@@ -100,6 +104,57 @@ impl KnownHosts {
         Ok(())
     }
 
+    /// 原子覆写整个 known_hosts 文件。
+    ///
+    /// 先写同目录下的临时文件并 `fsync`，再 `rename` 覆盖目标：
+    /// - 同一文件系统内 rename 是原子的，读者要么看到旧内容要么看到新内容；
+    /// - 旧的 `File::create(&self.path)` 会先截断原文件，若写入中途失败（磁盘满、
+    ///   进程被杀），known_hosts 就被截断/清空，主机密钥校验随之失守；
+    /// - 覆写沿用原文件权限（known_hosts 通常为 0600，不能被进程 umask 放宽）。
+    fn rewrite(&self, lines: &[&str]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let parent = self.path.parent().unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(parent)?;
+
+        let existing_perms = fs::metadata(&self.path).ok().map(|m| m.permissions());
+
+        // 临时文件放在目标同目录：跨文件系统 rename 会失败（EXDEV）
+        let stem = self.path.file_name().and_then(|n| n.to_str()).unwrap_or("known_hosts");
+        let tmp = parent.join(format!(
+            ".{}.{}.{}.tmp",
+            stem,
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+
+        let write_result = (|| -> std::io::Result<()> {
+            let mut file = fs::File::create(&tmp)?;
+            for line in lines {
+                writeln!(file, "{}", line)?;
+            }
+            file.sync_all()?;
+            Ok(())
+        })();
+
+        if let Err(err) = write_result {
+            let _ = fs::remove_file(&tmp);
+            return Err(err.into());
+        }
+
+        if let Some(perms) = existing_perms
+            && let Err(err) = fs::set_permissions(&tmp, perms)
+        {
+            // 权限设置失败不阻断替换，但必须可观测
+            tracing::warn!("Failed to preserve permissions on {}: {}", tmp.display(), err);
+        }
+
+        if let Err(err) = fs::rename(&tmp, &self.path) {
+            let _ = fs::remove_file(&tmp);
+            return Err(err.into());
+        }
+
+        Ok(())
+    }
+
     /// Remove a host key from the trusted store.
     pub fn remove(&self, host: &str, port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if !self.path.exists() {
@@ -126,10 +181,7 @@ impl KnownHosts {
             })
             .collect();
 
-        let mut file = fs::File::create(&self.path)?;
-        for line in lines {
-            writeln!(file, "{}", line)?;
-        }
+        self.rewrite(&lines)?;
 
         tracing::info!("Removed host key for: {}", target_host);
         Ok(())
@@ -265,6 +317,39 @@ mod tests {
         let entries = known_hosts.list().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, "10.0.0.1:2222");
+    }
+
+    #[test]
+    fn test_known_hosts_remove_missing_file_is_noop() {
+        let dir = tempdir().unwrap();
+        let known_hosts_path = dir.path().join("known_hosts");
+
+        let known_hosts = KnownHosts::new(Some(known_hosts_path.clone()), false);
+        known_hosts.remove("192.168.1.1", 22).unwrap();
+        assert!(!known_hosts_path.exists(), "文件不存在时 remove 不应创建文件");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_known_hosts_rewrite_preserves_permissions_and_leaves_no_temp_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let known_hosts_path = dir.path().join("known_hosts");
+        fs::write(&known_hosts_path, "192.168.1.1:22 ssh-ed25519 ABC\n10.0.0.1:2222 ssh-rsa DEF\n").unwrap();
+        fs::set_permissions(&known_hosts_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        let known_hosts = KnownHosts::new(Some(known_hosts_path.clone()), false);
+        known_hosts.remove("192.168.1.1", 22).unwrap();
+
+        let mode = fs::metadata(&known_hosts_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "原子覆写必须保留原文件权限");
+
+        let names: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["known_hosts".to_string()], "覆写后不应残留临时文件");
     }
 
     #[test]
