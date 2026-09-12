@@ -253,9 +253,11 @@ async fn test_audit_log_insert() {
 
 | 模块 | 当前覆盖 | 目标 |
 |------|----------|------|
-| Rust 单元测试 | 72/72 | 每个公共函数必须有测试 |
-| 前端组件测试 | 230/230 | 每个组件必须有渲染/交互测试 |
-| E2E 测试 | 27/27 | 核心用户流程覆盖（登陆、SSH、SFTP、Docker） |
+| Rust 测试 | 124/124（107 单元 + `tests/api_test.rs` 集成 17） | 每个公共函数必须有测试 |
+| 前端测试 | 291/291（26 个测试文件） | 每个组件必须有渲染/交互测试 |
+| E2E 测试 | 23/23（`frontend/e2e/basic.spec.ts`） | 核心用户流程覆盖（登录、SSH、SFTP、Docker） |
+
+> 数字随用例增删变化，改完测试记得同步这一行。
 
 ---
 
@@ -264,19 +266,26 @@ async fn test_audit_log_insert() {
 ```bash
 # 前端
 cd frontend
-npm run test          # vitest watch 模式
+npm run test          # vitest run，跑一遍就退出（CI 用的是 npm run test:unit）
+npm run test:unit     # 同上，verbose 输出
+npm run test:watch    # vitest watch 模式
 npm run test:coverage # vitest run + coverage
 npm run test:e2e      # Playwright headless
 
-# 后端
+# 后端（工具链版本见仓库根 rust-toolchain.toml，当前 1.96.1）
 cd backend
-cargo test            # 全部 72 个测试
-cargo test --no-run   # 编译检查
-cargo test ssh::      # 模块测试
+cargo test --all-targets    # 全部 124 个测试（107 单元 + 17 集成，tests/api_test.rs）
+cargo test --no-run         # 只编译不跑
+cargo test ssh::            # 按模块过滤
+cargo fmt --all --check     # 格式化检查（backend/rustfmt.toml）
+cargo clippy --all-targets -- -D warnings   # 告警即错误，与 CI 一致
 
 # 覆盖率（后端）
 cargo tarpaulin --out Xml --output-dir target/coverage
 ```
+
+> 说明：`cargo test` 不带 `--all-targets` 时也会跑 `tests/` 下的集成测试；加 `--all-targets`
+> 是为了和 CI 完全一致（同时覆盖 benches/examples）。数字会随用例增删变化，不必死记。
 
 ---
 

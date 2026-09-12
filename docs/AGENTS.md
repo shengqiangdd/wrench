@@ -139,10 +139,11 @@ npm run build        # 生产构建，产出 dist/
 
 ### 后端
 ```bash
-cd backend
-cargo check                  # 编译通过
-cargo clippy -- -D warnings  # Clippy 零警告
-cargo test                   # 72 个测试全绿
+cd backend                   # 工具链版本见仓库根 rust-toolchain.toml（1.96.1）
+cargo check --locked               # 编译通过
+cargo fmt --all --check            # 格式化（配置见 backend/rustfmt.toml）
+cargo clippy --all-targets --locked -- -D warnings   # Clippy 零告警
+cargo test --all-targets --locked  # 124 个测试全绿（107 单元 + 17 集成）
 ```
 
 ### 整体

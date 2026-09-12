@@ -2,6 +2,26 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 🔐 认证与安全修复
+- **关闭"无认证签发全权 JWT"** — 此前任何人都能 `POST /api/ws-token` 拿到 24 小时全权 token，
+  等于把终端、文件系统、Docker 控制权交出去。现在改为口令登录换 JWT（scope 分层：`api` / `ws`）、
+  中间件按路径校验 scope 且 fail-closed、改口令即吊销所有已签发令牌。外网暴露方式不变。
+- **`/api/ws-token` 降级** — 必须持有会话才能换取 scope=`ws` 的短时（10 分钟）token，不再是公开的全权签发点。
+- **compose 进度注入守卫** — 前端自动注入 `COMPOSE_PROGRESS=plain` 只在识别到真实 shell 提示符时执行
+  （跳过 `vim` 等 TUI 与密码提示），不会把命令敲进别人的编辑器里。
+
+### 🧪 工程规范
+- **Rust 工具链钉版本** — 新增仓库根 `rust-toolchain.toml`（1.96.1 + rustfmt/clippy），CI 不再用浮动的
+  stable（此前 Rust 每发一版新增默认告警，CI 就会在自己没改任何代码时变红）。
+- **CI 补 rustfmt 门禁** — 新增 `cargo fmt --all --check`；clippy/test 改为 `--all-targets --locked`。
+- **提交 `Cargo.lock`** — 此前从未入库（`backend/.gitignore` 里还明确忽略它），`Cargo.toml` 声明的
+  `dirs = "5"` 根本不在锁文件里；Dockerfile 两处构建同步加 `--locked`，依赖不再随构建环境漂移。
+- **后端全量 rustfmt + Clippy 1.96 零告警** — 37 个文件的格式化与 37 条告警一并清掉，
+  CI 的 `-D warnings` 从"从未真正通过"变成有效门禁。
+- **文档与实现对齐** — 修正 `HOST`/`PORT`（实际读取的是 `BRIDGE_HOST`/`BRIDGE_PORT`）、
+  `API_KEY`（实际是 `WRENCH_AUTH_PASSWORD`）、不存在的 `dev` 分支，以及各处已过期的测试数量；
+  `.gitignore` 的 `tests/` 等过宽模式改为锚定仓库根（否则新增后端集成测试 `git add` 会被拒）。
+
 ### 🗄️ 客户端 SQLite 架构 — 用户数据隔离 🚀
 - **浏览器端 SQLite** — 使用 sql.js (WASM) 在浏览器中运行 SQLite 数据库，实现用户数据完全隔离
 - **数据存储** — Vault 凭据、SSH 连接配置、告警规则/历史、通知渠道配置全部迁移至客户端 SQLite

@@ -93,9 +93,9 @@ npm run build     # 输出到 frontend/dist/
 
 ```bash
 cd backend
-# 首次构建需要安装 Rust 工具链
+# 首次构建需要安装 Rust 工具链（版本由仓库根 rust-toolchain.toml 指定，当前 1.96.1）
 # curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-cargo build --release
+cargo build --release --locked
 ```
 
 ### 3. 配置环境变量
@@ -105,8 +105,9 @@ cp .env.example .env
 # 编辑 .env 设置以下变量：
 # JWT_SECRET=your-jwt-secret           # 令牌签名密钥（必填，用于认证和 Vault 加密）
 # DATABASE_URL=wrench.db             # SQLite 数据库路径
-# HOST=0.0.0.0
-# PORT=3001
+# WRENCH_AUTH_PASSWORD=...           # 登录密码（不设置则自动生成并写入数据目录 auth_password）
+# BRIDGE_HOST=0.0.0.0                # 监听地址：注意变量名是 BRIDGE_HOST，不是 HOST
+# BRIDGE_PORT=3001                   # 监听端口：注意变量名是 BRIDGE_PORT，不是 PORT
 ```
 
 ### 4. 启动后端
@@ -136,8 +137,9 @@ Restart=always
 RestartSec=10
 Environment=JWT_SECRET=your-secret-key
 Environment=DATABASE_URL=/opt/wrench/data/wrench.db
-Environment=HOST=0.0.0.0
-Environment=PORT=3001
+Environment=WRENCH_AUTH_PASSWORD=change-me
+Environment=BRIDGE_HOST=0.0.0.0
+Environment=BRIDGE_PORT=3001
 Environment=RUST_LOG=info
 
 [Install]
@@ -209,8 +211,8 @@ server {
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `PORT` | `3001` | 后端监听端口 |
-| `HOST` | `0.0.0.0` | 监听地址 |
+| `BRIDGE_PORT` | `3001` | 后端监听端口（注意：不是 `PORT`） |
+| `BRIDGE_HOST` | `0.0.0.0` | 监听地址（注意：不是 `HOST`） |
 | `DATABASE_URL` | `无` (Docker 内默认 `/data/wrench.db`) | SQLite 数据库路径 |
 | `JWT_SECRET` | 自动生成 | 用于令牌签发和 Vault 加密密钥派生 |
 | `WRENCH_AUTH_PASSWORD` | 自动生成并写入数据目录 | **登录密码**；未设置时后端生成随机密码并落盘（Docker 下 entrypoint 写入 `/data/.env`，可用 `docker exec <容器名> grep WRENCH_AUTH_PASSWORD /data/.env` 查看；非 Docker 为数据目录的 `auth_password` 文件）。改密码会让所有旧令牌立即失效 |
@@ -239,5 +241,5 @@ curl http://localhost:3001/api/health
 1. **生产环境务必使用反向代理**（Nginx / Caddy）
 2. **启用 HTTPS**（Let's Encrypt 免费证书）
 3. 配置 **IP 白名单**或**基础认证**
-4. 定期更新依赖：`npm audit`
+4. 定期更新依赖：`npm audit`（前端）、`cargo audit`（后端，需 `cargo install cargo-audit`）
 5. 使用非 root 用户运行服务

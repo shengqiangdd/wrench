@@ -42,14 +42,15 @@
     ├── 安全 — Bearer Token 认证 / 速率限制 / 命令注入防护 / CSP 头
     └── 日志 — tail 实时跟踪 + grep 搜索 / 1MB 缓冲区上限
 部署: Docker + GitHub Actions (三阶段构建, 8.8MB 二进制)
-CI: TypeScript 零错误 + ESLint 零错误 + Clippy 零警告 + 34 Rust 单元测试 + 198 前端测试
+CI: TypeScript 零错误 + ESLint 零错误 + rustfmt/Clippy 零告警 + 124 Rust 测试（107 单元 + 17 集成）+ 291 前端测试
 
 ## 🚀 快速开始
 
 ### 环境要求
 
-- Node.js >= 18
-- npm
+- Node.js 22（与 CI 一致，见 `.github/workflows/ci-frontend.yml`）
+- npm（前端唯一包管理器，依赖以 `frontend/package-lock.json` 为准）
+- Rust 1.96.1（由仓库根的 `rust-toolchain.toml` 指定，rustup 会自动安装）
 
 ### 安装和启动
 
@@ -63,7 +64,8 @@ cd frontend && npm install
 
 # 3. 配置后端环境变量
 cd ../backend && cp .env.example .env
-# 编辑 .env 设置 API_KEY（用于认证）、DATABASE_URL 等
+# 编辑 .env：至少设置 JWT_SECRET 与登录密码 WRENCH_AUTH_PASSWORD（openssl rand -base64 32）
+# 不设密码也可以：后端会生成随机密码写入数据目录的 auth_password，用 cat 查看即可
 
 # 4. 启动后端（Rust，终端 1）
 cargo run
@@ -107,7 +109,7 @@ docker compose down
 ### 访问地址
 
 - 前端：http://localhost:3001
-- 健康检查：http://localhost:3001/api/health（唯一公开接口，无需登录）
+- 健康检查：http://localhost:3001/api/health（与 `/api/auth/login` 并列的公开接口，不需要登录；其余接口与 WebSocket 都要先登录）
 
 > 💡 Docker 镜像由 GitHub Actions 自动构建并推送至 **ghcr.io/shengqiangdd/wrench**，每次推送 `main` 分支都会自动更新 `latest` 标签。
 
