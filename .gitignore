@@ -52,22 +52,26 @@ Thumbs.db
 *~
 
 # Tests / screenshots / temp files
+# 注意：这些目录模式一律锚定到仓库根（开头的 /）。
+# 不锚定的 `tests/` 会连 backend/tests/ 一起吞掉 —— 新增后端集成测试根本 git add 不进去
+# （TESTING_STRATEGY.md 却要求测试放 tests/），而且和 frontend/package-lock.json 一样
+# 让"锁文件/测试是否入库"变得看运气。
 frontend/test-results/
-screenshots/
-screenshot.png
-_push.py
-bridge/
-memory/
-tests/
-tmp/
+/screenshots/
+/screenshot.png
+/_push.py
+/bridge/
+/memory/
+/tests/
+/tmp/
 
 # Local-only scripts (not shipped in repo)
-scripts/
-deploy*.py
-start-local.sh
-restart-local.sh
-Dockerfile.nodocker
-package-lock.json
+/scripts/
+/deploy*.py
+/start-local.sh
+/restart-local.sh
+/Dockerfile.nodocker
+/package-lock.json
 
 # Legacy / misc
 backend/core

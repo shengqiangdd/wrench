@@ -43,7 +43,7 @@ RUN mkdir -p src/api src/websocket src/ssh src/docker src/models src/middleware 
 # 去掉 || true，让错误暴露出来
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release 2>/dev/null
+    cargo build --release --locked 2>/dev/null
 
 # --- Step 2: 复制实际源码，增量编译 ---
 COPY backend/src/ ./src/
@@ -51,7 +51,7 @@ COPY backend/src/ ./src/
 # 仅重编译业务代码（依赖已缓存，cargo 自动检测文件变化）
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release && \
+    cargo build --release --locked && \
     cp /app/target/release/wrench-backend /tmp/wrench-backend
 
 # 验证二进制
