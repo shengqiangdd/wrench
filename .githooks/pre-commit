@@ -6,58 +6,56 @@
 #
 # Or symlink:
 #   ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
+#
+# 注意：本脚本用 /bin/sh 执行（很多发行版是 dash），所以只用 POSIX 语法 ——
+# 比如判断命令是否存在必须写 `command -v x > /dev/null 2>&1`，
+# 用 bash 的 `&>` 在 dash 下会被解析成"后台执行 + 重定向"，判断恒为真。
 
 echo "🔍 Running pre-commit checks..."
 
+fail() {
+  echo "❌ $1"
+  exit 1
+}
+
 # ── Frontend checks ──
-cd frontend
+if [ -d frontend/node_modules ]; then
+  cd frontend || exit 1
 
-echo "  → TypeScript..."
-npx tsc --noEmit 2>/dev/null
-if [ $? -ne 0 ]; then
-  echo "❌ TypeScript errors found. Aborting."
-  exit 1
-fi
+  echo "  → TypeScript..."
+  npx tsc --noEmit || fail "TypeScript errors found."
 
-echo "  → ESLint..."
-npx eslint . --report-unused-disable-directives --max-warnings 0 2>/dev/null
-if [ $? -ne 0 ]; then
-  echo "❌ ESLint errors found. Aborting."
-  exit 1
-fi
+  echo "  → ESLint..."
+  npx eslint . --report-unused-disable-directives --max-warnings 0 || fail "ESLint errors found."
 
-echo "  → Prettier..."
-npx prettier --check "src/**/*.{ts,tsx,css,json}" 2>/dev/null
-if [ $? -ne 0 ]; then
-  echo "❌ Prettier formatting issues found. Run: npm run format"
-  exit 1
-fi
+  echo "  → Prettier..."
+  npx prettier --check "src/**/*.{ts,tsx,css,json}" || fail "Prettier formatting issues found. Run: npm run format"
 
-echo "  → Unit tests..."
-npx vitest run 2>/dev/null
-if [ $? -ne 0 ]; then
-  echo "❌ Unit tests failed. Aborting."
-  exit 1
-fi
+  echo "  → Unit tests..."
+  npx vitest run || fail "Unit tests failed."
 
-cd ..
-
-# ── Backend checks (if cargo available) ──
-if command -v cargo &> /dev/null; then
-  cd backend
-  echo "  → Rust check..."
-  cargo check 2>/dev/null
-  if [ $? -ne 0 ]; then
-    echo "❌ Rust compilation errors. Aborting."
-    exit 1
-  fi
-  echo "  → Clippy..."
-  cargo clippy -- -D warnings 2>/dev/null
-  if [ $? -ne 0 ]; then
-    echo "❌ Clippy warnings found. Aborting."
-    exit 1
-  fi
   cd ..
+else
+  echo "  ⏭  skipped frontend checks (frontend/node_modules missing — run npm install)"
+fi
+
+# ── Backend checks（与 CI 的 ci-backend.yml 同一组命令；没装 cargo 就交给 CI） ──
+if command -v cargo > /dev/null 2>&1; then
+  cd backend || exit 1
+
+  echo "  → rustfmt..."
+  cargo fmt --all --check || fail "Backend formatting issues found. Run: cargo fmt --all"
+
+  echo "  → Clippy..."
+  cargo clippy --all-targets --locked -- -D warnings \
+    -A clippy::needless_update -A clippy::field_reassign_with_default || fail "Clippy warnings found."
+
+  echo "  → Cargo tests..."
+  cargo test --all-targets --locked || fail "Backend tests failed."
+
+  cd ..
+else
+  echo "  ⏭  skipped backend checks (cargo not installed — CI will run them)"
 fi
 
 echo "✅ All checks passed!"
