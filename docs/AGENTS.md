@@ -98,7 +98,8 @@ pub struct AppState {
 
 ```
 登录：POST /api/auth/login { password } → 会话 JWT（scope=api+ws，7 天）
-      · 口令来自 WRENCH_AUTH_PASSWORD（或数据目录的 auth_password 文件）
+      · 口令来自 WRENCH_AUTH_PASSWORD（Docker 下由 entrypoint 落盘到 /data/.env；
+        非 Docker 或未设环境变量时，为数据目录的 auth_password 文件）
       · 校验用 SHA-256 摘要 + 恒定时间比较；登录接口独立限流（8 次/分钟/IP）
 REST API：authedFetch(url, opts) → Authorization: Bearer <会话 JWT>
 WebSocket：POST /api/ws-token（需会话）→ 短时 token（scope=ws，10 分钟）
