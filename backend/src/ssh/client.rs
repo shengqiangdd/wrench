@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::ssh::SshSession;
 
 /// Represents an SSH connection including its active session.
+#[derive(Clone)]
 pub struct SshConnection {
     pub connection_id: String,
     pub host: String,
@@ -13,6 +14,9 @@ pub struct SshConnection {
     pub session: Option<Arc<SshSession>>,
     /// Sudo password for privilege escalation in SFTP fallback operations.
     pub sudo_password: Option<String>,
+    /// 归属空间：内存里的活连接也必须知道主人，否则拿到别人的 connection_id
+    /// 就能操作别人的主机。空串表示未归属（调用方一律看不见，fail-closed）。
+    pub space_id: String,
 }
 
 impl SshConnection {
@@ -25,7 +29,14 @@ impl SshConnection {
             auth_method,
             session: None,
             sudo_password: None,
+            space_id: String::new(),
         }
+    }
+
+    /// 设置归属空间（builder 风格，便于构造后就地标记主人）。
+    pub fn with_space(mut self, space_id: impl Into<String>) -> Self {
+        self.space_id = space_id.into();
+        self
     }
 
     pub async fn is_connected(&self) -> bool {

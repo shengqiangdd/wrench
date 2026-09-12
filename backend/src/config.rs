@@ -117,6 +117,18 @@ impl AppConfig {
     }
 }
 
+/// 维护令牌（可选）：只有持有它的人能调用「全局性」接口
+/// （整库下载、插件安装/卸载）。未设置时这些接口一律 404 —— 多人共用下
+/// 「人人平等」意味着没有人可以拿到别人的数据，包括整库导出。
+///
+/// 直接从环境变量读取（部署侧提供，不进仓库、不进日志）。
+pub fn maintenance_token() -> Option<String> {
+    std::env::var("WRENCH_MAINTENANCE_TOKEN")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
 /// 解析登录密码，见 [`AppConfig::auth_password`]。
 ///
 /// 返回 `None` 表示无法确定密码 —— 调用方必须保持 fail-closed（拒绝所有受保护请求）。

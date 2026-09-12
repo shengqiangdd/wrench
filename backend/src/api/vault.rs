@@ -11,7 +11,10 @@
 //!   DELETE /api/vault/:id      — Delete an entry
 //!   GET    /api/vault/types    — List supported entry types
 
-use axum::{Json, extract::Path, extract::State};
+use axum::{
+    Json,
+    extract::{Extension, Path, State},
+};
 use std::sync::Arc;
 
 use crate::api_types::{VaultEntryDetail, VaultEntrySummary, VaultListResponse, VaultTypeInfo, VaultTypesResponse};
@@ -19,6 +22,7 @@ use crate::app_state::AppState;
 use crate::db::VaultEntry;
 use crate::error::AppError;
 use crate::response::ApiResponse;
+use crate::space::SpaceCtx;
 use crate::utils::crypto;
 
 const SUPPORTED_KINDS: &[&str] = &["ssh_key", "api_key", "password", "note"];
@@ -68,6 +72,7 @@ async fn map_vault_entry_decrypted(
     vault_key: &[u8; 32],
     legacy_key: Option<&[u8; 32]>,
     db: &crate::db::Database,
+    space_id: &str,
 ) -> String {
     // Try current v2 key first
     if let Ok(plaintext) = crypto::decrypt(&e.encrypted_value, vault_key) {
@@ -93,7 +98,7 @@ async fn map_vault_entry_decrypted(
                 updated_at: now,
             };
             // Best-effort migration — log but don't fail on DB errors
-            let _ = db.update_vault_entry(&updated).await;
+            let _ = db.update_vault_entry(&updated, space_id).await;
         }
         return plaintext;
     }
@@ -106,8 +111,9 @@ async fn map_vault_entry(
     vault_key: &[u8; 32],
     legacy_key: Option<&[u8; 32]>,
     db: &crate::db::Database,
+    space_id: &str,
 ) -> VaultEntryDetail {
-    let decrypted = map_vault_entry_decrypted(e, vault_key, legacy_key, db).await;
+    let decrypted = map_vault_entry_decrypted(e, vault_key, legacy_key, db, space_id).await;
     let tags: Vec<String> = serde_json::from_str(&e.tags).unwrap_or_default();
 
     VaultEntryDetail {
@@ -125,6 +131,7 @@ async fn map_vault_entry(
 /// Returns metadata only — value is NOT decrypted for the list view (O(1) per entry).
 pub async fn list_vault_entries(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
 ) -> Result<ApiResponse<VaultListResponse>, AppError> {
     let db = state
         .db
@@ -132,7 +139,7 @@ pub async fn list_vault_entries(
         .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
 
     let entries = db
-        .list_vault_entries()
+        .list_vault_entries(&space.id)
         .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
@@ -158,6 +165,7 @@ pub async fn list_vault_entries(
 /// Create a vault entry (POST /api/vault)
 pub async fn create_vault_entry(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<ApiResponse<VaultEntryDetail>, AppError> {
     let db = state
@@ -205,16 +213,19 @@ pub async fn create_vault_entry(
         updated_at: now,
     };
 
-    db.insert_vault_entry(&entry)
+    db.insert_vault_entry(&entry, &space.id)
         .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
-    Ok(ApiResponse::success(map_vault_entry(&entry, &vault_key, None, db).await))
+    Ok(ApiResponse::success(
+        map_vault_entry(&entry, &vault_key, None, db, &space.id).await,
+    ))
 }
 
 /// Update a vault entry (PUT /api/vault/:id)
 pub async fn update_vault_entry(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Path(entry_id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<ApiResponse<VaultEntryDetail>, AppError> {
@@ -225,7 +236,7 @@ pub async fn update_vault_entry(
     let vault_key = get_vault_key(&state)?;
 
     let existing = db
-        .get_vault_entry(&entry_id)
+        .get_vault_entry(&entry_id, &space.id)
         .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?
         .ok_or_else(|| AppError::NotFound("Vault entry not found".into()))?;
@@ -269,16 +280,19 @@ pub async fn update_vault_entry(
         updated_at: now,
     };
 
-    db.update_vault_entry(&updated)
+    db.update_vault_entry(&updated, &space.id)
         .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
-    Ok(ApiResponse::success(map_vault_entry(&updated, &vault_key, None, db).await))
+    Ok(ApiResponse::success(
+        map_vault_entry(&updated, &vault_key, None, db, &space.id).await,
+    ))
 }
 
 /// Delete a vault entry (DELETE /api/vault/:id)
 pub async fn delete_vault_entry(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Path(entry_id): Path<String>,
 ) -> Result<ApiResponse<()>, AppError> {
     let db = state
@@ -287,7 +301,7 @@ pub async fn delete_vault_entry(
         .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
 
     let deleted = db
-        .delete_vault_entry(&entry_id)
+        .delete_vault_entry(&entry_id, &space.id)
         .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 

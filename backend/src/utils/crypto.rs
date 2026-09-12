@@ -8,6 +8,68 @@ use rand::TryRng;
 use rand::rngs::SysRng;
 use sha2::Sha256;
 
+// ── 门户口令哈希（PBKDF2-HMAC-SHA256）────────────────────────────────────────
+
+/// 门户口令哈希迭代次数（OWASP 对 PBKDF2-HMAC-SHA256 的建议量级）。
+///
+/// 只在登录/设置口令时计算，不在请求热路径上，因此可以取较大值：
+/// 换来的是即使数据库被拖走、口令哈希也极难离线爆破。
+pub const DOOR_ITERATIONS: u32 = 600_000;
+
+/// 生成门户口令哈希，格式：`pbkdf2-sha256$<iterations>$<salt_b64>$<hash_b64>`。
+///
+/// 盐为 16 字节系统随机数；同一口令每次哈希结果不同。
+pub fn hash_door_password(password: &str) -> String {
+    use rand::TryRng;
+    let mut rng = rand::rngs::SysRng;
+    let mut salt = [0u8; 16];
+    rng.try_fill_bytes(&mut salt).expect("system RNG unavailable");
+    let key = derive_key(password, &salt, DOOR_ITERATIONS);
+    format!(
+        "pbkdf2-sha256${}${}${}",
+        DOOR_ITERATIONS,
+        BASE64.encode(salt),
+        BASE64.encode(key)
+    )
+}
+
+/// 校验口令与存储的 PBKDF2 哈希是否匹配（恒定时间比较摘要）。
+///
+/// 参数（迭代次数、盐）都从存储串里读，便于将来提升迭代次数而不影响旧记录。
+pub fn verify_door_hash(password: &str, stored: &str) -> bool {
+    let Some(rest) = stored.strip_prefix("pbkdf2-sha256$") else {
+        return false;
+    };
+    let parts: Vec<&str> = rest.split('$').collect();
+    if parts.len() != 3 {
+        return false;
+    }
+    let Ok(iterations) = parts[0].parse::<u32>() else {
+        return false;
+    };
+    let (Ok(salt), Ok(expected)) = (BASE64.decode(parts[1]), BASE64.decode(parts[2])) else {
+        return false;
+    };
+    let key = derive_key(password, &salt, iterations);
+    // 先比 SHA-256 摘要再比字节：长度固定，避免按字节短路泄露前缀
+    use sha2::Digest;
+    Sha256::digest(key) == Sha256::digest(&expected)
+}
+
+/// legacy 环境变量口令（`WRENCH_AUTH_PASSWORD`）派生出的令牌版本号。
+///
+/// 数据库托管口令时，改口令会显式把 `token_version` +1（见 `AppState::set_door_password_hash`）；
+/// 而 legacy 部署的口令只存在于环境变量里，没有可自增的地方 ——
+/// 于是用「口令指纹」当版本号：部署者改环境变量口令 → 指纹变 → 所有旧令牌自动失效。
+pub fn env_password_version(password: &str) -> u32 {
+    use sha2::Digest;
+    let mut hasher = Sha256::new();
+    hasher.update(b"wrench-door-token-version:v1:");
+    hasher.update(password.as_bytes());
+    let digest = hasher.finalize();
+    u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]])
+}
+
 // ── Key Derivation ──────────────────────────────────────────────────────────
 
 /// Derive a 256-bit key using PBKDF2-HMAC-SHA256 (100K iterations).

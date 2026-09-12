@@ -14,6 +14,7 @@ pub mod db;
 pub mod middleware;
 pub mod models;
 pub mod notify;
+pub mod space;
 pub mod utils;
 
 pub use app_state::AppState;
@@ -141,16 +142,22 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
     // ─── Public API routes (no auth required) ───
     // 只保留健康检查：/api/ws-token 已移入受保护路由（需要登录会话），
     // 否则任何人都能凭它换取可用的全权令牌。
-    let public_api = Router::new().route("/health", get(api::health::health_check));
+    let public_api = Router::new()
+        .route("/health", get(api::health::health_check))
+        // 未认证也能查「口令是否已配置」，前端据此决定显示「首次设置」还是「登录」
+        .route("/auth/status", get(api::auth::status));
 
-    // ─── Login route (no auth, but strictly rate-limited) ───
+    // ─── Login / first-time setup routes (no session auth, but strictly rate-limited) ───
     let login_api = Router::new()
         .route("/auth/login", axum::routing::post(api::auth::login))
+        // 首次设置门户口令：需要启动日志里的一次性 setup token，且仅在未配置时有效
+        .route("/auth/setup", axum::routing::post(api::auth::setup))
         .layer(axum_middleware::from_fn(middleware::rate_limit::login_rate_limit_middleware));
 
     // ─── Protected API routes (auth + rate limit required) ───
     let protected_api = Router::new()
         .route("/auth/me", get(api::auth::me))
+        .route("/auth/password", axum::routing::post(api::auth::change_password))
         .route("/ws-token", axum::routing::post(api::auth::issue_ws_token))
         .route("/audit-logs", get(api::auth::get_audit_logs))
         .route("/hosts", get(api::hosts::list_hosts))
@@ -231,9 +238,12 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/connections", get(api::connections::list_connections))
         .route("/connections", axum::routing::post(api::connections::upsert_connection))
         .route("/connections/{id}", axum::routing::delete(api::connections::delete_connection))
+        // ─── Per-visitor space routes ───
+        .route("/space/me", get(api::space::me))
+        .route("/space/rotate", axum::routing::post(api::space::rotate))
+        .route("/space/attach", axum::routing::post(api::space::attach))
         // ─── System maintenance routes ───
         .route("/system/db-info", get(api::system::db_info))
-        .route("/system/db-download", get(api::system::db_download))
         // ─── Marketplace routes ───
         .route("/market/index", get(api::market::get_market_index))
         .layer(auth_layer);

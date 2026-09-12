@@ -8,12 +8,12 @@ use crate::error::AppError;
 use crate::response::ApiResponse;
 use axum::{
     Json,
-    extract::State,
-    http::{StatusCode, header},
-    response::IntoResponse,
+    extract::{Extension, State},
 };
 use serde::Serialize;
 use std::sync::Arc;
+
+use crate::space::SpaceCtx;
 
 /// Database info response.
 #[derive(Debug, Serialize)]
@@ -30,8 +30,14 @@ pub struct TableInfo {
     pub row_count: i64,
 }
 
-/// GET /api/system/db-info — Returns database path, size, and table row counts.
-pub async fn db_info(State(state): State<Arc<AppState>>) -> Result<Json<ApiResponse<DbInfo>>, AppError> {
+/// GET /api/system/db-info — Returns database size and **本空间** row counts.
+///
+/// 注意：绝不返回数据库文件本身。多人共用下一个整库下载等于把所有人的
+/// SSH 凭据与 Vault 交给任意访客，因此 `/system/db-download` 已被移除。
+pub async fn db_info(
+    State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
+) -> Result<Json<ApiResponse<DbInfo>>, AppError> {
     let db = state
         .db
         .as_ref()
@@ -49,7 +55,7 @@ pub async fn db_info(State(state): State<Arc<AppState>>) -> Result<Json<ApiRespo
 
     // Get table info
     let raw = db
-        .list_table_counts()
+        .list_table_counts(&space.id)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to query tables: {}", e)))?;
     let tables: Vec<TableInfo> = raw
@@ -58,38 +64,6 @@ pub async fn db_info(State(state): State<Arc<AppState>>) -> Result<Json<ApiRespo
         .collect();
 
     Ok(Json(ApiResponse::success(DbInfo { path, size_bytes, size_human, tables })))
-}
-
-/// GET /api/system/db-download — Download the SQLite database file.
-pub async fn db_download(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, AppError> {
-    let config = &state.config;
-    let path = config
-        .database_url
-        .as_ref()
-        .ok_or_else(|| AppError::NotFound("No persistent database configured".into()))?;
-
-    if !std::path::Path::new(path).exists() {
-        return Err(AppError::NotFound("Database file not found".into()));
-    }
-
-    let data = tokio::fs::read(path)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to read database: {}", e)))?;
-
-    let filename = format!("wrench-{}.db", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
-    let content_type = "application/x-sqlite3".to_string();
-
-    let headers = [
-        (header::CONTENT_TYPE, content_type),
-        (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename)),
-    ];
-
-    let mut response = axum::response::Response::new(axum::body::Body::from(data));
-    *response.status_mut() = StatusCode::OK;
-    for (name, value) in headers {
-        response.headers_mut().insert(name, value.parse().unwrap());
-    }
-    Ok(response)
 }
 
 fn byte_size_human(bytes: u64) -> String {

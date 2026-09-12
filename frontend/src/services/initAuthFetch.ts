@@ -11,10 +11,17 @@
  *   4. 公开端点（/api/health、/api/auth/login）跳过拦截
  */
 
-import { AuthRequiredError, getToken, notifyAuthRequired } from './auth'
+import {
+  AuthRequiredError,
+  captureSpaceCode,
+  getSpaceCode,
+  getToken,
+  handleInvalidSpace,
+  notifyAuthRequired,
+} from './auth'
 
 /** 无需注入令牌的公开端点 */
-const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/login'])
+const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/setup'])
 
 /** 安装全局 fetch 拦截器，返回取消函数 */
 export function initAuthFetch(): () => void {
@@ -39,9 +46,18 @@ export function initAuthFetch(): () => void {
       const token = await getToken()
       const headers = new Headers(request.headers)
       headers.set('Authorization', `Bearer ${token}`)
+      // 空间码：服务端据此定位私有空间（cookie 之外的第二通道）
+      const spaceCode = getSpaceCode()
+      if (spaceCode) {
+        headers.set('X-Space-Code', spaceCode)
+      }
 
       const authRequest = new Request(request, { headers })
       const resp = await originalFetch(authRequest)
+
+      // 首次访问时服务端会下发新空间码，必须在这里捕获（响应体被读之前）
+      captureSpaceCode(resp)
+      handleInvalidSpace(resp)
 
       if (resp.status === 401) {
         notifyAuthRequired(`401 from ${path}`)

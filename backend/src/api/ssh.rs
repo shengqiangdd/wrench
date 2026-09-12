@@ -1,9 +1,13 @@
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{Extension, State},
+};
 use std::sync::Arc;
 
 use crate::api_types::{SshConnectResponse, SshDisconnectRequest, SshExecRequest, SshExecResponse};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
+use crate::space::SpaceCtx;
 use crate::ssh::SshSession;
 use crate::ssh::client::{ConnectRequest, SshConnection};
 
@@ -19,6 +23,7 @@ pub async fn test_config() -> Json<serde_json::Value> {
 /// Execute a command on an SSH connection (POST /api/ssh/exec)
 pub async fn exec_command(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<SshExecRequest>,
 ) -> ApiResponse<SshExecResponse> {
     let connection_id = &body.connection_id;
@@ -29,7 +34,7 @@ pub async fn exec_command(
     }
 
     // Look up the connection
-    let conn = match state.connections.get(connection_id) {
+    let conn = match state.connection_in(&space.id, connection_id) {
         Some(c) => c,
         None => return ApiResponse::error(400, "SSH not connected"),
     };
@@ -54,7 +59,7 @@ pub async fn exec_command(
                 "stderr_len": stderr.len(),
             });
             let ip = "0.0.0.0".to_string();
-            state.add_audit_log("ssh_exec", detail, &ip);
+            state.add_audit_log("ssh_exec", detail, &ip, &space.id);
 
             ApiResponse::success(SshExecResponse { stdout, stderr, exit_code: exit_code as i32 })
         }
@@ -65,6 +70,7 @@ pub async fn exec_command(
 /// Connect to an SSH server (POST /api/ssh/connect)
 pub async fn connect_ssh(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<ConnectRequest>,
 ) -> ApiResponse<SshConnectResponse> {
     let connection_id = uuid::Uuid::new_v4().to_string();
@@ -96,6 +102,7 @@ pub async fn connect_ssh(
             Ok(()) => {
                 save_connection(
                     &state,
+                    &space.id,
                     &connection_id,
                     &host,
                     port,
@@ -127,6 +134,7 @@ pub async fn connect_ssh(
     {
         save_connection(
             &state,
+            &space.id,
             &connection_id,
             &host,
             port,
@@ -144,11 +152,12 @@ pub async fn connect_ssh(
 /// Disconnect from an SSH server (POST /api/ssh/disconnect)
 pub async fn disconnect_ssh(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<SshDisconnectRequest>,
 ) -> ApiResponse<String> {
     let connection_id = &body.connection_id;
 
-    let (_key, mut conn) = match state.connections.remove(connection_id) {
+    let mut conn = match state.remove_connection_in(&space.id, connection_id) {
         Some(c) => c,
         None => return ApiResponse::error(404, "SSH connection not found"),
     };
@@ -165,13 +174,16 @@ pub async fn disconnect_ssh(
         "username": conn.username,
     });
     let ip = "0.0.0.0".to_string();
-    state.add_audit_log("ssh_disconnect", detail, &ip);
+    state.add_audit_log("ssh_disconnect", detail, &ip, &space.id);
 
     ApiResponse::success_msg("Disconnected")
 }
 
+// 连接元信息字段本来就多，拆成一个结构体反而要到处构造中转对象，收益不抵噪音
+#[allow(clippy::too_many_arguments)]
 async fn save_connection(
     state: &AppState,
+    space_id: &str,
     connection_id: &str,
     host: &str,
     port: u16,
@@ -187,6 +199,7 @@ async fn save_connection(
         auth_method: "password".to_string(),
         session: Some(Arc::new(session)),
         sudo_password,
+        space_id: space_id.to_string(),
     };
 
     state.connections.insert(connection_id.to_string(), entry);
@@ -199,6 +212,7 @@ async fn save_connection(
 /// This lets Docker/Logs/Monitor pages connect without going through the SSH page.
 pub async fn ensure_connection(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<ConnectRequest>,
 ) -> ApiResponse<SshConnectResponse> {
     let host = body.host.clone();
@@ -206,8 +220,8 @@ pub async fn ensure_connection(
     let username = body.username.clone();
 
     // Check for existing active connection with same host+port+username
-    for entry in state.connections.iter() {
-        let conn = entry.value();
+    for conn in state.connections_in(&space.id) {
+        let conn = &conn;
         if conn.host == host
             && conn.port == port
             && conn.username == username
@@ -250,6 +264,7 @@ pub async fn ensure_connection(
             Ok(()) => {
                 save_connection(
                     &state,
+                    &space.id,
                     &connection_id,
                     &host,
                     port,
@@ -286,6 +301,7 @@ pub async fn ensure_connection(
     {
         save_connection(
             &state,
+            &space.id,
             &connection_id,
             &host,
             port,

@@ -113,25 +113,35 @@ docker compose down
 
 > 💡 Docker 镜像由 GitHub Actions 自动构建并推送至 **ghcr.io/shengqiangdd/wrench**，每次推送 `main` 分支都会自动更新 `latest` 标签。
 
-## 🔐 登录认证
+## 🔐 登录认证与多人共用（私有空间）
 
-Wrench **默认拒绝匿名访问**：除 `/api/health` 外，所有 REST 接口与 WebSocket（终端、日志、Docker 监控）
-都要求先登录。因此即使端口直接暴露到公网，未登录的请求也拿不到任何数据或终端。
+Wrench **默认拒绝匿名访问**：除 `/api/health`、`/api/auth/status` 外，所有 REST 接口与
+WebSocket（终端、日志、Docker 监控）都要求先登录。因此即使端口直接暴露到公网，
+未登录的请求也拿不到任何数据或终端。
 
-**密码来源（按优先级）**
-
-1. 环境变量 `WRENCH_AUTH_PASSWORD`
-2. 环境变量 `WRENCH_AUTH_PASSWORD_FILE` 指向的文件
-3. 数据目录下的 `auth_password` 文件（不存在则自动生成 256 位随机密码并写盘）
+**首次设置（推荐）**：不用配置任何环境变量。启动后打开网页会看到「首次设置」界面，
+把启动日志里的一次性令牌贴进去设置入口口令即可：
 
 ```bash
-# 自定义密码（写入 .env，不要提交到仓库）
-echo "WRENCH_AUTH_PASSWORD=$(openssl rand -base64 32)" >> .env
-docker compose up -d
-
-# 查看自动生成的密码（entrypoint 落盘时用单引号包着，所以要 tr 掉）
-docker exec wrench sh -c "sed -n 's/^WRENCH_AUTH_PASSWORD=//p' /data/.env" | tr -d "'"
+docker logs <容器名> 2>&1 | grep -i "setup token"
 ```
+
+口令以 PBKDF2-HMAC-SHA256（60 万次迭代 + 随机盐）存进数据库，**明文不写任何文件**；
+之后在「设置 → 入口口令」里也能改（改完所有人重新登录一次）。
+
+**legacy 方式**（可选，便于既有部署平滑升级）：设置 `WRENCH_AUTH_PASSWORD`（或
+`WRENCH_AUTH_PASSWORD_FILE`）则以环境变量为准。
+
+### 👥 每个人一个私有空间，互相看不见
+
+- 凡是能通过入口口令的人都能用，**不分管理员、人人平等**。
+- 每个浏览器第一次访问时自动获得一个**自己的空间**：SSH 主机、Vault、定时任务、
+  通知渠道、执行历史、审计记录全部按空间隔离（SQL 层强制过滤），别人的浏览器里看不到。
+- 换设备 / 换浏览器时，在「设置 → 我的空间」粘贴**空间码**即可找回数据。
+  服务端只保存空间码的 SHA-256 —— **连部署者也无法进入别人的空间**，
+  请像对待密码一样保存空间码。
+- 从旧版本升级时，历史数据会在第一次启动时通过日志里的一次性**认领码**交接
+  （在网页里粘贴即收归自己名下）。
 
 **安全特性**
 

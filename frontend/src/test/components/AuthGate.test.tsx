@@ -10,6 +10,7 @@ let _verifyError: Error | null = null
 let _pendingVerify = false
 let _loginError: Error | null = null
 let _wsError: Error | null = null
+let _setupRequired = false
 
 vi.mock('../../services/auth', () => ({
   AUTH_REQUIRED_EVENT: 'wrench:auth-required',
@@ -19,9 +20,22 @@ vi.mock('../../services/auth', () => ({
     if (_verifyError) throw _verifyError
     return _sessionValid
   }),
-  login: vi.fn(async (password: string) => {
+  login: vi.fn(async (password: string, _remember: boolean = false) => {
     if (_loginError) throw _loginError
     if (password !== 'correct-password') throw new Error('密码错误')
+    _authenticated = true
+    _sessionValid = true
+  }),
+  authStatus: vi.fn(async () => ({
+    configured: !_setupRequired,
+    setupRequired: _setupRequired,
+    source: _setupRequired ? 'none' : 'env',
+    canChangePassword: true,
+    rotationLogsOutEveryone: true,
+  })),
+  setupPassword: vi.fn(async (_password: string, setupToken: string) => {
+    if (setupToken !== 'good-token') throw new Error('启动令牌无效，请检查服务端日志里的 setup token')
+    _setupRequired = false
     _authenticated = true
     _sessionValid = true
   }),
@@ -62,6 +76,7 @@ function mockLoggedIn() {
   _pendingVerify = false
   _loginError = null
   _wsError = null
+  _setupRequired = false
 }
 
 /** 未登录 */
@@ -72,6 +87,7 @@ function mockLoggedOut() {
   _pendingVerify = false
   _loginError = null
   _wsError = null
+  _setupRequired = false
 }
 
 /** 有本地会话但服务端已不接受 */
@@ -275,6 +291,115 @@ describe('AuthGate', () => {
       expect(container.querySelector('[data-testid="login-password"]')).not.toBeNull()
     })
     expect(container.querySelector('[data-testid="children"]')).toBeNull()
+    cleanup()
+  })
+})
+
+describe('AuthGate · 首次设置', () => {
+  beforeEach(() => {
+    mockLoggedOut()
+    _setupRequired = true
+    document.body.innerHTML = ''
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('shows the setup form (not the login form) when the server has no password yet', async () => {
+    const { container, cleanup } = renderGate()
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
+    })
+    expect(container.textContent).toContain('首次设置')
+    expect(container.querySelector('[data-testid="login-password"]')).toBeNull()
+    cleanup()
+  })
+
+  it('does not mention docker exec anymore (口令在网页里设置)', async () => {
+    const { container, cleanup } = renderGate()
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
+    })
+    expect(container.textContent).not.toContain('docker exec')
+    cleanup()
+  })
+
+  it('sets the password with the one-time token and enters the app', async () => {
+    const { container, cleanup } = renderGate()
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
+    })
+
+    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!, 'good-token')
+    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!, 'a-strong-password')
+    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!, 'a-strong-password')
+
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector<HTMLButtonElement>('[data-testid="setup-submit"]')!.disabled,
+      ).toBe(false)
+    })
+
+    container
+      .querySelector<HTMLFormElement>('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="children"]')).not.toBeNull()
+    })
+    cleanup()
+  })
+
+  it('rejects a bad setup token with a readable error', async () => {
+    const { container, cleanup } = renderGate()
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
+    })
+
+    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!, 'wrong-token')
+    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!, 'a-strong-password')
+    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!, 'a-strong-password')
+
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector<HTMLButtonElement>('[data-testid="setup-submit"]')!.disabled,
+      ).toBe(false)
+    })
+
+    container
+      .querySelector<HTMLFormElement>('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('启动令牌无效')
+    })
+    expect(container.querySelector('[data-testid="children"]')).toBeNull()
+    cleanup()
+  })
+
+  it('refuses mismatched confirmation locally', async () => {
+    const { container, cleanup } = renderGate()
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
+    })
+
+    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!, 'good-token')
+    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!, 'a-strong-password')
+    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!, 'a-strong-passwerd')
+
+    container
+      .querySelector<HTMLFormElement>('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('两次输入的口令不一致')
+    })
     cleanup()
   })
 })

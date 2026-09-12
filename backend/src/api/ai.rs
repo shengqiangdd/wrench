@@ -17,6 +17,20 @@ use std::sync::Arc;
 use crate::api_types::{AiConfigResponse, ModelListItem, ModelsListResponse};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
+use crate::space::SpaceCtx;
+
+/// 解析可用于 AI 诊断的 API Key（部署侧提供）。
+///
+/// 优先 `OPENROUTER_API_KEY` 环境变量，其次配置文件里的 key。
+/// 该 key 属于**部署侧共享资源**（不是访客私有数据），所有空间共用；
+/// 若某空间不希望共享，可自行在前端填入临时 key（`api_key` 参数）。
+pub fn env_ai_key(state: &AppState, _space: &SpaceCtx) -> Option<String> {
+    std::env::var("OPENROUTER_API_KEY")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .or_else(|| state.config.openrouter_api_key.clone().filter(|v| !v.trim().is_empty()))
+}
 
 /// Determine if a model is free based on its pricing info.
 /// Handles both OpenRouter format (`prompt`/`completion` as strings) and

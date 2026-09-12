@@ -97,20 +97,33 @@ pub struct AppState {
 ### 5.3 认证流程（服务端口令 + 分层 scope）
 
 ```
-登录：POST /api/auth/login { password } → 会话 JWT（scope=api+ws，7 天）
-      · 口令来自 WRENCH_AUTH_PASSWORD（Docker 下由 entrypoint 落盘到 /data/.env，
-        注意落盘值带单引号：docker exec <容器名> sh -c "sed -n 's/^WRENCH_AUTH_PASSWORD=//p' /data/.env" | tr -d "'"
-        非 Docker 或未设环境变量时，为数据目录的 auth_password 文件）
-      · 校验用 SHA-256 摘要 + 恒定时间比较；登录接口独立限流（8 次/分钟/IP）
-REST API：authedFetch(url, opts) → Authorization: Bearer <会话 JWT>
-WebSocket：POST /api/ws-token（需会话）→ 短时 token（scope=ws，10 分钟）
+首次设置：POST /api/auth/setup { password } + X-Setup-Token（启动日志里的一次性令牌）
+          → 口令以 PBKDF2-HMAC-SHA256（60 万次迭代 + 随机盐）落库 app_settings，明文不落盘
+登录：POST /api/auth/login { password, remember } → 会话 JWT（scope=api+ws；7 天 / remember 30 天）
+      · 未走网页设置时，口令来自 WRENCH_AUTH_PASSWORD（或 WRENCH_AUTH_PASSWORD_FILE）
+      · 登录接口独立限流（8 次/分钟/IP）
+REST API：authedFetch(url, opts) → Authorization: Bearer <会话 JWT> + X-Space-Code <空间码>
+WebSocket：POST /api/ws-token（需会话）→ 短时 token（scope=ws，10 分钟，绑定 space_id）
            buildWsUrl("/ws") → wss://host/ws?token=<短时 token>
-全局拦截：initAuthFetch.ts 代理 window.fetch，/api/* 自动加头，跳过 /api/health 与 /api/auth/login
-失效：401 → 前端清会话回登录页；改 WRENCH_AUTH_PASSWORD 即让所有旧令牌立即失效
+全局拦截：initAuthFetch.ts 代理 window.fetch，/api/* 自动加头，
+          跳过 /api/health、/api/auth/status、/api/auth/login、/api/auth/setup
+失效：401 → 前端清会话回登录页；400 + X-Space-Invalid → 清空间码并刷新（自动建空空间）
 ```
 
-中间件按路径校验 scope：`/ws*` 需 `ws`，其余 REST 需 `api`（`backend/src/middleware/auth.rs`）。
-未配置口令时所有受保护接口返回 503（fail-closed）。
+中间件按路径校验 scope：`/ws*` 需 `ws`，其余 REST 需 `api`（`backend/src/middleware/auth.rs`），
+随后解析/创建访问者空间并注入 `SpaceCtx`（`backend/src/space.rs`）。未配置口令、或数据库不可用时
+受保护接口一律 503（fail-closed）。
+
+### 5.4 空间隔离（多人共用，无角色）
+
+- 7 张业务表都带 `space_id`（`SCHEMA_V6` 迁移）：`ssh_connections`、`vault_entries`、
+  `scheduled_tasks`、`alerts`、`notification_channels`、`task_execution_history`、`audit_logs`。
+- 隔离点在 **db 层**：`Database` 的读写方法签名都要求 `space_id`，handler 从
+  `Extension<SpaceCtx>` 取；漏传即编译失败（覆盖性机器门禁）。
+- 空间码 256 bit，服务端只存 SHA-256；明文只在创建时下发一次（HttpOnly cookie + `X-Space-Code`）。
+- 跨空间同 id 写入被 `ON CONFLICT ... WHERE space_id = excluded.space_id` 挡住。
+- 升级前的历史行（`space_id = ''`）由 `legacy` 空间的一次性认领码交接。
+- **不要**再暴露 `db-download` 这类整库接口：多人共用下等于泄露所有人的凭据。
 
 ### 5.4 前端状态切片
 ```

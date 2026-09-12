@@ -28,6 +28,54 @@ impl<T: Serialize> ApiResponse<T> {
     }
 }
 
+/// 需要真实 HTTP 状态码的 API 错误（`ApiResponse` 恒为 200，客户端无法区分
+/// “口令错误” 与 “服务端故障”，认证/空间类接口必须用真实状态码）。
+pub struct ApiError {
+    status: axum::http::StatusCode,
+    message: String,
+}
+
+impl ApiError {
+    pub fn new(status: axum::http::StatusCode, message: impl Into<String>) -> Self {
+        Self { status, message: message.into() }
+    }
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        Self::new(axum::http::StatusCode::BAD_REQUEST, message)
+    }
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        Self::new(axum::http::StatusCode::UNAUTHORIZED, message)
+    }
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(axum::http::StatusCode::FORBIDDEN, message)
+    }
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(axum::http::StatusCode::NOT_FOUND, message)
+    }
+    pub fn not_configured() -> Self {
+        Self::new(
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "Authentication not configured. Use the one-time setup token from the server logs to set the entry password.",
+        )
+    }
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::new(axum::http::StatusCode::INTERNAL_SERVER_ERROR, message)
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let code = self.status.as_u16() as i32;
+        let body = axum::Json(serde_json::json!({
+            "success": false,
+            "code": code,
+            "msg": self.message,
+            "error": self.message,
+            "data": serde_json::Value::Null,
+        }));
+        (self.status, body).into_response()
+    }
+}
+
 /// Convert any ApiResponse into an HTTP response.
 impl<T: Serialize> IntoResponse for ApiResponse<T> {
     fn into_response(self) -> Response {

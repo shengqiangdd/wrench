@@ -19,8 +19,10 @@ pub const SCOPE_WS: &str = "ws";
 /// 会话令牌：REST + WebSocket
 pub const SCOPE_API_WS: &str = "api+ws";
 
-/// 会话令牌有效期：7 天
+/// 会话令牌有效期：7 天（未勾选「记住此设备」）
 pub const SESSION_TTL_SECS: u64 = 7 * 24 * 60 * 60;
+/// 勾选「记住此设备」后的会话有效期：30 天
+pub const SESSION_TTL_REMEMBER_SECS: u64 = 30 * 24 * 60 * 60;
 /// WS 令牌有效期：10 分钟
 pub const WS_TOKEN_TTL_SECS: u64 = 10 * 60;
 
@@ -30,28 +32,12 @@ pub struct Claims {
     pub iat: u64,
     pub exp: u64,
     pub scope: String,
-    /// 口令指纹：绑定签发时的登录口令，服务端每次校验时用当前口令重算比对。
-    /// 因此修改口令 = 所有旧令牌立即失效（相当于全局登出）。
+    /// 门户口令版本（token version）：与服务器当前值不一致即失效。
+    ///
+    /// 用 `Option` 而不是裸 `u32`，是为了让**没有该字段的旧令牌一律被拒**：
+    /// 升级到多人共用版本后，所有人需要重新登录一次（空间数据不受影响）。
     #[serde(default)]
-    pub pwd_fp: String,
-}
-
-/// 口令指纹：`HMAC-SHA256(JWT_SECRET, 口令)` 的前 16 个十六进制字符。
-///
-/// 使用 HMAC（而非明文哈希）以避免令牌泄露后被离线暴力破解口令；
-/// 截断到 64 bit 足够做“是否同一口令”的判定。
-pub fn password_fingerprint(jwt_secret: &str, password: &str) -> String {
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
-
-    let mut mac = Hmac::<Sha256>::new_from_slice(jwt_secret.as_bytes()).expect("HMAC accepts any key length");
-    mac.update(password.as_bytes());
-    mac.finalize()
-        .into_bytes()
-        .iter()
-        .take(8)
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    pub tv: Option<u32>,
 }
 
 impl Claims {
@@ -60,26 +46,27 @@ impl Claims {
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs();
-        Self {
-            sub: subject,
-            iat: now,
-            exp: now + expires_in,
-            scope: scope.into(),
-            pwd_fp: String::new(),
-        }
+        Self { sub: subject, iat: now, exp: now + expires_in, scope: scope.into(), tv: None }
     }
 
-    /// 登录会话令牌：scope=`api+ws`，7 天，绑定当前登录口令。
-    pub fn session(jwt_secret: &str, password: &str) -> Self {
-        let mut claims = Self::new("owner".into(), SCOPE_API_WS, SESSION_TTL_SECS);
-        claims.pwd_fp = password_fingerprint(jwt_secret, password);
+    /// 登录会话令牌：scope=`api+ws`，绑定当前门户口令版本。
+    ///
+    /// `remember` 为真时有效期 30 天（「记住此设备」），否则 7 天。
+    pub fn session(token_version: u32, remember: bool) -> Self {
+        let ttl = if remember {
+            SESSION_TTL_REMEMBER_SECS
+        } else {
+            SESSION_TTL_SECS
+        };
+        let mut claims = Self::new("visitor".into(), SCOPE_API_WS, ttl);
+        claims.tv = Some(token_version);
         claims
     }
 
-    /// 短时 WebSocket 令牌：scope=`ws`，10 分钟，绑定当前登录口令。
-    pub fn ws_token(jwt_secret: &str, password: &str) -> Self {
-        let mut claims = Self::new("owner".into(), SCOPE_WS, WS_TOKEN_TTL_SECS);
-        claims.pwd_fp = password_fingerprint(jwt_secret, password);
+    /// 短时 WebSocket 令牌：scope=`ws`，10 分钟，绑定当前门户口令版本。
+    pub fn ws_token(token_version: u32) -> Self {
+        let mut claims = Self::new("visitor".into(), SCOPE_WS, WS_TOKEN_TTL_SECS);
+        claims.tv = Some(token_version);
         claims
     }
 
@@ -120,31 +107,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_password_fingerprint_is_keyed_and_stable() {
-        let a = password_fingerprint("secret-a", "pw");
-        let b = password_fingerprint("secret-a", "pw");
-        let c = password_fingerprint("secret-b", "pw");
-        let d = password_fingerprint("secret-a", "pw2");
-
-        assert_eq!(a, b, "同一密钥+口令应得到相同指纹");
-        assert_ne!(a, c, "不同密钥不应得到相同指纹");
-        assert_ne!(a, d, "不同口令不应得到相同指纹");
-        assert_eq!(a.len(), 16, "指纹为 8 字节十六进制");
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
-    }
-
-    #[test]
     fn test_session_and_ws_token_scopes() {
-        let session = Claims::session("sec", "pw");
+        let session = Claims::session(3, false);
         assert!(session.has_scope(SCOPE_API));
         assert!(session.has_scope(SCOPE_WS));
         assert_eq!(session.exp - session.iat, SESSION_TTL_SECS);
+        assert_eq!(session.tv, Some(3));
 
-        let ws = Claims::ws_token("sec", "pw");
+        let remembered = Claims::session(3, true);
+        assert_eq!(remembered.exp - remembered.iat, SESSION_TTL_REMEMBER_SECS);
+
+        let ws = Claims::ws_token(3);
         assert!(ws.has_scope(SCOPE_WS));
         assert!(!ws.has_scope(SCOPE_API));
         assert_eq!(ws.exp - ws.iat, WS_TOKEN_TTL_SECS);
-        assert_eq!(ws.pwd_fp, session.pwd_fp);
+        assert_eq!(ws.tv, session.tv);
+    }
+
+    #[test]
+    fn test_claims_without_token_version_are_rejected_by_deserialization_default() {
+        // 旧令牌（无 tv 字段）反序列化后 tv 必须为 None，中间件据此拒绝
+        let legacy = r#"{"sub":"owner","iat":1,"exp":99999999999,"scope":"api+ws"}"#;
+        let claims: Claims = serde_json::from_str(legacy).unwrap();
+        assert_eq!(claims.tv, None);
     }
 
     #[test]

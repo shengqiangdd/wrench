@@ -8,7 +8,10 @@
 //!   DELETE /api/notifications/:id      — Delete channel
 //!   POST   /api/notifications/test/:id — Send test alert
 
-use axum::{Json, extract::Path, extract::State};
+use axum::{
+    Json,
+    extract::{Extension, Path, State},
+};
 use std::sync::Arc;
 
 use crate::api_types::{NotificationChannelEntry, NotificationChannelsResponse};
@@ -16,12 +19,14 @@ use crate::app_state::AppState;
 use crate::db::NotificationChannel;
 use crate::error::AppError;
 use crate::response::ApiResponse;
+use crate::space::SpaceCtx;
 
 const SUPPORTED_TYPES: &[&str] = &["discord", "slack", "telegram", "email"];
 
 /// List notification channels (GET /api/notifications)
 pub async fn list_channels(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
 ) -> Result<ApiResponse<NotificationChannelsResponse>, AppError> {
     let db = state
         .db
@@ -29,7 +34,7 @@ pub async fn list_channels(
         .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
 
     let channels = db
-        .list_notification_channels()
+        .list_notification_channels(&space.id)
         .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
@@ -56,6 +61,7 @@ pub async fn list_channels(
 /// Create or update a notification channel (POST /api/notifications)
 pub async fn upsert_channel(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<ApiResponse<NotificationChannelEntry>, AppError> {
     let db = state
@@ -97,7 +103,7 @@ pub async fn upsert_channel(
         updated_at: now,
     };
 
-    db.upsert_notification_channel(&channel)
+    db.upsert_notification_channel(&channel, &space.id)
         .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
@@ -115,6 +121,7 @@ pub async fn upsert_channel(
 /// Delete a notification channel (DELETE /api/notifications/:id)
 pub async fn delete_channel(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Path(channel_id): Path<String>,
 ) -> Result<ApiResponse<()>, AppError> {
     let db = state
@@ -123,7 +130,7 @@ pub async fn delete_channel(
         .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
 
     let deleted = db
-        .delete_notification_channel(&channel_id)
+        .delete_notification_channel(&channel_id, &space.id)
         .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
@@ -137,6 +144,7 @@ pub async fn delete_channel(
 /// Send a test alert to a channel (POST /api/notifications/test/:id)
 pub async fn test_channel(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Path(channel_id): Path<String>,
 ) -> Result<ApiResponse<String>, AppError> {
     let db = state
@@ -145,7 +153,7 @@ pub async fn test_channel(
         .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
 
     let channels = db
-        .list_notification_channels()
+        .list_notification_channels(&space.id)
         .await
         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 

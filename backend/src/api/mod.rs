@@ -13,6 +13,7 @@ pub mod notifications;
 pub mod plugins;
 pub mod scripts;
 pub mod sftp;
+pub mod space;
 pub mod ssh;
 pub mod system;
 pub mod vault;

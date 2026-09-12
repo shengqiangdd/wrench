@@ -215,7 +215,7 @@ server {
 | `BRIDGE_HOST` | `0.0.0.0` | 监听地址（注意：不是 `HOST`） |
 | `DATABASE_URL` | `无` (Docker 内默认 `/data/wrench.db`) | SQLite 数据库路径 |
 | `JWT_SECRET` | 自动生成 | 用于令牌签发和 Vault 加密密钥派生 |
-| `WRENCH_AUTH_PASSWORD` | 自动生成并写入数据目录 | **登录密码**；未设置时后端生成随机密码并落盘（Docker 下 entrypoint 写入 `/data/.env`，非 Docker 为数据目录的 `auth_password` 文件）。改密码会让所有旧令牌立即失效 |
+| `WRENCH_AUTH_PASSWORD` | 无 | **可选的 legacy 入口口令**。推荐留空：首次访问时网页会显示「首次设置」，用启动日志里的一次性 `setup token` 设置口令（PBKDF2 哈希落库，明文不写文件）。设置该变量则以它为准，改这个变量会让所有旧令牌立即失效 |
 | `WRENCH_AUTH_PASSWORD_FILE` | 无 | 从文件读取登录密码（优先级低于环境变量） |
 | `VAULT_KEY` | `无` (从 JWT_SECRET 派生) | Secret Vault AES-256-GCM 加密密钥，建议显式设置 |
 | `LOG_LEVEL` | `info` | 日志级别 (trace/debug/info/warn/error) |
@@ -227,13 +227,38 @@ server {
 | `GITHUB_TOKEN` | 无 | GitHub API Token（插件市场功能） |
 | `RUST_LOG` | `info` | Rust 日志级别 |
 
-> **查看 Docker 部署下自动生成的登录密码**：entrypoint 落盘时会给密码加单引号，
-> 直接 `grep WRENCH_AUTH_PASSWORD /data/.env` 拿到的是 `WRENCH_AUTH_PASSWORD='xxx'`，
-> 复制时容易连引号一起带上 —— 那样登录会 401。用下面这条拿到裸密码：
+> **首次设置（推荐路径）**：不设 `WRENCH_AUTH_PASSWORD`，启动后打开网页会看到「首次设置」，
+> 需要从启动日志里取一次性 `setup token`：
 >
 > ```bash
-> docker exec <容器名> sh -c "sed -n 's/^WRENCH_AUTH_PASSWORD=//p' /data/.env" | tr -d "'"
+> docker logs <容器名> 2>&1 | grep -i "setup token"
 > ```
+>
+> 用该令牌在网页里设置入口口令即可（口令哈希落库，认领后该令牌不再需要）。
+
+---
+
+## 👥 多人共用与私有空间
+
+本实例是「无角色」的多人共用：谁都可以用，**人人平等**，但每个人的数据互相看不见。
+
+| 概念 | 说明 |
+|------|------|
+| **入口口令** | 只负责挡住公网扫描者，不是权限。网页里可改（设置 → 入口口令） |
+| **空间** | 每个浏览器第一次带着有效令牌访问时自动创建，7 张业务表按 `space_id` 隔离 |
+| **空间码** | 256 bit 随机值。服务端**只存 SHA-256**，明文只下发一次，由浏览器保存 |
+
+要点：
+
+- **换设备 / 换浏览器**：登录后在「设置 → 我的空间」粘贴空间码即可找回自己的主机与 Vault。
+  请把空间码当成密码保存好 —— 连部署者也无法帮你找回（服务端只有哈希）。
+- **重新生成空间码**：旧码立即失效，其它设备需要粘贴新码才能进同一空间。
+- **升级前的历史数据**：第一次启动时若检测到无归属的历史行，启动日志里会打印**一次性认领码**
+  （`[space] 一次性认领码：…`），在网页里粘贴即可把这些数据收归自己名下；认领后码即失效。
+- **`DATABASE_URL` 是必需的**：没有可用数据库时空间隔离无法保证，受保护接口一律返回 503
+  （失败关闭），不会退化成「所有人共用一个空间」。
+- **整库下载已移除**：`/api/system/db-download` 不存在了（多人共用下等于泄露所有人的凭据）。
+  需要备份请直接在宿主机上拷 `wrench.db`。
 
 ---
 

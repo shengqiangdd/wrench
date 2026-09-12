@@ -1,5 +1,5 @@
 use axum::extract::Path;
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use std::sync::Arc;
 
 use crate::api_types::PluginInstallResponse;
@@ -7,6 +7,7 @@ use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::models::PluginManifest;
 use crate::response::ApiResponse;
+use crate::space::SpaceCtx;
 
 /// List installed plugins (GET /api/plugins)
 /// 自动去重：同 ID 插件只保留第一个（目录名优先）
@@ -46,6 +47,7 @@ pub async fn list_plugins(State(state): State<Arc<AppState>>) -> ApiResponse<Vec
 /// Downloads manifest.json and plugin.js from provided URLs
 pub async fn install_plugin(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<ApiResponse<PluginInstallResponse>, AppError> {
     let plugin_id = body.get("pluginId").and_then(|v| v.as_str()).unwrap_or("");
@@ -109,6 +111,7 @@ pub async fn install_plugin(
             "pluginUrl": plugin_url
         }),
         "api",
+        &space.id,
     );
 
     Ok(ApiResponse::success(PluginInstallResponse {
@@ -121,6 +124,7 @@ pub async fn install_plugin(
 /// Uninstall a plugin (POST /api/plugins/uninstall)
 pub async fn uninstall_plugin(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Result<ApiResponse<PluginInstallResponse>, AppError> {
     let plugin_id = body.get("plugin_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -145,6 +149,7 @@ pub async fn uninstall_plugin(
             "pluginId": plugin_id
         }),
         "api",
+        &space.id,
     );
 
     Ok(ApiResponse::success(PluginInstallResponse {

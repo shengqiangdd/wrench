@@ -24,6 +24,13 @@ export class AuthRequiredError extends Error {
 export const AUTH_REQUIRED_EVENT = 'wrench:auth-required'
 
 const SESSION_KEY = 'wrench_session'
+/**
+ * 空间码（私有空间的唯一凭据）。
+ *
+ * 服务端只存 SHA-256；明文只在空间创建时通过 `X-Space-Code` 响应头下发一次。
+ * 保存在 localStorage 里，换设备时把这串码粘到「用空间码进入」即可找回自己的数据。
+ */
+const SPACE_KEY = 'wrench_space_code'
 /** WS 令牌提前刷新阈值 */
 const WS_TOKEN_REFRESH_AHEAD_MS = 60 * 1000
 
@@ -96,6 +103,103 @@ export function clearToken(): void {
   }
 }
 
+// ── 空间码（私有空间身份） ──
+
+/** 本浏览器保存的空间码（没有则为 null：说明空间还没建立或换了浏览器） */
+export function getSpaceCode(): string | null {
+  try {
+    const code = localStorage.getItem(SPACE_KEY)
+    return code && code.length > 0 ? code : null
+  } catch {
+    return null
+  }
+}
+
+/** 保存空间码（服务端下发或用户手动粘贴） */
+export function setSpaceCode(code: string): void {
+  try {
+    localStorage.setItem(SPACE_KEY, code)
+  } catch (err) {
+    console.warn('[Space] Failed to persist space code:', err)
+  }
+}
+
+/**
+ * 从响应头里捕获新空间码（服务端只在「首次创建空间」时下发一次）。
+ *
+ * 注意：必须在 `await fetch(...)` 之后、响应体被消费之前读取 header。
+ */
+export function captureSpaceCode(resp: Response): void {
+  const code = resp.headers.get('x-space-code')
+  if (code && code.length > 0) {
+    setSpaceCode(code)
+  }
+}
+
+/** 清除本地空间码（空间码失效或被用户显式丢弃时） */
+export function clearSpaceCode(): void {
+  try {
+    localStorage.removeItem(SPACE_KEY)
+  } catch (err) {
+    console.warn('[Space] Failed to clear space code:', err)
+  }
+}
+
+/**
+ * 刷新当前页面。
+ *
+ * 抽成可替换的导出是为了让单测能拦下导航（jsdom 不支持真实导航，
+ * 直接调用会抛出 "Not implemented: navigation"）。
+ */
+export let reloadPage: () => void = () => {
+  window.location.reload()
+}
+
+/** 仅供测试：替换页面刷新行为 */
+export function setReloadPageForTests(fn: () => void): void {
+  reloadPage = fn
+}
+
+/** 空间码失效标记：刷新后据此提示用户「已新建空空间」 */
+const SPACE_RESET_FLAG = 'wrench_space_reset'
+
+export function wasSpaceReset(): boolean {
+  try {
+    return sessionStorage.getItem(SPACE_RESET_FLAG) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function clearSpaceResetFlag(): void {
+  try {
+    sessionStorage.removeItem(SPACE_RESET_FLAG)
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * 处理「空间码失效」响应：清掉本地失效码并刷新一次，让服务端给一个空空间。
+ *
+ * 不做这一步的话，用户会因为每个请求都 400 而完全卡死 —— 连设置页都进不去，
+ * 也就没法粘贴正确的空间码。刷新用 sessionStorage 打标，避免在异常情况下循环刷新。
+ */
+export function handleInvalidSpace(resp: Response): boolean {
+  if (!resp.headers.get('x-space-invalid')) return false
+
+  clearSpaceCode()
+  try {
+    if (sessionStorage.getItem(SPACE_RESET_FLAG) !== '1') {
+      sessionStorage.setItem(SPACE_RESET_FLAG, '1')
+      reloadPage()
+    }
+  } catch {
+    /* sessionStorage/reload 不可用时静默降级 */
+  }
+  return true
+}
+
 /** 触发“需要登录”：清空本地会话并通知 UI */
 export function notifyAuthRequired(reason: string): void {
   clearToken()
@@ -107,11 +211,11 @@ export function notifyAuthRequired(reason: string): void {
  *
  * @throws Error 口令错误（401）、尝试过于频繁（429）或服务端未配置认证（503）
  */
-export async function login(password: string): Promise<void> {
+export async function login(password: string, remember: boolean = false): Promise<void> {
   const resp = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ password, remember }),
   })
 
   if (resp.status === 429) {
@@ -138,6 +242,151 @@ export async function login(password: string): Promise<void> {
     throw new Error('登录响应中缺少令牌')
   }
   saveSession(token, expiresIn)
+}
+
+/** 认证服务端状态：判断该显示「首次设置」还是「登录」 */
+export interface AuthStatus {
+  configured: boolean
+  setupRequired: boolean
+  source: string
+  canChangePassword: boolean
+  rotationLogsOutEveryone: boolean
+}
+
+/** 查询认证状态（公开接口，无需令牌） */
+export async function authStatus(): Promise<AuthStatus> {
+  const resp = await fetch('/api/auth/status', { headers: { Accept: 'application/json' } })
+  if (!resp.ok) {
+    throw new Error(`无法获取认证状态 (${resp.status})`)
+  }
+  const data = (await resp.json()) as AuthStatus & { data?: AuthStatus }
+  const payload = data.data ?? data
+  return {
+    configured: Boolean(payload.configured),
+    setupRequired: Boolean(payload.setupRequired),
+    source: payload.source ?? 'none',
+    canChangePassword: payload.canChangePassword ?? true,
+    rotationLogsOutEveryone: payload.rotationLogsOutEveryone ?? true,
+  }
+}
+
+/**
+ * 首次设置门户口令（仅在服务端尚未配置口令时可用）。
+ *
+ * 需要部署者从启动日志里取得的一次性 `setup token`；设置成功后服务端直接返回会话。
+ *
+ * @param password 新口令（≥8 位，且至少包含两类字符）
+ * @param setupToken 启动日志里打印的一次性令牌
+ */
+export async function setupPassword(password: string, setupToken: string): Promise<void> {
+  const resp = await fetch('/api/auth/setup', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Setup-Token': setupToken,
+    },
+    body: JSON.stringify({ password }),
+  })
+
+  if (resp.status === 429) {
+    throw new Error('尝试次数过多，请稍等一分钟后再试')
+  }
+  if (resp.status === 401) {
+    throw new Error('启动令牌无效，请检查服务端日志里的 setup token')
+  }
+  if (resp.status === 400) {
+    const msg = await resp.json().catch(() => null)
+    throw new Error((msg as { msg?: string })?.msg ?? '口令不符合强度要求')
+  }
+  if (!resp.ok) {
+    throw new Error(`设置失败 (${resp.status})`)
+  }
+
+  const data = (await resp.json()) as {
+    token?: string
+    expiresIn?: number
+    data?: { token?: string; expiresIn?: number }
+  }
+  const token = data.token ?? data.data?.token
+  const expiresIn = data.expiresIn ?? data.data?.expiresIn ?? 3600
+  if (!token) {
+    throw new Error('设置响应中缺少令牌')
+  }
+  saveSession(token, expiresIn)
+}
+
+/** 修改门户口令（会自动使所有人重新登录；各人的空间数据不受影响） */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const resp = await authedFetch('/api/auth/password', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })
+  if (resp.status === 401) {
+    throw new Error('当前口令不正确')
+  }
+  if (resp.status === 400) {
+    const msg = await resp.json().catch(() => null)
+    throw new Error((msg as { msg?: string })?.msg ?? '新口令不符合强度要求')
+  }
+  if (!resp.ok) {
+    throw new Error(`修改失败 (${resp.status})`)
+  }
+}
+
+// ── 私有空间 ──
+
+export interface SpaceInfo {
+  id: string
+  createdAt: string
+  lastSeenAt: string
+  isLegacy: boolean
+  counts: { table: string; count: number }[]
+}
+
+/** 当前空间信息（不含空间码：服务端只有哈希） */
+export async function getSpaceInfo(): Promise<SpaceInfo> {
+  const resp = await authedFetch('/api/space/me')
+  if (!resp.ok) throw new Error(`无法获取空间信息 (${resp.status})`)
+  const data = (await resp.json()) as SpaceInfo & { data?: SpaceInfo }
+  return data.data ?? data
+}
+
+/** 用空间码把当前浏览器切换到该空间（换设备 / 认领历史数据） */
+export async function attachSpace(code: string): Promise<SpaceInfo> {
+  const resp = await authedFetch('/api/space/attach', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  if (resp.status === 400) {
+    if (resp.headers.get('x-space-invalid')) {
+      throw new Error('空间码无效（可能拼错，或已被重新生成）')
+    }
+    const msg = await resp.json().catch(() => null)
+    throw new Error((msg as { msg?: string })?.msg ?? '进入空间失败')
+  }
+  if (!resp.ok) {
+    throw new Error(`进入空间失败 (${resp.status})`)
+  }
+  setSpaceCode(code.trim().toLowerCase())
+  return getSpaceInfo()
+}
+
+/** 重新生成空间码：旧码立即失效（本浏览器自动使用新码） */
+export async function rotateSpaceCode(): Promise<string> {
+  const resp = await authedFetch('/api/space/rotate', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+  if (!resp.ok) throw new Error(`生成新空间码失败 (${resp.status})`)
+  const data = (await resp.json()) as { code?: string; data?: { code?: string } }
+  const code = data.code ?? data.data?.code
+  if (!code) throw new Error('服务端未返回新空间码')
+  setSpaceCode(code)
+  return code
 }
 
 /** 退出登录（本地清除；服务端令牌由口令轮换或 JWT_SECRET 变更使其失效） */
@@ -248,8 +497,17 @@ export async function authedFetch(url: string, options: RequestInit = {}): Promi
   const token = await getToken()
   const headers = new Headers(options.headers ?? {})
   headers.set('Authorization', `Bearer ${token}`)
+  // 空间码随请求带上：即使浏览器禁用了 cookie 也能定位到自己的空间
+  const code = getSpaceCode()
+  if (code) {
+    headers.set('X-Space-Code', code)
+  }
 
   const resp = await fetch(url, { ...options, headers })
+
+  // 服务端只会在「首次创建空间」时下发空间码
+  captureSpaceCode(resp)
+  handleInvalidSpace(resp)
 
   if (resp.status === 401) {
     notifyAuthRequired(`401 from ${url}`)

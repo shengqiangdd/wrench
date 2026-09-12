@@ -29,8 +29,17 @@ fn test_config() -> AppConfig {
     }
 }
 
+/// 空间隔离需要持久化存储（没有库时受保护接口一律 503 失败关闭），
+/// 因此测试统一用一次性临时库。
+fn temp_db_config() -> AppConfig {
+    let mut config = test_config();
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    config.database_url = Some(dir.keep().join("wrench-test.db").to_string_lossy().into_owned());
+    config
+}
+
 async fn build_test_app() -> Router {
-    build_test_app_with(test_config()).await
+    build_test_app_with(temp_db_config()).await
 }
 
 async fn build_test_app_with(config: AppConfig) -> Router {
@@ -143,13 +152,14 @@ async fn invalid_jwt_is_rejected() {
 /// Valid JWT passes auth middleware.
 #[tokio::test]
 async fn authenticated_request_passes_auth() {
-    let config = test_config();
+    let config = temp_db_config();
     let state = AppState::new(config.clone()).await.expect("AppState");
+    // 会话令牌必须绑定当前门户口令版本（token version）
+    let token_version = state.auth.read().token_version;
     let app = wrench_backend::build_app(Arc::new(state)).await;
 
     let jwt = JwtService::from_secret(&config.jwt_secret).unwrap();
-    // 会话令牌必须绑定当前登录口令
-    let claims = Claims::session(&config.jwt_secret, "test-password");
+    let claims = Claims::session(token_version, false);
     let token = jwt.sign(&claims).unwrap();
 
     let req = Request::builder()
@@ -161,26 +171,37 @@ async fn authenticated_request_passes_auth() {
     assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// 修改口令后，用旧口令签发的令牌立即失效（全局登出）。
+/// 修改口令后，用旧口令签发的令牌立即失效（全局登出），但空间数据不受影响。
 #[tokio::test]
 async fn token_is_revoked_after_password_change() {
-    let old_config = test_config();
-    let jwt = JwtService::from_secret(&old_config.jwt_secret).unwrap();
+    let config = temp_db_config();
+    let state = Arc::new(AppState::new(config.clone()).await.expect("AppState"));
+    let app = wrench_backend::build_app(state.clone()).await;
+
+    let jwt = JwtService::from_secret(&config.jwt_secret).unwrap();
     let old_token = jwt
-        .sign(&Claims::session(&old_config.jwt_secret, "test-password"))
+        .sign(&Claims::session(state.auth.read().token_version, false))
         .unwrap();
 
-    // 服务端换成新口令重新部署
-    let mut new_config = test_config();
-    new_config.auth_password = Some("a-brand-new-password".to_string());
-    let app = build_test_app_with(new_config).await;
+    let mk_req = |token: &str| {
+        Request::builder()
+            .uri("/api/connections")
+            .header("Authorization", format!("Bearer {token}"))
+            .body(Body::from(""))
+            .unwrap()
+    };
 
-    let req = Request::builder()
-        .uri("/api/connections")
-        .header("Authorization", format!("Bearer {old_token}"))
-        .body(Body::from(""))
+    // 旧令牌此刻可用
+    let resp = app.clone().oneshot(mk_req(&old_token)).await.unwrap();
+    assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // 网页里改口令 → 哈希落库 + token_version 自增
+    state
+        .set_door_password_hash(wrench_backend::utils::crypto::hash_door_password("a-brand-new-password"))
+        .await
         .unwrap();
-    let resp = app.oneshot(req).await.unwrap();
+
+    let resp = app.oneshot(mk_req(&old_token)).await.unwrap();
     assert_eq!(
         resp.status(),
         StatusCode::UNAUTHORIZED,
@@ -221,16 +242,38 @@ async fn system_db_info_requires_auth() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-/// System db-download endpoint requires auth.
+/// 整库下载端点必须**彻底不存在**：多人共用下它能一次性拿走所有人的主机凭据与 Vault。
 #[tokio::test]
-async fn system_db_download_requires_auth() {
+async fn system_db_download_is_removed() {
     let app = build_test_app().await;
     let req = Request::builder()
         .uri("/api/system/db-download")
         .body(Body::from(""))
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "db-download 必须返回 404（端点已移除），而不是泄露整库"
+    );
+}
+
+/// 服务端没有可用数据库时，受保护接口失败关闭（503），绝不退化成共享空间。
+#[tokio::test]
+async fn no_database_fails_closed() {
+    let app = build_test_app_with(test_config()).await;
+    let session = login_and_get_token(&app, "test-password").await;
+    let req = Request::builder()
+        .uri("/api/connections")
+        .header("Authorization", format!("Bearer {session}"))
+        .body(Body::from(""))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "没有数据库就无法保证空间隔离，必须拒绝而不是共享"
+    );
 }
 
 /// ws-token 端点必须要求认证（回归：以前无认证即可换取 24h 全权令牌）。

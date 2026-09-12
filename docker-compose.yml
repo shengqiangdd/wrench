@@ -17,9 +17,9 @@ services:
       DATABASE_URL: /data/wrench.db
       # JWT_SECRET: 留空则 entrypoint 自动生成随机密钥（重启后失效，生产环境请显式设置）
       JWT_SECRET: "${JWT_SECRET:-}"
-      # WRENCH_AUTH_PASSWORD: 登录密码。留空则 entrypoint 自动生成随机密码并保存到 /data/.env
-      # （查看： docker exec wrench sh -c "sed -n 's/^WRENCH_AUTH_PASSWORD=//p' /data/.env" | tr -d "'"
-      #   注意落盘值带单引号，直接 grep 会把引号一起粘走、登录必然 401）
+      # WRENCH_AUTH_PASSWORD: 入口口令（可选）。留空时首次访问网页会显示「首次设置」，
+      # 用启动日志里的一次性 setup token 设置口令（PBKDF2 哈希落库，明文不落盘）：
+      #   docker logs <容器名> 2>&1 | grep -i "setup token"
       WRENCH_AUTH_PASSWORD: "${WRENCH_AUTH_PASSWORD:-}"
       # VAULT_KEY: "${VAULT_KEY:-}"
     healthcheck:

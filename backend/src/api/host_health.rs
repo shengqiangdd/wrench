@@ -3,12 +3,16 @@
 //! Runs a single combined SSH command per host to collect CPU, memory, disk,
 //! network, processes, and IO data in one shot. Frontend only renders.
 
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{Extension, State},
+};
 use std::sync::Arc;
 
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::response::ApiResponse;
+use crate::space::SpaceCtx;
 use crate::ssh::executor;
 use futures_util::future::join_all;
 
@@ -94,14 +98,17 @@ pub struct ProcInfo {
 }
 
 /// Get health status for all connected hosts (GET /api/hosts/health)
-pub async fn get_all_health(State(state): State<Arc<AppState>>) -> Result<ApiResponse<Vec<HostHealth>>, AppError> {
+pub async fn get_all_health(
+    State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
+) -> Result<ApiResponse<Vec<HostHealth>>, AppError> {
     // Deduplicate by (host, port, username) — multiple sessions to the same
     // host (e.g. multiple SSH terminal tabs) should only produce one health entry.
     // Prefer the entry that has a live session.
     let mut best: std::collections::HashMap<(String, u16, String), (String, HostInfo)> =
         std::collections::HashMap::new();
-    for entry in state.connections.iter() {
-        let conn = entry.value();
+    for conn in state.connections_in(&space.id) {
+        let conn = &conn;
         let key = (conn.host.clone(), conn.port, conn.username.clone());
         let has_session = conn.session.is_some();
         let dominated = match best.get(&key) {
@@ -115,7 +122,7 @@ pub async fn get_all_health(State(state): State<Arc<AppState>>) -> Result<ApiRes
                 username: conn.username.clone(),
                 session: conn.session.clone(),
             };
-            best.insert(key, (entry.key().clone(), info));
+            best.insert(key, (conn.connection_id.clone(), info));
         }
     }
 
@@ -142,15 +149,17 @@ pub async fn get_all_health(State(state): State<Arc<AppState>>) -> Result<ApiRes
     }
 
     // 并行采集所有主机数据
+    let space_id = space.id.clone();
     let futures: Vec<_> = host_infos
         .into_iter()
         .map(|(id, info, connected)| {
             let state = Arc::clone(&state);
+            let space_id = space_id.clone();
             async move {
                 if !connected {
                     return make_offline_health(id, &info, Some("Not connected".into()));
                 }
-                match check_host_health(&state, &id).await {
+                match check_host_health(&state, &space_id, &id).await {
                     Ok(data) => HostHealth {
                         id,
                         host: info.host,
@@ -185,13 +194,13 @@ pub async fn get_all_health(State(state): State<Arc<AppState>>) -> Result<ApiRes
     // 不自动清理离线连接 — 让用户手动管理
     // 之前自动删除导致主机从列表消失，无法重新连接
 
-    auto_alert_health_anomalies(&state, &results);
+    auto_alert_health_anomalies(&state, &results, &space_id);
 
     Ok(ApiResponse::success(results))
 }
 
 /// 自动告警
-fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
+fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth], space_id: &str) {
     use crate::app_state::AlertEntry;
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
 
@@ -212,6 +221,7 @@ fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
                     message: format!("CPU load {:.2} exceeds core count {}", load, cores),
                     value: ratio,
                     threshold: 1.0,
+                    space_id: space_id.to_string(),
                 });
             }
         }
@@ -228,6 +238,7 @@ fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
                 message: format!("Memory usage {:.1}%", mem_pct),
                 value: mem_pct,
                 threshold: 90.0,
+                space_id: space_id.to_string(),
             });
         }
 
@@ -248,6 +259,7 @@ fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
                     message: format!("Disk {} usage {} ({}/{})", disk.mount, disk.percent, disk.used, disk.total),
                     value: pct_val,
                     threshold: 85.0,
+                    space_id: space_id.to_string(),
                 });
             }
         }
@@ -257,6 +269,7 @@ fn auto_alert_health_anomalies(state: &AppState, results: &[HostHealth]) {
 /// AI-powered diagnosis (POST /api/hosts/diagnose)
 pub async fn diagnose_host(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<ApiResponse<crate::api_types::DiagnoseResponse>, AppError> {
     let host_id = body
@@ -265,11 +278,10 @@ pub async fn diagnose_host(
         .ok_or_else(|| AppError::BadRequest("Missing hostId".into()))?;
 
     let _conn = state
-        .connections
-        .get(host_id)
+        .connection_in(&space.id, host_id)
         .ok_or_else(|| AppError::NotFound("Host not found".into()))?;
 
-    let health = check_host_health(&state, host_id)
+    let health = check_host_health(&state, &space.id, host_id)
         .await
         .map_err(|e| AppError::Internal(format!("Health check failed: {}", e)))?;
 
@@ -303,7 +315,7 @@ pub async fn diagnose_host(
     }
 
     let health_text = lines.join("\n");
-    let api_key = state.config.openrouter_api_key.clone().unwrap_or_default();
+    let api_key = crate::api::ai::env_ai_key(&state, &space).unwrap_or_default();
     let ai_diagnosis = if !api_key.is_empty() {
         match get_ai_diagnosis(&api_key, &health_text).await {
             Ok(diag) => diag,
@@ -323,10 +335,9 @@ pub async fn diagnose_host(
 
 // ─── 单条 SSH 命令采集全部数据 ───
 
-async fn check_host_health(state: &AppState, host_id: &str) -> Result<HealthData, String> {
+async fn check_host_health(state: &AppState, space_id: &str, host_id: &str) -> Result<HealthData, String> {
     let conn = state
-        .connections
-        .get(host_id)
+        .connection_in(space_id, host_id)
         .ok_or_else(|| "Host not found".to_string())?;
     let session = conn
         .session

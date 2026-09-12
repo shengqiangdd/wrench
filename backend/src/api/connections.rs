@@ -8,8 +8,9 @@ use crate::app_state::AppState;
 use crate::db::SshConnection;
 use crate::error::AppError;
 use crate::response::ApiResponse;
+use crate::space::SpaceCtx;
 use axum::{
-    Json,
+    Extension, Json,
     extract::{Path, State},
 };
 use serde::{Deserialize, Serialize};
@@ -78,13 +79,14 @@ impl From<SshConnection> for ConnectionResponse {
 /// GET /api/connections — list all saved connections
 pub async fn list_connections(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
 ) -> Result<Json<ApiResponse<Vec<ConnectionResponse>>>, AppError> {
     let db = state
         .db
         .as_ref()
         .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
     let conns = db
-        .list_ssh_connections()
+        .list_ssh_connections(&space.id)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     let resp: Vec<ConnectionResponse> = conns.into_iter().map(Into::into).collect();
@@ -94,6 +96,7 @@ pub async fn list_connections(
 /// POST /api/connections — create or update a connection
 pub async fn upsert_connection(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(payload): Json<UpsertConnectionRequest>,
 ) -> Result<Json<ApiResponse<ConnectionResponse>>, AppError> {
     let db = state
@@ -114,13 +117,14 @@ pub async fn upsert_connection(
         sort_order: payload.sort_order,
         created_at: now.clone(),
         updated_at: now,
+        space_id: space.id.clone(),
     };
 
-    db.upsert_ssh_connection(&conn)
+    db.upsert_ssh_connection(&conn, &space.id)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     let saved = db
-        .list_ssh_connections()
+        .list_ssh_connections(&space.id)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?
         .into_iter()
@@ -133,6 +137,7 @@ pub async fn upsert_connection(
 /// DELETE /api/connections/:id — delete a connection
 pub async fn delete_connection(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Path(connection_id): Path<String>,
 ) -> Result<Json<ApiResponse<bool>>, AppError> {
     let db = state
@@ -140,7 +145,7 @@ pub async fn delete_connection(
         .as_ref()
         .ok_or_else(|| AppError::NotFound("Database not available".into()))?;
     let deleted = db
-        .delete_ssh_connection(&connection_id)
+        .delete_ssh_connection(&connection_id, &space.id)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     if !deleted {
