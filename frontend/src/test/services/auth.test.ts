@@ -204,10 +204,21 @@ describe('进入 / 切换空间', () => {
 
   it('rotateSpaceCode 用新码覆盖本地保存的旧码', async () => {
     setSpaceCode('old-code')
-    stubFetch(async () => jsonResponse({ code: 'new-code' }))
+    // 用**真实信封**做夹具：外层 `code` 是数字状态码，空间码在 `data.code` 里。
+    // 曾经写成 `body.code ?? body.data?.code`，于是把 0 当成了空间码 ——
+    // 服务端换了码、界面还显示旧码，用户存下来的是失效码。
+    stubFetch(async () => jsonResponse({ success: true, code: 0, data: { code: 'new-code' }, msg: 'success' }))
 
     expect(await rotateSpaceCode()).toBe('new-code')
     expect(getSpaceCode()).toBe('new-code')
+  })
+
+  it('rotateSpaceCode 遇到没有 data.code 的响应要报错，而不是存下垃圾', async () => {
+    setSpaceCode('old-code')
+    stubFetch(async () => jsonResponse({ success: false, code: 500, data: null, msg: 'boom' }))
+
+    await expect(rotateSpaceCode()).rejects.toThrow('服务端未返回新空间码')
+    expect(getSpaceCode()).toBe('old-code')
   })
 
   it('空间码失效时清掉本地码并打标，避免用户卡在 400 上', async () => {

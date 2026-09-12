@@ -382,8 +382,11 @@ export async function rotateSpaceCode(): Promise<string> {
     body: '{}',
   })
   if (!resp.ok) throw new Error(`生成新空间码失败 (${resp.status})`)
-  const data = (await resp.json()) as { code?: string; data?: { code?: string } }
-  const code = data.code ?? data.data?.code
+  const body = (await resp.json()) as { code?: unknown; data?: { code?: unknown } }
+  // ⚠️ 响应外层还有一个**数字** `code`（API 状态码 0 / 400…）。写成
+  // `body.code ?? body.data?.code` 会把 0 当成空间码，结果：服务端已经换了码，
+  // 界面却还显示旧码 —— 用户存下来的是失效码，等换设备时才发现数据「不见了」。
+  const code = typeof body.data?.code === 'string' ? body.data.code : undefined
   if (!code) throw new Error('服务端未返回新空间码')
   setSpaceCode(code)
   return code
