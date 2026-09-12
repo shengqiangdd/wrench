@@ -20,6 +20,12 @@
 - **安全审计门禁由假变真** — `ci-audit.yml` 里 `cargo audit` 曾带 `continue-on-error: true`，
   发现漏洞也不会让作业失败，门禁形同虚设；现已拆成"安装 cargo-audit"+"运行 cargo audit"两步并让失败即红，
   作业超时从 10 分钟放宽到 20 分钟（`cargo install` 要从源码编译，否则会把超时误报成审计失败）。
+- **审计门禁首次真正生效，扫出 3 条真漏洞并处理完毕** — 硬门禁上线后第一次运行即变红
+  （`CI Security & Quality Audit` run #93）：`RUSTSEC-2026-0258`（h2 < 0.4.16，未限量的空 DATA
+  帧可致内存无界增长）通过 `cargo update -p h2 --precise 0.4.16` 修掉；`RUSTSEC-2023-0071`
+  （rsa，Marvin 时序侧信道）上游 `patched = []`，且 rsa 无法从依赖树移除（russh/ssh-key 的
+  RSA 主机密钥与用户密钥认证要用它），改为在 `backend/.cargo/audit.toml` 里显式豁免并写明
+  残余风险与复查条件。豁免集中在一处配置，CI 与本地 `cargo audit` 行为一致。
 - **删除 `frontend/yarn.lock`** — 与 `package-lock.json` 双锁文件并存，但脚本/CI/文档无人使用 yarn
   （CI 走 `npm ci`），只会持续漂移。
 - **删掉从不运行的测试文件** — `src/ssh/known_hosts_test.rs` 没有被 `mod` 声明，`cargo` 从不编译它、

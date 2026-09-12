@@ -1,0 +1,29 @@
+# cargo-audit 配置。
+#
+# 在 backend/ 目录下执行 `cargo audit`（CI 的 ci-audit.yml 与本地手工检查都是这样跑的），
+# cargo-audit 会自动读取本文件，因此豁免在 CI 与本地行为一致。
+# 门禁本身是硬门禁：这里没列出的 advisory 一律让 CI 变红。
+
+[advisories]
+# ── 豁免：RUSTSEC-2023-0071 — Marvin Attack: potential key recovery through timing sidechannels ──
+#
+# 受影响 crate：rsa。本仓库经由 jsonwebtoken / russh / ssh-key 间接引入（锁定在 0.9.10 与
+# 0.10.0-rc.18 两个版本上）。审计报告（2026-09-12 抓取）中该 advisory 的 `patched = []`，
+# 即上游尚无修复版本，升级无法解决。
+#
+# 为什么不能靠移除依赖解决：
+#   - russh / ssh-key 用 rsa 处理 RSA 主机密钥与 RSA 用户密钥认证，去掉会直接破坏
+#     使用 RSA 密钥的 SSH 连接；
+#   - jsonwebtoken 的 rust_crypto 后端同样链接 rsa（本仓库 JWT 用 HS256 签名，
+#     运行时不走 RSA 路径，但依赖仍在图中）。
+#
+# 残余风险（如实记录，不粉饰）：
+#   该漏洞要求攻击者能对我们执行的 RSA 私钥运算做高精度计时。本服务的 RSA 私钥运算
+#   只发生在本服务作为 SSH 客户端、用 RSA 私钥向目标主机认证时 —— 也就是说，一个被控的
+#   或恶意的目标主机（或能反复触发认证并观测时延的一方）理论上可借此恢复该私钥。
+#   缓解：优先使用 ed25519 密钥（纯签名算法，不受此漏洞影响）；不要把长期高价值的
+#   RSA 私钥交给本服务使用。
+#
+# 复查条件：上游发布修复版本（或 rsa 0.10 正式版落地常数时间实现）后，立即升级并删除本豁免。
+# 参考：https://github.com/RustCrypto/RSA/issues/626
+ignore = ["RUSTSEC-2023-0071"]

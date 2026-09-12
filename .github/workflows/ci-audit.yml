@@ -48,9 +48,12 @@ jobs:
 
       # ── 硬门禁：发现漏洞即让 CI 变红 ──
       # 此前这一步带 continue-on-error: true，任何漏洞/失败都不会让作业失败，
-      # 门禁等于不存在。若确认某个 advisory 无法通过升级修复，请显式豁免并留注释：
-      #   cargo audit --ignore RUSTSEC-xxxx-xxxx
-      # 不要恢复 continue-on-error。
+      # 门禁等于不存在。去掉之后它立刻扫出 3 条真漏洞：
+      #   - RUSTSEC-2026-0258（h2 < 0.4.16，空 DATA 帧导致内存无界增长）→ 已用 cargo update 修掉；
+      #   - RUSTSEC-2023-0071（rsa，Marvin 时序侧信道，上游 patched = []）→ 无法升级修复，
+      #     已在 backend/.cargo/audit.toml 里显式豁免并写明残余风险与复查条件。
+      # 新的豁免请写进 backend/.cargo/audit.toml（cargo-audit 会自动读取，本地与 CI 行为一致），
+      # 不要改回 continue-on-error，也不要在命令行里散落 --ignore。
       - name: Run cargo audit
         run: cargo audit
         working-directory: backend
