@@ -63,10 +63,17 @@ curl http://localhost:3001/api/health
 
 ## Docker 构建
 
+本目录**没有**独立 Dockerfile：构建统一走仓库根目录的 `Dockerfile`（三阶段：前端 → Rust → Debian slim）。
+（历史上这里留过一个从别的项目抄来的 `backend/Dockerfile`，里面 COPY 的是 `cloudhub-backend` 这种并不存在的产物，
+用了只会构建失败，已删除。）
+
 ```bash
+# 在仓库根目录执行
 docker build -t wrench-backend .
 docker run -p 3001:3001 wrench-backend
 ```
+
+生产部署请用 `docker compose`，完整步骤见 `docs/DEPLOY.md`。
 
 ## 环境变量
 

@@ -249,5 +249,10 @@ curl http://localhost:3001/api/health
 1. **生产环境务必使用反向代理**（Nginx / Caddy）
 2. **启用 HTTPS**（Let's Encrypt 免费证书）
 3. 配置 **IP 白名单**或**基础认证**
-4. 定期更新依赖：`npm audit`（前端）、`cargo audit`（后端，需 `cargo install cargo-audit`）
-5. 使用非 root 用户运行服务
+4. 定期更新依赖：`npm audit`（前端）、`cargo audit`（后端，需 `cargo install cargo-audit`）。
+   已知豁免集中记录在 `backend/.cargo/audit.toml`（当前只有一条：`RUSTSEC-2023-0071`，rsa，上游无补丁）。
+   新增豁免请写进该文件并注明理由与复查条件 —— 审计扫出漏洞时应当让 CI 变红，不要用 `continue-on-error` 掩盖。
+5. **SSH 私钥优先用 ed25519**：Rust 生态的 `rsa` crate 存在时序侧信道（`RUSTSEC-2023-0071`），
+   上游至今没有补丁，而 Wrench 作为 SSH 客户端用私钥认证时正好落在这个风险面上。
+   ed25519 是纯签名算法、不受影响；长期或高价值的 RSA 私钥不建议交给 Wrench 使用。
+6. 使用非 root 用户运行服务

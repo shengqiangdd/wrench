@@ -26,6 +26,11 @@
   （rsa，Marvin 时序侧信道）上游 `patched = []`，且 rsa 无法从依赖树移除（russh/ssh-key 的
   RSA 主机密钥与用户密钥认证要用它），改为在 `backend/.cargo/audit.toml` 里显式豁免并写明
   残余风险与复查条件。豁免集中在一处配置，CI 与本地 `cargo audit` 行为一致。
+- **删除另一个项目的残留 `backend/Dockerfile`** — 里面 `COPY --from=builder /app/target/release/cloudhub-backend`
+  引用的是本仓库并不存在的二进制，谁用它构建谁失败；`backend/README.md` 还正好教人这么构建。
+  已删除该文件并把 README 的构建说明改为「统一走仓库根 `Dockerfile`」。
+- **`docs/DEPLOY.md` 安全建议补两条** — 说明审计豁免集中记录在 `backend/.cargo/audit.toml`（不要
+  用 `continue-on-error` 掩盖），以及 SSH 私钥优先 ed25519（规避上游无补丁的 `RUSTSEC-2023-0071`）。
 - **删除 `frontend/yarn.lock`** — 与 `package-lock.json` 双锁文件并存，但脚本/CI/文档无人使用 yarn
   （CI 走 `npm ci`），只会持续漂移。
 - **删掉从不运行的测试文件** — `src/ssh/known_hosts_test.rs` 没有被 `mod` 声明，`cargo` 从不编译它、
