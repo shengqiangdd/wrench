@@ -9,8 +9,19 @@
 - **`/api/ws-token` 降级** — 必须持有会话才能换取 scope=`ws` 的短时（10 分钟）token，不再是公开的全权签发点。
 - **compose 进度注入守卫** — 前端自动注入 `COMPOSE_PROGRESS=plain` 只在识别到真实 shell 提示符时执行
   （跳过 `vim` 等 TUI 与密码提示），不会把命令敲进别人的编辑器里。
+- **`known_hosts` 原子覆写** — 删除主机密钥时先写同目录临时文件 + `fsync` 再 `rename` 覆盖，
+  并保留原文件权限。此前 `File::create` 会先把文件截断再写，中途失败（磁盘满、进程被杀）
+  就留下被清空的 known_hosts，主机密钥校验随之失守；新增 `#[cfg(unix)]` 测试断言权限与无残留临时文件。
+- **未知 `/api/*` 一律 404** — 此前未匹配的 `/api/xxx` 会落到前端 SPA fallback，返回
+  `200 + index.html`，拼错的接口以"成功"伪装（排障时 `curl /api/ssh/hosts` 就被骗过一次）。
+  现在 `/api` 子树挂了自己的 fallback，前端路由仍正常回落 SPA；集成测试覆盖两种情形。
 
 ### 🧪 工程规范
+- **安全审计门禁由假变真** — `ci-audit.yml` 里 `cargo audit` 曾带 `continue-on-error: true`，
+  发现漏洞也不会让作业失败，门禁形同虚设；现已拆成"安装 cargo-audit"+"运行 cargo audit"两步并让失败即红，
+  作业超时从 10 分钟放宽到 20 分钟（`cargo install` 要从源码编译，否则会把超时误报成审计失败）。
+- **删除 `frontend/yarn.lock`** — 与 `package-lock.json` 双锁文件并存，但脚本/CI/文档无人使用 yarn
+  （CI 走 `npm ci`），只会持续漂移。
 - **Rust 工具链钉版本** — 新增仓库根 `rust-toolchain.toml`（1.96.1 + rustfmt/clippy），CI 不再用浮动的
   stable（此前 Rust 每发一版新增默认告警，CI 就会在自己没改任何代码时变红）。
 - **CI 补 rustfmt 门禁** — 新增 `cargo fmt --all --check`；clippy/test 改为 `--all-targets --locked`。
