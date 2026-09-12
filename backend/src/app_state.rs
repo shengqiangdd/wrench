@@ -116,7 +116,7 @@ async fn ensure_legacy_space(db: &Database) -> anyhow::Result<()> {
         if let Some(code) = db.get_setting("legacy_claim_code").await?
             && !code.is_empty()
         {
-            tracing::warn!("[space] {orphans} 行历史数据仍未被认领；认领码（网页「用空间码进入」）：{code}");
+            eprintln!("[space] {orphans} 行历史数据仍未被认领；认领码（网页「用空间码进入」）：{code}");
         }
         return Ok(());
     }
@@ -127,10 +127,11 @@ async fn ensure_legacy_space(db: &Database) -> anyhow::Result<()> {
         .await?;
     db.set_setting("legacy_claim_code", &code).await?;
 
-    // 这条日志是历史数据唯一的取回入口：认领后认领码即失效（从库中清除）
-    tracing::warn!("[space] 检测到 {orphans} 行升级前的历史数据（主机/Vault/调度/审计）");
-    tracing::warn!("[space] 一次性认领码：{code}");
-    tracing::warn!("[space] 在网页里点击「用空间码进入」粘贴该码即可把这些数据收到自己名下");
+    // 这条日志是历史数据唯一的取回入口：认领后认领码即失效（从库中清除）。
+    // 用 `eprintln!` 保证在任何 RUST_LOG 设置下都能看到。
+    eprintln!("[space] 检测到 {orphans} 行升级前的历史数据（主机/Vault/调度/审计）");
+    eprintln!("[space] 一次性认领码：{code}");
+    eprintln!("[space] 在网页里点「用空间码进入」粘贴该码即可把这些数据收到自己名下");
     Ok(())
 }
 
@@ -199,10 +200,19 @@ impl AppState {
         }
 
         // 首次设置口令用的一次性令牌：环境变量优先，否则随机生成并打到启动日志
+        //
+        // 用 `eprintln!` 而不是 `tracing`：这条日志必须在任何日志级别设置下都可见，
+        // 它是「首次设置」唯一的入口（生产上 RUST_LOG 配错一次就会永久锁死部署）。
         let setup_token = match std::env::var("WRENCH_SETUP_TOKEN") {
             Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
             _ => crate::space::generate_code(),
         };
+        let door_configured = auth.door_hash.is_some() || auth.env_password.is_some();
+        if door_configured {
+            eprintln!("🔐 入口口令已配置（数据库哈希或环境变量），无需首次设置令牌。");
+        } else {
+            eprintln!("🔑 首次设置令牌（在网页「首次设置」里填入，设置口令后即失效）：{setup_token}");
+        }
 
         Ok(Self {
             connections: DashMap::new(),

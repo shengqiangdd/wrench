@@ -70,7 +70,8 @@ FROM debian:12-slim
 ARG BUILD_HASH=0
 
 ENV FRONTEND_DIST=/app/frontend/dist \
-    RUST_LOG=backend=info,tower_http=info \
+    # 注意 target 是 `wrench_backend`：写成 `backend=info` 会匹配不上，后端日志全军覆没
+    RUST_LOG=wrench_backend=info,tower_http=info \
     DATABASE_URL=/data/wrench.db
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
