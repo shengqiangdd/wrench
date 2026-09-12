@@ -129,8 +129,8 @@ Wrench **默认拒绝匿名访问**：除 `/api/health` 外，所有 REST 接口
 echo "WRENCH_AUTH_PASSWORD=$(openssl rand -base64 32)" >> .env
 docker compose up -d
 
-# 查看自动生成的密码
-docker exec wrench sh -c 'grep WRENCH_AUTH_PASSWORD /data/.env'
+# 查看自动生成的密码（entrypoint 落盘时用单引号包着，所以要 tr 掉）
+docker exec wrench sh -c "sed -n 's/^WRENCH_AUTH_PASSWORD=//p' /data/.env" | tr -d "'"
 ```
 
 **安全特性**

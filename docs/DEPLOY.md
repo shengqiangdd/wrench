@@ -215,7 +215,7 @@ server {
 | `BRIDGE_HOST` | `0.0.0.0` | 监听地址（注意：不是 `HOST`） |
 | `DATABASE_URL` | `无` (Docker 内默认 `/data/wrench.db`) | SQLite 数据库路径 |
 | `JWT_SECRET` | 自动生成 | 用于令牌签发和 Vault 加密密钥派生 |
-| `WRENCH_AUTH_PASSWORD` | 自动生成并写入数据目录 | **登录密码**；未设置时后端生成随机密码并落盘（Docker 下 entrypoint 写入 `/data/.env`，可用 `docker exec <容器名> grep WRENCH_AUTH_PASSWORD /data/.env` 查看；非 Docker 为数据目录的 `auth_password` 文件）。改密码会让所有旧令牌立即失效 |
+| `WRENCH_AUTH_PASSWORD` | 自动生成并写入数据目录 | **登录密码**；未设置时后端生成随机密码并落盘（Docker 下 entrypoint 写入 `/data/.env`，非 Docker 为数据目录的 `auth_password` 文件）。改密码会让所有旧令牌立即失效 |
 | `WRENCH_AUTH_PASSWORD_FILE` | 无 | 从文件读取登录密码（优先级低于环境变量） |
 | `VAULT_KEY` | `无` (从 JWT_SECRET 派生) | Secret Vault AES-256-GCM 加密密钥，建议显式设置 |
 | `LOG_LEVEL` | `info` | 日志级别 (trace/debug/info/warn/error) |
@@ -226,6 +226,14 @@ server {
 | `ssh_test_password` | 无 | SSH 快速连接测试密码（开发用） |
 | `GITHUB_TOKEN` | 无 | GitHub API Token（插件市场功能） |
 | `RUST_LOG` | `info` | Rust 日志级别 |
+
+> **查看 Docker 部署下自动生成的登录密码**：entrypoint 落盘时会给密码加单引号，
+> 直接 `grep WRENCH_AUTH_PASSWORD /data/.env` 拿到的是 `WRENCH_AUTH_PASSWORD='xxx'`，
+> 复制时容易连引号一起带上 —— 那样登录会 401。用下面这条拿到裸密码：
+>
+> ```bash
+> docker exec <容器名> sh -c "sed -n 's/^WRENCH_AUTH_PASSWORD=//p' /data/.env" | tr -d "'"
+> ```
 
 ---
 

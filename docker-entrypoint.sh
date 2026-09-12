@@ -53,7 +53,7 @@ else
   WRENCH_AUTH_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')
   export WRENCH_AUTH_PASSWORD
   echo "WRENCH_AUTH_PASSWORD='${WRENCH_AUTH_PASSWORD}'" >> /data/.env
-  log "Generated random login password into /data/.env — 查看方式: docker exec wrench sh -c 'grep WRENCH_AUTH_PASSWORD /data/.env'"
+  log "Generated random login password into /data/.env — 查看方式: docker exec wrench sh -c \"sed -n 's/^WRENCH_AUTH_PASSWORD=//p' /data/.env\" | tr -d \"'\"（落盘值带单引号，直接 grep 会把引号一起复制走）"
   log "建议设置自己的密码: 在 .env 中设置 WRENCH_AUTH_PASSWORD 后重启容器"
 fi
 

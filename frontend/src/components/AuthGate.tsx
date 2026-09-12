@@ -185,11 +185,12 @@ function LoginView({ onSubmit }: LoginViewProps) {
         <p className="mt-4 text-xs leading-relaxed text-gray-500">
           密码由服务端环境变量 <code className="text-gray-400">WRENCH_AUTH_PASSWORD</code>{' '}
           配置：Docker 部署下 entrypoint 会把它落盘到数据目录{' '}
-          <code className="text-gray-400">/data/.env</code>（可用{' '}
+          <code className="text-gray-400">/data/.env</code>（查看：
           <code className="text-gray-400">
-            docker exec &lt;容器名&gt; grep WRENCH_AUTH_PASSWORD /data/.env
-          </code>{' '}
-          查看）；未配置时后端会生成随机密码到数据目录的{' '}
+            {`docker exec <容器名> sh -c "sed -n 's/^WRENCH_AUTH_PASSWORD=//p' /data/.env" | tr -d "'"`}
+          </code>
+          ，注意落盘值带单引号，直接 grep
+          会把引号一起复制走）；未配置时后端会生成随机密码到数据目录的{' '}
           <code className="text-gray-400">auth_password</code>。
         </p>
       </form>
