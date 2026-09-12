@@ -1,0 +1,7 @@
+# 固定 Rust 工具链：让 本地 / CI / Docker 三处的 rustfmt 与 clippy 结果一致。
+# Dockerfile 的构建阶段用的是 rust:1.96-slim-bookworm（即 1.96.1），此处与之一致；
+# 之前 CI 里写的是 toolchain: stable —— 新版本 Rust 会新增默认告警，
+# 于是"本地绿、CI 红"（反之亦然）会随发布时间随机发生。
+[toolchain]
+channel = "1.96.1"
+components = ["rustfmt", "clippy"]
