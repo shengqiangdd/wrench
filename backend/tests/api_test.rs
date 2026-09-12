@@ -432,3 +432,87 @@ async fn login_and_get_token(app: &Router, password: &str) -> String {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     json["data"]["token"].as_str().unwrap().to_string()
 }
+
+/// 显式带上（请求头）一个格式合法但库里不存在的空间码 → 400 + `x-space-invalid`。
+///
+/// 这是「用户拼错码 / 码在别处被重新生成」的路径：必须明确报错并由前端清码重建，
+/// 不能静默换一个空空间（用户会以为数据丢了）。
+#[tokio::test]
+async fn unknown_space_code_header_is_rejected() {
+    let app = build_test_app_with(temp_db_config()).await;
+    let token = login_and_get_token(&app, "test-password").await;
+
+    let req = with_connect_info(
+        Request::builder()
+            .method("GET")
+            .uri("/api/space/me")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("X-Space-Code", "a".repeat(64))
+            .body(Body::empty())
+            .unwrap(),
+    );
+    let resp = app.oneshot(req).await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        resp.headers().get("x-space-invalid").and_then(|v| v.to_str().ok()),
+        Some("1"),
+        "要给出失效标记，前端据此清掉本地失效码"
+    );
+}
+
+/// 只剩一个「库里已经没有」的 cookie 时必须发一个新空间，而不是 400。
+///
+/// 触发场景很常见：换库 / 重建实例 / 空间被删。cookie 是 HttpOnly，前端清不掉，
+/// 一旦返回 400 就会变成「清码 → 再 400」的死循环，浏览器再也进不去。
+#[tokio::test]
+async fn stale_space_cookie_gets_a_fresh_space() {
+    let app = build_test_app_with(temp_db_config()).await;
+    let token = login_and_get_token(&app, "test-password").await;
+
+    let req = with_connect_info(
+        Request::builder()
+            .method("GET")
+            .uri("/api/space/me")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Cookie", format!("wrench_space={}", "b".repeat(64)))
+            .body(Body::empty())
+            .unwrap(),
+    );
+    let resp = app.oneshot(req).await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK, "陈旧 cookie 应当拿到一个新空间");
+    assert!(
+        resp.headers().get("x-space-code").is_some(),
+        "新空间码要下发（否则用户永远拿不到自己的码）"
+    );
+    assert!(
+        resp.headers().get("set-cookie").is_some(),
+        "要用新 cookie 覆盖掉那个陈旧 cookie"
+    );
+}
+
+/// 首次访问（没有任何空间码）→ 200 且下发新空间码与 cookie。
+#[tokio::test]
+async fn first_visit_creates_a_space() {
+    let app = build_test_app_with(temp_db_config()).await;
+    let token = login_and_get_token(&app, "test-password").await;
+
+    let req = with_connect_info(
+        Request::builder()
+            .method("GET")
+            .uri("/api/space/me")
+            .header("Authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap(),
+    );
+    let resp = app.oneshot(req).await.unwrap();
+    let status = resp.status();
+    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "第一次访问应当拿到一个新空间，实际 body={}",
+        String::from_utf8_lossy(&body)
+    );
+}

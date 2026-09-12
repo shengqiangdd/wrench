@@ -110,8 +110,13 @@ fn hex(bytes: &[u8]) -> String {
 pub enum PresentedCode {
     /// 没有携带任何空间码
     Absent,
-    /// 携带了可用的空间码（请求头优先于 cookie）
-    Valid(String),
+    /// 携带了可用的空间码
+    Valid {
+        code: String,
+        /// 是否来自显式携带的 `X-Space-Code` 请求头（而不是浏览器自动带上的 cookie）。
+        /// 这个区别决定「码查不到」时是报错还是换新空间，见 `resolve_or_create`。
+        from_header: bool,
+    },
     /// 携带了空间码但格式不合法（头与 cookie 都不合法时才可能到这里）
     ///
     /// 这种情况必须报错而不是静默新建空间：用户拼错码时会得到 400 + 失效标记，
@@ -143,16 +148,16 @@ pub fn code_from_headers(headers: &HeaderMap) -> PresentedCode {
     let header_raw = headers.get(SPACE_HEADER).and_then(|v| v.to_str().ok());
     if let Some(raw) = header_raw {
         if let Some(code) = normalize_code(raw) {
-            return PresentedCode::Valid(code);
+            return PresentedCode::Valid { code, from_header: true };
         }
         // 请求头里的码不合法：只要 cookie 里还有可用的码就继续用它
         if let Some(code) = cookie_code(headers) {
-            return PresentedCode::Valid(code);
+            return PresentedCode::Valid { code, from_header: false };
         }
         return PresentedCode::Malformed;
     }
     match cookie_code(headers) {
-        Some(code) => PresentedCode::Valid(code),
+        Some(code) => PresentedCode::Valid { code, from_header: false },
         None => PresentedCode::Absent,
     }
 }
@@ -160,15 +165,19 @@ pub fn code_from_headers(headers: &HeaderMap) -> PresentedCode {
 /// 解析（必要时创建）当前请求所属的空间。
 ///
 /// * 带了空间码且命中 → `Existing`
-/// * 带了空间码但不存在/格式不合法 → `InvalidCode`（**不静默新建**，否则拼错会悄悄换空间）
+/// * **显式**带的码（`X-Space-Code` 请求头）查不到 → `InvalidCode`
+///   （不静默新建，否则用户拼错码会悄悄换空间）
+/// * 只有 cookie、且这个 cookie 已经查不到 → 发一个新空间
+///   （cookie 是 HttpOnly，前端清不掉；报错会让这类浏览器陷入「400 → 清码 → 再 400」
+///   的死循环，换库/换实例之后尤其常见）
 /// * 完全没有空间码 → 新建（仅限已通过门认证的请求；未认证的调用方不会被调用到）
 pub async fn resolve_or_create(state: &Arc<AppState>, headers: &HeaderMap) -> SpaceOutcome {
     let Some(db) = state.db.as_ref() else {
         return SpaceOutcome::Unavailable;
     };
 
-    let code = match code_from_headers(headers) {
-        PresentedCode::Valid(code) => code,
+    let (code, from_header) = match code_from_headers(headers) {
+        PresentedCode::Valid { code, from_header } => (code, from_header),
         PresentedCode::Malformed => return SpaceOutcome::InvalidCode,
         PresentedCode::Absent => return create_space(state).await,
     };
@@ -178,7 +187,11 @@ pub async fn resolve_or_create(state: &Arc<AppState>, headers: &HeaderMap) -> Sp
             maybe_touch(db, &space).await;
             SpaceOutcome::Existing(space)
         }
-        Ok(None) => SpaceOutcome::InvalidCode,
+        Ok(None) if from_header => SpaceOutcome::InvalidCode,
+        Ok(None) => {
+            tracing::warn!("[space] stale space cookie — issuing a new space");
+            create_space(state).await
+        }
         Err(err) => {
             tracing::error!("[space] lookup failed: {err}");
             SpaceOutcome::Unavailable
@@ -189,7 +202,7 @@ pub async fn resolve_or_create(state: &Arc<AppState>, headers: &HeaderMap) -> Sp
 /// 解析**已存在**的空间（不创建）——用于登录等门外的审计归属。
 pub async fn resolve_existing(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Space> {
     let db = state.db.as_ref()?;
-    let PresentedCode::Valid(code) = code_from_headers(headers) else {
+    let PresentedCode::Valid { code, .. } = code_from_headers(headers) else {
         return None;
     };
     db.find_space_by_code_hash(&hash_code(&code)).await.ok().flatten()
@@ -329,31 +342,32 @@ mod tests {
         assert_eq!(code_from_headers(&headers(&[])), PresentedCode::Absent);
     }
 
+    fn valid(code: &str, from_header: bool) -> PresentedCode {
+        PresentedCode::Valid { code: code.into(), from_header }
+    }
+
     #[test]
     fn header_code_is_used() {
-        assert_eq!(
-            code_from_headers(&headers(&[(SPACE_HEADER, CODE)])),
-            PresentedCode::Valid(CODE.into())
-        );
+        assert_eq!(code_from_headers(&headers(&[(SPACE_HEADER, CODE)])), valid(CODE, true));
     }
 
     #[test]
     fn header_code_wins_over_cookie() {
         let h = headers(&[(SPACE_HEADER, CODE), ("cookie", &cookie_header(OTHER))]);
-        assert_eq!(code_from_headers(&h), PresentedCode::Valid(CODE.into()));
+        assert_eq!(code_from_headers(&h), valid(CODE, true));
     }
 
     #[test]
     fn cookie_is_used_when_header_absent() {
         let h = headers(&[("cookie", &cookie_header(CODE))]);
-        assert_eq!(code_from_headers(&h), PresentedCode::Valid(CODE.into()));
+        assert_eq!(code_from_headers(&h), valid(CODE, false), "cookie 是隐式来源");
     }
 
     #[test]
     fn malformed_header_falls_back_to_cookie() {
         // 客户端存的码坏了，但 cookie 还有效 → 继续用 cookie，不要打扰用户
         let h = headers(&[(SPACE_HEADER, "not-a-code"), ("cookie", &cookie_header(CODE))]);
-        assert_eq!(code_from_headers(&h), PresentedCode::Valid(CODE.into()));
+        assert_eq!(code_from_headers(&h), valid(CODE, false));
     }
 
     #[test]
