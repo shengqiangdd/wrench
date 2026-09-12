@@ -131,7 +131,9 @@ describe('认证与首次设置', () => {
   })
 
   it('setupPassword 带上一次性 setup token 并保存会话', async () => {
-    const mock = stubFetch(async () => jsonResponse({ token: 'setup-token-session', expiresIn: 60 }))
+    const mock = stubFetch(async () =>
+      jsonResponse({ token: 'setup-token-session', expiresIn: 60 }),
+    )
 
     await setupPassword('a-strong-password', 'one-time-token')
 
@@ -184,7 +186,13 @@ describe('进入 / 切换空间', () => {
   it('attachSpace 成功后保存规范化后的空间码', async () => {
     stubFetch(async (url) => {
       if (url === '/api/space/attach') return jsonResponse({ ok: true })
-      return jsonResponse({ id: 'space-9', createdAt: '', lastSeenAt: '', isLegacy: false, counts: [] })
+      return jsonResponse({
+        id: 'space-9',
+        createdAt: '',
+        lastSeenAt: '',
+        isLegacy: false,
+        counts: [],
+      })
     })
 
     const info = await attachSpace('  ABC-123  ')
@@ -207,7 +215,9 @@ describe('进入 / 切换空间', () => {
     // 用**真实信封**做夹具：外层 `code` 是数字状态码，空间码在 `data.code` 里。
     // 曾经写成 `body.code ?? body.data?.code`，于是把 0 当成了空间码 ——
     // 服务端换了码、界面还显示旧码，用户存下来的是失效码。
-    stubFetch(async () => jsonResponse({ success: true, code: 0, data: { code: 'new-code' }, msg: 'success' }))
+    stubFetch(async () =>
+      jsonResponse({ success: true, code: 0, data: { code: 'new-code' }, msg: 'success' }),
+    )
 
     expect(await rotateSpaceCode()).toBe('new-code')
     expect(getSpaceCode()).toBe('new-code')
@@ -263,7 +273,9 @@ describe('启动路径必须捕获空间码（verifySession 早于 fetch 拦截�
 
     // 这一枪发生在 initAuthFetch() 安装之前，服务端正是在这里建空间并下发空间码；
     // 不在这里捕获 → cookie 已落地 → 之后永远不会再发 → 用户再也看不到自己的码。
-    stubFetch(async () => jsonResponse({ authenticated: true }, 200, { 'x-space-code': 'fresh-code-1' }))
+    stubFetch(async () =>
+      jsonResponse({ authenticated: true }, 200, { 'x-space-code': 'fresh-code-1' }),
+    )
     expect(await verifySession()).toBe(true)
 
     expect(getSpaceCode()).toBe('fresh-code-1')
@@ -274,7 +286,9 @@ describe('启动路径必须捕获空间码（verifySession 早于 fetch 拦截�
     await login('correct-password')
     setSpaceCode('dead-code')
 
-    stubFetch(async () => jsonResponse({ error: 'invalid space code' }, 400, { 'x-space-invalid': '1' }))
+    stubFetch(async () =>
+      jsonResponse({ error: 'invalid space code' }, 400, { 'x-space-invalid': '1' }),
+    )
     expect(await verifySession()).toBe(false)
 
     expect(getSpaceCode()).toBeNull()

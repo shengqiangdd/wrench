@@ -80,11 +80,14 @@ describe('AccountSection · 我的空间', () => {
   it('展示空间信息与空间码', async () => {
     const { container, cleanup } = render(<AccountSection />)
 
+    // 空间码来自本地存储（同步可得），空间详情来自 getSpaceInfo()（异步）。
+    // 必须等到异步详情落地再断言，否则会在 CI 上偶发红（这是个真实的 flake）。
     await vi.waitFor(() => {
-      expect(container.querySelector('[data-testid="space-code"]')).not.toBeNull()
+      expect(container.textContent).toContain('space-1')
     })
-    expect(container.querySelector('[data-testid="space-code"]')!.textContent).toBe('space-code-abc')
-    expect(container.textContent).toContain('space-1')
+    expect(container.querySelector('[data-testid="space-code"]')!.textContent).toBe(
+      'space-code-abc',
+    )
     expect(container.textContent).toContain('3 条')
     cleanup()
   })
@@ -103,7 +106,9 @@ describe('AccountSection · 我的空间', () => {
     expect(rotate).not.toBeNull()
     rotate!.click()
     await vi.waitFor(() => {
-      expect(container.querySelector('[data-testid="space-code"]')?.textContent).toBe('rotated-code-xyz')
+      expect(container.querySelector('[data-testid="space-code"]')?.textContent).toBe(
+        'rotated-code-xyz',
+      )
     })
     cleanup()
   })
@@ -114,7 +119,10 @@ describe('AccountSection · 我的空间', () => {
       expect(container.querySelector('[data-testid="space-attach-input"]')).not.toBeNull()
     })
 
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="space-attach-input"]')!, 'OTHER-CODE')
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="space-attach-input"]')!,
+      'OTHER-CODE',
+    )
 
     await vi.waitFor(() => {
       expect(
@@ -136,7 +144,10 @@ describe('AccountSection · 我的空间', () => {
       expect(container.querySelector('[data-testid="space-attach-input"]')).not.toBeNull()
     })
 
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="space-attach-input"]')!, 'nope')
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="space-attach-input"]')!,
+      'nope',
+    )
     await vi.waitFor(() => {
       expect(
         container.querySelector<HTMLButtonElement>('[data-testid="space-attach"]')!.disabled,
@@ -159,7 +170,9 @@ describe('AccountSection · 我的空间', () => {
     container.querySelector<HTMLButtonElement>('[data-testid="space-rotate"]')!.click()
 
     await vi.waitFor(() => {
-      expect(container.querySelector('[data-testid="space-code"]')!.textContent).toBe('rotated-code-xyz')
+      expect(container.querySelector('[data-testid="space-code"]')!.textContent).toBe(
+        'rotated-code-xyz',
+      )
     })
     expect(container.textContent).toContain('旧码立即失效')
     cleanup()
@@ -183,7 +196,10 @@ describe('AccountSection · 修改门户口令', () => {
 
     typeInto(container.querySelector<HTMLInputElement>('[data-testid="pw-current"]')!, 'right')
     typeInto(container.querySelector<HTMLInputElement>('[data-testid="pw-new"]')!, 'new-password-1')
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="pw-confirm"]')!, 'new-password-2')
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="pw-confirm"]')!,
+      'new-password-2',
+    )
     container.querySelector<HTMLButtonElement>('[data-testid="pw-submit"]')!.click()
 
     await vi.waitFor(() => {
@@ -200,7 +216,10 @@ describe('AccountSection · 修改门户口令', () => {
 
     typeInto(container.querySelector<HTMLInputElement>('[data-testid="pw-current"]')!, 'wrong')
     typeInto(container.querySelector<HTMLInputElement>('[data-testid="pw-new"]')!, 'new-password-1')
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="pw-confirm"]')!, 'new-password-1')
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="pw-confirm"]')!,
+      'new-password-1',
+    )
     container.querySelector<HTMLButtonElement>('[data-testid="pw-submit"]')!.click()
 
     await vi.waitFor(() => {
@@ -217,7 +236,10 @@ describe('AccountSection · 修改门户口令', () => {
 
     typeInto(container.querySelector<HTMLInputElement>('[data-testid="pw-current"]')!, 'right')
     typeInto(container.querySelector<HTMLInputElement>('[data-testid="pw-new"]')!, 'new-password-1')
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="pw-confirm"]')!, 'new-password-1')
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="pw-confirm"]')!,
+      'new-password-1',
+    )
     container.querySelector<HTMLButtonElement>('[data-testid="pw-submit"]')!.click()
 
     await vi.waitFor(() => {

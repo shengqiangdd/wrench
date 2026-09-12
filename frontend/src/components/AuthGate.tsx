@@ -358,7 +358,10 @@ function SetupView({ onSubmit }: SetupViewProps) {
         </button>
 
         <p className="mt-4 text-xs leading-relaxed text-gray-500">
-          取启动令牌：<code className="text-gray-400">docker logs &lt;容器名&gt; 2&gt;&amp;1 | grep -i &quot;setup token&quot;</code>
+          取启动令牌：
+          <code className="text-gray-400">
+            docker logs &lt;容器名&gt; 2&gt;&amp;1 | grep -i &quot;setup token&quot;
+          </code>
           。口令以 PBKDF2 哈希保存到数据库，明文不写任何文件。
         </p>
       </form>

@@ -301,7 +301,8 @@ function SpaceSection() {
             创建于：<span className="text-slate-300">{info ? fmtTime(info.createdAt) : '…'}</span>
           </div>
           <div>
-            最近使用：<span className="text-slate-300">{info ? fmtTime(info.lastSeenAt) : '…'}</span>
+            最近使用：
+            <span className="text-slate-300">{info ? fmtTime(info.lastSeenAt) : '…'}</span>
           </div>
           <div>
             数据量：
@@ -341,7 +342,8 @@ function SpaceSection() {
           <div className="mb-3 flex items-start gap-2">
             <p className="flex-1 text-[11px] text-amber-400">
               本浏览器没有保存空间码（清过缓存或换过浏览器）。如果这是你自己的空间，
-              点右边「生成新码」拿一个可以保存的新凭据（<span className="text-amber-200">数据不会丢</span>
+              点右边「生成新码」拿一个可以保存的新凭据（
+              <span className="text-amber-200">数据不会丢</span>
               ）；如果是从别的设备搬过来，在下面粘贴当初保存的码。
             </p>
             <button

@@ -21,7 +21,12 @@ import {
 } from './auth'
 
 /** 无需注入令牌的公开端点 */
-const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/setup'])
+const PUBLIC_PATHS = new Set([
+  '/api/health',
+  '/api/auth/status',
+  '/api/auth/login',
+  '/api/auth/setup',
+])
 
 /** 安装全局 fetch 拦截器，返回取消函数 */
 export function initAuthFetch(): () => void {

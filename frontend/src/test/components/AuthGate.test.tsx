@@ -34,7 +34,8 @@ vi.mock('../../services/auth', () => ({
     rotationLogsOutEveryone: true,
   })),
   setupPassword: vi.fn(async (_password: string, setupToken: string) => {
-    if (setupToken !== 'good-token') throw new Error('启动令牌无效，请检查服务端日志里的 setup token')
+    if (setupToken !== 'good-token')
+      throw new Error('启动令牌无效，请检查服务端日志里的 setup token')
     _setupRequired = false
     _authenticated = true
     _sessionValid = true
@@ -334,9 +335,18 @@ describe('AuthGate · 首次设置', () => {
       expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
     })
 
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!, 'good-token')
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!, 'a-strong-password')
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!, 'a-strong-password')
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!,
+      'good-token',
+    )
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!,
+      'a-strong-password',
+    )
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!,
+      'a-strong-password',
+    )
 
     await vi.waitFor(() => {
       expect(
@@ -361,9 +371,18 @@ describe('AuthGate · 首次设置', () => {
       expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
     })
 
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!, 'wrong-token')
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!, 'a-strong-password')
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!, 'a-strong-password')
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!,
+      'wrong-token',
+    )
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!,
+      'a-strong-password',
+    )
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!,
+      'a-strong-password',
+    )
 
     await vi.waitFor(() => {
       expect(
@@ -389,9 +408,18 @@ describe('AuthGate · 首次设置', () => {
       expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
     })
 
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!, 'good-token')
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!, 'a-strong-password')
-    typeInto(container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!, 'a-strong-passwerd')
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!,
+      'good-token',
+    )
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!,
+      'a-strong-password',
+    )
+    typeInto(
+      container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!,
+      'a-strong-passwerd',
+    )
 
     container
       .querySelector<HTMLFormElement>('form')!
