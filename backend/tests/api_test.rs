@@ -86,6 +86,38 @@ async fn unknown_route_returns_404() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
+/// 未知 `/api/*` 即使在前端产物存在时也必须 404（回归测试）。
+///
+/// 生产镜像里 `frontend/dist/index.html` 是存在的，SPA fallback 会把所有
+/// 未匹配路径兜成 `200 + index.html`；若不给 /api 挂 fallback，拼错的接口
+/// 会以「HTTP 200 + HTML」伪装成功（`GET /api/ssh/hosts` 这种不存在的路径
+/// 就是这样骗过排障时的 curl 的）。单元测试里的 frontend_dist 指向
+/// /nonexistent，所以这个差异只有真正带上 SPA 产物才能测出来。
+#[tokio::test]
+async fn unknown_api_route_is_404_even_with_spa_present() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("index.html"), "<html><body>spa</body></html>").unwrap();
+
+    let mut config = test_config();
+    config.frontend_dist = dir.path().to_path_buf();
+
+    let app = build_test_app_with(config).await;
+
+    let resp = app
+        .clone()
+        .oneshot(Request::builder().uri("/api/nonexistent").body(Body::from("")).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND, "未知 /api/* 必须 404");
+
+    // 前端路由（非 /api）仍要回落到 SPA，否则刷新页面会 404。
+    let resp = app
+        .oneshot(Request::builder().uri("/ssh").body(Body::from("")).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "前端路由应回落 SPA");
+}
+
 /// Protected routes return 401 without auth.
 #[tokio::test]
 async fn protected_routes_require_auth() {

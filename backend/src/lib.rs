@@ -239,8 +239,19 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .layer(auth_layer);
 
     // Combine public + login + protected API routes under /api
+    // fallback：未知 /api/* 必须 404，不能被下面的 SPA fallback 兜成
+    // 200 + index.html —— 那样拼错的接口会以「HTTP 200 + HTML」伪装成功，
+    // 调用方（包括排障时手敲的 curl）很难发现自己打错了路径。
+    let api_fallback = || async { crate::error::AppError::NotFound("not found".to_string()) };
     let api_routes = Router::new()
-        .nest("/api", Router::new().merge(public_api).merge(login_api).merge(protected_api))
+        .nest(
+            "/api",
+            Router::new()
+                .merge(public_api)
+                .merge(login_api)
+                .merge(protected_api)
+                .fallback(api_fallback),
+        )
         .layer(cors.clone())
         .layer(TraceLayer::new_for_http())
         // Compress JSON API responses on-the-fly (gzip, min-size 512 bytes)
