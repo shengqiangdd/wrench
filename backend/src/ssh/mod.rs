@@ -9,6 +9,3 @@ pub mod sftp_ops;
 pub use client::SshConnection;
 pub use known_hosts::KnownHosts;
 pub use pool::SshSession;
-
-#[cfg(test)]
-mod tests {}

@@ -22,6 +22,9 @@
   作业超时从 10 分钟放宽到 20 分钟（`cargo install` 要从源码编译，否则会把超时误报成审计失败）。
 - **删除 `frontend/yarn.lock`** — 与 `package-lock.json` 双锁文件并存，但脚本/CI/文档无人使用 yarn
   （CI 走 `npm ci`），只会持续漂移。
+- **删掉从不运行的测试文件** — `src/ssh/known_hosts_test.rs` 没有被 `mod` 声明，`cargo` 从不编译它、
+  CI 的测试数量里也没有它（内容与 `known_hosts.rs` 内的测试重复，另含一条恒真断言
+  `assert!(path.exists() || !path.exists())`）；连同 `ssh/mod.rs` 末尾空的 `#[cfg(test)] mod tests {}` 一并移除。
 - **Rust 工具链钉版本** — 新增仓库根 `rust-toolchain.toml`（1.96.1 + rustfmt/clippy），CI 不再用浮动的
   stable（此前 Rust 每发一版新增默认告警，CI 就会在自己没改任何代码时变红）。
 - **CI 补 rustfmt 门禁** — 新增 `cargo fmt --all --check`；clippy/test 改为 `--all-targets --locked`。
