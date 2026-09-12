@@ -67,7 +67,7 @@ let cmd = format!("docker exec {} sh -c 'cat {}'", container_id, safe_path);
 | **后端路由** | 遵循 Axum 提取器模式：`State<Arc<AppState>>`, `Json<T>`, `Path<T>`, `Query<T>`，返回 `ApiResponse<T>` |
 | **错误处理** | 统一 `response::ApiResponse` + `error::AppError`，HTTP 语义化：400/401/404/429/500 |
 | **数据库** | SQLite 操作走 `db::Database`（内部 `spawn_blocking`），读优先内存缓存，双写策略 |
-| **WebSocket** | 认证：`?token=` 查询参数；心跳 30s；指数退避重连(最大 10 次) |
+| **WebSocket** | 认证：`?token=` 查询参数（短时 `ws` 令牌，重连前自动刷新）；心跳 30s；指数退避重连(最大 10 次) |
 | **前端构建** | Vite 8 + `@vitejs/plugin-react` v6，React Compiler 仅生产构建启用 (`process.argv.includes('build')`) |
 
 ---
@@ -94,13 +94,21 @@ pub struct AppState {
 - 复用 SFTP：`session.get_sftp_session()` 缓存 `SftpSession`
 - 清理：主循环每 5 分钟扫描 `is_idle_async()` + `is_connected()`，空闲/断开则 `disconnect()` 并从 `connections` 移除
 
-### 5.3 前端：认证流程
+### 5.3 认证流程（服务端口令 + 分层 scope）
+
 ```
-App 启动 → initAuth() → POST /api/ws-token → 拿到一次性 token
-WebSocket 连接：buildWsUrl("/api/ws/terminal") → wss://host?token=xxx
-REST API：authedFetch(url, opts) → 自动注入 Authorization: Bearer <token>
-全局拦截：initAuthFetch.ts 代理 window.fetch，/api/* 自动加头，跳过 /api/ws-token
+登录：POST /api/auth/login { password } → 会话 JWT（scope=api+ws，7 天）
+      · 口令来自 WRENCH_AUTH_PASSWORD（或数据目录的 auth_password 文件）
+      · 校验用 SHA-256 摘要 + 恒定时间比较；登录接口独立限流（8 次/分钟/IP）
+REST API：authedFetch(url, opts) → Authorization: Bearer <会话 JWT>
+WebSocket：POST /api/ws-token（需会话）→ 短时 token（scope=ws，10 分钟）
+           buildWsUrl("/ws") → wss://host/ws?token=<短时 token>
+全局拦截：initAuthFetch.ts 代理 window.fetch，/api/* 自动加头，跳过 /api/health 与 /api/auth/login
+失效：401 → 前端清会话回登录页；改 WRENCH_AUTH_PASSWORD 即让所有旧令牌立即失效
 ```
+
+中间件按路径校验 scope：`/ws*` 需 `ws`，其余 REST 需 `api`（`backend/src/middleware/auth.rs`）。
+未配置口令时所有受保护接口返回 503（fail-closed）。
 
 ### 5.4 前端状态切片
 ```

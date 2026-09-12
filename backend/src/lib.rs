@@ -139,12 +139,19 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         ));
 
     // ─── Public API routes (no auth required) ───
-    let public_api = Router::new()
-        .route("/health", get(api::health::health_check))
-        .route("/ws-token", axum::routing::post(api::auth::issue_jwt_token));
+    // 只保留健康检查：/api/ws-token 已移入受保护路由（需要登录会话），
+    // 否则任何人都能凭它换取可用的全权令牌。
+    let public_api = Router::new().route("/health", get(api::health::health_check));
+
+    // ─── Login route (no auth, but strictly rate-limited) ───
+    let login_api = Router::new()
+        .route("/auth/login", axum::routing::post(api::auth::login))
+        .layer(axum_middleware::from_fn(middleware::rate_limit::login_rate_limit_middleware));
 
     // ─── Protected API routes (auth + rate limit required) ───
     let protected_api = Router::new()
+        .route("/auth/me", get(api::auth::me))
+        .route("/ws-token", axum::routing::post(api::auth::issue_ws_token))
         .route("/audit-logs", get(api::auth::get_audit_logs))
         .route("/hosts", get(api::hosts::list_hosts))
         .route("/hosts", axum::routing::post(api::hosts::add_host))
@@ -234,9 +241,15 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/market/index", get(api::market::get_market_index))
         .layer(auth_layer);
 
-    // Combine public + protected API routes under /api
+    // Combine public + login + protected API routes under /api
     let api_routes = Router::new()
-        .nest("/api", Router::new().merge(public_api).merge(protected_api))
+        .nest(
+            "/api",
+            Router::new()
+                .merge(public_api)
+                .merge(login_api)
+                .merge(protected_api),
+        )
         .layer(cors.clone())
         .layer(TraceLayer::new_for_http())
         // Compress JSON API responses on-the-fly (gzip, min-size 512 bytes)

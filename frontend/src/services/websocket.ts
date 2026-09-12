@@ -23,7 +23,7 @@ type ErrorHandler = (error: string) => void
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
 
-import { buildWsUrl } from './auth'
+import { AUTH_REQUIRED_EVENT, buildWsUrl } from './auth'
 
 interface PendingRequest {
   resolve: (data: Record<string, unknown>) => void
@@ -59,6 +59,10 @@ const HEARTBEAT_WATCHDOG_INTERVAL_MS = 10_000
 export class WsClient {
   private ws: WebSocket | null = null
   private url: string
+  /** 每次（重）连接前重新解析 URL（刷新短时 WS 令牌） */
+  private _urlProvider: (() => Promise<string>) | null = null
+  /** 防止并发刷新导致重复建连 */
+  private _refreshing = false
   private handlers = new Map<string, MessageHandler[]>()
   private statusHandlers: StatusHandler[] = []
   private errorHandlers: ErrorHandler[] = []
@@ -157,6 +161,47 @@ export class WsClient {
   }
 
   connect() {
+    // 配置了 urlProvider（用于刷新短时 WS 令牌）时，先异步刷新 URL 再建连
+    if (this._urlProvider) {
+      void this.refreshUrlThenConnect()
+      return
+    }
+    this.openSocket()
+  }
+
+  /**
+   * 设置 URL 提供者：每次（重）连接前重新解析地址。
+   *
+   * WS 认证令牌放在 URL 查询串里，且是短时令牌（10 分钟），
+   * 因此重连必须重新取新令牌，否则会在令牌过期后一直 401。
+   */
+  setUrlProvider(provider: (() => Promise<string>) | null) {
+    this._urlProvider = provider
+  }
+
+  private async refreshUrlThenConnect(): Promise<void> {
+    if (this._refreshing) return
+    this._refreshing = true
+    try {
+      await this.refreshUrl()
+    } finally {
+      this._refreshing = false
+    }
+    this.openSocket()
+  }
+
+  private async refreshUrl(): Promise<void> {
+    if (!this._urlProvider) return
+    try {
+      this.url = await this._urlProvider()
+    } catch (err) {
+      // 取不到新令牌（如会话过期）时保留旧 URL：连接会失败并走重连/登录流程
+      console.warn('[WsClient] Failed to refresh URL/token, keeping previous URL:', err)
+    }
+  }
+
+  /** 实际建连（不做令牌刷新） */
+  private openSocket() {
     // 如果已连接或正在连接，不重复创建
     if (this.ws) {
       const state = this.ws.readyState
@@ -714,7 +759,19 @@ let _instance: WsClient | null = null
 let _tokenReady = false
 let _initPromise: Promise<WsClient> | null = null
 
-/** 获取 WS 连接地址（带一次性 token） */
+// 会话失效（令牌过期 / 被吊销 / 主动退出）时断开 WS，避免残留已认证连接
+if (typeof window !== 'undefined') {
+  window.addEventListener(AUTH_REQUIRED_EVENT, () => {
+    try {
+      _instance?.disconnect()
+      _initPromise = null
+    } catch (err) {
+      console.warn('[WS] disconnect on auth-required failed:', err)
+    }
+  })
+}
+
+/** 获取 WS 连接地址（带短时 WS 令牌） */
 async function resolveWsUrl(): Promise<string> {
   try {
     return buildWsUrl('/ws')
@@ -739,10 +796,16 @@ export async function getWsClient(): Promise<WsClient> {
     if (!_instance) {
       _instance = new WsClient('')
     }
+    // 注册 URL 提供者：每次重连都会取新的短时 WS 令牌
+    _instance.setUrlProvider(resolveWsUrl)
     const url = await resolveWsUrl()
     _instance.setUrl(url)
     _tokenReady = true
-    _instance.connect()
+    if (_instance.status === 'connected') {
+      return _instance
+    }
+    // 重新登录后再次初始化时，重置重连计数并重新建连
+    _instance.reconnect()
     return _instance
   })()
 
@@ -768,6 +831,17 @@ export function getWsClientSync(): WsClient {
   const host = window.location.host
   _instance = new WsClient(`${protocol}//${host}/ws`)
   return _instance
+}
+
+/**
+ * 为 SSH 终端创建独立的 WsClient 实例（自动使用短时 WS 令牌并在重连时刷新）。
+ *
+ * 推荐用法：`createSessionWsClient('/ws')`，不要自己拼 token 到 URL 上。
+ */
+export function createSessionWsClient(path = '/ws'): WsClient {
+  const client = new WsClient('')
+  client.setUrlProvider(() => buildWsUrl(path))
+  return client
 }
 
 /**

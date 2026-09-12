@@ -166,6 +166,36 @@ pub async fn rate_limit_middleware(
     next.run(req).await
 }
 
+/// 登录接口专用限流（比通用限流更严格）。
+///
+/// 口令校验是恒定时间比较，这里限的是“可尝试次数”，用于抵挡在线暴力破解：
+/// 每个 IP 每 60 秒最多 8 次登录尝试。
+pub async fn login_rate_limit_middleware(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    use std::sync::LazyLock;
+    static LOGIN_LIMITER: LazyLock<RateLimiter> = LazyLock::new(|| RateLimiter::new(60, 8));
+
+    let client_ip = addr.ip().to_string();
+    if !LOGIN_LIMITER.check(&client_ip) {
+        tracing::warn!("[auth] login rate limited for {}", client_ip);
+        let body = serde_json::json!({
+            "error": "Too many login attempts. Please retry in a minute."
+        })
+        .to_string();
+        return Response::builder()
+            .status(StatusCode::TOO_MANY_REQUESTS)
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .header("Retry-After", "60")
+            .body(Body::from(body))
+            .unwrap();
+    }
+
+    next.run(req).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -217,6 +217,7 @@ mod tests {
             vault_key: None,
             database_url: None, // memory-only mode for tests
             log_level: "warn".into(),
+            auth_password: Some("test-password".into()),
         }
     }
 

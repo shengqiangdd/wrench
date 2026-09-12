@@ -4,6 +4,7 @@ import { useAppStore } from '../../stores/app-store'
 import SystemMaintenance from './SystemMaintenance'
 import AiSettings from './AiSettings'
 import ImportExport from './ImportExport'
+import AccountSection from './AccountSection'
 
 export default function SettingsPanel() {
   const theme = useAppStore((s) => s.theme)
@@ -81,6 +82,9 @@ export default function SettingsPanel() {
 
           {/* ─── 系统维护 ─── */}
           <SystemMaintenance />
+
+          {/* ─── 登录与安全 ─── */}
+          <AccountSection />
         </div>
       </div>
     </div>

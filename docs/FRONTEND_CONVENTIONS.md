@@ -137,17 +137,21 @@ export class WsClient {
 ### 2.2 认证集成（来自 `services/auth.ts`）
 
 ```ts
-// 获取一次性令牌（POST /api/ws-token）
-export async function getToken(): Promise<string> {
-  if (_currentToken) return _currentToken
-  return refreshToken()
-}
+// 会话令牌（登录获得，scope=api+ws，7 天）；未登录抛 AuthRequiredError
+export async function getToken(): Promise<string> { ... }
+
+// 短时 WS 令牌（scope=ws，10 分钟，带缓存）：WS 需要把令牌放进 URL 查询串
+export async function getWsToken(): Promise<string> { ... }
 
 export async function buildWsUrl(path: string): Promise<string> {
-  const token = await getToken()
+  const token = await getWsToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${window.location.host}${path}?token=${token}`
 }
+
+// 需要长连接的 WsClient 请用 createSessionWsClient(path)：
+// 它注册 urlProvider，在每次重连前刷新短时令牌，避免令牌过期后一直 401
+```
 ```
 
 ### 2.3 React Hook 用法

@@ -17,6 +17,9 @@ services:
       DATABASE_URL: /data/wrench.db
       # JWT_SECRET: 留空则 entrypoint 自动生成随机密钥（重启后失效，生产环境请显式设置）
       JWT_SECRET: "${JWT_SECRET:-}"
+      # WRENCH_AUTH_PASSWORD: 登录密码。留空则 entrypoint 自动生成随机密码并保存到 /data/.env
+      # （查看：docker exec wrench sh -c 'grep WRENCH_AUTH_PASSWORD /data/.env'）
+      WRENCH_AUTH_PASSWORD: "${WRENCH_AUTH_PASSWORD:-}"
       # VAULT_KEY: "${VAULT_KEY:-}"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]

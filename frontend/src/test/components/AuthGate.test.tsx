@@ -4,42 +4,37 @@ import { createRoot } from 'react-dom/client'
 import { AuthGate } from '../../components/AuthGate'
 
 // ─── Shared mock state ───
-let _shouldSucceed = true
-let _errorMessage: string | null = null
-let _pendingPromise: (() => void) | null = null
+let _authenticated = true
+let _sessionValid = true
+let _verifyError: Error | null = null
+let _pendingVerify = false
+let _loginError: Error | null = null
+let _wsError: Error | null = null
 
 vi.mock('../../services/auth', () => ({
-  refreshToken: vi.fn().mockImplementation(async () => {
-    // Delegate to getWsClient's token fetching
-    if (!_shouldSucceed) {
-      throw new Error(_errorMessage ?? 'Auth failed')
-    }
-    return 'mock-token'
+  AUTH_REQUIRED_EVENT: 'wrench:auth-required',
+  isAuthenticated: vi.fn(() => _authenticated),
+  verifySession: vi.fn(async () => {
+    if (_pendingVerify) return new Promise<boolean>(() => {})
+    if (_verifyError) throw _verifyError
+    return _sessionValid
   }),
-  getToken: vi.fn().mockImplementation(async () => {
-    if (!_shouldSucceed) {
-      throw new Error(_errorMessage ?? 'Auth failed')
-    }
-    return 'mock-token'
+  login: vi.fn(async (password: string) => {
+    if (_loginError) throw _loginError
+    if (password !== 'correct-password') throw new Error('密码错误')
+    _authenticated = true
+    _sessionValid = true
   }),
+  notifyAuthRequired: vi.fn(),
   clearToken: vi.fn(),
-  buildWsUrl: vi.fn().mockImplementation(async () => {
-    if (!_shouldSucceed) {
-      throw new Error(_errorMessage ?? 'Auth failed')
-    }
-    return 'ws://localhost/ws?token=mock-token'
-  }),
+  getToken: vi.fn(async () => 'mock-token'),
+  getWsToken: vi.fn(async () => 'mock-ws-token'),
+  buildWsUrl: vi.fn(async () => 'ws://localhost/ws?token=mock-ws-token'),
 }))
 
 vi.mock('../../services/websocket', () => ({
-  getWsClient: vi.fn().mockImplementation(async () => {
-    if (_pendingPromise) {
-      // Never resolves — keeps loading state
-      return new Promise(() => {})
-    }
-    if (!_shouldSucceed) {
-      throw new Error(_errorMessage ?? 'WS connection failed')
-    }
+  getWsClient: vi.fn(async () => {
+    if (_wsError) throw _wsError
     return {
       connect: vi.fn(),
       send: vi.fn(),
@@ -56,42 +51,37 @@ vi.mock('../../services/websocket', () => ({
 }))
 
 vi.mock('../../services/initAuthFetch', () => ({
-  initAuthFetch: vi.fn(() => {
-    if (!_shouldSucceed) {
-      // initAuthFetch itself doesn't reject, it only wraps fetch.
-      // Failures will come from getWsClient.
-    }
-    return vi.fn() // cleanup
-  }),
+  initAuthFetch: vi.fn(() => vi.fn()),
 }))
 
-/** Set mock to succeed */
-function mockSucceed() {
-  _shouldSucceed = true
-  _errorMessage = null
-  _pendingPromise = null
+/** 已登录且会话有效 */
+function mockLoggedIn() {
+  _authenticated = true
+  _sessionValid = true
+  _verifyError = null
+  _pendingVerify = false
+  _loginError = null
+  _wsError = null
 }
 
-/** Set mock to fail with an error */
-function mockFail(message = 'Auth failed') {
-  _shouldSucceed = false
-  _errorMessage = message
-  _pendingPromise = null
+/** 未登录 */
+function mockLoggedOut() {
+  _authenticated = false
+  _sessionValid = false
+  _verifyError = null
+  _pendingVerify = false
+  _loginError = null
+  _wsError = null
 }
 
-/** Set mock to stay pending (never resolves/rejects) */
-function mockPending() {
-  _shouldSucceed = true
-  _errorMessage = null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _pendingPromise = true as any // truthy to trigger the pending path
+/** 有本地会话但服务端已不接受 */
+function mockStaleSession() {
+  mockLoggedIn()
+  _sessionValid = false
 }
 
 /**
  * Helper: render a React node into a detached DOM container.
- * Uses createRoot directly (React 19) — act wrapper is not available
- * in React 19.2.7 CJS build, but the render still works correctly
- * without it in test environments.
  */
 function renderReact(node: React.ReactNode) {
   const container = document.createElement('div')
@@ -110,9 +100,27 @@ function renderReact(node: React.ReactNode) {
   }
 }
 
+/**
+ * 模拟用户输入：React 追踪 input.value 的原生 setter，直接赋值不会触发 onChange，
+ * 因此这里用原型上的 setter 再派发 input 事件。
+ */
+function typeInto(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function renderGate(containerText?: string) {
+  return renderReact(
+    <AuthGate>
+      <div data-testid="children">{containerText ?? 'App Content'}</div>
+    </AuthGate>,
+  )
+}
+
 describe('AuthGate', () => {
   beforeEach(() => {
-    mockSucceed()
+    mockLoggedIn()
     document.body.innerHTML = ''
   })
 
@@ -120,16 +128,25 @@ describe('AuthGate', () => {
     vi.restoreAllMocks()
   })
 
-  it('shows loading state on mount', async () => {
-    mockPending()
+  it('shows login form when no session exists', async () => {
+    mockLoggedOut()
 
-    const { container, cleanup } = renderReact(
-      <AuthGate>
-        <div data-testid="children">App Content</div>
-      </AuthGate>,
-    )
+    const { container, cleanup } = renderGate()
 
-    // Should show loading spinner
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="login-password"]')).not.toBeNull()
+    })
+    expect(container.textContent).toContain('请输入访问密码')
+    expect(container.querySelector('[data-testid="children"]')).toBeNull()
+    cleanup()
+  })
+
+  it('shows loading state while verifying the session', async () => {
+    mockLoggedIn()
+    _pendingVerify = true
+
+    const { container, cleanup } = renderGate()
+
     await vi.waitFor(() => {
       expect(container.textContent).toContain('正在连接服务器...')
     })
@@ -137,128 +154,127 @@ describe('AuthGate', () => {
     cleanup()
   })
 
-  it('renders children when auth succeeds', async () => {
-    mockSucceed()
+  it('renders children when the session is valid', async () => {
+    const { container, cleanup } = renderGate()
 
-    const { container, cleanup } = renderReact(
-      <AuthGate>
-        <div data-testid="children">App Content</div>
-      </AuthGate>,
-    )
-
-    // Wait for auth to resolve
     await vi.waitFor(() => {
       expect(container.textContent).toContain('App Content')
     })
-
     expect(container.querySelector('[data-testid="children"]')).not.toBeNull()
-    expect(container.textContent).not.toContain('正在连接服务器...')
-    expect(container.textContent).not.toContain('连接失败')
     cleanup()
   })
 
-  it('shows error state when auth fails', async () => {
-    mockFail('Network error')
+  it('falls back to the login form when the server rejects the stored session', async () => {
+    mockStaleSession()
 
-    const { container, cleanup } = renderReact(
-      <AuthGate>
-        <div data-testid="children">App Content</div>
-      </AuthGate>,
-    )
+    const { container, cleanup } = renderGate()
 
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('连接失败')
+      expect(container.querySelector('[data-testid="login-password"]')).not.toBeNull()
     })
-    expect(container.textContent).toContain('Network error')
     expect(container.querySelector('[data-testid="children"]')).toBeNull()
-    expect(container.textContent).toContain('重试')
     cleanup()
   })
 
-  it('shows fallback error when no error message provided', async () => {
-    mockFail('') // empty error message
+  it('logs in and renders children on correct password', async () => {
+    mockLoggedOut()
 
-    const { container, cleanup } = renderReact(
-      <AuthGate>
-        <div data-testid="children">App Content</div>
-      </AuthGate>,
-    )
-
+    const { container, cleanup } = renderGate()
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('无法获取认证令牌')
-    })
-    cleanup()
-  })
-
-  it('retries auth when retry button is clicked', async () => {
-    // First call fails
-    mockFail('Network error')
-
-    const { container, cleanup } = renderReact(
-      <AuthGate>
-        <div data-testid="children">App Content</div>
-      </AuthGate>,
-    )
-
-    // Wait for error state
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain('连接失败')
+      expect(container.querySelector('[data-testid="login-password"]')).not.toBeNull()
     })
 
-    // Second call succeeds
-    mockSucceed()
+    const input = container.querySelector<HTMLInputElement>('[data-testid="login-password"]')!
+    typeInto(input, 'correct-password')
 
-    // Click retry
-    const retryBtn = container.querySelector('button')
-    expect(retryBtn).not.toBeNull()
-    retryBtn!.click()
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector<HTMLButtonElement>('[data-testid="login-submit"]')!.disabled,
+      ).toBe(false)
+    })
 
-    // Wait for children to appear after retry
+    container
+      .querySelector<HTMLFormElement>('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
     await vi.waitFor(() => {
       expect(container.querySelector('[data-testid="children"]')).not.toBeNull()
     })
     cleanup()
   })
 
-  it('shows error again when retry fails', async () => {
-    mockFail('Network error')
+  it('shows an error message on wrong password', async () => {
+    mockLoggedOut()
 
-    const { container, cleanup } = renderReact(
-      <AuthGate>
-        <div data-testid="children">App Content</div>
-      </AuthGate>,
-    )
-
-    // Wait for first error
+    const { container, cleanup } = renderGate()
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('连接失败')
+      expect(container.querySelector('[data-testid="login-password"]')).not.toBeNull()
     })
 
-    // Click retry — still failing
-    const retryBtn = container.querySelector('button')
-    retryBtn!.click()
+    const input = container.querySelector<HTMLInputElement>('[data-testid="login-password"]')!
+    typeInto(input, 'wrong-password')
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector<HTMLButtonElement>('[data-testid="login-submit"]')!.disabled,
+      ).toBe(false)
+    })
+
+    container
+      .querySelector<HTMLFormElement>('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('连接失败')
+      expect(container.textContent).toContain('密码错误')
     })
     expect(container.querySelector('[data-testid="children"]')).toBeNull()
     cleanup()
   })
 
-  it('cleans up on unmount (cancelled flag)', async () => {
-    mockPending()
+  it('shows error state when WebSocket init fails', async () => {
+    mockLoggedIn()
+    _wsError = new Error('Network error')
 
-    const { cleanup } = renderReact(
-      <AuthGate>
-        <div data-testid="children">App Content</div>
-      </AuthGate>,
-    )
+    const { container, cleanup } = renderGate()
 
-    // Unmount before auth completes
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('连接失败')
+    })
+    expect(container.textContent).toContain('Network error')
+    expect(container.querySelector('[data-testid="retry"]')).not.toBeNull()
     cleanup()
+  })
 
-    // Wait for any pending effects to settle
-    await new Promise((r) => setTimeout(r, 50))
-    expect(true).toBe(true) // should not have thrown from setState on unmounted
+  it('retries boot when the retry button is clicked', async () => {
+    mockLoggedIn()
+    _wsError = new Error('Network error')
+
+    const { container, cleanup } = renderGate()
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('连接失败')
+    })
+
+    // 服务恢复后重试应成功
+    _wsError = null
+    container.querySelector<HTMLButtonElement>('[data-testid="retry"]')!.click()
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="children"]')).not.toBeNull()
+    })
+    cleanup()
+  })
+
+  it('returns to the login form when auth-required is dispatched', async () => {
+    const { container, cleanup } = renderGate()
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="children"]')).not.toBeNull()
+    })
+
+    window.dispatchEvent(new CustomEvent('wrench:auth-required', { detail: { reason: '401' } }))
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="login-password"]')).not.toBeNull()
+    })
+    expect(container.querySelector('[data-testid="children"]')).toBeNull()
+    cleanup()
   })
 })

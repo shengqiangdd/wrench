@@ -6,9 +6,8 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import { Search, X, ChevronUp, ChevronDown, Copy, AlignLeft } from 'lucide-react'
-import { createTerminalWsClient, type WsClient } from '../../services/websocket'
+import { createSessionWsClient, type WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
-import { getToken } from '../../services/auth'
 import { on } from '../../services/event-bus'
 
 /** 安全读取剪贴板（WebView 中 navigator.clipboard 可能为 undefined） */
@@ -660,20 +659,8 @@ export default function TerminalView({
       }, 20_000)
 
       try {
-        console.log('[Terminal] Calling getToken()...')
-        const token = await getToken()
-        console.log(`[Terminal] Got token: ${token.substring(0, 20)}... (length=${token.length})`)
-        console.log(`[Terminal] gen check: gen=${gen}, genRef.current=${genRef.current}`)
-        if (gen !== genRef.current) {
-          console.warn(
-            `[Terminal] gen mismatch! gen=${gen} !== genRef.current=${genRef.current}, aborting`,
-          )
-          clearTimeout(sshTimeout)
-          return
-        }
-
-        console.log('[Terminal] Creating WsClient...')
-        const termWs = createTerminalWsClient(token)
+        console.log('[Terminal] Creating session WS client (short-lived ws token)...')
+        const termWs = createSessionWsClient('/ws')
         console.log(
           `[Terminal] Created WsClient, URL: ${termWs['url'].split('?')[0]}, status=${termWs['status']}`,
         )
@@ -794,9 +781,8 @@ export default function TerminalView({
           }
         })
 
-        // 连接 WebSocket
-        const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws?token=${token.substring(0, 20)}...`
-        console.log(`[Terminal] Connecting WebSocket to: ${wsUrl}`)
+        // 连接 WebSocket（令牌由 createSessionWsClient 在每次连接前自动刷新）
+        console.log('[Terminal] Connecting WebSocket to /ws')
         // 先注册 onStatus handler，再 connect()，避免错过 'connected' 状态
         // （某些浏览器 onopen 可能在微任务内同步触发，connect 后再注册 handler 会丢失事件）
         console.log(`[Terminal] register onStatus, current ws status: ${termWs['status']}`)

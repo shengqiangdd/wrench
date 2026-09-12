@@ -33,6 +33,34 @@ pub fn derive_v1_legacy_key(password: &str) -> [u8; 32] {
     key
 }
 
+// ── Password Verification ───────────────────────────────────────────────────
+
+/// 恒定时间比较两个字节串（长度不同直接判否，本函数只用于等长摘要）。
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// 校验明文口令是否与配置的口令一致。
+///
+/// 先做 SHA-256 摘要（定长 32 字节），再恒定时间比较，
+/// 避免按字节短路比较泄露前缀信息、也避免直接持有明文比较分支。
+pub fn verify_password(input: &str, expected: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    if expected.is_empty() {
+        return false;
+    }
+    let a = Sha256::digest(input.as_bytes());
+    let b = Sha256::digest(expected.as_bytes());
+    constant_time_eq(&a, &b)
+}
+
 // ── AES-256-GCM Encryption ─────────────────────────────────────────────────
 
 /// Encrypt sensitive data (SSH passwords, private keys) using AES-256-GCM.
@@ -223,5 +251,38 @@ mod tests {
     fn test_derive_key_unicode_password() {
         let key = derive_key("密码-🔑-secret", b"unicode-salt", 1_000);
         assert_ne!(key, [0u8; 32]);
+    }
+
+    #[test]
+    fn test_verify_password_exact_match() {
+        assert!(verify_password("s3cret-pw", "s3cret-pw"));
+    }
+
+    #[test]
+    fn test_verify_password_rejects_wrong_and_prefix() {
+        assert!(!verify_password("s3cret", "s3cret-pw"));
+        assert!(!verify_password("s3cret-pw ", "s3cret-pw"));
+        assert!(!verify_password("", "s3cret-pw"));
+        assert!(!verify_password("S3CRET-PW", "s3cret-pw"));
+    }
+
+    #[test]
+    fn test_verify_password_empty_expected_always_fails() {
+        // 未配置口令时必须拒绝任何输入（fail-closed）
+        assert!(!verify_password("", ""));
+        assert!(!verify_password("anything", ""));
+    }
+
+    #[test]
+    fn test_constant_time_eq() {
+        assert!(constant_time_eq(b"abc", b"abc"));
+        assert!(!constant_time_eq(b"abc", b"abd"));
+        assert!(!constant_time_eq(b"abc", b"ab"));
+    }
+
+    #[test]
+    fn test_verify_password_unicode() {
+        assert!(verify_password("密码-🔑", "密码-🔑"));
+        assert!(!verify_password("密码", "密码-🔑"));
     }
 }

@@ -10,6 +10,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: /data/wrench.db
       JWT_SECRET: "${JWT_SECRET:?请设置 JWT_SECRET 环境变量}"
+      WRENCH_AUTH_PASSWORD: "${WRENCH_AUTH_PASSWORD:?请设置 WRENCH_AUTH_PASSWORD 环境变量（登录密码）}"
       FRONTEND_DIST: /app/working/workspaces/default/wrench/frontend/dist
       PLUGINS_DIR: /app/working/workspaces/default/wrench/plugins
 

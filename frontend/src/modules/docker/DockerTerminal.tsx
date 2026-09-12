@@ -3,9 +3,8 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { X, Maximize2 } from 'lucide-react'
-import { createTerminalWsClient, type WsClient } from '../../services/websocket'
+import { createSessionWsClient, type WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
-import { getToken } from '../../services/auth'
 
 const TERMINAL_THEME = {
   background: '#0f172a',
@@ -83,8 +82,7 @@ export default function DockerTerminal({
 
     const initDockerTerminal = async () => {
       try {
-        const token = await getToken()
-        const client = createTerminalWsClient(token)
+        const client = createSessionWsClient('/ws')
         wsClientRef.current = client
 
         const readyOff = client.on('docker_shell_ready', (msg) => {

@@ -107,9 +107,38 @@ docker compose down
 ### 访问地址
 
 - 前端：http://localhost:3001
-- 健康检查：http://localhost:3001/api/health
+- 健康检查：http://localhost:3001/api/health（唯一公开接口，无需登录）
 
 > 💡 Docker 镜像由 GitHub Actions 自动构建并推送至 **ghcr.io/shengqiangdd/wrench**，每次推送 `main` 分支都会自动更新 `latest` 标签。
+
+## 🔐 登录认证
+
+Wrench **默认拒绝匿名访问**：除 `/api/health` 外，所有 REST 接口与 WebSocket（终端、日志、Docker 监控）
+都要求先登录。因此即使端口直接暴露到公网，未登录的请求也拿不到任何数据或终端。
+
+**密码来源（按优先级）**
+
+1. 环境变量 `WRENCH_AUTH_PASSWORD`
+2. 环境变量 `WRENCH_AUTH_PASSWORD_FILE` 指向的文件
+3. 数据目录下的 `auth_password` 文件（不存在则自动生成 256 位随机密码并写盘）
+
+```bash
+# 自定义密码（写入 .env，不要提交到仓库）
+echo "WRENCH_AUTH_PASSWORD=$(openssl rand -base64 32)" >> .env
+docker compose up -d
+
+# 查看自动生成的密码
+docker exec wrench sh -c 'grep WRENCH_AUTH_PASSWORD /data/.env'
+```
+
+**安全特性**
+
+- 登录接口按 IP 限流（8 次/分钟），口令校验使用恒定时间比较，失败只返回统一的 401
+- 会话令牌有效期 7 天，仅通过 `POST /api/auth/login` 签发；口令变更后所有旧令牌立即失效（全局登出）
+- WebSocket 使用独立的短时令牌（`scope=ws`，10 分钟），不能用于调用 REST 接口
+- 未配置密码时后端保持 fail-closed：受保护接口统一返回 503，不会放行匿名请求
+
+> ⚠️ 通过公网访问时请务必使用 HTTPS 反向代理（Caddy/Nginx），否则密码与令牌会以明文经过网络。
 
 ## 🧩 插件开发
 

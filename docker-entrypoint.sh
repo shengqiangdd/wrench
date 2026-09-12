@@ -38,6 +38,25 @@ else
   log "Generated random JWT_SECRET and saved to /data/.env"
 fi
 
-# ── 4. 启动 ──
+# ── 4. 确保登录密码存在（WRENCH_AUTH_PASSWORD）──
+# Wrench 不再允许无认证访问：任何能连到端口的客户端都必须先登录。
+# 优先级：环境变量 > 持久化 .env > 自动生成并保存到 /data/.env
+if [ -n "$WRENCH_AUTH_PASSWORD" ]; then
+  sed -i '/^#*WRENCH_AUTH_PASSWORD=/d' /data/.env
+  # 单引号包裹，避免密码里的特殊字符被 shell 解析
+  echo "WRENCH_AUTH_PASSWORD='${WRENCH_AUTH_PASSWORD}'" >> /data/.env
+  log "Using WRENCH_AUTH_PASSWORD from environment variable"
+elif grep -q "^WRENCH_AUTH_PASSWORD=." /data/.env 2>/dev/null; then
+  export WRENCH_AUTH_PASSWORD=$(grep "^WRENCH_AUTH_PASSWORD=" /data/.env | head -1 | cut -d= -f2- | sed "s/^'//; s/'$//")
+  log "Loaded WRENCH_AUTH_PASSWORD from /data/.env"
+else
+  WRENCH_AUTH_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')
+  export WRENCH_AUTH_PASSWORD
+  echo "WRENCH_AUTH_PASSWORD='${WRENCH_AUTH_PASSWORD}'" >> /data/.env
+  log "Generated random login password into /data/.env — 查看方式: docker exec wrench sh -c 'grep WRENCH_AUTH_PASSWORD /data/.env'"
+  log "建议设置自己的密码: 在 .env 中设置 WRENCH_AUTH_PASSWORD 后重启容器"
+fi
+
+# ── 5. 启动 ──
 log "Starting Wrench backend..."
 exec /app/wrench "$@"

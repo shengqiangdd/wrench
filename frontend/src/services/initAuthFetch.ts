@@ -1,17 +1,20 @@
 /**
  * Wrench 全局 fetch 认证拦截器
  *
- * 在应用启动时自动拦截所有 `/api/` 请求，添加 `Authorization: Bearer <token>` 头部。
+ * 在应用启动时自动拦截所有 `/api/` 请求，添加 `Authorization: Bearer <session token>` 头部。
  * 这样所有模块中的 `fetch('/api/...') 调用无需手动修改即可获得认证。
  *
  * 工作原理:
  *   1. 用 Proxy 代理 window.fetch，只拦截 /api/{...} 路径的请求
- *   2. 自动调用 getToken() 获取一次性 token 并注入 Authorization 头
- *   3. 401 响应自动清除 token 缓存，下次请求自动刷新
- *   4. /api/ws-token 端点跳过拦截（公开端点）
+ *   2. 自动调用 getToken() 取会话令牌并注入 Authorization 头
+ *   3. 401 响应 → 清除本地会话并通知 AuthGate 切回登录界面
+ *   4. 公开端点（/api/health、/api/auth/login）跳过拦截
  */
 
-import { getToken, clearToken } from './auth'
+import { AuthRequiredError, getToken, notifyAuthRequired } from './auth'
+
+/** 无需注入令牌的公开端点 */
+const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/login'])
 
 /** 安装全局 fetch 拦截器，返回取消函数 */
 export function initAuthFetch(): () => void {
@@ -28,7 +31,7 @@ export function initAuthFetch(): () => void {
     const path = url.pathname
 
     // 只拦截 /api/ 路径，跳过公开端点
-    if (!path.startsWith('/api/') || path === '/api/ws-token') {
+    if (!path.startsWith('/api/') || PUBLIC_PATHS.has(path)) {
       return originalFetch(request)
     }
 
@@ -41,12 +44,15 @@ export function initAuthFetch(): () => void {
       const resp = await originalFetch(authRequest)
 
       if (resp.status === 401) {
-        clearToken()
+        notifyAuthRequired(`401 from ${path}`)
       }
 
       return resp
-    } catch {
-      console.warn('[AuthFetch] Token unavailable, falling back:', path)
+    } catch (err) {
+      // 未登录（本地无会话）不属于异常路径：交给调用方处理 401
+      if (!(err instanceof AuthRequiredError)) {
+        console.warn('[AuthFetch] Token unavailable, falling back:', path, err)
+      }
       return originalFetch(request)
     }
   }
@@ -56,7 +62,6 @@ export function initAuthFetch(): () => void {
     writable: true,
     configurable: true,
   })
-
   ;(window as unknown as Record<string, unknown>).__AUTH_FETCH_INSTALLED = true
 
   return () => {
