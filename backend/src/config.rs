@@ -16,11 +16,15 @@ pub struct AppConfig {
     ///
     /// 来源优先级：
     /// 1. 环境变量 `WRENCH_AUTH_PASSWORD`
-    /// 2. `WRENCH_AUTH_PASSWORD_FILE` 指向的文件（非空即用）
-    /// 3. 数据库所在目录（容器内为 `/data`）下的 `auth_password`，不存在则生成随机强密码并落盘
+    /// 2. `WRENCH_AUTH_PASSWORD_FILE` 指向的文件；
+    ///    未显式指定时回退到数据库所在目录（容器内为 `/data`）下的 `auth_password`
     ///
-    /// 为 `None` 时表示无法确定密码：此时**所有**受保护接口返回 503，
-    /// 绝不放行未认证请求（fail-closed）。
+    /// 两者都没有时为 `None` —— 这就是**首次设置模式**：启动日志里会打印一次性
+    /// setup token，网页显示「首次设置」，由使用者自己设口令（PBKDF2 哈希落库）。
+    /// 在此之前，所有受保护接口返回 503，绝不放行未认证请求（fail-closed）。
+    ///
+    /// 注意：**不再自动生成随机口令并落盘**。自动生成会让「网页首次设置」在容器部署里
+    /// 永远走不到，使用者只能去 `cat` 容器里的明文口令 —— 那是被刻意改掉的旧体验。
     pub auth_password: Option<String>,
 }
 
@@ -154,23 +158,11 @@ fn resolve_auth_password(database_url: Option<&str>) -> Option<String> {
         return Some(pw);
     }
 
-    // 3. 生成随机强密码并落盘（仅当文件不存在/为空）
-    match generate_password_file(&file_path) {
-        Ok(pw) => {
-            eprintln!(
-                "🔐 认证已启用：已生成随机密码并保存到 {}（查看：cat {}）",
-                file_path.display(),
-                file_path.display()
-            );
-            eprintln!("   如需自定义密码，请设置环境变量 WRENCH_AUTH_PASSWORD。");
-            Some(pw)
-        }
-        Err(e) => {
-            eprintln!("❌ 无法确定登录密码（{e}）；所有受保护接口将返回 503。");
-            eprintln!("   请设置环境变量 WRENCH_AUTH_PASSWORD 后重启。");
-            None
-        }
-    }
+    // 3. 都没有 → 进入首次设置模式（fail-closed，由使用者自己在网页里设口令）
+    eprintln!("🔑 未配置入口口令（{} 不存在）—— 进入首次设置模式。", file_path.display());
+    eprintln!("   网页会显示「首次设置」，粘贴启动日志里的一次性 setup token 即可设置口令。");
+    eprintln!("   也可以直接设置环境变量 WRENCH_AUTH_PASSWORD 后重启。");
+    None
 }
 
 /// 密码文件默认位置：优先与数据库同目录（容器内 `/data`，是持久卷），
@@ -190,32 +182,4 @@ fn read_password_file(path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     let pw = content.trim().to_string();
     if pw.is_empty() { None } else { Some(pw) }
-}
-
-/// 生成 256 位随机密码，以 0600 权限写入 `path`。
-fn generate_password_file(path: &Path) -> Result<String, String> {
-    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-    use rand::TryRng;
-    use rand::rngs::SysRng;
-
-    let mut bytes = [0u8; 32];
-    SysRng
-        .try_fill_bytes(&mut bytes)
-        .map_err(|e| format!("随机数生成失败: {e:?}"))?;
-    let password = URL_SAFE_NO_PAD.encode(bytes);
-
-    if let Some(dir) = path.parent()
-        && !dir.as_os_str().is_empty()
-    {
-        std::fs::create_dir_all(dir).map_err(|e| format!("创建目录 {} 失败: {e}", dir.display()))?;
-    }
-    std::fs::write(path, format!("{password}\n")).map_err(|e| format!("写入 {} 失败: {e}", path.display()))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-
-    Ok(password)
 }

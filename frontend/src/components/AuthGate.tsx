@@ -204,7 +204,7 @@ function LoginView({ onSubmit }: LoginViewProps) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="mb-4 w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
-          placeholder="服务端 WRENCH_AUTH_PASSWORD"
+          placeholder="请输入入口口令"
         />
 
         {error && (

@@ -105,7 +105,7 @@ cp .env.example .env
 # 编辑 .env 设置以下变量：
 # JWT_SECRET=your-jwt-secret           # 令牌签名密钥（必填，用于认证和 Vault 加密）
 # DATABASE_URL=wrench.db             # SQLite 数据库路径
-# WRENCH_AUTH_PASSWORD=...           # 登录密码（不设置则自动生成并写入数据目录 auth_password）
+# WRENCH_AUTH_PASSWORD=...           # 登录口令（可选 legacy 方式；留空则用网页「首次设置」+ 启动日志里的 setup token）
 # BRIDGE_HOST=0.0.0.0                # 监听地址：注意变量名是 BRIDGE_HOST，不是 HOST
 # BRIDGE_PORT=3001                   # 监听端口：注意变量名是 BRIDGE_PORT，不是 PORT
 ```
@@ -216,7 +216,7 @@ server {
 | `DATABASE_URL` | `无` (Docker 内默认 `/data/wrench.db`) | SQLite 数据库路径 |
 | `JWT_SECRET` | 自动生成 | 用于令牌签发和 Vault 加密密钥派生 |
 | `WRENCH_AUTH_PASSWORD` | 无 | **可选的 legacy 入口口令**。推荐留空：首次访问时网页会显示「首次设置」，用启动日志里的一次性 `setup token` 设置口令（PBKDF2 哈希落库，明文不写文件）。设置该变量则以它为准，改这个变量会让所有旧令牌立即失效 |
-| `WRENCH_AUTH_PASSWORD_FILE` | 无 | 从文件读取登录密码（优先级低于环境变量） |
+| `WRENCH_AUTH_PASSWORD_FILE` | 无 | 从文件读取登录口令（优先级低于环境变量）。不设置时回退到数据库同目录的 `auth_password` —— 只读，不会自动创建 |
 | `VAULT_KEY` | `无` (从 JWT_SECRET 派生) | Secret Vault AES-256-GCM 加密密钥，建议显式设置 |
 | `LOG_LEVEL` | `info` | 日志级别 (trace/debug/info/warn/error) |
 | `FRONTEND_DIST` | `./frontend/dist` | 前端静态文件目录路径 |

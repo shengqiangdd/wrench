@@ -251,13 +251,17 @@ async fn test_audit_log_insert() {
 
 ## 4. 测试覆盖目标
 
-| 模块 | 当前覆盖 | 目标 |
+| 模块 | 当前覆盖（2026-09-13 实测） | 目标 |
 |------|----------|------|
-| Rust 测试 | 124/124（107 单元 + `tests/api_test.rs` 集成 17） | 每个公共函数必须有测试 |
-| 前端测试 | 291/291（26 个测试文件） | 每个组件必须有渲染/交互测试 |
+| Rust 测试 | **145** 全绿（113 单元 + `tests/api_test.rs` 22 + `tests/space_isolation_test.rs` 10） | 每个公共函数必须有测试 |
+| 前端测试 | **321** 全绿（28 个测试文件） | 每个组件必须有渲染/交互测试 |
 | E2E 测试 | 23/23（`frontend/e2e/basic.spec.ts`） | 核心用户流程覆盖（登录、SSH、SFTP、Docker） |
 
-> 数字随用例增删变化，改完测试记得同步这一行。
+> 数字必然随用例增删变化 —— **以 `cargo test --all-targets` / `npm run test:unit` 的实际输出为准**，
+> 不要把这些数字当成门禁值抄进别处；发现本表过时就顺手更新（或删掉具体数字，只留命令）。
+
+`tests/space_isolation_test.rs` 是多人共用改造的**隔离回归**：跨空间读/写、同 id 覆盖、
+按空间计数、legacy 行认领、空间码只存哈希、复合主键约束，任何人动 db 层都要先跑它。
 
 ---
 
@@ -274,11 +278,12 @@ npm run test:e2e      # Playwright headless
 
 # 后端（工具链版本见仓库根 rust-toolchain.toml，当前 1.96.1）
 cd backend
-cargo test --all-targets    # 全部 124 个测试（107 单元 + 17 集成，tests/api_test.rs）
+cargo test --all-targets    # 全部 145 个测试（113 单元 + tests/api_test.rs 22 + tests/space_isolation_test.rs 10）
 cargo test --no-run         # 只编译不跑
 cargo test ssh::            # 按模块过滤
 cargo fmt --all --check     # 格式化检查（backend/rustfmt.toml）
-cargo clippy --all-targets -- -D warnings   # 告警即错误，与 CI 一致
+cargo clippy --all-targets --locked -- -D warnings -A clippy::needless_update -A clippy::field_reassign_with_default
+                            # 告警即错误，与 CI 一致（后两个 -A 必须带上，否则会误报）
 
 # 覆盖率（后端）
 cargo tarpaulin --out Xml --output-dir target/coverage

@@ -210,15 +210,16 @@ impl Database {
 ### 3.2 查询（读操作）
 
 ```rust
-// 读操作：spawn_blocking + 立即释放锁
+// 读操作：spawn_blocking + 立即释放锁；空间过滤写进 SQL，不做「查完再筛」
 impl Database {
-    pub async fn load_audit_logs(&self, limit: usize) -> anyhow::Result<Vec<AuditEntry>> {
+    pub async fn load_recent_audit_logs(&self, limit: usize, space_id: &str) -> anyhow::Result<Vec<AuditEntry>> {
         let conn = self.clone();
+        let space = space_id.to_string();
         tokio::task::spawn_blocking(move || {
             let mut stmt = conn.lock().unwrap()
-                .prepare("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?")?;
+                .prepare("SELECT * FROM audit_logs WHERE space_id = ?1 ORDER BY timestamp DESC LIMIT ?2")?;
             let rows = stmt
-                .query_map([limit as i32], |row| {
+                .query_map(params![space, limit as i32], |row| {
                     Ok(AuditEntry { /* ... */ })
                 })?
                 .filter_map(|r| r.ok())
@@ -233,9 +234,9 @@ impl Database {
 ### 3.3 插入（写操作）
 
 ```rust
-// 写操作：spawn_blocking，失败不阻塞主流程
+// 写操作：spawn_blocking，失败不阻塞主流程；space_id 随写一起落库
 impl AppState {
-    pub fn add_audit_log(&self, action: &str, detail: serde_json::Value, ip: &str) {
+    pub fn add_audit_log(&self, action: &str, detail: serde_json::Value, ip: &str, space_id: &str) {
         let ts = chrono::Utc::now();
         let entry = AuditEntry { /* ... */ };
         self.audit_logs.write().push(entry.clone()); // 内存双写
@@ -247,8 +248,9 @@ impl AppState {
             let action = action.to_string();
             let detail = detail.clone();
             let ip = ip.to_string();
+            let space = space_id.to_string();
             tokio::spawn(async move {
-                if let Err(e) = db.insert_audit_log(&ts, &action, &detail, &ip).await {
+                if let Err(e) = db.insert_audit_log(&ts, &action, &detail, &ip, &space).await {
                     tracing::warn!("Audit log DB write failed: {}", e);
                 }
             });
@@ -278,6 +280,28 @@ async fn migrate(&self) -> anyhow::Result<()> {
 }
 ```
 
+### 3.5 多租户（空间隔离）硬规则 —— **违反即事故**
+
+Wrench 是多人在同一个实例上共用、彼此不可见（无角色体系）。隔离**只靠 SQL 层**，没有任何兜底：
+
+1. **所有业务表的读写方法签名必须带 `space_id`**（`&str`），并在 SQL 里过滤/写入该值：
+   ```rust
+   // ✅ 对：签名强制 + SQL 过滤
+   pub async fn list_vault_entries(&self, space_id: &str) -> ...
+       // "SELECT * FROM vault_entries WHERE space_id = ?1 ..."
+
+   // ❌ 错：漏了 space_id —— 等于把所有人的数据混在一起
+   pub async fn list_vault_entries(&self) -> ...
+   ```
+2. **不允许「查完再在内存里筛 `space_id`」** —— 过滤条件必须出现在 SQL（`WHERE` / `ON CONFLICT`），
+   否则一旦有分页/`LIMIT` 就是跨空间泄露。
+3. **写入用 `ON CONFLICT ... WHERE space_id = excluded.space_id`**，防止跨空间同名 id 覆盖别人的行。
+4. **新增业务表必须**：加 `space_id TEXT NOT NULL DEFAULT ''`、加复合索引 `(space_id, id)`、
+   把表名登记进 `db::SPACE_SCOPED_TABLES`（`/api/space/me` 的计数与认领逻辑依赖它）。
+5. 内存态（`AppState` 里的 `DashMap` 等）**没有**空间隔离，凡是按连接/任务缓存的东西都要自己带
+   `space_id` 判断；不确定就不要放进全局缓存。
+6. 交付前必须跑 `cargo test --all-targets`（含 `tests/space_isolation_test.rs` 的跨空间回归）。
+
 ---
 
 ## 4. 常见误区禁止
@@ -289,6 +313,7 @@ async fn migrate(&self) -> anyhow::Result<()> {
 | 硬编码 `"/api/xxx"` 字符串 | 用常量模块或 `config.rs` 环境变量 |
 | `Vec<>` 替代 `DashMap` 做共享状态 | 保持现有 `AppState` 结构 |
 | 手动 `format!("rm -rf {}", path)` | `format!("rm -rf {}", escape_sh_arg(path))` |
+| db 方法少一个 `space_id` 参数 | 见 §3.5：签名必须带 `space_id`，漏传即编译失败 |
 
 ---
 

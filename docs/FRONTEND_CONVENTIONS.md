@@ -152,7 +152,6 @@ export async function buildWsUrl(path: string): Promise<string> {
 // 需要长连接的 WsClient 请用 createSessionWsClient(path)：
 // 它注册 urlProvider，在每次重连前刷新短时令牌，避免令牌过期后一直 401
 ```
-```
 
 ### 2.3 React Hook 用法
 

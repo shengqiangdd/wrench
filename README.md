@@ -42,7 +42,8 @@
     ├── 安全 — Bearer Token 认证 / 速率限制 / 命令注入防护 / CSP 头
     └── 日志 — tail 实时跟踪 + grep 搜索 / 1MB 缓冲区上限
 部署: Docker + GitHub Actions (三阶段构建, 8.8MB 二进制)
-CI: TypeScript 零错误 + ESLint 零错误 + rustfmt/Clippy 零告警 + 124 Rust 测试（107 单元 + 17 集成）+ 291 前端测试
+CI: TypeScript 零错误 + ESLint 零错误 + rustfmt/Clippy 零告警 + 145 Rust 测试 + 321 前端测试
+```
 
 ## 🚀 快速开始
 
@@ -64,8 +65,9 @@ cd frontend && npm install
 
 # 3. 配置后端环境变量
 cd ../backend && cp .env.example .env
-# 编辑 .env：至少设置 JWT_SECRET 与登录密码 WRENCH_AUTH_PASSWORD（openssl rand -base64 32）
-# 不设密码也可以：后端会生成随机密码写入数据目录的 auth_password，用 cat 查看即可
+# 编辑 .env：至少设置 JWT_SECRET（openssl rand -base64 32）
+# 登录口令不必写进 .env：不设口令时后端进入「首次设置」模式，
+# 启动日志会打印一次性 setup token，在网页里粘贴即可设置口令（PBKDF2 哈希落库，明文不落盘）
 
 # 4. 启动后端（Rust，终端 1）
 cargo run

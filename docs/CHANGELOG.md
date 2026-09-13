@@ -97,6 +97,24 @@
 - **文档与实现对齐** — 修正 `HOST`/`PORT`（实际读取的是 `BRIDGE_HOST`/`BRIDGE_PORT`）、
   `API_KEY`（实际是 `WRENCH_AUTH_PASSWORD`）、不存在的 `dev` 分支，以及各处已过期的测试数量；
   `.gitignore` 的 `tests/` 等过宽模式改为锚定仓库根（否则新增后端集成测试 `git add` 会被拒）。
+- **「首次设置」终于走得通（此前被自动生成的口令挡住）** — `docker-entrypoint.sh` 在没有
+  `WRENCH_AUTH_PASSWORD` 时会自动生成随机口令写进 `/data/.env`，`config.rs` 还有第二层
+  「生成并落盘 `/data/auth_password`」兜底。两层叠加的结果：容器部署**永远进不了「首次设置」**，
+  使用者只能 `docker exec` 进容器 `cat` 明文口令 —— 正是多用户改造想消掉的体验，而
+  `docker-compose.yml`/`.env.example`/README 却都写着「留空 → 网页首次设置」。
+  现在两层自动生成都删掉：不再写口令文件、不再生成环境变量；口令未配置时后端 fail-closed
+  进入首次设置模式（启动日志一次性 setup token → 网页设置 → PBKDF2 哈希落库）。
+  老部署的 `/data/.env` 与已有 `auth_password` 文件仍会被读取，行为不变。
+- **架构文档从「Node 单文件」改回真实实现** — `docs/ARCHITECTURE.md` 通篇在描述
+  `bridge/index.js`（Express + ssh2、单文件 1200 行、无需数据库），与 Rust/axum/rusqlite +
+  空间隔离的实现完全对不上；已按代码重写（依赖与版本、前后端模块树、路由认证分组、
+  令牌 scope、空间隔离、凭据存储现状与已知风险、ADR）。
+- **删掉恒真的 `codeStoredLocally` 响应字段** — 服务端写死 `true`、前端从不读，属于只会
+  误导调用方的死 API 面。
+- **门禁命令与测试数字不再互相打架** — 各文档里的 `cargo clippy --all-targets -- -D warnings`
+  少了 `-A clippy::needless_update -A clippy::field_reassign_with_default`，照着抄会误报失败，
+  已统一成 CI/`pre-commit` 里的完整命令；文档中写死的测试数量（124 / 291 / 222+）更新为
+  实测值（后端 145、前端 321/28 文件）并注明「以命令输出为准，别抄进门禁」。
 
 ### 🗄️ 客户端 SQLite 架构 — 用户数据隔离 🚀
 - **浏览器端 SQLite** — 使用 sql.js (WASM) 在浏览器中运行 SQLite 数据库，实现用户数据完全隔离

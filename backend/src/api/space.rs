@@ -22,9 +22,6 @@ pub struct SpaceInfoResponse {
     pub is_legacy: bool,
     /// 本空间各业务表行数
     pub counts: Vec<TableCount>,
-    /// 提示：空间码只保存在浏览器里，服务端无法找回
-    #[serde(rename = "codeStoredLocally")]
-    pub code_stored_locally: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -100,7 +97,6 @@ pub async fn me(
             .into_iter()
             .map(|(table, count)| TableCount { table, count })
             .collect(),
-        code_stored_locally: true,
     })
 }
 

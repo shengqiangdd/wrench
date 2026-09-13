@@ -64,8 +64,9 @@ npm run build         # Vite 生产构建
 # 后端（首次会由 rustup 自动装 1.96.1 工具链）
 cd backend
 cargo fmt --all --check                               # 格式化（配置见 backend/rustfmt.toml）
-cargo clippy --all-targets -- -D warnings             # 告警即错误
-cargo test --all-targets                              # 单元测试 + tests/ 集成测试
+cargo clippy --all-targets --locked -- -D warnings -A clippy::needless_update -A clippy::field_reassign_with_default
+                                                      # 告警即错误（后两个 -A 与 CI 保持一致，缺了会误报）
+cargo test --all-targets --locked                     # 单元测试 + tests/ 集成测试
 ```
 
 可选：装上仓库自带的 pre-commit 钩子，提交前自动跑前端 tsc / ESLint / Prettier / Vitest

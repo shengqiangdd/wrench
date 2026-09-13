@@ -125,7 +125,7 @@ WebSocket：POST /api/ws-token（需会话）→ 短时 token（scope=ws，10 �
 - 升级前的历史行（`space_id = ''`）由 `legacy` 空间的一次性认领码交接。
 - **不要**再暴露 `db-download` 这类整库接口：多人共用下等于泄露所有人的凭据。
 
-### 5.4 前端状态切片
+### 5.5 前端状态切片
 ```
 stores/
 ├── slices/
@@ -145,9 +145,10 @@ stores/
 ### 前端
 ```bash
 cd frontend
-npm run type-check   # tsc --noEmit，必须 0 错误
+npm run format:check # prettier --check，必须通过（CI 会卡这一步）
 npm run lint         # eslint，必须 0 error（warning 允许 ≤300）
-npm run test         # vitest run，222+ 测试全绿
+npm run type-check   # tsc --noEmit，必须 0 错误
+npm run test:unit    # vitest run，全绿（数量以实际输出为准，别写死在文档里）
 npm run build        # 生产构建，产出 dist/
 ```
 
@@ -156,9 +157,11 @@ npm run build        # 生产构建，产出 dist/
 cd backend                   # 工具链版本见仓库根 rust-toolchain.toml（1.96.1）
 cargo check --locked               # 编译通过
 cargo fmt --all --check            # 格式化（配置见 backend/rustfmt.toml）
-cargo clippy --all-targets --locked -- -D warnings   # Clippy 零告警
-cargo test --all-targets --locked  # 124 个测试全绿（107 单元 + 17 集成）
+cargo clippy --all-targets --locked -- -D warnings -A clippy::needless_update -A clippy::field_reassign_with_default
+cargo test --all-targets --locked  # 全绿（数量以实际输出为准）
 ```
+
+> 上面两段与 `.github/workflows/ci-*.yml`、`.githooks/pre-commit` 是**同一组命令**，改一处要同步其余几处。
 
 ### 整体
 ```bash
