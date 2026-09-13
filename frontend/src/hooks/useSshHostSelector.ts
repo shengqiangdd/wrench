@@ -1,10 +1,13 @@
 /**
  * useSshHostSelector.ts — 统一的 SSH 主机选择器 Hook
  *
- * 从三个来源合并主机列表：
- *   1. useSshStore.connections  — 用户在 SSH 页面保存的连接
- *   2. /api/connections          — 后端已有的连接列表
- *   3. /api/ssh/test-config      — 环境变量中的测试主机
+ * 从两个来源合并主机列表：
+ *   1. useSshStore.connections   — 用户在 SSH 页面保存的连接（凭据本地加密存储）
+ *   2. /api/ssh/test-config      — 部署方用环境变量配置的测试主机
+ *
+ * 为什么不再读 /api/connections：服务端**不接收也不返回 SSH 凭据**
+ * （该接口只提供脱敏后的连接元数据，见 backend/src/api/connections.rs 顶部契约），
+ * 从那里拿不到 password/privateKey，列出来只会变成「点了连不上」的幽灵主机。
  *
  * 选中主机后自动 ensureSshConnection()，返回 connectionId。
  */
@@ -24,12 +27,11 @@ export interface SshHost {
   username: string
   password?: string
   privateKey?: string
-  source: 'saved' | 'api' | 'test-config'
+  source: 'saved' | 'test-config'
 }
 
 export interface UseSshHostSelectorOptions {
   autoConnect?: boolean
-  loadApiConnections?: boolean
   loadTestConfig?: boolean
 }
 
@@ -47,61 +49,9 @@ export interface UseSshHostSelectorReturn {
 
 // ─── Module-level caches ───
 
-type ApiConn = {
-  id: string
-  name: string
-  host: string
-  port: number
-  username: string
-  password?: string
-  privateKey?: string
-}
-let _apiCache: ApiConn[] | null = null
-let _apiPromise: Promise<ApiConn[]> | null = null
-
 type TestCfg = { host: string; user: string; password: string }
 let _testCache: TestCfg | null = null
 let _testPromise: Promise<TestCfg | null> | null = null
-
-async function loadApiConnections(): Promise<ApiConn[]> {
-  if (_apiCache) return _apiCache
-  if (_apiPromise) return _apiPromise
-  _apiPromise = (async () => {
-    try {
-      const res = await authedFetch('/api/connections')
-      const json = (await res.json()) as {
-        success?: boolean
-        data?: Array<Record<string, unknown>>
-      }
-      if (!json.success || !Array.isArray(json.data)) return []
-      const list = json.data.map((c) => {
-        let password = '',
-          privateKey = ''
-        try {
-          const cfg = JSON.parse((c.config as string) || '{}')
-          password = cfg.password || ''
-          privateKey = cfg.private_key || ''
-        } catch {
-          /* */
-        }
-        return {
-          id: (c.id as string) || '',
-          name: (c.name as string) || (c.host as string) || '',
-          host: (c.host as string) || '',
-          port: (c.port as number) || 22,
-          username: (c.username as string) || '',
-          password,
-          privateKey,
-        }
-      })
-      _apiCache = list
-      return list
-    } catch {
-      return []
-    }
-  })()
-  return _apiPromise
-}
 
 async function loadTestConfig(): Promise<TestCfg | null> {
   if (_testCache) return _testCache
@@ -128,16 +78,11 @@ async function loadTestConfig(): Promise<TestCfg | null> {
 export function useSshHostSelector(
   options: UseSshHostSelectorOptions = {},
 ): UseSshHostSelectorReturn {
-  const {
-    autoConnect = true,
-    loadApiConnections: loadApi = true,
-    loadTestConfig: loadTest = true,
-  } = options
+  const { autoConnect = true, loadTestConfig: loadTest = true } = options
 
   const savedConnections = useSshStore((s) => s.connections)
   const sessions = useSshStore((s) => s.sessions)
 
-  const [apiConnections, setApiConnections] = useState<ApiConn[]>([])
   const [testConfig, setTestConfig] = useState<TestCfg | null>(null)
 
   // selectedId uses state but avoids sync-setState-in-effect:
@@ -147,23 +92,18 @@ export function useSshHostSelector(
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Load fallbacks
+  // Load fallback（仅在本地没有保存任何连接时才问后端要测试主机）
   useEffect(() => {
     let cancelled = false
-    if (savedConnections.length === 0) {
-      if (loadApi)
-        loadApiConnections().then((c) => {
-          if (!cancelled) setApiConnections(c)
-        })
-      if (loadTest)
-        loadTestConfig().then((c) => {
-          if (!cancelled) setTestConfig(c)
-        })
+    if (savedConnections.length === 0 && loadTest) {
+      loadTestConfig().then((c) => {
+        if (!cancelled) setTestConfig(c)
+      })
     }
     return () => {
       cancelled = true
     }
-  }, [savedConnections.length, loadApi, loadTest])
+  }, [savedConnections.length, loadTest])
 
   // Merge & dedupe hosts
   const hosts = useMemo(() => {
@@ -187,18 +127,6 @@ export function useSshHostSelector(
         source: 'saved',
       })
     }
-    for (const c of apiConnections) {
-      add({
-        id: c.id,
-        name: c.name || c.host,
-        host: c.host,
-        port: c.port,
-        username: c.username,
-        password: c.password,
-        privateKey: c.privateKey,
-        source: 'api',
-      })
-    }
     if (testConfig) {
       const id = `__tc__:${testConfig.host}:${testConfig.user}`
       add({
@@ -212,7 +140,7 @@ export function useSshHostSelector(
       })
     }
     return result
-  }, [savedConnections, apiConnections, testConfig])
+  }, [savedConnections, testConfig])
 
   // Derive the "ideal" selection from hosts — this is read-only, no side effects.
   const idealSelection = useMemo(() => {

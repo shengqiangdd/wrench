@@ -258,6 +258,57 @@ async fn system_db_download_is_removed() {
     );
 }
 
+/// 服务端**不再提供** SSH 连接写入端点：凭据不入服务端库（结构性保证）。
+///
+/// 历史教训：`POST /api/connections` 曾经把 `config` 原样存库，而 `config` 里通常
+/// 带着 `password` / `private_key` 明文。写了就能存，黑名单校验永远可能漏字段名，
+/// 所以直接取消写入口，只保留「读（脱敏）+ 删（清理历史）」。
+#[tokio::test]
+async fn connections_api_has_no_write_endpoint() {
+    // 直接签一个合法会话令牌，避免再打一次 /api/auth/login（该端点有按 IP 限流，
+    // 多打一次会让同进程内其它登录型测试收到 429）。
+    let config = temp_db_config();
+    let jwt_secret = config.jwt_secret.clone();
+    let state = AppState::new(config).await.expect("Failed to create AppState");
+    let token_version = state.auth.read().token_version;
+    let app = wrench_backend::build_app(Arc::new(state)).await;
+    let session = JwtService::from_secret(&jwt_secret)
+        .expect("JwtService")
+        .sign(&Claims::session(token_version, false))
+        .expect("sign");
+
+    // 即便带着有效会话，也没有 POST
+    let req = with_connect_info(
+        Request::builder()
+            .method("POST")
+            .uri("/api/connections")
+            .header("Authorization", format!("Bearer {session}"))
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"name":"x","host":"h","config":"{\"password\":\"hunter2\"}"}"#))
+            .unwrap(),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    let status = resp.status();
+    let body = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    assert_eq!(
+        status,
+        StatusCode::METHOD_NOT_ALLOWED,
+        "写入口必须不存在，避免明文凭据被持久化；实际响应体：{}",
+        String::from_utf8_lossy(&body)
+    );
+
+    // GET 仍然可用（元数据 + 脱敏）
+    let req = with_connect_info(
+        Request::builder()
+            .uri("/api/connections")
+            .header("Authorization", format!("Bearer {session}"))
+            .body(Body::from(""))
+            .unwrap(),
+    );
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
 /// 服务端没有可用数据库时，受保护接口失败关闭（503），绝不退化成共享空间。
 #[tokio::test]
 async fn no_database_fails_closed() {

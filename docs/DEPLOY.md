@@ -281,3 +281,8 @@ curl http://localhost:3001/api/health
    上游至今没有补丁，而 Wrench 作为 SSH 客户端用私钥认证时正好落在这个风险面上。
    ed25519 是纯签名算法、不受影响；长期或高价值的 RSA 私钥不建议交给 Wrench 使用。
 6. 使用非 root 用户运行服务
+7. **SSH 凭据不进服务端**：服务端只保存连接元数据（`GET`/`DELETE /api/connections`，没有写入端点）。
+   若你的库是从早期版本升级上来的，里面可能还躺着明文凭据的历史行（`config` 里带 `password`/
+   `private_key`）：接口读取时已强制脱敏，但仍建议清掉，例如
+   `curl -H "Authorization: Bearer <token>" -X DELETE https://<你的域名>/api/connections/<id>`。
+   备份/迁移 `wrench.db` 前也请确认这些行已清理。

@@ -162,7 +162,7 @@ backend/src/
 |---|---|---|---|
 | **Public** | `/api` | 无 | `/health`、`/auth/status`（供前端判断显示「首次设置」还是「登录」） |
 | **Login / Setup** | `/api` | 无会话，但独立限流（8 次/分钟/IP） | `/auth/login`、`/auth/setup` |
-| **Protected** | `/api` | 会话 JWT（`scope=api`）+ `SpaceCtx` | `/auth/me`、`/auth/password`、`/ws-token`、`/audit-logs`、`/hosts*`、`/connections*`、`/vault*`、`/notifications*`、`/sftp/*`、`/docker/*`、`/logs/*`、`/plugins*`、`/ai/*`、`/space/{me,rotate,attach}`、`/system/db-info` |
+| **Protected** | `/api` | 会话 JWT（`scope=api`）+ `SpaceCtx` | `/auth/me`、`/auth/password`、`/ws-token`、`/audit-logs`、`/hosts*`、`/connections`（只读）、`/vault*`、`/notifications*`、`/sftp/*`、`/docker/*`、`/logs/*`、`/plugins*`、`/ai/*`、`/space/{me,rotate,attach}`、`/system/db-info` |
 | **WebSocket** | `/ws` | 会话 JWT 或短时 ws token（`scope=ws`） | `/ws`、`/ws/terminal`、`/ws/logs`、`/ws/docker/stats` |
 | **Static** | `/*` | 无 | `frontend/dist` 静态资源 + SPA fallback |
 
@@ -278,10 +278,15 @@ Zustand，按业务域拆分（`stores/`）：
 
 - **Secret Vault** 条目以 **AES-256-GCM** 加密后存服务端（密钥由 `VAULT_KEY` 派生，
   未设置时回退到 `JWT_SECRET`），按空间隔离。
-- SSH 连接记录（`ssh_connections`）保存主机/端口/用户名/`config` 等元数据。**注意**：
-  `POST /api/connections` 会原样保存 `config` 里的 `password` / `private_key`（**不加密**）。
-  当前前端只在 `useSshHostSelector` 里**读取**该接口，不写入 —— 也就是说这个写路径目前没有客户端在用。
-  若将来要用它同步连接，请先改成只存 `vault_entry_id` 引用，不要把明文凭据交给服务端。
+- SSH 连接记录（`ssh_connections`）只保存**元数据**（主机/端口/用户名/`auth_type`/`sort_order`/`config`）。
+  **服务端不接收、不保存 SSH 凭据**：`/api/connections` 只有 `GET`（返回的 `config` 会递归剥离
+  凭据字段）和 `DELETE`（清理历史行），**没有写入端点**。凭据要么留在浏览器本地
+  （`secure-store` 加密后进 IndexedDB），要么进 Secret Vault；连接时经 `/api/ssh/ensure`、`/ws`
+  一次性传给后端使用，不落库。
+  历史遗留的明文行（该接口早期版本可以写入明文）读取时同样会被脱敏，可用
+  `DELETE /api/connections/{id}` 清掉。
+  之所以取消写入口而不是「校验字段」：字段名黑名单永远可能漏（`key`、`identity`、自定义命名……），
+  「服务端根本没有存凭据的入口」才是结构性保证。
 - 推荐 SSH 认证优先使用 **ed25519 密钥**（纯签名算法，不受 rsa 已知无补丁漏洞影响）。
 
 ### 7.4 插件沙箱
@@ -292,10 +297,11 @@ Zustand，按业务域拆分（`stores/`）：
 
 ### 7.5 已知风险（接受并记录，不在本轮修）
 
-1. 上面 7.3 提到的 `/api/connections` 明文 `config` 写路径（当前无调用方）。
-2. `rsa` 的 `RUSTSEC-2023-0071`（Marvin 攻击）上游无补丁，已在 `backend/.cargo/audit.toml` 显式豁免，
+1. `rsa` 的 `RUSTSEC-2023-0071`（Marvin 攻击）上游无补丁，已在 `backend/.cargo/audit.toml` 显式豁免，
    缓解措施是优先改用 ed25519。
-3. 经公网访问必须配 HTTPS 反向代理，否则口令与令牌明文过网。
+2. 经公网访问必须配 HTTPS 反向代理，否则口令与令牌明文过网。
+3. 若部署方设置了 `SSH_TEST_*` 环境变量，`/api/ssh/test-config` 会把该测试主机的口令下发给
+   任何已登录用户（部署方的自有配置，未设置即不存在）。多用户实例上不要配置它。
 
 ---
 

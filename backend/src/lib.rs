@@ -236,7 +236,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         )
         // ─── SSH Connection persistence routes ───
         .route("/connections", get(api::connections::list_connections))
-        .route("/connections", axum::routing::post(api::connections::upsert_connection))
+        // 注意：没有 POST。服务端不接收 SSH 凭据（详见 api/connections.rs 顶部契约）。
         .route("/connections/{id}", axum::routing::delete(api::connections::delete_connection))
         // ─── Per-visitor space routes ───
         .route("/space/me", get(api::space::me))

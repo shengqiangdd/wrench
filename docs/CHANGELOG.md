@@ -66,6 +66,14 @@
 - **未知 `/api/*` 一律 404** — 此前未匹配的 `/api/xxx` 会落到前端 SPA fallback，返回
   `200 + index.html`，拼错的接口以"成功"伪装（排障时 `curl /api/ssh/hosts` 就被骗过一次）。
   现在 `/api` 子树挂了自己的 fallback，前端路由仍正常回落 SPA；集成测试覆盖两种情形。
+- **服务端不再保存 SSH 凭据** — 删除 `POST /api/connections`（写入口），`GET` 返回的 `config`
+  递归剥离凭据字段（`password` / `passwd` / `passphrase` / `privateKey` / `*_secret` / `*_token` /
+  `*_apiKey`，含嵌套对象与数组），非法 JSON 与非对象形态一律回退 `{}`。
+  此前该接口把 `config` 原样入库，前端保存的主机带着 `password` / `private_key` 明文就会写进
+  服务端的 SQLite：换设备看不出问题，但服务端被备份/拖库即等于所有用户的 SSH 凭据泄露。
+  现在凭据只留在浏览器本地（加密存储）或 Secret Vault，连接时经 `/api/ssh/ensure`、`/ws`
+  一次性传给后端使用。历史遗留的明文行读取时会被脱敏，可用 `DELETE /api/connections/{id}` 清理。
+  前端 `useSshHostSelector` 不再从该接口取凭据（那里已无凭据可给，列出来只会是点了连不上的幽灵主机）。
 
 ### 🧪 工程规范
 - **安全审计门禁由假变真** — `ci-audit.yml` 里 `cargo audit` 曾带 `continue-on-error: true`，
