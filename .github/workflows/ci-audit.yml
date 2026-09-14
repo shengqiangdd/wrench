@@ -41,7 +41,7 @@ jobs:
 
       - name: Install Rust toolchain
         # 与 ci-backend 一致，交给仓库根的 rust-toolchain.toml
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
 
       - name: Install cargo-audit
         run: cargo install cargo-audit
