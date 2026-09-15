@@ -217,6 +217,8 @@ server {
 | `JWT_SECRET` | 自动生成 | 用于令牌签发和 Vault 加密密钥派生 |
 | `WRENCH_AUTH_PASSWORD` | 无 | **可选的 legacy 入口口令**。推荐留空：首次访问时网页会显示「首次设置」，用启动日志里的一次性 `setup token` 设置口令（PBKDF2 哈希落库，明文不写文件）。设置该变量则以它为准，改这个变量会让所有旧令牌立即失效 |
 | `WRENCH_AUTH_PASSWORD_FILE` | 无 | 从文件读取登录口令（优先级低于环境变量）。不设置时回退到数据库同目录的 `auth_password` —— 只读，不会自动创建 |
+| `WRENCH_EGRESS_ALLOW` | 空 | **这台机器允许主动连到哪里**（逗号分隔的 `IP[:端口]` / `CIDR[:端口]`，只接受 IP/CIDR）。留空 = 内网/环回/链路本地/云元数据/保留地址一律拒绝。例：`192.168.1.5:22,192.168.1.6:22`。**条目越窄越安全**：每个条目都是「任何人打开网页后可以用来发起连接的目标」，不要整段放开内网 |
+| `WRENCH_EGRESS_STRICT` | `0` | 置 `1` 时公网 TCP 目标也必须在 `WRENCH_EGRESS_ALLOW` 里（只管理固定几台主机时更严） |
 | `VAULT_KEY` | `无` (从 JWT_SECRET 派生) | Secret Vault AES-256-GCM 加密密钥，建议显式设置 |
 | `LOG_LEVEL` | `info` | 日志级别 (trace/debug/info/warn/error) |
 | `FRONTEND_DIST` | `./frontend/dist` | 前端静态文件目录路径 |
@@ -235,6 +237,68 @@ server {
 > ```
 >
 > 用该令牌在网页里设置入口口令即可（口令哈希落库，认领后该令牌不再需要）。
+
+---
+
+## 🚪 出口策略：这台机器允许主动连到哪里
+
+Wrench 是「跑在服务器上的 SSH 客户端」——目标主机与端口来自浏览器请求。所以只要实例能被
+公网访问，任何打开网页的人都能让**这台服务器**替他去连它连得到的东西（内网其他机器、
+容器网络里的服务、云元数据 `169.254.169.254`）。入口口令只决定「谁能进门」，不决定
+「进门后能连哪里」，因此可达范围由服务端声明：
+
+```yaml
+# docker-compose.yml
+environment:
+  # 只列真正需要管理的主机；留空 = 内网/环回/链路本地/云元数据地址一律拒绝
+  WRENCH_EGRESS_ALLOW: "192.168.1.5:22,192.168.1.6:22"
+  # WRENCH_EGRESS_STRICT: "1"   # 连公网目标也要求写进白名单
+```
+
+规则速览：
+
+| 目标 | SSH/SFTP（TCP 通道） | HTTP(S) 通道（插件下载、AI `base_url`、webhook） |
+|------|----------------------|--------------------------------------------------|
+| 内网/环回（RFC1918、ULA、CGNAT） | 必须写进 `WRENCH_EGRESS_ALLOW` | 必须写进 `WRENCH_EGRESS_ALLOW` |
+| 公网地址 | 默认放行（`WRENCH_EGRESS_STRICT=1` 时也需声明） | 默认放行 |
+| 链路本地 / 云元数据 / 未指定 / 组播 / 广播 / 保留段 | 一律拒绝，写白名单也没用 | 一律拒绝，写白名单也没用 |
+
+- **条目越窄越安全。** 每个白名单条目都等价于「任何人打开这个网页后可以用来发起连接的目标」。
+  如果你希望实例公网可达又不加口令，白名单就是唯一的结构性边界：写 `192.168.1.0/24:22`
+  意味着陌生人可以拿你的机器去撞整个网段（虽然仍要过目标主机自己的认证），写
+  `192.168.1.5:22` 就只放行那一台。
+- **启动即确认**：容器日志里会打一行摘要，先看这个再放流量。
+
+  ```bash
+  docker logs wrench 2>&1 | grep 出口策略
+  # 出口策略：WRENCH_EGRESS_ALLOW=[192.168.1.5:22]，公网 TCP 目标默认放行；HTTP(S) 出口一律禁止私网/环回/链路本地/元数据地址
+  ```
+
+- 白名单写错（例如写了域名）不会「配错就全放开」：解析失败按空白名单处理（内网全拒）
+  并在日志打 error。
+- 被拒绝的连接会返回可读原因，例如
+  「出口策略拒绝了SSH/SFTP 连接 192.168.1.9:22：192.168.1.9（内网地址）不在实例的可达白名单中。
+  如需连接，请由实例管理员把目标加入 WRENCH_EGRESS_ALLOW（例如 192.168.1.9:22）」，
+  并写入审计日志（动作 `ssh_egress_denied`）。
+
+### 可选第二层：网络层再收一道（需要 root）
+
+应用层策略是主防线；若还想让「绕过应用也不可能进内网」，可在宿主机用 `DOCKER-USER` 链
+限制容器出站（保留公网出站，否则 AI 网关、通知 webhook 会一起失效）：
+
+```bash
+# 容器所在网段（默认 bridge）
+SUBNET=$(docker network inspect bridge --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' | head -1)
+
+iptables -I DOCKER-USER -s "$SUBNET" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+iptables -I DOCKER-USER -s "$SUBNET" -d 192.168.1.5 -p tcp --dport 22 -j RETURN   # 白名单主机
+iptables -I DOCKER-USER -s "$SUBNET" -d 192.168.0.0/16 -j DROP                    # 其余内网
+iptables -I DOCKER-USER -s "$SUBNET" -d 10.0.0.0/8 -j DROP
+iptables -I DOCKER-USER -s "$SUBNET" -d 172.16.0.0/12 -j DROP
+```
+
+> 这些规则重启后不保留，需要 `netfilter-persistent`（Debian/Ubuntu）或
+> `iptables-services`（RHEL 系）持久化；改完先确认容器仍能访问所需目标。
 
 ---
 

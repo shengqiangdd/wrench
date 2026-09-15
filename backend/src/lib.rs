@@ -5,6 +5,7 @@ pub mod api_types;
 pub mod app_state;
 pub mod config;
 pub mod docker;
+pub mod egress;
 pub mod error;
 pub mod response;
 pub mod ssh;
@@ -118,26 +119,30 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
     let cors = middleware::cors::create_cors_layer(&state.config.cors_origins);
 
     // ─── Authentication + Rate-limit middleware layer ───
-    let auth_layer = ServiceBuilder::new()
-        .layer(axum_middleware::from_fn_with_state(
-            state.clone(),
-            middleware::auth::auth_middleware
-                as fn(
-                    _: axum::extract::State<Arc<AppState>>,
-                    _: axum::http::Request<Body>,
-                    _: axum_middleware::Next,
-                ) -> _,
-        ))
-        .layer(axum_middleware::from_fn_with_state(
-            state.clone(),
-            middleware::rate_limit::rate_limit_middleware
-                as fn(
-                    _: axum::extract::State<Arc<AppState>>,
-                    _: axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>,
-                    _: axum::http::Request<Body>,
-                    _: axum_middleware::Next,
-                ) -> _,
-        ));
+    // 用闭包构造：`ServiceBuilder` 是一次性值（`.layer()` 会消费它），而这里有
+    // 两组路由需要同一套「鉴权 + 通用限流」，所以按需各构造一份实例。
+    let make_auth_layer = || {
+        ServiceBuilder::new()
+            .layer(axum_middleware::from_fn_with_state(
+                state.clone(),
+                middleware::auth::auth_middleware
+                    as fn(
+                        _: axum::extract::State<Arc<AppState>>,
+                        _: axum::http::Request<Body>,
+                        _: axum_middleware::Next,
+                    ) -> _,
+            ))
+            .layer(axum_middleware::from_fn_with_state(
+                state.clone(),
+                middleware::rate_limit::rate_limit_middleware
+                    as fn(
+                        _: axum::extract::State<Arc<AppState>>,
+                        _: axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>,
+                        _: axum::http::Request<Body>,
+                        _: axum_middleware::Next,
+                    ) -> _,
+            ))
+    };
 
     // ─── Public API routes (no auth required) ───
     // 只保留健康检查：/api/ws-token 已移入受保护路由（需要登录会话），
@@ -168,8 +173,6 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/metrics", get(api::monitor::get_metrics))
         .route("/scripts", get(api::scripts::list_scripts))
         .route("/ssh/exec", axum::routing::post(api::ssh::exec_command))
-        .route("/ssh/connect", axum::routing::post(api::ssh::connect_ssh))
-        .route("/ssh/ensure", axum::routing::post(api::ssh::ensure_connection))
         .route("/ssh/disconnect", axum::routing::post(api::ssh::disconnect_ssh))
         .route("/ssh/test-config", get(api::ssh::test_config))
         .route("/docker/ps", axum::routing::post(api::docker::docker_ps))
@@ -246,7 +249,19 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/system/db-info", get(api::system::db_info))
         // ─── Marketplace routes ───
         .route("/market/index", get(api::market::get_market_index))
-        .layer(auth_layer);
+        .layer(make_auth_layer());
+
+    // ─── SSH 连接建立类接口：在通用鉴权 + 限流之上，再叠一层专门的连接限流 ───
+    // 公开实例上每次连接都是一次真实外拨（可能带着口令去撞目标），限流防止这台机器
+    // 被当成批量爆破/扫段的放大器。出口白名单管「能连哪里」，这层管「多快能连多少」。
+    let ssh_connect_api = Router::new()
+        .route("/ssh/connect", axum::routing::post(api::ssh::connect_ssh))
+        .route("/ssh/ensure", axum::routing::post(api::ssh::ensure_connection))
+        .layer(axum_middleware::from_fn(
+            middleware::rate_limit::ssh_connect_rate_limit_middleware
+                as fn(_: axum::http::Request<Body>, _: axum_middleware::Next) -> _,
+        ))
+        .layer(make_auth_layer());
 
     // Combine public + login + protected API routes under /api
     // fallback：未知 /api/* 必须 404，不能被下面的 SPA fallback 兜成
@@ -260,6 +275,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
                 .merge(public_api)
                 .merge(login_api)
                 .merge(protected_api)
+                .merge(ssh_connect_api)
                 .fallback(api_fallback),
         )
         .layer(cors.clone())

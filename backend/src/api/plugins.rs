@@ -74,21 +74,20 @@ pub async fn install_plugin(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to create plugin dir: {}", e)))?;
 
-    // Download manifest.json
-    let manifest_content = reqwest::get(manifest_url)
+    // Download manifest.json / plugin.js
+    //
+    // 这两个 URL 来自请求体，是服务端替客户端发起的抓取：必须过出口策略
+    // （禁私网/环回/链路本地/云元数据，白名单内的内网地址除外），逐跳校验重定向，
+    // 并限制响应体大小，避免公开实例被当成内网探测跳板或被灌满磁盘。
+    let manifest_content = crate::egress::fetch_text(manifest_url, crate::egress::DEFAULT_MAX_FETCH_BYTES)
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to download manifest: {}", e)))?
-        .text()
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to read manifest: {}", e)))?;
+        .map_err(|e| AppError::Forbidden(e.to_string()))?
+        .body;
 
-    // Download plugin.js
-    let plugin_content = reqwest::get(plugin_url)
+    let plugin_content = crate::egress::fetch_text(plugin_url, crate::egress::DEFAULT_MAX_FETCH_BYTES)
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to download plugin: {}", e)))?
-        .text()
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to read plugin: {}", e)))?;
+        .map_err(|e| AppError::Forbidden(e.to_string()))?
+        .body;
 
     // Write manifest.json
     tokio::fs::write(target_dir.join("manifest.json"), &manifest_content)

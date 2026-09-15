@@ -567,3 +567,169 @@ async fn first_visit_creates_a_space() {
         String::from_utf8_lossy(&body)
     );
 }
+
+// ─────────────────────────── 出口策略（egress policy） ───────────────────────────
+//
+// 这些用例盯的是「服务端替客户端连出去」这件事的**接线**：策略本身在
+// `backend/src/egress.rs` 的单测里覆盖（地址分类、白名单、硬拒段、严格模式）。
+// 这里只确认各条出口路径真的调用了策略，并且拒绝时给出 403 + 可读原因。
+
+/// 建一个应用并**直接签**一个合法会话令牌（不走 /api/auth/login）。
+///
+/// `/api/auth/login` 有按 IP 限流，同进程内多打几次会让其它登录型用例收到 429，
+/// 所以出口策略的用例自己签令牌，避免互相干扰。
+async fn authed_app_and_token() -> (Router, String) {
+    let config = temp_db_config();
+    let jwt_secret = config.jwt_secret.clone();
+    let state = AppState::new(config).await.expect("Failed to create AppState");
+    let token_version = state.auth.read().token_version;
+    let app = wrench_backend::build_app(Arc::new(state)).await;
+    let token = JwtService::from_secret(&jwt_secret)
+        .expect("JwtService")
+        .sign(&Claims::session(token_version, false))
+        .expect("sign");
+    (app, token)
+}
+
+async fn authed_json_post(
+    app: &Router,
+    token: &str,
+    uri: &str,
+    body: serde_json::Value,
+) -> (StatusCode, serde_json::Value) {
+    let req = with_connect_info(
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Content-Type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap(),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    let status = resp.status();
+    let bytes = axum::body::to_bytes(resp.into_body(), 256 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+    (status, json)
+}
+
+/// SSH 连接：目标是内网地址且不在白名单里 → 拒绝，且原因要能读懂（不是笼统的"认证失败"）。
+#[tokio::test]
+async fn ssh_connect_to_private_host_is_denied_by_egress_policy() {
+    let (app, token) = authed_app_and_token().await;
+
+    let (status, json) = authed_json_post(
+        &app,
+        &token,
+        "/api/ssh/connect",
+        serde_json::json!({
+            "host": "192.168.99.99",
+            "port": 22,
+            "username": "root",
+            "password": "whatever",
+        }),
+    )
+    .await;
+
+    // 这个端点用 ApiResponse 约定：HTTP 200 + body 里的 code
+    assert_eq!(status, StatusCode::OK, "{json}");
+    assert_eq!(json["code"], 403, "内网目标必须被出口策略挡下：{json}");
+    let msg = json["msg"].as_str().unwrap_or_default();
+    assert!(msg.contains("出口策略"), "{msg}");
+    assert!(msg.contains("WRENCH_EGRESS_ALLOW"), "要告诉管理员改哪个变量：{msg}");
+}
+
+/// 云元数据地址：即使写进白名单也不许连（写白名单也没有正当用途）。
+#[tokio::test]
+async fn ssh_connect_to_cloud_metadata_is_always_denied() {
+    let (app, token) = authed_app_and_token().await;
+
+    let (status, json) = authed_json_post(
+        &app,
+        &token,
+        "/api/ssh/connect",
+        serde_json::json!({
+            "host": "169.254.169.254",
+            "port": 22,
+            "username": "root",
+            "password": "whatever",
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{json}");
+    assert_eq!(json["code"], 403, "{json}");
+    let msg = json["msg"].as_str().unwrap_or_default();
+    assert!(msg.contains("元数据") || msg.contains("链路本地"), "{msg}");
+}
+
+/// 白名单里的目标要放行到「真的去连」这一步：预检通过后失败原因是连接/认证，
+/// 而不是策略拒绝（403）。选 127.0.0.1 上没有监听的端口，失败是瞬间的。
+#[tokio::test]
+async fn allowlisted_target_passes_egress_check_and_fails_only_on_auth() {
+    wrench_backend::egress::install(wrench_backend::egress::EgressPolicy::parse("127.0.0.1:2233", false).unwrap());
+
+    let (app, token) = authed_app_and_token().await;
+
+    let (_status, json) = authed_json_post(
+        &app,
+        &token,
+        "/api/ssh/connect",
+        serde_json::json!({
+            "host": "127.0.0.1",
+            "port": 2233,
+            "username": "root",
+            "password": "wrong-password",
+        }),
+    )
+    .await;
+
+    assert_ne!(json["code"], 403, "白名单内不该被策略拒绝：{json}");
+    // 连不上/认证失败都是预期（该端口没有服务），但绝不是策略拒绝
+    let msg = json["msg"].as_str().unwrap_or_default();
+    assert!(!msg.contains("出口策略"), "{msg}");
+}
+
+/// 插件安装：下载地址来自请求体 → 私网/环回地址必须 403（否则就是 SSRF 跳板）。
+#[tokio::test]
+async fn plugin_install_from_loopback_url_is_denied() {
+    let (app, token) = authed_app_and_token().await;
+
+    let (status, json) = authed_json_post(
+        &app,
+        &token,
+        "/api/plugins/install",
+        serde_json::json!({
+            "pluginId": "ssrf-probe",
+            "manifestUrl": "http://127.0.0.1:9/manifest.json",
+            "pluginUrl": "http://127.0.0.1:9/plugin.js",
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN, "{json}");
+    let msg = json["msg"].as_str().unwrap_or_default();
+    assert!(msg.contains("出口策略"), "{msg}");
+}
+
+/// AI 代理：base_url 来自请求体 → 打到云元数据地址必须 403。
+#[tokio::test]
+async fn ai_chat_proxy_to_metadata_url_is_denied() {
+    let (app, token) = authed_app_and_token().await;
+
+    let (status, json) = authed_json_post(
+        &app,
+        &token,
+        "/api/ai/chat",
+        serde_json::json!({
+            "model": "whatever",
+            "messages": [{"role": "user", "content": "hi"}],
+            "base_url": "http://169.254.169.254/v1",
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN, "{json}");
+    let msg = json["error"]["message"].as_str().unwrap_or_default();
+    assert!(msg.contains("出口策略"), "{msg}");
+}

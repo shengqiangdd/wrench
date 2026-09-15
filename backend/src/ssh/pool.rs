@@ -126,6 +126,52 @@ impl SshSession {
         Arc::new(config)
     }
 
+    /// 出口策略把关 + 建连（唯一咽喉点）。
+    ///
+    /// Wrench 的目标主机来自客户端请求，所有 SSH/SFTP 通路（REST、WebSocket 终端、
+    /// 健康探测）都必须经过这里。策略在这里强制，而不是只在上层 API 里做校验，
+    /// 否则 WebSocket 那条路径可以绕过。
+    ///
+    /// 连接使用策略校验过的 **IP**（而不是主机名），防止 DNS rebinding：
+    /// 校验和连接之间不能有第二次解析。Host key 校验仍用原始主机名
+    /// （`SshHandler.host`），所以 known_hosts 的按名匹配不受影响。
+    async fn connect_authorized(
+        &self,
+        known_hosts_path: Option<String>,
+        strict_mode: bool,
+    ) -> Result<client::Handle<SshHandler>, Box<dyn std::error::Error + Send + Sync>> {
+        let addrs = match crate::egress::policy()
+            .resolve_target(&self.host, self.port, crate::egress::Channel::Tcp)
+            .await
+        {
+            Ok(addrs) => addrs,
+            Err(denied) => {
+                tracing::warn!(
+                    target: "wrench_backend",
+                    "出口策略拒绝 {}@{}:{} — {}",
+                    self.username, self.host, self.port, denied
+                );
+                return Err(Box::new(denied));
+            }
+        };
+
+        let mut last_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+        for ip in addrs {
+            let target = std::net::SocketAddr::new(ip, self.port);
+            let config = Self::build_config();
+            let handler = self.create_handler(known_hosts_path.clone(), strict_mode);
+            match client::connect(config, target, handler).await {
+                Ok(handle) => return Ok(handle),
+                Err(e) => {
+                    tracing::warn!("SSH 连接 {}（{}）失败：{}", self.host, target, e);
+                    last_err = Some(Box::new(e));
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| "出口策略未放行任何可连接地址".into()))
+    }
+
     /// Connect using password authentication.
     ///
     /// # Arguments
@@ -138,10 +184,7 @@ impl SshSession {
         known_hosts_path: Option<String>,
         strict_mode: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let config = Self::build_config();
-        let handler = self.create_handler(known_hosts_path, strict_mode);
-
-        let mut handle = client::connect(config, (self.host.as_str(), self.port), handler).await?;
+        let mut handle = self.connect_authorized(known_hosts_path, strict_mode).await?;
         let auth_result = handle.authenticate_password(&self.username, password).await?;
 
         if auth_result.success() {
@@ -180,10 +223,7 @@ impl SshSession {
         known_hosts_path: Option<String>,
         strict_mode: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let config = Self::build_config();
-        let handler = self.create_handler(known_hosts_path, strict_mode);
-
-        let mut handle = client::connect(config, (self.host.as_str(), self.port), handler).await?;
+        let mut handle = self.connect_authorized(known_hosts_path, strict_mode).await?;
 
         // Parse the private key using russh's internal ssh-key crate
         let mut private_key = russh::keys::ssh_key::PrivateKey::from_openssh(private_key_pem)?;

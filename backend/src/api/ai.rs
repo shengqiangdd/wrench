@@ -254,8 +254,20 @@ async fn fetch_siliconflow_models() -> ModelsListResponse {
 /// Generic fetch models from any OpenAI-compatible `/v1/models` endpoint
 async fn fetch_models_from_url(base_url: &str, api_key: Option<&str>) -> ModelsListResponse {
     let models_url = format!("{}/models", base_url.trim_end_matches('/'));
-    let client = reqwest::Client::new();
-    let mut req_builder = client.get(&models_url);
+
+    // base_url 来自请求体：服务端不能替任何人去抓任意地址（SSRF / 跳板）。
+    let authorized = match crate::egress::authorize_url(&models_url).await {
+        Ok(a) => a,
+        Err(denied) => {
+            tracing::warn!(target: "wrench_backend", "出口策略拒绝 AI base_url {models_url} — {denied}");
+            return ModelsListResponse { models: Vec::new(), error: Some(denied.to_string()) };
+        }
+    };
+    let client = match authorized.client() {
+        Ok(c) => c,
+        Err(e) => return ModelsListResponse { models: Vec::new(), error: Some(e.to_string()) },
+    };
+    let mut req_builder = client.get(authorized.url.clone());
 
     if let Some(key) = api_key {
         req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
@@ -330,6 +342,32 @@ pub async fn chat_proxy(
     let base_url = req.base_url.as_deref().unwrap_or("https://openrouter.ai/api/v1");
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
+    // 出口策略：base_url 来自请求体，服务端不做任意地址代理（否则公开实例可被
+    // 用来读内网页面/元数据）。默认只放行公网目标；内网自建网关需在白名单里声明。
+    let authorized = match crate::egress::authorize_url(&url).await {
+        Ok(a) => a,
+        Err(denied) => {
+            tracing::warn!(target: "wrench_backend", "出口策略拒绝 AI 代理目标 {url} — {denied}");
+            return Response::builder()
+                .status(StatusCode::FORBIDDEN)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "error": { "message": denied.to_string(), "status": 403, "code": "EGRESS_DENIED" } })
+                        .to_string(),
+                ))
+                .unwrap();
+        }
+    };
+    let client = match authorized.client() {
+        Ok(c) => c,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(Body::from(serde_json::json!({ "error": e.to_string() }).to_string()))
+                .unwrap();
+        }
+    };
+
     let model = req.model.unwrap_or_else(|| "google/gemma-4-31b-it:free".into());
     let messages = req.messages.unwrap_or_default();
     let stream = req.stream.unwrap_or(false);
@@ -341,9 +379,8 @@ pub async fn chat_proxy(
         "max_tokens": req.max_tokens.unwrap_or(4096),
     });
 
-    let client = reqwest::Client::new();
     let mut req_builder = client
-        .post(&url)
+        .post(authorized.url.clone())
         .header("Content-Type", "application/json")
         .header("HTTP-Referer", "https://wrench.app")
         .header("X-Title", "Wrench")

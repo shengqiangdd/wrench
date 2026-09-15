@@ -78,6 +78,30 @@ pub async fn connect_ssh(
     let port = body.port.unwrap_or(22);
     let username = body.username;
 
+    // 出口策略：先判定「这台机器允许连到哪里」再动手。
+    // 这层预检给出 403 + 可读原因（上层笼统的 401「认证失败」会把策略拒绝说成口令错）；
+    // 真正的强制点在 ssh/pool.rs，WebSocket 终端那条路径走同一个咽喉点。
+    if let Err(denied) = crate::egress::authorize_tcp(&host, port).await {
+        tracing::warn!(
+            target: "wrench_backend",
+            "出口策略拒绝 {}@{}:{} — {}",
+            username, host, port, denied
+        );
+        state.add_audit_log(
+            "ssh_egress_denied",
+            serde_json::json!({
+                "action": "ssh_egress_denied",
+                "host": host,
+                "port": port,
+                "username": username,
+                "reason": denied.to_string(),
+            }),
+            "0.0.0.0",
+            &space.id,
+        );
+        return ApiResponse::error(403, &denied.to_string());
+    }
+
     // Configuration for known_hosts verification
     let known_hosts_path = body.known_hosts_path.clone();
     let strict_mode = body.strict_mode.unwrap_or(false);
@@ -238,6 +262,29 @@ pub async fn ensure_connection(
     }
 
     // No existing connection — create new one (reuse connect_ssh logic)
+    //
+    // 建新连接前先过出口策略（复用已有会话不受影响：那是上一轮已经放行的目标）。
+    if let Err(denied) = crate::egress::authorize_tcp(&host, port).await {
+        tracing::warn!(
+            target: "wrench_backend",
+            "出口策略拒绝 {}@{}:{} — {}",
+            username, host, port, denied
+        );
+        state.add_audit_log(
+            "ssh_egress_denied",
+            serde_json::json!({
+                "action": "ssh_egress_denied",
+                "host": host,
+                "port": port,
+                "username": username,
+                "reason": denied.to_string(),
+            }),
+            "0.0.0.0",
+            &space.id,
+        );
+        return ApiResponse::error(403, &denied.to_string());
+    }
+
     let connection_id = uuid::Uuid::new_v4().to_string();
 
     // Configuration for known_hosts verification

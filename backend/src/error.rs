@@ -17,6 +17,10 @@ pub enum AppError {
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
+    /// 请求本身合法，但被策略拒绝（例如出口策略不允许连到该目标）
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 
@@ -39,6 +43,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, 400, msg.clone()),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, 404, msg.clone()),
             AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, 401, msg.clone()),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, 403, msg.clone()),
             AppError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, 429, "Too many requests".into()),
             _ => {
                 tracing::error!("Internal error: {:?}", &self);

@@ -28,11 +28,12 @@ pub struct MarketPluginListing {
 /// 策略：先尝试远程市场，失败则返回本地内置插件列表
 pub async fn get_market_index(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     // 1. 尝试从远程市场获取
+    //    MARKET_INDEX_URL 由运维配置，但仍是「服务端替访客抓 URL」，所以走同一个出口校验：
+    //    禁私网/环回/链路本地/元数据，内网自建市场需写进 WRENCH_EGRESS_ALLOW。
     if let Ok(index_url) = std::env::var("MARKET_INDEX_URL")
         && !index_url.is_empty()
-        && let Ok(resp) = reqwest::get(&index_url).await
-        && resp.status().is_success()
-        && let Ok(data) = resp.json::<serde_json::Value>().await
+        && let Ok(fetched) = crate::egress::fetch_text(&index_url, crate::egress::DEFAULT_MAX_FETCH_BYTES).await
+        && let Ok(data) = serde_json::from_str::<serde_json::Value>(&fetched.body)
         && let Some(arr) = data.get("plugins").and_then(|v| v.as_array())
     {
         let mut plugins: Vec<MarketPluginListing> = arr

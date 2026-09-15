@@ -187,6 +187,38 @@ pub async fn login_rate_limit_middleware(
     next.run(req).await
 }
 
+/// SSH 连接接口专用限流。
+///
+/// 公开实例上，一个新 SSH 连接意味着一次真实的外拨（可能带着口令去撞目标主机）。
+/// 应用层出口白名单限定了「能连哪里」，这里再限制「多久能连多少次」，避免
+/// 一台机器被当成批量爆破/扫段的放大器。每个 IP 每 60 秒最多 20 次。
+pub async fn ssh_connect_rate_limit_middleware(req: Request<Body>, next: Next) -> Response {
+    use std::sync::LazyLock;
+    static SSH_LIMITER: LazyLock<RateLimiter> = LazyLock::new(|| RateLimiter::new(60, 20));
+
+    // 直接从扩展里取连接信息：没有连接信息时（如进程内请求）退回同一个键，限流仍然生效
+    let client_ip = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    if !SSH_LIMITER.check(&client_ip) {
+        tracing::warn!("[ssh] connect rate limited for {}", client_ip);
+        let body = serde_json::json!({
+            "error": "Too many SSH connection attempts. Please retry in a minute."
+        })
+        .to_string();
+        return Response::builder()
+            .status(StatusCode::TOO_MANY_REQUESTS)
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .header("Retry-After", "60")
+            .body(Body::from(body))
+            .unwrap();
+    }
+
+    next.run(req).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

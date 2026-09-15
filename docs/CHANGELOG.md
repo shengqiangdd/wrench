@@ -2,6 +2,32 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 🚪 出口策略：从根上消除跳板能力（`backend/src/egress.rs`）
+- **问题被正确定位**：风险不是「谁能进门」，而是「进门之后这台机器能替谁连到哪里」。
+  Wrench 的目标主机/端口来自客户端请求（`api/ssh.rs`、`websocket/terminal.rs`），
+  实例一旦公网可达，任何打开网页的人都能借服务器的网络位置去连它连得到的东西
+  （内网其他主机、容器网络、云元数据 `169.254.169.254`）。补口令只改变进门条件，
+  不改变这个能力，所以改为在结构上限定**可达范围**。
+- **`WRENCH_EGRESS_ALLOW`（服务端声明可达目标）**：逗号分隔的 `IP[:端口]` / `CIDR[:端口]`。
+  空白名单 = 内网、环回、链路本地、云元数据、保留段一律拒绝；公网 TCP 目标默认放行
+  （与直接上网等价），`WRENCH_EGRESS_STRICT=1` 时公网目标也要求声明。链路本地/元数据/
+  未指定/组播/广播/保留段**无论白名单怎么写都拒绝**。解析失败按空白名单处理（失败关闭）。
+- **强制点在唯一咽喉点**：`ssh/pool.rs:connect_authorized()`。REST、WebSocket 终端、
+  健康探测三条通路都经过它——策略放在这里而不是只在上层 API 做校验，WebSocket
+  那条路径才无法绕过。API 层另做一次预检，给出 403 + 可读原因（此前这类拒绝会被
+  说成「认证失败」）并写审计 `ssh_egress_denied`。
+- **防 DNS rebinding**：校验后连接用**解析并校验过的 IP**（校验与连接之间不做第二次解析）；
+  Host key 校验仍按原始主机名匹配，`known_hosts` 不受影响。
+- **HTTP 出口同样收口（SSRF）**：插件安装下载地址、AI `base_url`、通知 webhook、市场索引
+  这些来自请求体/配置的 URL 全部走同一套校验——禁止解析到私网/环回/链路本地/元数据地址、
+  钉住校验过的 IP、关闭自动重定向（逐跳重新校验）、限制响应体大小（`4 MiB`，防公开实例
+  被灌满磁盘）。这些路径此前的行为是「服务端替任何人抓任意 URL」。
+- **`/api/ssh/connect`、`/api/ssh/ensure` 连接限流**：在通用限流之上再加一层按 IP 的
+  连接限流（20 次/分钟），避免实例被当成批量爆破/扫段的放大器。
+- **文档**：`docs/ARCHITECTURE.md` 新增 §7.5（机制）与 ADR-8（为什么用白名单而不是再加口令），
+  `docs/DEPLOY.md` 新增「出口策略」章节（含可选的 `DOCKER-USER` 网络层第二道防线），
+  `docker-compose.yml` 增加 `WRENCH_EGRESS_ALLOW` / `WRENCH_EGRESS_STRICT`。
+
 ### 👥 多人共用（无角色、自动私有空间）
 - **从「登录即看全库」改为「每人一个私有空间」** — 此前 7 张业务表（`ssh_connections`、
   `vault_entries`、`scheduled_tasks`、`alerts`、`notification_channels`、

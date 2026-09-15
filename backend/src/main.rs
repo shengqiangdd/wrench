@@ -176,6 +176,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Database: {:?}", config.database_url);
     tracing::info!("Plugins dir: {:?}", config.plugins_dir);
 
+    // 出口策略：启动时读环境变量并打印一行摘要（这台机器允许主动连到哪里）
+    wrench_backend::egress::init_from_env();
+
     eprintln!("[wrench] Config loaded, building app state...");
 
     // Build app state

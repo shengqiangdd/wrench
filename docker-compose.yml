@@ -21,6 +21,13 @@ services:
       # 用启动日志里的一次性 setup token 设置口令（PBKDF2 哈希落库，明文不落盘）：
       #   docker logs <容器名> 2>&1 | grep -i "setup token"
       WRENCH_AUTH_PASSWORD: "${WRENCH_AUTH_PASSWORD:-}"
+      # WRENCH_EGRESS_ALLOW: **这台机器允许主动连到哪里**（逗号分隔的 IP[:端口] / CIDR[:端口]）。
+      # 留空 = 内网/环回/链路本地/云元数据地址一律拒绝（公网目标仍可连）。
+      # 例：WRENCH_EGRESS_ALLOW=192.168.1.5:22,192.168.1.6:22
+      # 注意：这个列表越窄越安全——每个条目都是「任何人打开网页后可以用来发起连接的目标」。
+      WRENCH_EGRESS_ALLOW: "${WRENCH_EGRESS_ALLOW:-}"
+      # WRENCH_EGRESS_STRICT: 置 1 时连公网目标也必须写在白名单里（只管理固定几台机时更严）
+      WRENCH_EGRESS_STRICT: "${WRENCH_EGRESS_STRICT:-0}"
       # VAULT_KEY: "${VAULT_KEY:-}"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]

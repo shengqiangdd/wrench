@@ -184,9 +184,11 @@ async fn send_discord_test(config: &serde_json::Value) -> Result<String, String>
         .get("webhookUrl")
         .and_then(|v| v.as_str())
         .ok_or("Missing webhookUrl")?;
-    let client = reqwest::Client::new();
+    // webhookUrl 来自调用方配置：服务端不能替任何人 POST 到任意地址（SSRF / 内网探测）
+    let authorized = crate::egress::authorize_url(webhook).await.map_err(|e| e.to_string())?;
+    let client = authorized.client().map_err(|e| e.to_string())?;
     let resp = client
-        .post(webhook)
+        .post(authorized.url.clone())
         .json(&serde_json::json!({
             "content": "✅ **Wrench Test Alert**\nNotification channel is working correctly!",
             "username": "Wrench",
@@ -207,9 +209,10 @@ async fn send_slack_test(config: &serde_json::Value) -> Result<String, String> {
         .get("webhookUrl")
         .and_then(|v| v.as_str())
         .ok_or("Missing webhookUrl")?;
-    let client = reqwest::Client::new();
+    let authorized = crate::egress::authorize_url(webhook).await.map_err(|e| e.to_string())?;
+    let client = authorized.client().map_err(|e| e.to_string())?;
     let resp = client
-        .post(webhook)
+        .post(authorized.url.clone())
         .json(&serde_json::json!({
             "text": "✅ *Wrench Test Alert*\nNotification channel is working correctly!"
         }))

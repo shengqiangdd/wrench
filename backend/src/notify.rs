@@ -110,9 +110,13 @@ async fn send_discord(config: &Value, body: &str) -> Result<bool, String> {
         .ok_or("Missing webhookUrl")?;
 
     let payload = serde_json::json!({ "content": body });
-    let client = reqwest::Client::new();
+    // webhookUrl 来自通知渠道配置：同样要过出口策略，不能让告警通道变成任意 POST 跳板
+    let authorized = crate::egress::authorize_url(webhook)
+        .await
+        .map_err(|e| format!("Discord: {}", e))?;
+    let client = authorized.client().map_err(|e| format!("Discord: {}", e))?;
     let resp = client
-        .post(webhook)
+        .post(authorized.url.clone())
         .json(&payload)
         .send()
         .await
@@ -132,9 +136,12 @@ async fn send_slack(config: &Value, body: &str) -> Result<bool, String> {
         .ok_or("Missing webhookUrl")?;
 
     let payload = serde_json::json!({ "text": body });
-    let client = reqwest::Client::new();
+    let authorized = crate::egress::authorize_url(webhook)
+        .await
+        .map_err(|e| format!("Slack: {}", e))?;
+    let client = authorized.client().map_err(|e| format!("Slack: {}", e))?;
     let resp = client
-        .post(webhook)
+        .post(authorized.url.clone())
         .json(&payload)
         .send()
         .await
