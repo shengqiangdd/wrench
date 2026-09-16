@@ -3,7 +3,10 @@ import { isAtShellPrompt, type TerminalBufferLike } from '../../utils/shell-prom
 
 /**
  * 造一个假 buffer：lines 是全部行（自 0 开始），cursorY 相对 baseY。
- * 与 xterm `IBuffer` 一样，`translateToString(true)` 会去掉行尾空白。
+ *
+ * ⚠️ 忠实模拟 xterm 6.0 的真实行为：`translateToString(true)` **不会**去掉行尾空白
+ * —— 实测 bash 提示符 `admin@fnos:~$ `（行尾一个空格）原样返回。
+ * 这个 mock 曾经"好心"替 xterm 做了 trim，于是单测全绿、真机上自动注入从未触发过。
  */
 function makeBuffer(
   lines: string[],
@@ -18,7 +21,7 @@ function makeBuffer(
       const text = lines[y]
       if (text === undefined) return undefined
       return {
-        translateToString: (trimRight?: boolean) => (trimRight ? text.replace(/\s+$/, '') : text),
+        translateToString: () => text,
       }
     },
   }
@@ -33,6 +36,15 @@ describe('isAtShellPrompt', () => {
     expect(isAtShellPrompt(makeBuffer(['~/proj on  main ❯ ']))).toBe(true)
     expect(isAtShellPrompt(makeBuffer(['➜  proj git:(main)']))).toBe(true)
     expect(isAtShellPrompt(makeBuffer(['λ ']))).toBe(true)
+  })
+
+  it('真实 xterm 的行尾空白不能让判定失效（回归：mock 曾替 xterm trim）', () => {
+    // xterm 6.0 的真实返回：`admin@fnos:~$ ` 带行尾空格；`translateToString(true)` 不会去掉它。
+    // 线上实测：自动注入因此从未触发，20 服务 compose pull 往 scrollback 堆了 3000+ 行重复块。
+    expect(isAtShellPrompt(makeBuffer(['admin@fnos:~$ ']))).toBe(true)
+    expect(isAtShellPrompt(makeBuffer(['admin@fnos:~$   ']))).toBe(true)
+    expect(isAtShellPrompt(makeBuffer(['root@nas:/tmp# ']))).toBe(true)
+    expect(isAtShellPrompt(makeBuffer(['me@host:~$ \u00a0']))).toBe(true)
   })
 
   it('非提示符行判否（密码提示 / 命令输出 / 续行符）', () => {

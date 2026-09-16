@@ -44,8 +44,12 @@ export function isAtShellPrompt(buffer: TerminalBufferLike | null | undefined): 
 
     // 从光标所在行（含）往上找第一行非空文本，只信它
     for (let y = buffer.baseY + buffer.cursorY; y >= 0; y--) {
-      const text = buffer.getLine(y)?.translateToString(true) ?? ''
-      if (!text.trim()) continue
+      // ⚠️ 不要依赖 `translateToString(true)` 去掉行尾空白：xterm 6.0 实测会把
+      // `admin@fnos:~$ `（bash 默认 PS1 结尾就是这个空格）原样返回，于是
+      // `PROMPT_TAIL` 永远匹配不上 → 自动注入在真机上从未触发过。
+      // 这里自己 trimEnd，判定只看可见字符。
+      const text = (buffer.getLine(y)?.translateToString(true) ?? '').trimEnd()
+      if (!text) continue
       return PROMPT_TAIL.test(text) || PROMPT_HEAD.test(text)
     }
     return false

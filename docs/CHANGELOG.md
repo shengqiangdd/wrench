@@ -2,6 +2,28 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 🖥️ 终端 `plain` 进度自动注入从未真正触发（提示符判定吃掉行尾空白）
+- **现象（线上 `3d07044b` 实测：真实浏览器 + 真 SSH + 真 compose）**：44 列 × 12 行跑一次
+  20 服务 `docker compose pull`，xterm buffer 涨到 **3012 行**、其中重复 2151 行，同一个服务行
+  被反复重画 **281 次**；44 列 × 21 行更差（3021 行 / 重复 2997 行）。用户看到的就是
+  「进度块一直往下堆同一份内容」。
+- **真因**：`isAtShellPrompt()`（`frontend/src/utils/shell-prompt.ts`）依赖
+  `buffer.getLine(y).translateToString(true)` 去掉行尾空白，但 **xterm 6.0 不保证如此** ——
+  bash 默认提示符 `admin@fnos:~$ `（结尾本来就是一个空格）原样带回，`PROMPT_TAIL` 的 `$` 锚点
+  永远匹配不上，于是 `on('connected')` 里的 `COMPOSE_PROGRESS=plain` 自动注入**一次都没触发过**，
+  用户只能手动点右上角 `plain` 芯片。
+- **单测为何全绿**：测试里的假 buffer 自己实现了
+  `translateToString: (trimRight) => trimRight ? text.replace(/\s+$/, '') : text`，
+  等于替 xterm 做了它并不做的事 —— mock 与真实实现不一致，把 bug 挡在了测试之外。
+- **修复**：判定改为自己 `trimEnd()` 后再匹配（不再依赖 emitter 的 `trimRight`）；测试 mock
+  改成忠实复刻真实 xterm（不做 trim），并补上真实形态用例（行尾一个空格 / 多个空格 / NBSP）。
+  旧代码跑新测试 **6/8 失败**，修复后 **8/8 通过**。
+- **端到端复核**（本地构建 dist 挂进临时容器，同款镜像 + 真 SSH + 真 compose，44 列 × 12 行，
+  保持默认设置、不手动敲任何命令）：`echo $COMPOSE_PROGRESS` 自动为 `plain`，
+  同一场景 buffer **3012 → 913 行**、重复 **2151 → 42 行**，每个服务行只出现 1 次（原先 281 次）。
+- **门禁**：前端 29 文件 / 335 用例全过，`tsc --noEmit`、ESLint `--max-warnings 0`、
+  Prettier `--check` 干净。
+
 ### 🛡️ 公网暴露加固（第二轮）：真实客户端 IP、安全响应头、Markdown 链接白名单
 - **反向代理后的真实客户端 IP（`WRENCH_TRUSTED_PROXIES`）**：挂在 Nginx/Caddy 后面的部署里，
   TCP 对端永远是代理地址，于是登录限流的「每 IP 60 秒 8 次」静默坍缩成**全局** 8 次/分钟
