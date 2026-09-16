@@ -552,12 +552,34 @@ export function formatSize(bytes: number | undefined | null): string {
 }
 
 export function formatPerms(mode: number): string {
-  const s = mode.toString(8).slice(-3)
+  // padStart 是必要的：mode 小于 0o100（如 0o060）时 toString(8) 只有两位，
+  // 直接 slice(-3) 会输出 6 个字符，列宽对不齐。
+  const s = mode.toString(8).padStart(3, '0').slice(-3)
   const p = ['---', '--x', '-w-', '-wx', 'r--', 'r-x', 'rw-', 'rwx']
   return s
     .split('')
     .map((c) => p[parseInt(c)] || '---')
     .join('')
+}
+
+/**
+ * 后端 `SftpEntry.permissions` 是**八进制字符串**（`format!("{:o}", p & 0o7777)`，
+ * 如 `"755"` / `"1777"`），取不到权限时是哨兵值 `"----"`。
+ *
+ * ⚠️ 别用 `parseInt(x, 16)` 去解析它 —— 那是错的，而且不是"显示错"这么轻：
+ * - `"755"` → 1877 → 显示 `r-x-w-r-x`（乱码）；
+ * - `"600"` → 1536 → 回填给 chmod 输入框变成 `3000` = setgid+sticky，
+ *   而且**抹掉所有者读写** —— 对着私钥点一次「修改权限」就这么毁了。
+ */
+export function parsePermsOctal(permissions: string | undefined | null): number {
+  const s = (permissions ?? '').trim()
+  if (!s || !/^[0-7]{1,4}$/.test(s)) return 0
+  return parseInt(s, 8)
+}
+
+/** 八进制字符串 → chmod 输入框的 4 位八进制值（`"600"` → `"0600"`）。 */
+export function permsToOctalInput(permissions: string | undefined | null): string {
+  return parsePermsOctal(permissions).toString(8).padStart(4, '0')
 }
 
 /** 文件扩展名 → CodeMirror 语言标识映射 */

@@ -82,6 +82,8 @@ import {
   getFileIcon,
   formatSize,
   formatPerms,
+  parsePermsOctal,
+  permsToOctalInput,
   detectLanguage,
   fallbackCopy,
   isDirLike,
@@ -1748,7 +1750,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             <span className="shrink-0 text-[10px] text-slate-600">{formatSize(entry.size)}</span>
           )}
           <span className="hidden w-16 shrink-0 text-right text-[10px] text-slate-600 sm:block">
-            {formatPerms(parseInt(entry.permissions, 16) || 0)}
+            {formatPerms(parsePermsOctal(entry.permissions))}
           </span>
         </div>
       )
@@ -2321,7 +2323,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         onDelete={handleDelete}
         onChmod={(entry) => {
           setChmodEntry(entry)
-          setChmodValue((parseInt(entry.permissions, 16) || 0).toString(8).padStart(4, '0'))
+          setChmodValue(permsToOctalInput(entry.permissions))
         }}
         onMove={(entry) => {
           const parentPath = entry.path.includes('/')

@@ -3,7 +3,7 @@
  */
 import { memo } from 'react'
 import type { SftpEntry } from '../../../types/ssh'
-import { formatPerms } from '../sftp-utils'
+import { formatPerms, parsePermsOctal } from '../sftp-utils'
 
 export interface ChmodModalProps {
   entry: SftpEntry | null
@@ -57,7 +57,7 @@ const ChmodModal = memo(function ChmodModal({
         <h3 className="mb-3 text-sm font-medium text-slate-200">修改权限</h3>
         <p className="mb-1 text-xs text-slate-400">{entry.name}</p>
         <p className="mb-3 text-xs text-slate-500">
-          当前: {formatPerms(parseInt(entry.permissions, 16) || 0)}
+          当前: {formatPerms(parsePermsOctal(entry.permissions))}
         </p>
 
         {/* Octal input */}

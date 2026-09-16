@@ -4,7 +4,7 @@
 import { memo } from 'react'
 import { X } from 'lucide-react'
 import type { SftpEntry } from '../../../types/ssh'
-import { getFileIcon, formatSize, formatPerms } from '../sftp-utils'
+import { getFileIcon, formatSize, formatPerms, parsePermsOctal } from '../sftp-utils'
 
 export interface FileInfoModalProps {
   entry: SftpEntry | null
@@ -48,7 +48,7 @@ const FileInfoModal = memo(function FileInfoModal({ entry, onClose }: FileInfoMo
           <div className="flex justify-between">
             <span className="text-slate-600">权限</span>
             <span className="font-mono">
-              {formatPerms(parseInt(entry.permissions, 16) || 0)} ({entry.permissions})
+              {formatPerms(parsePermsOctal(entry.permissions))} ({entry.permissions})
             </span>
           </div>
           <div className="flex justify-between">
