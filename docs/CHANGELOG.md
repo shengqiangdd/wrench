@@ -2,6 +2,14 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 🔧 让 backend 门禁转绿（此前一直是红的）
+
+- `cargo fmt --check` 在 `api/auth.rs`、`api/ssh.rs` 有历史漂移，
+  clippy 报 `middleware/auth.rs` 的死代码 `gate_off_config`，另有 2 个用例假失败
+  （`auth/status` 的 `configured` 期望过时；`with_connect_info` 让所有用例共用 127.0.0.1，
+  互相挤兑登录限流 → 429）。修完后 `cargo fmt/clippy/test` 全绿
+  （161 lib + 31 api_test + 10 space_isolation）。
+
 ### 📋 粘贴这条链修到底：HTTP 下也能粘、多行先过目、移动端有入口
 
 - **背景（读码 + 上游源码取证）**：本机部署是 HTTP（`http://<内网地址>:3001`，非安全上下文），而

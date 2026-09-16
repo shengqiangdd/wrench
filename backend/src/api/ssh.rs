@@ -404,10 +404,7 @@ mod tests {
     #[test]
     fn test_config_hides_password_by_default() {
         let body = build_test_config(false, "s3cret".to_string());
-        assert!(
-            body.get("password").is_none(),
-            "默认响应体不得包含 password 字段，实际: {body}"
-        );
+        assert!(body.get("password").is_none(), "默认响应体不得包含 password 字段，实际: {body}");
         assert_eq!(body["hasPassword"], serde_json::json!(true));
     }
 

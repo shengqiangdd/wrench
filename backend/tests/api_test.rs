@@ -459,11 +459,18 @@ async fn missing_password_config_fails_closed() {
 }
 
 /// 在 oneshot 请求上补上 ConnectInfo（登录路由的限流中间件需要真实连接信息）。
+///
+/// 每次调用给一个**独立 IP**：限流器（登录 8 次/60s/IP、SSH 20 次/60s/IP）是进程级
+/// 全局静态，多个用例共用 127.0.0.1 会互相挤兑，出现「单跑绿、全跑红」的假失败。
 fn with_connect_info(mut req: Request<Body>) -> Request<Body> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT_PEER: AtomicU32 = AtomicU32::new(0);
+    let n = NEXT_PEER.fetch_add(1, Ordering::Relaxed);
+    // 198.51.100.0/24（TEST-NET-2）不会出现在受信代理网段里
+    let ip = std::net::Ipv4Addr::new(198, 51, 100, (n % 250) as u8 + 1);
     req.extensions_mut()
         .insert(axum::extract::connect_info::ConnectInfo(std::net::SocketAddr::from((
-            [127, 0, 0, 1],
-            54321,
+            ip, 54321,
         ))));
     req
 }
@@ -750,6 +757,9 @@ async fn ai_chat_proxy_to_metadata_url_is_denied() {
 async fn gate_off_allows_password_free_access() {
     let mut config = temp_db_config();
     config.require_auth = false;
+    // 门关着 = 界面上没有任何口令环节，所以这里也不该有口令；
+    // 口令留着会让 auth/status 报 configured=true（这才是它的字面含义）。
+    config.auth_password = None;
     let app = build_test_app_with(config).await;
 
     // 1) 无令牌访问受保护接口 → 放行（不给 401）

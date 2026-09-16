@@ -326,11 +326,6 @@ mod tests {
         }
     }
 
-    /// 门关着（`WRENCH_REQUIRE_AUTH=off`）的配置：零输入直进
-    fn gate_off_config() -> AppConfig {
-        AppConfig { require_auth: false, auth_password: None, ..test_config(None) }
-    }
-
     fn state_with_env_password(password: &str) -> Arc<AppState> {
         let rt = tokio::runtime::Runtime::new().unwrap();
         Arc::new(rt.block_on(AppState::new(test_config(Some(password)))).unwrap())

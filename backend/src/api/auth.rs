@@ -87,7 +87,11 @@ pub async fn status(State(state): State<Arc<AppState>>) -> ApiResponse<AuthStatu
     ApiResponse::success(AuthStatusResponse {
         configured,
         auth_required,
-        source: if auth_required { auth.source().to_string() } else { "disabled".into() },
+        source: if auth_required {
+            auth.source().to_string()
+        } else {
+            "disabled".into()
+        },
         can_change_password: auth_required && configured,
         rotation_logs_out_everyone: true,
     })
