@@ -73,7 +73,7 @@ export const QUIET_PROGRESS_LEGACY_STORAGE_KEY = 'wrench_ssh_compose_plain'
  * - 画布关着（用户主动贴屏）：行数兜底没了，这时**必须**注入，否则又回到
  *   "每帧往 scrollback 堆重复行"的老毛病。
  *
- * 用户手动点过 `plain` 芯片就听用户的（见 `resolveQuietProgress` 的 `manual`）。
+ * 用户手动点过「显示 → 日志逐行输出」就听用户的（见 `resolveQuietProgress` 的 `manual`）。
  */
 export function defaultQuietProgress(canvasOn: boolean): boolean {
   return !canvasOn

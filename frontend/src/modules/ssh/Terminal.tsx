@@ -10,8 +10,6 @@ import {
   ChevronUp,
   ChevronDown,
   Copy,
-  AlignLeft,
-  Maximize2,
   ArrowDownToLine,
   ClipboardPaste,
   Eraser,
@@ -47,6 +45,7 @@ import {
   type TerminalMenuItem,
 } from '../../components/terminal/TerminalContextMenu'
 import { TerminalSearchBar } from '../../components/terminal/TerminalSearchBar'
+import { TerminalDisplayMenu } from '../../components/terminal/TerminalDisplayMenu'
 import { useTerminalSearch } from '../../hooks/useTerminalSearch'
 import {
   FONT_SIZE_DEFAULT,
@@ -217,13 +216,13 @@ export default function TerminalView({
   // 但画布（几何层，默认开）已经把块高塞进逻辑屏、实测富进度 0 堆行 —— 这时再压成
   // plain 就是净损失（看不到动画、回显三行 export、等于替所有人改 docker 的展示设置）。
   // 所以：画布开 → 不注入；画布关（用户主动贴屏，行数兜底没了）→ 自动注入。
-  // 用户手动点过 plain 芯片就听用户的，画布再切也不动它（plainManualRef）。
+  // 用户手动点过「日志逐行输出」就听用户的，画布再切也不动它（plainManualRef）。
   const [plainInit] = useState(() =>
     resolveQuietProgress(readQuietProgressPref(), readCanvasPref()),
   )
   const [composePlain, setComposePlain] = useState<boolean>(plainInit.value)
   const composePlainRef = useRef(composePlain)
-  /** 用户是否手动点过 plain 芯片（没点过 = 跟随画布） */
+  /** 用户是否手动点过「日志逐行输出」（没点过 = 跟随「进度原地刷新」） */
   const plainManualRef = useRef(plainInit.manual)
   // ─── 终端画布开关（逻辑尺寸与可视尺寸解耦，见 utils/terminal-canvas.ts）───
   // 默认开启：窄视口（手机键盘弹起约 12 行）下把 PTY 逻辑屏抬到 30 行，
@@ -789,10 +788,10 @@ export default function TerminalView({
         return
       }
       // 画布已顶到上限（80 行）而块还在长：几何层到此为止，给用户一条出路 ——
-      // 否则用户只会看到重复行继续堆，却不知道右上角还有个 plain 芯片。
+      // 否则用户只会看到重复行继续堆，却不知道右上角「显示」菜单里能改成逐行日志。
       if (!canvasCapHinted && isCanvasCappedOut({ currentRows: term.rows, runTotal })) {
         canvasCapHinted = true
-        showHint('进度块高超过画布上限（80 行）：点右上 plain 可改成逐行日志')
+        showHint('进度块太高，画面放不下了：打开右上「显示」→ 开启「日志逐行输出」')
       }
     }
 
@@ -1202,7 +1201,7 @@ export default function TerminalView({
           //   · 全屏 TUI（vim/htop/less → xterm alternate buffer）里注入会打进 TUI；
           //   · ssh/sudo 密码提示里注入会把命令行当密码敲进去。
           // 因此改为轮询探测提示符：探测不到就**不注入**，只给一次提示，
-          // 用户可随时点右上 plain 芯片手动开启（功能不会因此丢失）。
+          // 用户可随时在右上「显示」菜单里手动开启（功能不会因此丢失）。
           userTypedRef.current = false
           if (plainInjectTimerRef.current) clearTimeout(plainInjectTimerRef.current)
           if (composePlainRef.current) {
@@ -1213,7 +1212,7 @@ export default function TerminalView({
               if (disposedRef.current || !connectedRef.current || gen !== genRef.current) return
               if (!composePlainRef.current) return
               if (userTypedRef.current) {
-                showHint('进度纯文本未自动注入（你已在输入）· 点右上 plain 手动开启')
+                showHint('日志逐行输出未自动开启（你正在输入）· 打开右上「显示」可手动开启')
                 return
               }
               const t = terminalRef.current
@@ -1223,7 +1222,9 @@ export default function TerminalView({
                 if (n < MAX_TRIES) {
                   plainInjectTimerRef.current = setTimeout(() => tryInject(n + 1), RETRY_MS)
                 } else {
-                  showHint('未检测到 shell 提示符，进度纯文本未自动注入 · 点右上 plain 手动开启')
+                  showHint(
+                    '未检测到 shell 提示符，日志逐行输出未自动开启 · 打开右上「显示」可手动开启',
+                  )
                 }
                 return
               }
@@ -1237,7 +1238,7 @@ export default function TerminalView({
                 if (localStorage.getItem('wrench_ssh_plain_hint_shown') !== '1') {
                   localStorage.setItem('wrench_ssh_plain_hint_shown', '1')
                   showHint(
-                    '已注入进度纯文本（docker compose / buildkit）：终端行数不足时动画进度块会重复堆叠 · 点右上 plain 可恢复动画',
+                    '已开启日志逐行输出（docker compose / buildkit）：终端行数不足时动画进度块会重复堆叠 · 打开右上「显示」可恢复动画',
                   )
                 }
               } catch {
@@ -1729,12 +1730,12 @@ export default function TerminalView({
       : 'failed'
   }
 
-  /** 点右上 `plain` 芯片：显式选择（此后不再跟随画布） */
+  /** 点右上「显示」→「日志逐行输出」：显式选择（此后不再跟随「进度原地刷新」） */
   const toggleComposePlain = () => {
     const next = !composePlain
     const result = applyComposePlain(next, true)
     if (result === 'not-connected') {
-      showHint(next ? '进度纯文本已开启（连接后自动生效）' : '进度纯文本已关闭')
+      showHint(next ? '日志逐行输出已开启（连接后自动生效）' : '日志逐行输出已关闭')
       return
     }
     if (result === 'busy') {
@@ -1742,7 +1743,9 @@ export default function TerminalView({
       return
     }
     if (result === 'applied') {
-      showHint(next ? '进度输出：纯文本（不再整块重绘）' : '进度输出：恢复动画')
+      showHint(
+        next ? '日志逐行输出：已开启（进度改一行一条）' : '日志逐行输出：已关闭（恢复动画进度条）',
+      )
       return
     }
     showHint('连接不可用，切换将在下次连接生效')
@@ -1758,7 +1761,7 @@ export default function TerminalView({
    *
    * 安静进度变量组**跟随画布**：关掉画布 = 行数兜底没了，这时必须注入，
    * 否则又回到"每帧堆重复行"；开着画布则不必牺牲动画（实测富进度 0 堆行）。
-   * 用户手动点过 `plain` 芯片就尊重他的选择，画布再切也不动它。
+   * 用户手动点过「日志逐行输出」就尊重他的选择，「进度原地刷新」再切也不动它。
    */
   const toggleCanvas = () => {
     const next = !canvasOn
@@ -1777,14 +1780,14 @@ export default function TerminalView({
     const tail = !followCanvas
       ? ''
       : plainShouldBe
-        ? '；同时开启进度纯文本（画布关掉后没有行数兜底）'
-        : '；同时恢复进度动画（画布已能容纳进度块）'
+        ? '；同时开启日志逐行输出（关掉「进度原地刷新」后没有行数兜底）'
+        : '；同时恢复动画进度（「进度原地刷新」已能容纳进度块）'
     const deferred =
       followResult === 'busy' || followResult === 'not-connected' ? '（下次连接生效）' : ''
     showHint(
       (next
-        ? '画布开启：逻辑屏抬到 30 行，进度块原地重绘（可视区跟随光标，可上下平移）'
-        : '已贴屏：逻辑尺寸 = 可视尺寸（改造前行为）') +
+        ? '进度原地刷新：已开启（进度块原地重绘，窄窗口不刷屏；可上下平移回看）'
+        : '进度原地刷新：已关闭（严格按窗口行数渲染）') +
         tail +
         deferred,
     )
@@ -1868,53 +1871,17 @@ export default function TerminalView({
           }
         }}
       />
-      {/* ─── 右上角悬浮控制：进度纯文本开关 + 快捷键栏收起 + 选中文本复制 ─── */}
+      {/* ─── 右上角悬浮控制：「显示」菜单（进度画法 / 字号）+ 快捷键栏收起 + 选中文本复制 ─── */}
       <div className="pointer-events-none absolute top-1 right-1 z-10 flex flex-col items-end gap-1">
-        <button
-          onPointerDown={(e) => {
-            // 移动端用 pointerdown：这个容器外层 touchAction 为 none，
-            // 合成 click 在部分移动浏览器上会被吞掉（与下方快捷键按钮一致的处理）
-            e.preventDefault()
-            e.stopPropagation()
-            toggleComposePlain()
-          }}
-          className={`pointer-events-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] shadow-lg backdrop-blur-sm transition-all duration-150 ${
-            composePlain
-              ? 'bg-emerald-600/90 text-white hover:bg-emerald-500'
-              : 'bg-slate-800/90 text-slate-400 hover:bg-slate-700 hover:text-white'
-          }`}
-          style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
-          title={
-            composePlain
-              ? '进度输出：纯文本（本会话已 export docker 全家族的安静进度变量）——点击恢复动画'
-              : '进度切纯文本：在当前会话 export COMPOSE_PROGRESS / BUILDKIT_PROGRESS=plain。想要"能滚动回看的逐行日志"、或关掉画布贴屏后防止进度块堆行时点它'
-          }
-        >
-          <AlignLeft size={12} />
-          <span className="font-mono">plain</span>
-        </button>
-        <button
-          onPointerDown={(e) => {
-            // 与 plain 芯片一致：移动端用 pointerdown，避免合成 click 被吞
-            e.preventDefault()
-            e.stopPropagation()
-            toggleCanvas()
-          }}
-          className={`pointer-events-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] shadow-lg backdrop-blur-sm transition-all duration-150 ${
-            canvasOn
-              ? 'bg-sky-600/90 text-white hover:bg-sky-500'
-              : 'bg-slate-800/90 text-slate-400 hover:bg-slate-700 hover:text-white'
-          }`}
-          style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
-          title={
-            canvasOn
-              ? '终端画布：窄视口下把逻辑屏抬到 30 行，可视区只是这扇屏上的窗（跟随光标、可上下平移），整块重画的进度 UI 原地重绘不堆叠 —— 点击改为贴屏'
-              : '贴屏模式：逻辑尺寸 = 可视尺寸（改造前行为）。点击启用画布，解决窄视口下进度块重复堆叠'
-          }
-        >
-          <Maximize2 size={12} />
-          <span>画布</span>
-        </button>
+        <TerminalDisplayMenu
+          canvasOn={canvasOn}
+          onToggleCanvas={toggleCanvas}
+          plainOn={composePlain}
+          onTogglePlain={toggleComposePlain}
+          fontSize={prefs.fontSize}
+          onFontSizeChange={changeFontSize}
+          defaultFontSize={FONT_SIZE_DEFAULT}
+        />
         <button
           onPointerDown={(e) => {
             e.preventDefault()
