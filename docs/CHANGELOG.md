@@ -2,6 +2,38 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 🗂️ 文件管理「明明有自动连接逻辑就是连不上」——根因在后端，不在自动连接逻辑
+
+- **症状**：SSH 页里终端连得上，切到「文件管理」，连接下拉已经选中那台主机，
+  目录区却显示「无法加载目录 · SSH 连接已断开」，点「重试」永远同一个结果。
+- **取证**（真机 + 后端日志）：同一时刻后端打的是
+  `[space] blocked cross-space connection access: space=17ae… tried id=sess_ssh_…`，
+  前端拿到的是 `api/ssh.rs` 的 `SSH not connected`。也就是说**会话存在、但读不到**。
+- **两条根因，都在后端**：
+  1. **写端漏了空间归属**。REST 路径（`api/ssh.rs`）会给 SSH 会话打 `space_id`，而终端页
+     走 **WebSocket**，`websocket/terminal.rs` 直接 `SshConnection::new(...)` 塞进全局注册表，
+     `space_id` 是默认空串（"未归属"）。读端 `app_state.rs` 的 `connection_in()` 是
+     fail-closed 的：**空归属的连接对任何空间都不可见** → SFTP、Docker exec、日志扫描、
+     主机健康、ssh exec 全部报「SSH not connected」。终端自己不受影响（WS 路径不查空间），
+     所以表现成「终端好好的，文件管理连不上」。
+  2. **读端完全不查空间**。WS 里几处查找是裸 `connections.get(&id)`，`api/logs.rs` 甚至有
+     「fallback: 第一个有 session 的连接」。于是**知道 connectionId 就能用别人已认证的
+     SSH 会话**（读文件、执行命令）——这比第 1 条严重，必须一起收口。
+- **修法**：`ws_handler` 取中间件注入的 `Extension<SpaceCtx>`，把 `space_id` 穿到
+  `handle_socket` → 各 handler；终端的 connect 复用只在**同空间**内生效，新建连接
+  `.with_space(space_id)`；WS 的 sftp / logtail / docker_shell / disconnect 以及
+  `api/logs.rs`、`api/hosts.rs` 一律改走 `connection_in(space, id)`（跨空间 == 不存在）；
+  logtail 的会话键加空间前缀（猜到 id 也掐不掉别人的跟随进程）。注册表保持 fail-closed，
+  **不加"空串通吃"的后门**——漏打空间只会变成谁都看不见的孤儿，不会变成公共资源。
+- **前端**：`FileManager` 里两处「看到 store 有 connected 的会话就当 SFTP 会话用」的捷径
+  没验证过 SFTP 可用性，改为统一走 `sshSessionManager.getOrCreateSftpSession()`
+  （先 `/api/sftp/stat` 实测，不通才新建专用 SFTP 会话）；失败不再静默退回「未连接」，
+  界面上留原因 + 重试入口，自动重试上限 1 次；`SftpBrowser` 在会话失效时把按钮从
+  「重试」换成「重连」（同一个失效 id 重发没有意义）。
+- **测试**：`app_state` 补 3 例（跨空间不可见 / 只列本空间 / 不能删别人的）、
+  `websocket::terminal` 补 `logtail_key_is_space_scoped`、前端补
+  `services/ssh-session-manager.test.ts` 4 例。
+
 ### 🕹️ 终端两个 P0：删除键吞掉下一个字符 / 初始连接被自己挡住
 
 - **P0-1「删掉命令再打字不显示」**：Backspace 的双通路去重用的是裸布尔

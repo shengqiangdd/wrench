@@ -186,6 +186,12 @@ function FileManagerInner() {
   const connectingRef = useRef(false)
   const mountedRef = useRef(false)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 最近一次连接失败的主机 id（给「重试」按钮用）；null = 没有失败记录 */
+  const lastFailedConnIdRef = useRef<string | null>(null)
+  /** 上一次由文件管理建出来的 SFTP 会话 id（重连时只清它，不动终端页会话） */
+  const lastSftpSessionIdRef = useRef<string | null>(null)
+  /** 自动连接尝试次数：主机不通时不要无限重试（用户手动重试会清零） */
+  const autoConnectTriesRef = useRef(0)
 
   // ─── 持久化状态 ───
   const sidebarOpen = useAppStore((s) => s.fmSidebarOpen)
@@ -207,6 +213,25 @@ function FileManagerInner() {
     // 使用 queueMicrotask 避免在 effect 中同步调用 setState
     queueMicrotask(() => setWsReady(true))
   }, [])
+
+  /**
+   * 清掉「上一次由文件管理建出来的」那个会话。
+   *
+   * 关键：不要按 connectionId 批量 disconnect —— 终端页的交互会话挂在同一个
+   * connectionId 下，切到文件管理时把用户的终端踢掉是不可接受的。
+   */
+  const dropStaleSftpSession = useCallback(
+    (client: WsClient) => {
+      const staleId = lastSftpSessionIdRef.current
+      lastSftpSessionIdRef.current = null
+      if (!staleId) return
+      if (useSshStore.getState().sessions.some((s) => s.id === staleId)) {
+        client.send({ type: 'disconnect', connectionId: staleId })
+        removeSession(staleId)
+      }
+    },
+    [removeSession],
+  )
 
   /** 持久化 SFTP 浏览路径（用 useCallback 包装，避免 re-render 时重建回调） */
   const handlePathChange = useCallback(
@@ -245,40 +270,32 @@ function FileManagerInner() {
     // 🔧 使用 SshSessionManager 智能复用会话
     const sessArr = useSshStore.getState().sessions
 
-    // 优先查找已有的 SSH session（功能更完整）
-    const existingSshSession = sessArr.find(
-      (s) =>
-        s.connectionId === cached.connId && s.status === 'connected' && !s.id.startsWith('sftp_'),
-    )
+    // 注意：这里**不能**「看到一个 connected 的 SSH 会话就拿来当 SFTP 会话」。
+    // 终端页的会话走 WebSocket，文件管理走 REST，两者是否互相认账必须实测
+    // （/api/sftp/stat）。以前直接复用 sessionId 的后果是：界面显示已连接，
+    // 但每个目录请求都失败并提示「SSH 连接已断开」——也就是「明明有自动连接
+    // 逻辑就是连不上」。统一交给 getOrCreateSftpSession：先验证 SFTP 可用，
+    // 可用才复用，不可用就新建专用 SFTP 会话。
 
-    if (existingSshSession) {
-      // 直接复用 SSH 页面的 session，无需重新连接
-      setFmState({
-        connId: cached.connId,
-        sessionId: existingSshSession.id,
-        pathCache: cached.pathCache,
-      })
-      return true
-    }
-
-    // 尝试新建连接
+    // 尝试复用 / 新建连接
     connectingRef.current = true
     dispatch({ connecting: true })
 
-    // 🔧 修复：只清理同一主机的旧 sftp session（重连场景），
-    // 不再断开其他主机的 session — 支持多主机并存
-    for (const sess of sessArr) {
-      if (sess.connectionId === cached.connId && sess.id.startsWith('sftp_')) {
-        client.send({ type: 'disconnect', connectionId: sess.id })
-        removeSession(sess.id)
-      }
-    }
+    // 清理上次由文件管理自己建出来的会话（终端页的会话不能动，见 dropStaleSftpSession）
+    dropStaleSftpSession(client)
 
+    const beforeIds = new Set(sessArr.map((s) => s.id))
+    let lastStatus = ''
     const sid = await ensureSftpSession(cached.connId, sessArr, addSession, client, (msg) => {
-      if (msg) dispatch({ statusMsg: msg })
+      if (msg) {
+        lastStatus = msg
+        dispatch({ statusMsg: msg })
+      }
     })
 
     if (sid) {
+      // 记住「新建的 SFTP 会话」（复用别人的会话不记），下次重连只清它
+      lastSftpSessionIdRef.current = beforeIds.has(sid) ? null : sid
       setFmState({
         connId: cached.connId,
         sessionId: sid,
@@ -289,11 +306,16 @@ function FileManagerInner() {
       return true
     }
 
+    // 失败：不静默回退成「未连接到任何 SSH」，把原因留在界面上（含重试入口）
+    lastFailedConnIdRef.current = cached.connId
     setFmState({ connId: null, sessionId: null, pathCache: cached.pathCache })
     connectingRef.current = false
-    dispatch({ connecting: false, statusMsg: '' })
+    dispatch({
+      connecting: false,
+      statusMsg: lastStatus || `连接失败：${conn.name}（${conn.host}）`,
+    })
     return false
-  }, [addSession, removeSession, setFmState])
+  }, [addSession, dropStaleSftpSession, setFmState])
 
   // mount 时尝试恢复
   useEffect(() => {
@@ -327,22 +349,9 @@ function FileManagerInner() {
     // 🔧 修复：如果 fmState.connId 为空（被 reset 过），不再尝试恢复
     // 只有当 connId 有效且 sessions 已恢复时才重建
     if (fmState.connId && sessions.length > 0 && wsClientRef.current) {
-      // 🔧 修复：检查是否有可复用的 SSH session（从 SSH 页面已连接的）
-      const existingSshSession = sessions.find(
-        (s) =>
-          s.connectionId === fmState.connId &&
-          s.status === 'connected' &&
-          !s.id.startsWith('sftp_'),
-      )
-
-      if (existingSshSession) {
-        // 直接复用 SSH 页面的 session，无需重新连接
-        setFmState({
-          ...fmState,
-          sessionId: existingSshSession.id,
-        })
-        return
-      }
+      // 注意：这里不再「看到 SSH 页面已有 connected 会话就直接挂上来」——
+      // 复用前必须验证 SFTP 真的能用（走 tryRestoreSession → getOrCreateSftpSession），
+      // 否则会出现「显示已连接、每个请求都失败」的假连接。
 
       // 🔧 修复：如果当前 fmState 已有有效的 sftp session 在 sessions 中，
       // 不再重试（避免 sessions 变化导致的无意义重连）
@@ -370,8 +379,11 @@ function FileManagerInner() {
       !fmState.sessionId &&
       !connectingRef.current &&
       connections.length >= 1 &&
-      connectAndSftpRef.current
+      connectAndSftpRef.current &&
+      // 主机不通时不要反复重试：最多自动试 1 次，之后交给用户点「重试」
+      autoConnectTriesRef.current < 1
     ) {
+      autoConnectTriesRef.current += 1
       // 自动选中第一个主机并连接
       setSelectedHostId(connections[0]!.id)
       void connectAndSftpRef.current(connections[0]!.id)
@@ -415,38 +427,45 @@ function FileManagerInner() {
       connectingRef.current = true
       dispatch({ connecting: true })
 
-      // 🔧 修复：只清理同一主机的旧 session（重连场景），
-      // 不再断开其他主机的 session — 支持多主机并存
-      for (const sess of currentSessions) {
-        if (sess.connectionId === connId) {
-          client.send({ type: 'disconnect', connectionId: sess.id })
-          removeSession(sess.id)
-        }
-      }
+      // 清理上次由文件管理自己建出来的会话（终端页的会话不能动，见 dropStaleSftpSession）
+      dropStaleSftpSession(client)
 
       // 🔧 使用实时获取的 sessions
+      const beforeIds = new Set(currentSessions.map((s) => s.id))
+      let lastStatus = ''
       const sid = await ensureSftpSession(connId, currentSessions, addSession, client, (msg) => {
-        if (msg) dispatch({ statusMsg: msg })
+        if (msg) {
+          lastStatus = msg
+          dispatch({ statusMsg: msg })
+        }
       })
 
       if (sid) {
         const currentCache = useAppStore.getState().fmSftpState.pathCache
+        // 记住「新建的 SFTP 会话」（复用别人的会话不记），下次重连只清它
+        lastSftpSessionIdRef.current = beforeIds.has(sid) ? null : sid
+        lastFailedConnIdRef.current = null
         setFmState({
           connId,
           sessionId: sid,
           pathCache: currentCache,
         })
         connectingRef.current = false
-        dispatch({ connecting: false })
+        dispatch({ connecting: false, statusMsg: '' })
         return currentCache[connId] || '/'
       }
 
+      // 失败：不要静默回到「未连接到任何 SSH」，把原因留在空状态里（含重试入口）
       console.log(`[FileManager] ensureSftpSession failed, not setting fmState`)
+      lastFailedConnIdRef.current = connId
       connectingRef.current = false
-      dispatch({ connecting: false })
+      dispatch({
+        connecting: false,
+        statusMsg: lastStatus || `连接失败：${conn.name}（${conn.host}）`,
+      })
       return
     },
-    [addSession, removeSession, setFmState], // 🔧 移除 sessions 依赖
+    [addSession, dropStaleSftpSession, setFmState], // 🔧 移除 sessions 依赖
   )
 
   // 同步 ref 供 useEffect 使用（避免 hook 顺序问题）
@@ -485,6 +504,11 @@ function FileManagerInner() {
           <p className="text-sm font-medium text-slate-400">未连接到任何 SSH</p>
           <p className="mt-1 text-xs text-slate-600">选择一个已保存的连接来浏览文件</p>
         </div>
+        {statusMsg && (
+          <p className="max-w-sm rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-xs leading-relaxed text-amber-300">
+            {statusMsg}
+          </p>
+        )}
         {connections.length > 0 && (
           <div className="flex flex-col items-center gap-2">
             <p className="text-[10px] text-slate-600">选择主机连接</p>
@@ -493,7 +517,7 @@ function FileManagerInner() {
                 value={selectedHostId || connections[0]?.id || ''}
                 onChange={(e) => {
                   setSelectedHostId(e.target.value)
-                  connectAndSftp(e.target.value)
+                  void connectAndSftp(e.target.value)
                 }}
                 className="appearance-none rounded-lg border border-slate-700/50 bg-slate-800/80 px-4 py-2 pr-8 text-xs text-slate-300 focus:ring-1 focus:ring-sky-500 focus:outline-none"
               >
@@ -508,6 +532,22 @@ function FileManagerInner() {
                 className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-slate-500"
               />
             </div>
+            {statusMsg && (
+              <button
+                onClick={() => {
+                  // 手动重试：清零自动重试计数，重试上一次失败的主机
+                  autoConnectTriesRef.current = 0
+                  const target = lastFailedConnIdRef.current || connections[0]?.id
+                  if (target) {
+                    setSelectedHostId(target)
+                    void connectAndSftp(target)
+                  }
+                }}
+                className="rounded-md border border-slate-700/60 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800"
+              >
+                重试连接
+              </button>
+            )}
           </div>
         )}
         <button

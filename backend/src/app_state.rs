@@ -272,9 +272,17 @@ impl AppState {
     }
 
     /// 取本空间的活连接（跨空间的 `connection_id` 一律视为不存在）。
+    ///
+    /// fail-closed 两条：① 调用方自己的空间为空 → 什么都不给；② 连接注册时
+    /// 没有归属（`space_id` 为空）→ 对任何调用方都不可见。第 ② 条是
+    /// 「文件管理连不上」那个 bug 的兜底：WS 路径一旦漏打空间，这些会话会变成
+    /// 谁都看不见的孤儿，而不是变成谁都能用的公共资源。
     pub fn connection_in(&self, space_id: &str, connection_id: &str) -> Option<SshConnection> {
+        if space_id.is_empty() {
+            return None;
+        }
         let entry = self.connections.get(connection_id)?;
-        if entry.space_id != space_id {
+        if entry.space_id.is_empty() || entry.space_id != space_id {
             tracing::warn!(
                 "[space] blocked cross-space connection access: space={} tried id={} (owner={})",
                 space_id,
@@ -288,6 +296,9 @@ impl AppState {
 
     /// 列出本空间的活连接。
     pub fn connections_in(&self, space_id: &str) -> Vec<SshConnection> {
+        if space_id.is_empty() {
+            return Vec::new();
+        }
         self.connections
             .iter()
             .filter(|e| e.value().space_id == space_id)
@@ -297,11 +308,12 @@ impl AppState {
 
     /// 删除本空间的活连接（不是自己的连接不动）。
     pub fn remove_connection_in(&self, space_id: &str, connection_id: &str) -> Option<SshConnection> {
-        let owned = self
-            .connections
-            .get(connection_id)
-            .map(|e| e.value().space_id == space_id)
-            .unwrap_or(false);
+        let owned = !space_id.is_empty()
+            && self
+                .connections
+                .get(connection_id)
+                .map(|e| e.value().space_id == space_id)
+                .unwrap_or(false);
         if !owned {
             tracing::warn!(
                 "[space] blocked cross-space connection removal: space={} tried id={}",
@@ -551,5 +563,73 @@ mod tests {
 
         let alerts = state.alerts.read();
         assert!(alerts.len() <= 500);
+    }
+
+    // ── 空间归属的连接注册表 ──
+    //
+    // 回归用例：文件管理（SFTP/Docker/日志）报「SSH not connected」的真因，是
+    // WebSocket 终端路径把 SSH 会话注册成「未归属」（space_id 为空串），而
+    // connection_in() 对未归属连接一律不可见。这些断言把那条契约钉住。
+
+    fn register(state: &AppState, id: &str, space: Option<&str>) {
+        let mut conn = SshConnection::new(id.into(), "10.0.0.1".into(), 22, "root".into(), "password".into());
+        if let Some(s) = space {
+            conn = conn.with_space(s);
+        }
+        state.connections.insert(id.into(), conn);
+    }
+
+    #[test]
+    fn test_connection_in_is_space_scoped() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let state = rt.block_on(AppState::new(test_config())).unwrap();
+
+        register(&state, "c-a", Some("space-a"));
+        register(&state, "orphan", None); // 未归属（旧 WS 路径的产物）
+
+        assert!(state.connection_in("space-a", "c-a").is_some());
+        // 跨空间一律视为不存在
+        assert!(state.connection_in("space-b", "c-a").is_none());
+        // 未归属的连接对任何空间都不可见（fail-closed，不能加"空串通吃"的后门）
+        assert!(state.connection_in("space-a", "orphan").is_none());
+        assert!(state.connection_in("", "orphan").is_none());
+        // 不存在的 id
+        assert!(state.connection_in("space-a", "nope").is_none());
+    }
+
+    #[test]
+    fn test_connections_in_lists_only_own_space() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let state = rt.block_on(AppState::new(test_config())).unwrap();
+
+        register(&state, "c-a", Some("space-a"));
+        register(&state, "c-b", Some("space-b"));
+        register(&state, "orphan", None);
+
+        let mut a: Vec<String> = state
+            .connections_in("space-a")
+            .into_iter()
+            .map(|c| c.connection_id)
+            .collect();
+        a.sort();
+        assert_eq!(a, vec!["c-a".to_string()]);
+        assert_eq!(state.connections_in("space-b").len(), 1);
+        assert!(state.connections_in("space-c").is_empty());
+    }
+
+    #[test]
+    fn test_remove_connection_in_does_not_touch_other_spaces() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let state = rt.block_on(AppState::new(test_config())).unwrap();
+
+        register(&state, "c-a", Some("space-a"));
+
+        // 别人删不掉：返回 None 且连接仍在
+        assert!(state.remove_connection_in("space-b", "c-a").is_none());
+        assert!(state.connections.contains_key("c-a"));
+
+        // 自己可以删
+        assert!(state.remove_connection_in("space-a", "c-a").is_some());
+        assert!(!state.connections.contains_key("c-a"));
     }
 }

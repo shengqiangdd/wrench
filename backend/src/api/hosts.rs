@@ -1,10 +1,14 @@
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{Extension, State},
+};
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::api_types::{HostCreatedResponse, HostEntry};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
+use crate::space::SpaceCtx;
 use crate::ssh::SshSession;
 use futures_util::future::join_all;
 
@@ -12,13 +16,15 @@ use futures_util::future::join_all;
 type HostSnapshot = (String, String, u16, String, Option<Arc<SshSession>>);
 
 /// List all hosts (GET /api/hosts)
-pub async fn list_hosts(State(state): State<Arc<AppState>>) -> ApiResponse<Vec<HostEntry>> {
-    // 先收集基础信息
+pub async fn list_hosts(
+    State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
+) -> ApiResponse<Vec<HostEntry>> {
+    // 先收集基础信息（只列本空间的活连接，别人的主机信息不外泄）
     let host_snapshots: Vec<HostSnapshot> = state
-        .connections
-        .iter()
-        .map(|entry| {
-            let conn = entry.value();
+        .connections_in(&space.id)
+        .into_iter()
+        .map(|conn| {
             (
                 conn.connection_id.clone(),
                 conn.host.clone(),
@@ -60,8 +66,10 @@ pub async fn add_host(
 /// Delete a host (DELETE /api/hosts/{id})
 pub async fn delete_host(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> ApiResponse<()> {
-    state.connections.remove(&id);
+    // 只允许断开本空间的连接（跨空间的 id 视为不存在）
+    state.remove_connection_in(&space.id, &id);
     ApiResponse::success_msg("Host deleted")
 }

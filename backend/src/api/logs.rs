@@ -1,23 +1,27 @@
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{Extension, State},
+};
 use std::sync::Arc;
 
 use crate::api_types::{GrepResponse, LogScanResult, LogSource, LogTailResponse};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
+use crate::space::SpaceCtx;
 
-fn get_session(state: &Arc<AppState>, connection_id: &str) -> Option<Arc<crate::ssh::SshSession>> {
+fn get_session(state: &Arc<AppState>, space_id: &str, connection_id: &str) -> Option<Arc<crate::ssh::SshSession>> {
     if !connection_id.is_empty()
-        && let Some(c) = state.connections.get(connection_id)
+        && let Some(c) = state.connection_in(space_id, connection_id)
     {
         return c.session.clone();
     }
-    // fallback: 第一个有 session 的连接
-    for entry in state.connections.iter() {
-        if entry.value().session.is_some() {
-            return entry.value().session.clone();
-        }
-    }
-    None
+    // fallback: 本空间里第一个有 session 的连接（前端没带 connectionId 时）
+    // 注意：必须是本空间 —— 之前这里遍历全部连接，等于把别人已认证的 SSH 会话
+    // 借给任何访客做日志读取。
+    state
+        .connections_in(space_id)
+        .into_iter()
+        .find_map(|c| c.session.clone())
 }
 
 fn sq(s: &str) -> String {
@@ -27,6 +31,7 @@ fn sq(s: &str) -> String {
 /// Scan log files on remote host (POST /api/logs/scan)
 pub async fn scan_log_sources(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<serde_json::Value>,
 ) -> ApiResponse<Vec<LogScanResult>> {
     let connection_id = body.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
@@ -36,7 +41,7 @@ pub async fn scan_log_sources(
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
         .unwrap_or_default();
 
-    let session = match get_session(&state, connection_id) {
+    let session = match get_session(&state, &space.id, connection_id) {
         Some(s) => s,
         None => {
             // 无连接时全部标记不存在
@@ -152,13 +157,14 @@ pub async fn scan_log_sources(
 /// Tail log file via SSH (POST /api/logs/tail)
 pub async fn tail_log(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<serde_json::Value>,
 ) -> ApiResponse<LogTailResponse> {
     let path = body.get("path").and_then(|v| v.as_str()).unwrap_or("/var/log/syslog");
     let lines = body.get("lines").and_then(|v| v.as_u64()).unwrap_or(200) as usize;
     let connection_id = body.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
 
-    let content = match get_session(&state, connection_id) {
+    let content = match get_session(&state, &space.id, connection_id) {
         Some(s) => {
             let p = sq(path);
             // 最简方案：|| 链式降级，兼容 BusyBox
@@ -194,6 +200,7 @@ pub async fn tail_log(
 /// Grep log file via SSH (POST /api/logs/grep)
 pub async fn grep_log(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<serde_json::Value>,
 ) -> ApiResponse<GrepResponse> {
     let pattern = body.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
@@ -204,7 +211,7 @@ pub async fn grep_log(
         return ApiResponse::error(-1, "pattern required");
     }
 
-    let content = match get_session(&state, connection_id) {
+    let content = match get_session(&state, &space.id, connection_id) {
         Some(s) => {
             let pat = sq(pattern);
             let pth = sq(path);
@@ -234,13 +241,14 @@ pub async fn grep_log(
 /// List available log sources (POST /api/logs/list-sources)
 pub async fn list_sources(
     State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
     Json(body): Json<serde_json::Value>,
 ) -> ApiResponse<Vec<LogSource>> {
     let connection_id = body.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
 
     let mut sources: Vec<LogSource> = Vec::new();
 
-    if let Some(s) = get_session(&state, connection_id) {
+    if let Some(s) = get_session(&state, &space.id, connection_id) {
         let cmd = concat!(
             "find /var/log -maxdepth 2 -type f \\( -name '*.log' -o -name '*.log.[0-9]' -o -name '*.log.[0-9][0-9]' \\) ",
             "! -name '*.gz' ! -name '*.bz2' ! -name '*.xz' ! -name '*.zst' ",

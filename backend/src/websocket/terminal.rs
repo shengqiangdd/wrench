@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::{
-        State,
+        Extension, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
@@ -13,6 +13,7 @@ use tracing::{info, warn};
 
 use crate::app_state::AppState;
 use crate::models::{SftpRequest, SftpResponse};
+use crate::space::SpaceCtx;
 use crate::ssh::SshSession;
 use crate::ssh::client::SshConnection;
 
@@ -65,17 +66,33 @@ fn build_docker_output_msg(connection_id: &str, container_id: &str, data: &str) 
     txt(buf)
 }
 
+/// 日志跟随（logtail）的会话键：带空间前缀，避免猜到 id 就能掐掉别人的跟随进程。
+fn logtail_key(space_id: &str, connection_id: &str, log_path: &str) -> String {
+    format!("{}:{}:{}", space_id, connection_id, log_path)
+}
+
 /// Main WebSocket handler — the one the frontend actually connects to.
 /// Dispatches messages by `type` field.
-pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    tracing::info!("[ws] WebSocket upgrade request received, returning 101");
+///
+/// `space` 由中间件（`middleware::auth`）注入：终端走的是 WebSocket，不走 REST
+/// 的那套 `Extension<SpaceCtx>` 校验，但这里建立的 SSH 会话会写进全局连接注册表，
+/// 之后被文件管理（SFTP）、Docker、日志等 REST 接口按 `space_id` 查找。少了这层
+/// 归属，WS 建的会话就是「未归属」，对任何空间都不可见——也就是「终端能连、
+/// 文件管理连不上」的根因。
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
+) -> impl IntoResponse {
+    let space_id = space.id;
+    tracing::info!("[ws] WebSocket upgrade request received, returning 101 (space={})", space_id);
     ws.on_upgrade(move |socket| {
         tracing::info!("[ws] WebSocket upgrade completed, entering message loop");
-        handle_socket(socket, state)
+        handle_socket(socket, state, space_id)
     })
 }
 
-async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
+async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>, space_id: String) {
     info!("WebSocket connected");
 
     // ─── Main message loop ───
@@ -117,18 +134,18 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                         }
                         "connect" => {
                             // Terminal connect: look up SSH session and open shell
-                            handle_terminal_connect(&mut socket, &state, &parsed).await;
+                            handle_terminal_connect(&mut socket, &state, &space_id, &parsed).await;
                             // handle_terminal_connect manages the full I/O loop, then returns
                             // After it returns, the terminal session is done
                             info!("Terminal session ended, back to main loop");
                         }
                         "sftp" => {
                             // SFTP operation: handle via SSH SFTP subsystem
-                            handle_sftp_operation(&mut socket, &state, &parsed).await;
+                            handle_sftp_operation(&mut socket, &state, &space_id, &parsed).await;
                         }
                         "logtail_start" => {
                             // Log tail: runs SSH tail -f and streams output
-                            handle_logtail_start(&mut socket, &state, &parsed).await;
+                            handle_logtail_start(&mut socket, &state, &space_id, &parsed).await;
                             info!("Logtail session ended, back to main loop");
                         }
                         "logtail_stop" => {
@@ -136,7 +153,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                             // cancel any active logtail for this connection
                             let conn_id = parsed.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
                             let log_path = parsed.get("logPath").and_then(|v| v.as_str()).unwrap_or("");
-                            let key = format!("{}:{}", conn_id, log_path);
+                            let key = logtail_key(&space_id, conn_id, log_path);
                             if let Some((_, sender)) = state.active_logtails.remove(&key) {
                                 let _ = sender.send(());
                             }
@@ -144,7 +161,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                         "disconnect" => {
                             let conn_id = parsed.get("connectionId").and_then(|v| v.as_str()).unwrap_or("");
                             if !conn_id.is_empty() {
-                                let _ = state.connections.remove(conn_id);
+                                // 只删自己空间的连接；别人的连接不动（也不报错，避免探测）。
+                                let _ = state.remove_connection_in(&space_id, conn_id);
                                 let ack = serde_json::json!({
                                     "type": "disconnected",
                                     "connectionId": conn_id
@@ -153,7 +171,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                             }
                         }
                         "docker_shell" => {
-                            handle_docker_shell(&mut socket, &state, &parsed).await;
+                            handle_docker_shell(&mut socket, &state, &space_id, &parsed).await;
                             info!("Docker shell session ended, back to main loop");
                         }
                         _ => {
@@ -188,7 +206,12 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 /// Handle "connect" message — open an interactive SSH shell and enter I/O loop.
 /// If no SSH session exists for `connectionId`, creates one from the message
 /// credentials (host, port, username, password/privateKey).
-async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
+async fn handle_terminal_connect(
+    socket: &mut WebSocket,
+    state: &Arc<AppState>,
+    space_id: &str,
+    msg: &serde_json::Value,
+) {
     let connection_id = msg
         .get("connectionId")
         .and_then(|v| v.as_str())
@@ -230,16 +253,13 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
     // 重连失败一次。周期性清理（main.rs，5 分钟一轮）迟早会清掉它，但重连不能等 5 分钟。
     // 判定方式与那轮清理保持一致：is_connected() 为假 → disconnect() 后重建。
     let live_session = {
-        let entry = state.connections.get(&connection_id);
+        let entry = state.connection_in(space_id, &connection_id);
         match entry.and_then(|c| c.session.clone()) {
             Some(s) => {
                 if s.is_connected().await {
                     Some(s)
                 } else {
-                    tracing::info!(
-                        "Discarding dead SSH session before reconnect: {}",
-                        connection_id
-                    );
+                    tracing::info!("Discarding dead SSH session before reconnect: {}", connection_id);
                     s.disconnect().await;
                     None
                 }
@@ -407,7 +427,8 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
             } else {
                 "key".into()
             },
-        );
+        )
+        .with_space(space_id.to_string());
         conn.set_session(session_arc.clone());
         state.connections.insert(connection_id.clone(), conn);
         info!("SSH session created via WebSocket: {}@{}:{}", username, host, port);
@@ -460,6 +481,13 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
     // Removed output batching: each SSH output chunk is sent immediately
     // as a WebSocket message. This eliminates the 16ms flush timer delay
     // that caused noticeable lag during interactive typing and tab completion.
+    //
+    // close_reason：这个会话是**怎么结束**的，前端据此决定要不要自动重连。
+    // - "exit"：远端 shell 正常退出（用户敲了 exit / Ctrl+D，拿到了 ExitStatus）→ 不要自动重开，
+    //   否则用户刚退出就又被塞一个新的 shell。
+    // - "closed"：通道/流断了但没拿到退出码（掉线、远端被重启、网络抖动）→ 值得重连。
+    // - "client"：WebSocket 先断了（浏览器侧网络/页面关闭）→ 由前端 WsClient 自己的退避重连负责。
+    let mut close_reason = "closed";
     loop {
         tokio::select! {
             // Incoming from WebSocket (user keystrokes / resize)
@@ -509,11 +537,13 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
                     }
                     Some(Ok(Message::Close(_))) | None => {
                         info!("Terminal WebSocket closed by client");
+                        close_reason = "client";
                         break;
                     }
                     Some(Ok(Message::Binary(_))) => {}
                     Some(Err(e)) => {
                         warn!("Terminal WebSocket error: {:?}", e);
+                        close_reason = "client";
                         break;
                     }
                     _ => break,
@@ -533,10 +563,12 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
                     }
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
                         info!("SSH channel closed (connection: {})", connection_id);
+                        close_reason = "closed";
                         break;
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         info!("SSH shell exited with status: {}", exit_status);
+                        close_reason = "exit";
                         break;
                     }
                     _ => {}
@@ -547,7 +579,8 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
 
     let disc = serde_json::json!({
         "type": "disconnected",
-        "connectionId": connection_id
+        "connectionId": connection_id,
+        "reason": close_reason
     });
     let _ = socket.send(Message::Text(txt(disc.to_string()))).await;
     info!("Terminal session ended: {}", connection_id);
@@ -560,7 +593,7 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
 /// Parses the incoming message as a typed `SftpRequest`, looks up the
 /// SSH session, delegates to the type-safe `ssh::sftp` functions, and
 /// sends a typed `SftpResponse` — entirely eliminating raw `serde_json::Value`.
-async fn handle_sftp_operation(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
+async fn handle_sftp_operation(socket: &mut WebSocket, state: &Arc<AppState>, space_id: &str, msg: &serde_json::Value) {
     // ── 1. 解析为强类型请求（消除 .get("field") 模式） ──
     let req: SftpRequest = match serde_json::from_value(msg.clone()) {
         Ok(r) => r,
@@ -573,7 +606,7 @@ async fn handle_sftp_operation(socket: &mut WebSocket, state: &Arc<AppState>, ms
 
     // ── 2. 查找 SSH 会话 ──
     let session = {
-        let entry = state.connections.get(&req.connection_id);
+        let entry = state.connection_in(space_id, &req.connection_id);
         entry.and_then(|c| c.session.clone())
     };
 
@@ -717,7 +750,7 @@ async fn handle_sftp_stat(session: &std::sync::Arc<crate::ssh::pool::SshSession>
 
 /// Handle logtail_start message.
 /// Spawns SSH exec `tail -f` and streams output to the WebSocket.
-async fn handle_logtail_start(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
+async fn handle_logtail_start(socket: &mut WebSocket, state: &Arc<AppState>, space_id: &str, msg: &serde_json::Value) {
     let connection_id = msg
         .get("connectionId")
         .and_then(|v| v.as_str())
@@ -742,7 +775,7 @@ async fn handle_logtail_start(socket: &mut WebSocket, state: &Arc<AppState>, msg
         return;
     }
 
-    let key = format!("{}:{}", connection_id, log_path);
+    let key = logtail_key(space_id, &connection_id, &log_path);
 
     // Check if already tailing — if so, stop the old one first
     if let Some((_, old_sender)) = state.active_logtails.remove(&key) {
@@ -751,7 +784,7 @@ async fn handle_logtail_start(socket: &mut WebSocket, state: &Arc<AppState>, msg
 
     // Look up SSH session
     let session = {
-        let entry = state.connections.get(&connection_id);
+        let entry = state.connection_in(space_id, &connection_id);
         entry.and_then(|c| c.session.clone())
     };
 
@@ -887,7 +920,7 @@ async fn handle_logtail_start(socket: &mut WebSocket, state: &Arc<AppState>, msg
 // ========== Docker Shell (docker exec -it via SSH) ==========
 
 /// Handle "docker_shell" message — SSH docker exec -it into a container and enter I/O loop.
-async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg: &serde_json::Value) {
+async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, space_id: &str, msg: &serde_json::Value) {
     let connection_id = msg
         .get("connectionId")
         .and_then(|v| v.as_str())
@@ -940,7 +973,7 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg:
 
     // Look up SSH session
     let session = {
-        let entry = state.connections.get(&connection_id);
+        let entry = state.connection_in(space_id, &connection_id);
         entry.and_then(|c| c.session.clone())
     };
 
@@ -1089,3 +1122,19 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, msg:
 }
 
 // ─── Output batching helper functions ───
+
+#[cfg(test)]
+mod tests {
+    use super::logtail_key;
+
+    /// 跟随日志的会话键必须带空间前缀：否则猜到 connectionId + 路径就能掐掉
+    /// 别人的 tail -f 进程。
+    #[test]
+    fn logtail_key_is_space_scoped() {
+        let a = logtail_key("space-a", "conn-1", "/var/log/syslog");
+        let b = logtail_key("space-b", "conn-1", "/var/log/syslog");
+        assert_ne!(a, b);
+        assert!(a.starts_with("space-a:"));
+        assert_eq!(a, "space-a:conn-1:/var/log/syslog");
+    }
+}

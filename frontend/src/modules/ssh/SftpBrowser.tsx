@@ -430,6 +430,8 @@ function SftpBrowserInner({
   const [entries, setEntries] = useState<SftpEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** 错误是否属于「会话没了」：此时「重试」应该重建会话，而不是重发同一个失效 id */
+  const [sessionLost, setSessionLost] = useState(false)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -524,6 +526,7 @@ function SftpBrowserInner({
         })
         setCurrentPath(dirPath)
         setEntries(files)
+        setSessionLost(false)
         retryCountRef.current = 0
       } catch (err) {
         const msg = (err as Error).message
@@ -543,8 +546,10 @@ function SftpBrowserInner({
           msg.includes('NOT_CONNECTED') ||
           msg.includes('SSH not connected')
         ) {
-          setError('SSH 连接已断开，请在左侧连接列表重新连接')
+          setSessionLost(true)
+          setError('SSH 会话已失效，点「重连」重建连接')
         } else {
+          setSessionLost(false)
           setError(msg)
         }
         retryCountRef.current = 0
@@ -2248,10 +2253,20 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
                 <p className="mt-2 text-xs text-amber-600">无法加载目录</p>
                 <p className="mt-1 max-w-[240px] text-[10px] break-all text-slate-700">{error}</p>
                 <button
-                  onClick={() => listDir(currentPath)}
+                  onClick={() => {
+                    // 会话失效时重试没意义（同一个 id 再发一次还是失效），
+                    // 这里直接重建会话：onConnect 会走「验证 SFTP → 不可用则新建」。
+                    if (sessionLost && _activeConnId && onConnect) {
+                      setError(null)
+                      setSessionLost(false)
+                      onConnect(_activeConnId)
+                    } else {
+                      void listDir(currentPath)
+                    }
+                  }}
                   className="mt-3 flex items-center gap-1 rounded border border-slate-700/50 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-700/50 hover:text-slate-300"
                 >
-                  <RefreshCw size={12} /> 重试
+                  <RefreshCw size={12} /> {sessionLost ? '重连' : '重试'}
                 </button>
               </>
             ) : searchQuery ? (

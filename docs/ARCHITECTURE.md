@@ -519,6 +519,22 @@ Zustand，按业务域拆分（`stores/`）：
 - **空间码** 256 bit 随机，服务端只存 SHA-256，明文只在创建/轮换时下发一次；Cookie 带
   `HttpOnly` + `SameSite=Lax`（HTTPS 下再加 `Secure`），同时支持 `X-Space-Code` 头。
 - 升级前的历史行（`space_id = ''`）由 `legacy` 空间的一次性认领码交接。
+- **内存里的 SSH 连接注册表同样按空间隔离，且 fail-closed**。注册表不是数据库表，
+  漏一个 `space_id` 不会有编译错误，所以这里靠约定 + 用例钉住（`app_state.rs`）：
+  - `connection_in(space, id)` / `connections_in(space)` / `remove_connection_in(space, id)`
+    三条通路统一语义：**调用方空间为空 → 一律拒绝；连接无归属（`space_id = ''`）→ 对任何人都不可见**。
+    不加"空串通吃"的后门——写端一旦漏打空间，后果是「谁都看不见的孤儿」，而不是「谁都能用的公共资源」。
+  - **两条写入通路必须都带归属**：REST（`api/ssh.rs`）与 WebSocket 终端
+    （`websocket/terminal.rs`）。后者经 `ws_handler` 的 `Extension<SpaceCtx>` 拿 `space_id`，
+    新建连接一律 `.with_space(...)`。
+  - **读端也必须查空间**：WS 的 sftp / logtail / docker_shell / disconnect、`api/logs.rs`
+    （含"没带 connectionId 时挑第一个连接"的 fallback）、`api/hosts.rs` 全部走 `connection_in*`。
+    logtail 的会话键带空间前缀，否则猜到 id 就能掐掉别人的跟随进程。
+  - 由此得到的一条判据：**「终端连得上、文件管理连不上」= 读端查空间而写端没打空间**
+    （或反之）——两者用的必须是同一套归属，否则症状就是「会话明明在，就是读不到」。
+- 前端同样不许"猜"会话可用性：`sshSessionManager.getOrCreateSftpSession()` 先
+  `POST /api/sftp/stat` 实测，通了才复用，不通就新建专用 SFTP 会话；不允许仅凭
+  store 里存在 `connected` 的 SSH 会话就把它当 SFTP 会话使。
 - **不提供整库导出**：多人共用下 `/api/system/db-download` 之类的接口等于泄露所有人的凭据，已删除。
 
 ### 7.3 凭据与 Vault
