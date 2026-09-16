@@ -30,6 +30,30 @@
 - **测试**：新增 40 例（`terminal-prefs` / `terminal-links` / `terminal-search`），
   前端合计 **430 passed / 37 files**；tsc / eslint(0 warning) / prettier 全绿。
 
+### 🔌 「重连」点下去失败的真因（后端复用了已断的 SSH 会话）
+
+- **症状**：真机断线后，状态条与「重连」按钮都正常出现，但点「重连」拿到的是
+  `Shell open failed: Channel send error`（后端原文，直接显示在状态条上）。
+- **根因**：`handle_terminal_connect` 里解析会话时**只按 `connectionId` 取注册表里的会话，
+  从不检查它是否还活着**。SSH 断开只是让终端的 I/O 循环退出并给前端发 `disconnected`，
+  注册表里那条会话（handle 已关闭）还会被下一次 `connect` 拿去复用 → `open_shell` 在
+  已关闭的 handle 上发请求。
+  真正会清掉它的是 `main.rs` 那轮「每 5 分钟清理 idle/disconnected 会话」——于是**刚断线
+  就点重连必失败，等过一轮清理再点又"莫名好了"**，属于最难复盘的一类 bug。
+- **修复**（`backend/src/websocket/terminal.rs`）：复用前先 `is_connected()` 判定，为假则
+  `disconnect()` 并落到「新建会话」分支；判定方式/顺序与 `main.rs` 那轮清理保持一致，
+  不新增状态位。
+- **真机复核**：断线 → 点「重连」→ 状态条消失、服务端重新出现该会话、终端可继续输入。
+
+### ⚠️ 验证边界（同一轮记录，避免以后重复踩）
+
+- 桌面右键菜单走的是 React `onContextMenu`，自动化 SDK 只能发左键 → 本轮用**临时插桩**
+  （往容器 `index.html` 注入一个同源小脚本，向 `.xterm-screen` 派发与真实右键**同一个**
+  `contextmenu` 事件）验证，验完即撤（`index.html` 已还原、脚本已删）。
+- `Ctrl+F`（终端内查找）在 Chromium 里是**浏览器级快捷键**，`keyboard.press` 送不到页面，
+  所以本地接管这条分支在自动化里测不到；同一条查找能力改由 `Ctrl+Shift+F` 与右键菜单
+  「查找」两条路复核（三者最终都调 `search.toggleSearch()`）。
+
 
 ### 🧭 画布触顶后给一条出路 + 堆行结论补上游对照与独立基准
 

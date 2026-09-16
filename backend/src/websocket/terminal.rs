@@ -224,10 +224,31 @@ async fn handle_terminal_connect(socket: &mut WebSocket, state: &Arc<AppState>, 
     );
 
     // ─── Resolve or create SSH session ───
-    let session = if let Some(s) = {
+    // 复用已有会话之前必须先确认它真的还活着：SSH 断开后同一个 connectionId 再连
+    // （前端断线状态条上的「重连」）时，注册表里那条会话的 handle 可能已经关闭，
+    // 直接 open_shell 只会拿到 "Shell open failed: Channel send error" —— 用户点一次
+    // 重连失败一次。周期性清理（main.rs，5 分钟一轮）迟早会清掉它，但重连不能等 5 分钟。
+    // 判定方式与那轮清理保持一致：is_connected() 为假 → disconnect() 后重建。
+    let live_session = {
         let entry = state.connections.get(&connection_id);
-        entry.and_then(|c| c.session.clone())
-    } {
+        match entry.and_then(|c| c.session.clone()) {
+            Some(s) => {
+                if s.is_connected().await {
+                    Some(s)
+                } else {
+                    tracing::info!(
+                        "Discarding dead SSH session before reconnect: {}",
+                        connection_id
+                    );
+                    s.disconnect().await;
+                    None
+                }
+            }
+            None => None,
+        }
+    };
+
+    let session = if let Some(s) = live_session {
         s
     } else {
         // No existing session — create one from the message details
