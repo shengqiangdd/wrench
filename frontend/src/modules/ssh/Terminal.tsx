@@ -5,11 +5,23 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
-import { Search, X, ChevronUp, ChevronDown, Copy, AlignLeft } from 'lucide-react'
+import { Search, X, ChevronUp, ChevronDown, Copy, AlignLeft, Maximize2 } from 'lucide-react'
 import { createSessionWsClient, type WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
 import { isAtShellPrompt } from '../../utils/shell-prompt'
 import { buildQuietProgressExportLine, buildQuietProgressUnsetLine } from '../../utils/quiet-env'
+import {
+  CANVAS_GROW_MEMORY_MS,
+  CANVAS_ROWS_FLOOR,
+  clampWindowOffset,
+  followWindowOffset,
+  isLiveBottom,
+  maxWindowOffset,
+  nextCanvasRowsForBlock,
+  panWindow,
+  resolveCanvasRows,
+} from '../../utils/terminal-canvas'
+import { createCursorUpRunState, scanCursorUpRuns } from '../../utils/cursor-up-runs'
 import { on } from '../../services/event-bus'
 
 /** 安全读取剪贴板（WebView 中 navigator.clipboard 可能为 undefined） */
@@ -208,6 +220,23 @@ export default function TerminalView({
     }
   })
   const composePlainRef = useRef(composePlain)
+  // ─── 终端画布开关（逻辑尺寸与可视尺寸解耦，见 utils/terminal-canvas.ts）───
+  // 默认开启：窄视口（手机键盘弹起约 12 行）下把 PTY 逻辑屏抬到 30 行，
+  // 可视区只是这扇屏上的一扇窗（跟随光标、可平移）。这样"整块重画"的进度 UI
+  // 有足够行数原地重绘，不再每帧往 scrollback 丢重复块（实测 44×12 跑 20 服务
+  // compose pull：2383 行 → 0 行）。
+  // 关掉 = 贴屏（逻辑尺寸 = 可视尺寸，即改造前行为），留给 tmux / top 这类
+  // 非备用屏全屏程序，或不喜欢窗口平移的场景。
+  const [canvasOn, setCanvasOn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('wrench_ssh_canvas') !== '0'
+    } catch {
+      return true
+    }
+  })
+  const canvasOnRef = useRef(canvasOn)
+  /** 画布控制器（终端初始化 effect 注入；供芯片 /「回到底部」按钮调用） */
+  const canvasCtlRef = useRef<{ refit: () => void; goLive: () => void } | null>(null)
   // 用户是否已在本次连接里敲过键（自动注入安静进度变量前用它避让）
   const userTypedRef = useRef(false)
   // 自动注入安静进度变量的"等提示符出现"轮询定时器
@@ -368,6 +397,220 @@ export default function TerminalView({
       // 静默降级到默认 unicode 版本
     }
 
+    // ─── 终端画布：逻辑尺寸与可视尺寸解耦（几何层面的根源修复）───
+    // 可视区只是逻辑屏上的一扇窗：窗口偏移 W ∈ [0, 逻辑行数 − 可视行数]，
+    // 渲染时把整块 xterm 元素上移 W 行高，容器 overflow:hidden 裁切。
+    // 为什么这样做见 utils/terminal-canvas.ts 顶部（含 44×12 → 2383 行、
+    // 44×30 → 0 行的实测数据）。
+    let canvasOffset = 0
+    let canvasFollow = true
+    let canvasGrowRows = 0 // 自适应长出来的行数（只增不减）
+    let canvasAlt = false // 备用屏（vim/less/htop）内保持 1:1
+    let canvasRaf = 0
+    let blockRunTotal = 0
+    let blockRunSeenAt = 0
+    let blockRunConfirmations = 0
+    const cursorRunState = createCursorUpRunState()
+
+    /**
+     * 行高（px）。
+     *
+     * ⚠️ 必须用 `.xterm-screen`（它被 xterm 显式设成 `rows × 行高`），**不能**用
+     * `.xterm-viewport`：viewport 是 `position:absolute; inset:0`，高度等于容器高，
+     * 拿它 ÷ 逻辑行数，画布一开到 30 行就会算出「可视行数 = 30」，窗口永远缩不回去。
+     */
+    const canvasCellHeight = (): number => {
+      const screen = container.querySelector('.xterm-screen') as HTMLElement | null
+      if (screen && term.rows > 0 && screen.clientHeight > 0) return screen.clientHeight / term.rows
+      return 0
+    }
+
+    /**
+     * 可视行数 = 容器实际能放下几行。
+     *
+     * 首选 `FitAddon.proposeDimensions().rows`：它由容器像素高 ÷ 行高算出，**与
+     * `term.rows`（可能已被画布抬到 30）无关**，就是"这扇窗有几行"。取不到时退回
+     * 容器高 ÷ 行高（同样与逻辑行数无关）。
+     */
+    let canvasVisibleRowsCache = 0
+    const canvasVisibleRows = (): number => {
+      if (canvasVisibleRowsCache > 0) return canvasVisibleRowsCache
+      const h = container.clientHeight
+      const cellH = canvasCellHeight()
+      if (h <= 0 || cellH <= 0) return Math.max(1, term.rows)
+      return Math.max(1, Math.min(term.rows, Math.floor(h / cellH)))
+    }
+
+    /**
+     * 目标逻辑行数。
+     * 画布关 / 备用屏 / 搜索打开时 = 可视行数（与改造前一致）；
+     * 否则 = max(可视行数, 30 或自适应值)。
+     */
+    const canvasTargetRows = (visibleRows: number): number => {
+      if (!canvasOnRef.current || canvasAlt || showSearchRef.current) return visibleRows
+      return resolveCanvasRows(visibleRows, Math.max(CANVAS_ROWS_FLOOR, canvasGrowRows))
+    }
+
+    /** 跟随光标：让光标落在窗口下沿（Ctrl+L / clear 后提示符回屏顶也看得见） */
+    const canvasFollowOffset = (maxOffset: number, visibleRows: number): number => {
+      const buf = term.buffer.active
+      const cursorRow = buf.viewportY + buf.cursorY - buf.baseY
+      return followWindowOffset(cursorRow, visibleRows, maxOffset)
+    }
+
+    /** 是否处于实时视图（决定自动滚底 + 是否显示「回到底部」按钮） */
+    const syncScrolledUpState = () => {
+      const buf = term.buffer.active
+      const scrolled = !canvasFollow || buf.viewportY < buf.baseY
+      if (scrolled !== userScrolledUpRef.current) {
+        userScrolledUpRef.current = scrolled
+        setUserScrolledUp(scrolled)
+      }
+    }
+
+    /** 把窗口偏移写进 DOM（transform 不参与布局，FitAddon 的计算不受影响） */
+    const canvasPaint = () => {
+      const el = term.element
+      if (!el || disposedRef.current) return
+      const visibleRows = canvasVisibleRows()
+      const maxOffset = maxWindowOffset(term.rows, visibleRows)
+      if (maxOffset <= 0) {
+        canvasOffset = 0
+        canvasFollow = true
+        if (el.style.transform) el.style.transform = ''
+        return
+      }
+      const followOff = canvasFollowOffset(maxOffset, visibleRows)
+      const buf = term.buffer.active
+      if (!canvasFollow) {
+        canvasOffset = clampWindowOffset(canvasOffset, maxOffset)
+        if (
+          isLiveBottom({
+            offset: canvasOffset,
+            followOffset: followOff,
+            viewportY: buf.viewportY,
+            baseY: buf.baseY,
+          })
+        ) {
+          canvasFollow = true
+          canvasOffset = followOff
+        }
+      } else {
+        canvasOffset = followOff
+      }
+      el.style.transform =
+        canvasOffset === 0 ? '' : `translateY(${-canvasOffset * canvasCellHeight()}px)`
+    }
+
+    /** rAF 合并：一帧内多次输出只重排一次 */
+    const canvasSync = () => {
+      if (canvasRaf || disposedRef.current) return
+      canvasRaf = requestAnimationFrame(() => {
+        canvasRaf = 0
+        canvasPaint()
+        syncScrolledUpState()
+      })
+    }
+
+    /**
+     * 平移窗口 / 滚历史。
+     * 往更早内容翻：先平移窗口、平移到顶再滚 scrollback；
+     * 反向：先滚 scrollback、到底再平移窗口 —— 两个方向都连续移动，且最老历史可达。
+     */
+    const canvasPan = (deltaLines: number) => {
+      if (deltaLines === 0) return
+      const maxOffset = maxWindowOffset(term.rows, canvasVisibleRows())
+      const buf = term.buffer.active
+      const step = panWindow({
+        offset: canvasOffset,
+        deltaLines,
+        maxOffset,
+        viewportY: buf.viewportY,
+        baseY: buf.baseY,
+      })
+      canvasFollow = false
+      canvasOffset = step.offset
+      if (step.bufferScroll !== 0) term.scrollLines(step.bufferScroll)
+      canvasSync()
+    }
+
+    /** 回到实时视图：跟随光标 + 贴底 */
+    const canvasGoLive = () => {
+      canvasFollow = true
+      try {
+        term.scrollToBottom()
+      } catch {
+        /* ignore */
+      }
+      canvasSync()
+    }
+
+    /** fit：逻辑行数 = max(可视行数, 画布行数)；列数依旧交给 FitAddon（与改造前一致） */
+    const canvasRefit = () => {
+      const c = containerRef.current
+      if (!c || c.offsetWidth === 0 || c.offsetHeight === 0 || disposedRef.current) return
+      if (gen !== genRef.current) return
+      let proposed: { cols: number; rows: number } | undefined
+      try {
+        proposed = fitAddon.proposeDimensions()
+      } catch {
+        proposed = undefined
+      }
+      if (!proposed || !Number.isFinite(proposed.cols) || proposed.cols < 1) return
+      if (!Number.isFinite(proposed.rows) || proposed.rows < 1) return
+      // 先记下"可视行数"（此刻 proposed.rows 就是窗高），再按画布行数 resize
+      canvasVisibleRowsCache = Math.max(1, Math.floor(proposed.rows))
+      try {
+        term.resize(proposed.cols, canvasTargetRows(proposed.rows))
+      } catch {
+        /* ignore */
+      }
+      canvasSync()
+    }
+
+    /**
+     * 自适应增高：观察到"整块重画"的块高超过当前画布 → 把画布长高。
+     * 同一块高连续出现两次才动手（避免一次性异常序列触发 resize），封顶且只增不减。
+     */
+    const canvasObserveBlock = (runTotal: number) => {
+      if (!canvasOnRef.current || canvasAlt || runTotal <= 0) return
+      const now = Date.now()
+      if (
+        blockRunTotal > 0 &&
+        Math.abs(blockRunTotal - runTotal) <= 1 &&
+        now - blockRunSeenAt <= CANVAS_GROW_MEMORY_MS
+      ) {
+        blockRunConfirmations += 1
+      } else {
+        blockRunConfirmations = 1
+      }
+      blockRunTotal = runTotal
+      blockRunSeenAt = now
+      const next = nextCanvasRowsForBlock({
+        currentRows: term.rows,
+        runTotal,
+        confirmations: blockRunConfirmations,
+      })
+      if (next > 0) {
+        canvasGrowRows = next
+        canvasRefit()
+      }
+    }
+
+    canvasCtlRef.current = { refit: canvasRefit, goLive: canvasGoLive }
+
+    // 备用屏（vim / less / htop / fzf 的 smcup）自动 1:1：全屏程序按可视尺寸渲染，
+    // 行为与改造前一致，不受画布影响。
+    const bufferChangeDisposable = term.buffer.onBufferChange((buf) => {
+      const nextAlt = buf.type === 'alternate'
+      if (nextAlt === canvasAlt) return
+      canvasAlt = nextAlt
+      // 回调发生在 term.write 解析过程中，延后一帧再 resize，避免写入中途重入
+      requestAnimationFrame(() => {
+        if (!disposedRef.current) canvasRefit()
+      })
+    })
+
     // ─── 阻止终端容器的默认浏览器行为 ───
     // 长按方向键时浏览器可能触发右键菜单或文本选择
     const preventContextMenu = (e: Event) => e.preventDefault()
@@ -387,13 +630,9 @@ export default function TerminalView({
     // ─── 自动滚动管理：检测用户是否在查看历史 ───
     const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null
     const checkScrollPosition = () => {
-      if (!viewport) return
-      const atBottom = viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 2
-      const scrolledUp = !atBottom
-      if (scrolledUp !== userScrolledUpRef.current) {
-        userScrolledUpRef.current = scrolledUp
-        setUserScrolledUp(scrolledUp)
-      }
+      // 画布开启时"是否在实时视图"由窗口状态决定（见 syncScrolledUpState），
+      // 这里只负责把 viewport 自身滚动（桌面滚轮 / 滚动条）也纳入判断。
+      syncScrolledUpState()
     }
     viewport?.addEventListener('scroll', checkScrollPosition)
 
@@ -409,23 +648,25 @@ export default function TerminalView({
     let momentumRafId = 0
     let isScrolling = false
 
-    /** 动态获取当前行高（像素） */
+    /**
+     * 动态获取当前行高（像素）。
+     * ⚠️ 用 canvasCellHeight()（`.xterm-screen` 像素高 ÷ 逻辑行数）。
+     * 不能用 `.xterm-viewport`：画布开启时它等于容器高，÷30 会把行高算小 2.5 倍，
+     * 触摸滚动就会快 2.5 倍。
+     */
     const getRowHeight = (): number => {
-      const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null
-      if (viewport && term.rows > 0) {
-        return viewport.clientHeight / term.rows
-      }
-      return 16 // fallback
+      const cell = canvasCellHeight()
+      return cell > 0 ? cell : 16
     }
 
-    /** 按像素滚动（支持亚行精度） */
+    /** 按像素滚动（支持亚行精度）：画布开启时优先平移窗口，到顶再滚 scrollback */
     const scrollByPixels = (px: number) => {
       const rowHeight = getRowHeight()
       touchAccumulator += px
       const linesToScroll = Math.trunc(touchAccumulator / rowHeight)
       if (linesToScroll !== 0) {
-        // 手指下滑 → px 正 → 查看历史 → scrollLines 负值
-        term.scrollLines(-linesToScroll)
+        // 手指下滑 → px 正 → 查看更早内容 → deltaLines 取负
+        canvasPan(-linesToScroll)
         touchAccumulator -= linesToScroll * rowHeight
       }
     }
@@ -575,14 +816,7 @@ export default function TerminalView({
 
     // 延迟执行 fit 确保容器已渲染
     const fitTimer = setTimeout(() => {
-      const c = containerRef.current
-      if (c && c.offsetWidth > 0 && c.offsetHeight > 0 && gen === genRef.current) {
-        try {
-          fitAddon.fit()
-        } catch {
-          /* ignore */
-        }
-      }
+      canvasRefit()
     }, 50)
 
     terminalRef.current = term
@@ -627,7 +861,12 @@ export default function TerminalView({
     const writePty = (chunk: string) => {
       const ready = ansiBuf.push(chunk)
       if (!ready || disposedRef.current) return
+      // 探测"整块重画"（连续回移光标累计行数 = 块高 − 1）：块高超过画布就把画布长高。
+      // 只做识别，不改写输出 —— 误判最坏是多一次 resize，绝不丢数据。
+      const runTotal = scanCursorUpRuns(ready, cursorRunState)
+      if (runTotal > 0) canvasObserveBlock(runTotal)
       term.write(ready, () => {
+        canvasSync()
         if (!userScrolledUpRef.current && !disposedRef.current) {
           term.scrollToBottom()
         }
@@ -687,14 +926,7 @@ export default function TerminalView({
             connectedRef.current = true
             // SSH 连接成功后，执行 fit 调整终端尺寸
             setTimeout(() => {
-              const c = containerRef.current
-              if (c && c.offsetWidth > 0 && c.offsetHeight > 0 && gen === genRef.current) {
-                try {
-                  fitAddon.fit()
-                } catch {
-                  /* ignore */
-                }
-              }
+              if (gen === genRef.current) canvasRefit()
             }, 50)
             return
           }
@@ -732,7 +964,8 @@ export default function TerminalView({
             ansiBuf.reset()
             // 清除 [连接中] 等状态行，让 SSH banner/prompt 从第一行开始
             term.clear()
-            term.scrollToBottom()
+            if (canvasCtlRef.current) canvasCtlRef.current.goLive()
+            else term.scrollToBottom()
           }
           term.focus()
           onConnectedRef.current?.()
@@ -1032,11 +1265,7 @@ export default function TerminalView({
         if (c.offsetWidth === lastFitWidth && c.offsetHeight === lastFitHeight) return
         lastFitWidth = c.offsetWidth
         lastFitHeight = c.offsetHeight
-        try {
-          fitAddon.fit()
-        } catch {
-          /* ignore */
-        }
+        canvasRefit()
       })
     })
     observer.observe(container)
@@ -1083,6 +1312,17 @@ export default function TerminalView({
       document.removeEventListener('selectionchange', handleSelectionChange)
       // 移除滚动位置监听器
       viewport?.removeEventListener('scroll', checkScrollPosition)
+      // 清理画布：待执行的 rAF / 备用屏监听 / 控制器引用
+      if (canvasRaf) {
+        cancelAnimationFrame(canvasRaf)
+        canvasRaf = 0
+      }
+      try {
+        bufferChangeDisposable.dispose()
+      } catch {
+        /* ignore */
+      }
+      canvasCtlRef.current = null
       // 清理输出追踪定时器
       if (outputTracker.checkTimer) {
         clearTimeout(outputTracker.checkTimer)
@@ -1270,6 +1510,31 @@ export default function TerminalView({
     }
   }
 
+  /**
+   * 切换「终端画布」：逻辑尺寸与可视尺寸解耦（见 utils/terminal-canvas.ts）。
+   *
+   * 开：窄视口下把 PTY 逻辑屏抬到 30 行，可视区只是这扇屏的一扇窗（跟随光标、
+   *     可上下平移）。整块重画的进度 UI 因此有足够行数原地重绘，不再每帧往
+   *     scrollback 丢重复块。
+   * 关：贴屏（逻辑尺寸 = 可视尺寸），即改造前的行为。
+   */
+  const toggleCanvas = () => {
+    const next = !canvasOn
+    setCanvasOn(next)
+    canvasOnRef.current = next
+    try {
+      localStorage.setItem('wrench_ssh_canvas', next ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+    canvasCtlRef.current?.refit()
+    showHint(
+      next
+        ? '画布开启：逻辑屏抬到 30 行，进度块原地重绘（可视区跟随光标，可上下平移）'
+        : '已贴屏：逻辑尺寸 = 可视尺寸（改造前行为）',
+    )
+  }
+
   return (
     <div className={`group relative flex flex-col ${className}`} style={{ minHeight: 0 }}>
       {/* 搜索面板 */}
@@ -1369,6 +1634,28 @@ export default function TerminalView({
         </button>
         <button
           onPointerDown={(e) => {
+            // 与 plain 芯片一致：移动端用 pointerdown，避免合成 click 被吞
+            e.preventDefault()
+            e.stopPropagation()
+            toggleCanvas()
+          }}
+          className={`pointer-events-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] shadow-lg backdrop-blur-sm transition-all duration-150 ${
+            canvasOn
+              ? 'bg-sky-600/90 text-white hover:bg-sky-500'
+              : 'bg-slate-800/90 text-slate-400 hover:bg-slate-700 hover:text-white'
+          }`}
+          style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
+          title={
+            canvasOn
+              ? '终端画布：窄视口下把逻辑屏抬到 30 行，可视区只是这扇屏上的窗（跟随光标、可上下平移），整块重画的进度 UI 原地重绘不堆叠 —— 点击改为贴屏'
+              : '贴屏模式：逻辑尺寸 = 可视尺寸（改造前行为）。点击启用画布，解决窄视口下进度块重复堆叠'
+          }
+        >
+          <Maximize2 size={12} />
+          <span>画布</span>
+        </button>
+        <button
+          onPointerDown={(e) => {
             e.preventDefault()
             e.stopPropagation()
             const next = !toolbarCollapsed
@@ -1417,7 +1704,9 @@ export default function TerminalView({
           onClick={() => {
             userScrolledUpRef.current = false
             setUserScrolledUp(false)
-            terminalRef.current?.scrollToBottom()
+            // 画布开启时"回到底部"= 窗口跟随光标 + 贴底（见 canvasGoLive）
+            if (canvasCtlRef.current) canvasCtlRef.current.goLive()
+            else terminalRef.current?.scrollToBottom()
           }}
           className={`absolute right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-slate-700/90 text-slate-300 shadow-lg backdrop-blur-sm transition-all hover:bg-slate-600 hover:text-white md:bottom-6 ${
             toolbarCollapsed ? 'bottom-6' : 'bottom-28'
