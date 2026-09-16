@@ -13,20 +13,15 @@
 
 import {
   AuthRequiredError,
+  applyAuthHeaders,
   captureSpaceCode,
-  getSpaceCode,
-  getToken,
   handleInvalidSpace,
+  isAuthDisabled,
   notifyAuthRequired,
 } from './auth'
 
 /** 无需注入令牌的公开端点 */
-const PUBLIC_PATHS = new Set([
-  '/api/health',
-  '/api/auth/status',
-  '/api/auth/login',
-  '/api/auth/setup',
-])
+const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/status', '/api/auth/login'])
 
 /** 安装全局 fetch 拦截器，返回取消函数 */
 export function initAuthFetch(): () => void {
@@ -56,14 +51,9 @@ export function initAuthFetch(): () => void {
     }
 
     try {
-      const token = await getToken()
       const headers = new Headers(request.headers)
-      headers.set('Authorization', `Bearer ${token}`)
-      // 空间码：服务端据此定位私有空间（cookie 之外的第二通道）
-      const spaceCode = getSpaceCode()
-      if (spaceCode) {
-        headers.set('X-Space-Code', spaceCode)
-      }
+      // 令牌 + 空间码：门关着时不带令牌（服务端也不校验），空间码照旧带上
+      await applyAuthHeaders(headers)
 
       const authRequest = new Request(request, { headers })
       const resp = await originalFetch(authRequest)
@@ -72,7 +62,7 @@ export function initAuthFetch(): () => void {
       captureSpaceCode(resp)
       handleInvalidSpace(resp)
 
-      if (resp.status === 401) {
+      if (resp.status === 401 && !isAuthDisabled()) {
         notifyAuthRequired(`401 from ${path}`)
       }
 

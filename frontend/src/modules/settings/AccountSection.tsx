@@ -20,6 +20,7 @@ import {
   getSession,
   getSpaceCode,
   getSpaceInfo,
+  isAuthDisabled,
   logout,
   reloadPage,
   rotateSpaceCode,
@@ -35,6 +36,8 @@ function fmtTime(value: string): string {
 
 export default function AccountSection() {
   const session = getSession()
+  /** 部署侧关掉了入口口令：没有登录/退出/改口令这些事 */
+  const authOff = isAuthDisabled()
   const [confirming, setConfirming] = useState(false)
 
   const expiryText = session?.exp
@@ -61,43 +64,60 @@ export default function AccountSection() {
         </h3>
 
         <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs text-slate-400">
-            <ShieldAlert size={14} className="text-emerald-500" />
-            <span>已登录（服务端校验）</span>
-          </div>
-          <p className="mb-4 text-[11px] text-slate-500">
-            当前会话有效期至 <span className="text-slate-300">{expiryText}</span>。
-            令牌由入口口令签发；修改口令后所有已签发令牌立即失效，需要重新登录。
-          </p>
-
-          {confirming ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => void handleLogout()}
-                className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-              >
-                确认退出
-              </button>
-              <button
-                onClick={() => setConfirming(false)}
-                className="rounded border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/50"
-              >
-                取消
-              </button>
-            </div>
+          {authOff ? (
+            <>
+              <div className="mb-3 flex items-center gap-2 text-xs text-slate-400">
+                <ShieldAlert size={14} className="text-amber-500" />
+                <span>未设入口口令 — 开放访问</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                部署侧关掉了入口口令（
+                <code className="text-slate-400">WRENCH_REQUIRE_AUTH=off</code>
+                ），访问者零输入直进：任何能访问本地址的人都能使用它（能连到哪些机器由服务端出口
+                白名单决定）。数据仍按浏览器隔离 —— 每个人只看到自己的空间。
+              </p>
+            </>
           ) : (
-            <button
-              onClick={() => setConfirming(true)}
-              className="flex items-center gap-2 rounded border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/50"
-            >
-              <LogOut size={14} />
-              退出登录
-            </button>
+            <>
+              <div className="mb-3 flex items-center gap-2 text-xs text-slate-400">
+                <ShieldAlert size={14} className="text-emerald-500" />
+                <span>已登录（服务端校验）</span>
+              </div>
+              <p className="mb-4 text-[11px] text-slate-500">
+                当前会话有效期至 <span className="text-slate-300">{expiryText}</span>。
+                令牌由入口口令签发；修改口令后所有已签发令牌立即失效，需要重新登录。
+              </p>
+
+              {confirming ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void handleLogout()}
+                    className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                  >
+                    确认退出
+                  </button>
+                  <button
+                    onClick={() => setConfirming(false)}
+                    className="rounded border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/50"
+                  >
+                    取消
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirming(true)}
+                  className="flex items-center gap-2 rounded border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/50"
+                >
+                  <LogOut size={14} />
+                  退出登录
+                </button>
+              )}
+            </>
           )}
         </div>
       </section>
 
-      <PasswordSection />
+      {!authOff && <PasswordSection />}
       <SpaceSection />
     </div>
   )

@@ -94,25 +94,29 @@ pub struct AppState {
 - 复用 SFTP：`session.get_sftp_session()` 缓存 `SftpSession`
 - 清理：主循环每 5 分钟扫描 `is_idle_async()` + `is_connected()`，空闲/断开则 `disconnect()` 并从 `connections` 移除
 
-### 5.3 认证流程（服务端口令 + 分层 scope）
+### 5.3 认证流程（门可整体关闭 + 分层 scope）
 
 ```
-首次设置：POST /api/auth/setup { password } + X-Setup-Token（启动日志里的一次性令牌）
-          → 口令以 PBKDF2-HMAC-SHA256（60 万次迭代 + 随机盐）落库 app_settings，明文不落盘
+门：WRENCH_REQUIRE_AUTH（默认 on）
+  · off  → 中间件跳过整层令牌校验（也不校验可能残留的旧令牌），注入匿名会话身份 → 零输入直进
+  · on   → 需要口令，口令只能由部署侧提供：
+           ① 数据库哈希 app_settings.door_password_hash（PBKDF2-HMAC-SHA256，60 万次迭代 + 随机盐）
+           ② WRENCH_AUTH_PASSWORD / WRENCH_AUTH_PASSWORD_FILE
+           两者都没有 → 受保护接口一律 503（fail-closed，**没有「网页首次设置」这条路**）
 登录：POST /api/auth/login { password, remember } → 会话 JWT（scope=api+ws；7 天 / remember 30 天）
-      · 未走网页设置时，口令来自 WRENCH_AUTH_PASSWORD（或 WRENCH_AUTH_PASSWORD_FILE）
-      · 登录接口独立限流（8 次/分钟/IP）
+      · 登录接口独立限流（8 次/分钟/IP）；门关着时该接口返回 400
 REST API：authedFetch(url, opts) → Authorization: Bearer <会话 JWT> + X-Space-Code <空间码>
-WebSocket：POST /api/ws-token（需会话）→ 短时 token（scope=ws，10 分钟，绑定 space_id）
+          （门关着时不带 Authorization；空间码照旧带）
+WebSocket：POST /api/ws-token → 短时 token（scope=ws，10 分钟，绑定 space_id）
            buildWsUrl("/ws") → wss://host/ws?token=<短时 token>
 全局拦截：initAuthFetch.ts 代理 window.fetch，/api/* 自动加头，
-          跳过 /api/health、/api/auth/status、/api/auth/login、/api/auth/setup
-失效：401 → 前端清会话回登录页；400 + X-Space-Invalid → 清空间码并刷新（自动建空空间）
+          跳过 /api/health、/api/auth/status、/api/auth/login
+失效：401 → 前端清会话回登录页（门关着时不弹登录框）；400 + X-Space-Invalid → 清空间码并刷新（自动建空空间）
 ```
 
 中间件按路径校验 scope：`/ws*` 需 `ws`，其余 REST 需 `api`（`backend/src/middleware/auth.rs`），
-随后解析/创建访问者空间并注入 `SpaceCtx`（`backend/src/space.rs`）。未配置口令、或数据库不可用时
-受保护接口一律 503（fail-closed）。
+随后解析/创建访问者空间并注入 `SpaceCtx`（`backend/src/space.rs`）。**空间隔离与门无关**：
+门关着时照样每人一个私有空间。门开着而未配置口令、或数据库不可用时，受保护接口一律 503（fail-closed）。
 
 ### 5.4 空间隔离（多人共用，无角色）
 

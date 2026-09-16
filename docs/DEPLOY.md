@@ -105,7 +105,8 @@ cp .env.example .env
 # 编辑 .env 设置以下变量：
 # JWT_SECRET=your-jwt-secret           # 令牌签名密钥（必填，用于认证和 Vault 加密）
 # DATABASE_URL=wrench.db             # SQLite 数据库路径
-# WRENCH_AUTH_PASSWORD=...           # 登录口令（可选 legacy 方式；留空则用网页「首次设置」+ 启动日志里的 setup token）
+# WRENCH_REQUIRE_AUTH=on              # 门开关：on（默认）= 要口令；off = 访问者零输入直进
+# WRENCH_AUTH_PASSWORD=...             # 入口口令（由部署侧提供；门开着却没给 → 受保护接口一律 503）
 # BRIDGE_HOST=0.0.0.0                # 监听地址：注意变量名是 BRIDGE_HOST，不是 HOST
 # BRIDGE_PORT=3001                   # 监听端口：注意变量名是 BRIDGE_PORT，不是 PORT
 ```
@@ -215,7 +216,8 @@ server {
 | `BRIDGE_HOST` | `0.0.0.0` | 监听地址（注意：不是 `HOST`） |
 | `DATABASE_URL` | `无` (Docker 内默认 `/data/wrench.db`) | SQLite 数据库路径 |
 | `JWT_SECRET` | 自动生成 | 用于令牌签发和 Vault 加密密钥派生 |
-| `WRENCH_AUTH_PASSWORD` | 无 | **可选的 legacy 入口口令**。推荐留空：首次访问时网页会显示「首次设置」，用启动日志里的一次性 `setup token` 设置口令（PBKDF2 哈希落库，明文不写文件）。设置该变量则以它为准，改这个变量会让所有旧令牌立即失效 |
+| `WRENCH_REQUIRE_AUTH` | `on` | 门开关。`off` = **不设门**：访问者零输入直进（没有登录界面，也不要求任何口令）；此时空间隔离照旧（每个浏览器一个私有空间），机器能力请靠 `WRENCH_EGRESS_ALLOW` 收敛。拼错的值一律按 `on` 处理 |
+| `WRENCH_AUTH_PASSWORD` | 无 | **入口口令，由部署侧提供**（没有「网页首次设置」这条路）。设置后以 PBKDF2 哈希落库（明文不写文件），改它会让所有旧令牌立即失效。门开着却没给口令 → 受保护接口一律 503（fail-closed） |
 | `WRENCH_AUTH_PASSWORD_FILE` | 无 | 从文件读取登录口令（优先级低于环境变量）。不设置时回退到数据库同目录的 `auth_password` —— 只读，不会自动创建 |
 | `WRENCH_EGRESS_ALLOW` | 空 | **这台机器允许主动连到哪里**（逗号分隔的 `IP[:端口]` / `CIDR[:端口]`，只接受 IP/CIDR）。留空 = 内网/环回/链路本地/云元数据/保留地址一律拒绝。例：`192.168.1.5:22,192.168.1.6:22`。**条目越窄越安全**：每个条目都是「任何人打开网页后可以用来发起连接的目标」，不要整段放开内网 |
 | `WRENCH_EGRESS_STRICT` | `0` | 置 `1` 时公网 TCP 目标也必须在 `WRENCH_EGRESS_ALLOW` 里（只管理固定几台主机时更严） |
@@ -232,14 +234,18 @@ server {
 | `GITHUB_TOKEN` | 无 | GitHub API Token（插件市场功能） |
 | `RUST_LOG` | `info` | Rust 日志级别 |
 
-> **首次设置（推荐路径）**：不设 `WRENCH_AUTH_PASSWORD`，启动后打开网页会看到「首次设置」，
-> 需要从启动日志里取一次性 `setup token`：
+> **入口口令由部署侧决定，访问者永远不用设口令。** 两种姿势：
 >
 > ```bash
-> docker logs <容器名> 2>&1 | grep -i "setup token"
+> # ① 要口令门：在这里给出口令（推荐 openssl rand -base64 32）
+> WRENCH_AUTH_PASSWORD='...'
+> # ② 不要口令门：零输入直进
+> WRENCH_REQUIRE_AUTH=off
 > ```
 >
-> 用该令牌在网页里设置入口口令即可（口令哈希落库，认领后该令牌不再需要）。
+> 门开着却没给口令 → 网页显示「等待部署侧配置」，所有受保护接口 503（fail-closed）。
+> 之所以不再有「网页首次设置」，是因为它要求访问者先去容器日志里翻一次性令牌 ——
+> 那正是「不人性化」的来源。
 
 ---
 

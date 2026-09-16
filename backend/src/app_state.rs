@@ -23,8 +23,6 @@ pub struct AppState {
     pub active_logtails: DashMap<String, tokio::sync::oneshot::Sender<()>>,
     /// 门（door）运行时状态：门户口令与令牌版本。
     pub auth: RwLock<AuthRuntime>,
-    /// 首次设置口令用的一次性令牌（仅在门户口令未设置时有效）。
-    pub setup_token: String,
     /// 服务器启动时间，用于计算 uptime
     pub start_time: std::time::Instant,
 }
@@ -32,9 +30,12 @@ pub struct AppState {
 /// 门的运行时状态。
 ///
 /// 口令来源优先级（高 → 低）：
-/// 1. 数据库 `app_settings.door_password_hash`（网页里自设/改过口令）
-/// 2. 环境变量 `WRENCH_AUTH_PASSWORD`（legacy 部署，二进制启动时写入）
-/// 3. 都没有 → setup 模式：受保护接口一律 503，只放行 `/api/auth/status` 与 `/api/auth/setup`
+/// 1. 数据库 `app_settings.door_password_hash`（网页里改过口令）
+/// 2. 环境变量 `WRENCH_AUTH_PASSWORD` / 口令文件（部署侧提供）
+/// 3. 都没有 → 门开着但没有口令 → 受保护接口一律 503（fail-closed）
+///
+/// 门的开关是 [`crate::config::AppConfig::require_auth`]：`off` 时完全不校验令牌
+/// （访客零输入直进），此时本结构只用来签发 WS 令牌的版本号。
 pub struct AuthRuntime {
     /// PBKDF2 哈希串；`None` 表示数据库里还没设过口令
     pub door_hash: Option<String>,
@@ -199,19 +200,20 @@ impl AppState {
             tracing::warn!("[space] legacy data handover not prepared: {err}");
         }
 
-        // 首次设置口令用的一次性令牌：环境变量优先，否则随机生成并打到启动日志
+        // 门的开关状态：设门但没口令 → fail-closed（503），日志里说清怎么配；
+        // 不设门 → 明确告警，因为这意味着「任何能访问本地址的人都能把这里当跳板」。
         //
-        // 用 `eprintln!` 而不是 `tracing`：这条日志必须在任何日志级别设置下都可见，
-        // 它是「首次设置」唯一的入口（生产上 RUST_LOG 配错一次就会永久锁死部署）。
-        let setup_token = match std::env::var("WRENCH_SETUP_TOKEN") {
-            Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
-            _ => crate::space::generate_code(),
-        };
-        let door_configured = auth.door_hash.is_some() || auth.env_password.is_some();
-        if door_configured {
-            eprintln!("🔐 入口口令已配置（数据库哈希或环境变量），无需首次设置令牌。");
+        // 用 `eprintln!` 而不是 `tracing`：这两条必须在任何日志级别下都可见。
+        if !config.require_auth {
+            eprintln!("⚠️  入口口令已关闭（WRENCH_REQUIRE_AUTH=off）：访客零输入直进。");
+            eprintln!("   任何能访问本服务地址的人都能把它当 SSH 客户端使用 —— 机器能力请靠出口白名单");
+            eprintln!("   （WRENCH_EGRESS_ALLOW）收敛；每个浏览器仍有自己的私有空间（数据互不可见）。");
+        } else if auth.configured() {
+            eprintln!("🔐 入口口令已启用（来源：{}），未登录访客需先输入口令。", auth.source());
         } else {
-            eprintln!("🔑 首次设置令牌（在网页「首次设置」里填入，设置口令后即失效）：{setup_token}");
+            eprintln!("⛔ 没有可用的入口口令：受保护接口将一律返回 503（fail-closed）。");
+            eprintln!("   部署侧设置 WRENCH_AUTH_PASSWORD（或 WRENCH_AUTH_PASSWORD_FILE）后重启即可；");
+            eprintln!("   若本实例不需要口令门，设置 WRENCH_REQUIRE_AUTH=off 让访客零输入直进。");
         }
 
         Ok(Self {
@@ -223,7 +225,6 @@ impl AppState {
             marketplace_cache: RwLock::new(None),
             active_logtails: DashMap::new(),
             auth: RwLock::new(auth),
-            setup_token,
             db,
             jwt_service: RwLock::new(JwtService::from_secret(&config.jwt_secret).ok()),
             config,
@@ -435,6 +436,7 @@ mod tests {
             database_url: None, // memory-only mode for tests
             log_level: "warn".into(),
             auth_password: Some("test-password".into()),
+            require_auth: true,
         }
     }
 

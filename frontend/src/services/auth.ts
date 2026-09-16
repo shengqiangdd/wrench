@@ -9,6 +9,10 @@
  *      降低查询串泄露（浏览器历史 / 代理日志）的影响
  *   4. 令牌过期或被服务端吊销（例如口令已修改）→ 401 → 触发登录界面
  *
+ * 例外：服务端可把门整体关掉（`WRENCH_REQUIRE_AUTH=off`）。此时上面的令牌环节全部
+ * 短路 —— 不显示登录界面、不要求口令，访客零输入直进；**数据隔离照旧**（每个浏览器
+ * 仍有自己的私有空间，靠空间码识别，与门无关）。
+ *
  * 安全约束：本文件从不保存口令，只保存令牌；口令只发送给 /api/auth/login。
  */
 
@@ -46,6 +50,14 @@ let _sessionLoaded = false
 let _wsToken: string | null = null
 let _wsTokenExp = 0
 let _wsTokenPromise: Promise<string> | null = null
+/**
+ * 服务端是否关掉了门（`WRENCH_REQUIRE_AUTH=off`）。
+ *
+ * AuthGate 启动时用 `/api/auth/status` 的结果写入。为 true 时：登录/首次设置界面
+ * 完全不出现，所有「取令牌」的路径短路 —— 访客零输入直接进入（每个浏览器仍有
+ * 自己的私有空间，数据隔离不依赖门）。
+ */
+let _authDisabled = false
 
 // ── 会话存取 ──
 
@@ -76,6 +88,16 @@ export function getSession(): StoredSession | null {
 
 export function isAuthenticated(): boolean {
   return getSession() !== null
+}
+
+/** 服务端未设入口口令：访客零输入直进（没有登录环节） */
+export function isAuthDisabled(): boolean {
+  return _authDisabled
+}
+
+/** 记录服务端的门开关状态（AuthGate 启动时调用一次） */
+export function setAuthDisabled(value: boolean): void {
+  _authDisabled = value
 }
 
 function saveSession(token: string, expiresInSeconds: number): void {
@@ -244,10 +266,13 @@ export async function login(password: string, remember: boolean = false): Promis
   saveSession(token, expiresIn)
 }
 
-/** 认证服务端状态：判断该显示「首次设置」还是「登录」 */
+/** 认证服务端状态：判断该显示「登录」「部署侧需配置」还是直接进入 */
 export interface AuthStatus {
+  /** 门户口令是否已配置（部署侧提供或网页改过） */
   configured: boolean
-  setupRequired: boolean
+  /** 门是否启用；false = 零输入直进，没有口令界面 */
+  authRequired: boolean
+  /** 口令来源：`database` / `env` / `none` / `disabled` */
   source: string
   canChangePassword: boolean
   rotationLogsOutEveryone: boolean
@@ -263,57 +288,12 @@ export async function authStatus(): Promise<AuthStatus> {
   const payload = data.data ?? data
   return {
     configured: Boolean(payload.configured),
-    setupRequired: Boolean(payload.setupRequired),
+    // 旧版后端没有这个字段：缺省按「要口令」处理，绝不因为字段缺失就把门敞开
+    authRequired: payload.authRequired ?? true,
     source: payload.source ?? 'none',
     canChangePassword: payload.canChangePassword ?? true,
     rotationLogsOutEveryone: payload.rotationLogsOutEveryone ?? true,
   }
-}
-
-/**
- * 首次设置门户口令（仅在服务端尚未配置口令时可用）。
- *
- * 需要部署者从启动日志里取得的一次性 `setup token`；设置成功后服务端直接返回会话。
- *
- * @param password 新口令（≥8 位，且至少包含两类字符）
- * @param setupToken 启动日志里打印的一次性令牌
- */
-export async function setupPassword(password: string, setupToken: string): Promise<void> {
-  const resp = await fetch('/api/auth/setup', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Setup-Token': setupToken,
-    },
-    body: JSON.stringify({ password }),
-  })
-
-  if (resp.status === 429) {
-    throw new Error('尝试次数过多，请稍等一分钟后再试')
-  }
-  if (resp.status === 401) {
-    throw new Error('启动令牌无效，请检查服务端日志里的 setup token')
-  }
-  if (resp.status === 400) {
-    const msg = await resp.json().catch(() => null)
-    throw new Error((msg as { msg?: string })?.msg ?? '口令不符合强度要求')
-  }
-  if (!resp.ok) {
-    throw new Error(`设置失败 (${resp.status})`)
-  }
-
-  const data = (await resp.json()) as {
-    token?: string
-    expiresIn?: number
-    data?: { token?: string; expiresIn?: number }
-  }
-  const token = data.token ?? data.data?.token
-  const expiresIn = data.expiresIn ?? data.data?.expiresIn ?? 3600
-  if (!token) {
-    throw new Error('设置响应中缺少令牌')
-  }
-  saveSession(token, expiresIn)
 }
 
 /** 修改门户口令（会自动使所有人重新登录；各人的空间数据不受影响） */
@@ -400,11 +380,13 @@ export function logout(): void {
 /** 校验本地会话是否仍被服务端接受（不产生副作用） */
 export async function verifySession(): Promise<boolean> {
   const session = getSession()
-  if (!session) return false
+  // 门关着时不需要会话：直接问服务端「我是谁」，顺带把首访的空间码领回来
+  if (!session && !isAuthDisabled()) return false
   try {
-    const resp = await fetch('/api/auth/me', {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${session.token}` },
-    })
+    const headers = new Headers({ Accept: 'application/json' })
+    // 门关着时不带令牌（带着旧令牌只会让人以为「非登录不可」）
+    if (session && !isAuthDisabled()) headers.set('Authorization', `Bearer ${session.token}`)
+    const resp = await fetch('/api/auth/me', { headers })
     // ⚠️ 这一步跑在 `initAuthFetch()` 之前（AuthGate 的启动顺序），而「首次访问建空间」
     // 恰好就发生在这个请求上：不在这里捕获，一次性下发的空间码就永远丢了 ——
     // cookie 已经落地，之后每个请求都会命中「已有空间」，服务端不会再重发明文码。
@@ -438,6 +420,25 @@ export async function getToken(): Promise<string> {
 }
 
 /**
+ * 给请求头补上认证信息（令牌 + 空间码）。
+ *
+ * * 门开着 → 必须带会话令牌（没会话时按原语义抛 `AuthRequiredError`）；
+ * * 门关着（`WRENCH_REQUIRE_AUTH=off`）→ **不带令牌**：服务端本来就不校验，
+ *   带着可能过期的旧令牌只会让人误会「必须要登录」。
+ *
+ * 空间码一律带上：它是 cookie 之外的第二通道，禁用 cookie 的浏览器靠它找回自己的空间。
+ */
+export async function applyAuthHeaders(headers: Headers): Promise<void> {
+  if (!isAuthDisabled()) {
+    headers.set('Authorization', `Bearer ${await getToken()}`)
+  }
+  const code = getSpaceCode()
+  if (code) {
+    headers.set('X-Space-Code', code)
+  }
+}
+
+/**
  * 获取短时 WebSocket 令牌（scope=`ws`，10 分钟，带缓存）。
  *
  * @throws AuthRequiredError 会话失效
@@ -449,19 +450,18 @@ export async function getWsToken(): Promise<string> {
   if (_wsTokenPromise) return _wsTokenPromise
 
   _wsTokenPromise = (async () => {
-    const sessionToken = await getToken()
+    const headers = new Headers({ Accept: 'application/json', 'Content-Type': 'application/json' })
+    await applyAuthHeaders(headers)
     const resp = await fetch('/api/ws-token', {
       method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionToken}`,
-      },
+      headers,
       body: '{}',
     })
 
     if (resp.status === 401 || resp.status === 403) {
-      notifyAuthRequired('ws-token rejected')
+      if (!isAuthDisabled()) {
+        notifyAuthRequired('ws-token rejected')
+      }
       throw new AuthRequiredError('Session rejected when requesting WS token')
     }
     if (!resp.ok) {
@@ -503,14 +503,9 @@ export function clearWsToken(): void {
  * 令牌只能由登录接口签发，无法“静默续期”）。
  */
 export async function authedFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = await getToken()
   const headers = new Headers(options.headers ?? {})
-  headers.set('Authorization', `Bearer ${token}`)
-  // 空间码随请求带上：即使浏览器禁用了 cookie 也能定位到自己的空间
-  const code = getSpaceCode()
-  if (code) {
-    headers.set('X-Space-Code', code)
-  }
+  // 令牌（门关着时不带）+ 空间码
+  await applyAuthHeaders(headers)
 
   const resp = await fetch(url, { ...options, headers })
 
@@ -518,7 +513,7 @@ export async function authedFetch(url: string, options: RequestInit = {}): Promi
   captureSpaceCode(resp)
   handleInvalidSpace(resp)
 
-  if (resp.status === 401) {
+  if (resp.status === 401 && !isAuthDisabled()) {
     notifyAuthRequired(`401 from ${url}`)
   }
 

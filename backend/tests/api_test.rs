@@ -26,6 +26,7 @@ fn test_config() -> AppConfig {
         database_url: None,
         log_level: "error".to_string(),
         auth_password: Some("test-password".to_string()),
+        require_auth: true,
     }
 }
 
@@ -732,4 +733,120 @@ async fn ai_chat_proxy_to_metadata_url_is_denied() {
     assert_eq!(status, StatusCode::FORBIDDEN, "{json}");
     let msg = json["error"]["message"].as_str().unwrap_or_default();
     assert!(msg.contains("出口策略"), "{msg}");
+}
+
+// ─── 入口门的三种形态 ───────────────────────────────────────────
+//
+// 2026-09 起的产品决定：**不要求使用者设置口令**。
+// * 门开 + 有口令（部署侧提供）→ 登录界面；
+// * 门开 + 没口令 → 受保护接口 503（fail-closed），日志/状态接口告诉部署者怎么配；
+// * 门关（`WRENCH_REQUIRE_AUTH=off`）→ 零输入直进，界面里没有任何口令环节。
+//
+// 关键不变式：**数据隔离不依赖门**。门关着时每个浏览器照样有自己的私有空间，
+// 别人看不到（隔离由 `space_id` 在 SQL 层强制）。
+
+/// `WRENCH_REQUIRE_AUTH=off`：无令牌也能访问受保护接口，且首访零输入就有自己的空间。
+#[tokio::test]
+async fn gate_off_allows_password_free_access() {
+    let mut config = temp_db_config();
+    config.require_auth = false;
+    let app = build_test_app_with(config).await;
+
+    // 1) 无令牌访问受保护接口 → 放行（不给 401）
+    let resp = app
+        .clone()
+        .oneshot(with_connect_info(Request::builder().uri("/api/ai/config").body(Body::from("")).unwrap()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "门关着时不应要求令牌");
+
+    // 2) 零输入首访 → 服务端直接建空间并下发一次性明文空间码
+    let resp = app
+        .clone()
+        .oneshot(with_connect_info(Request::builder().uri("/api/space/me").body(Body::from("")).unwrap()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(
+        resp.headers().get("x-space-code").is_some(),
+        "零输入首访应立刻拿到自己的空间码（这是换设备的唯一凭据）"
+    );
+
+    // 3) 状态接口明确告诉前端「不用登录」
+    let resp = app
+        .clone()
+        .oneshot(with_connect_info(Request::builder().uri("/api/auth/status").body(Body::from("")).unwrap()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let data = &json["data"];
+    assert_eq!(data["authRequired"], serde_json::json!(false), "{json}");
+    assert_eq!(data["source"], serde_json::json!("disabled"), "{json}");
+    assert_eq!(data["configured"], serde_json::json!(false), "{json}");
+
+    // 4) 门关着时「登录」没有意义，必须明确拒绝而不是假装成功
+    let resp = app
+        .clone()
+        .oneshot(with_connect_info(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"password":"whatever"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+/// 门开着但没有口令 → 503 fail-closed，且状态接口说清「需要部署侧配置」（不再有网页首次设置）。
+#[tokio::test]
+async fn gate_on_without_password_fails_closed() {
+    let mut config = temp_db_config();
+    config.auth_password = None;
+    assert!(config.require_auth, "默认为开门");
+    let app = build_test_app_with(config).await;
+
+    let resp = app
+        .clone()
+        .oneshot(with_connect_info(Request::builder().uri("/api/plugins").body(Body::from("")).unwrap()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let resp = app
+        .clone()
+        .oneshot(with_connect_info(Request::builder().uri("/api/auth/status").body(Body::from("")).unwrap()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "状态接口本身必须可访问（前端据此显示配置指引）");
+    let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["data"]["authRequired"], serde_json::json!(true), "{json}");
+    assert_eq!(json["data"]["configured"], serde_json::json!(false), "{json}");
+}
+
+/// 网页「首次设置口令」端点必须彻底不存在：口令是部署侧的事，使用者不该被要求设口令。
+#[tokio::test]
+async fn web_setup_endpoint_is_gone() {
+    let app = build_test_app().await;
+    let resp = app
+        .oneshot(with_connect_info(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/setup")
+                .header("Content-Type", "application/json")
+                .body(Body::from(r#"{"password":"a-strong-password"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "不能再有「由使用者设置口令」的入口"
+    );
 }

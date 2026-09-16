@@ -17,9 +17,11 @@ services:
       DATABASE_URL: /data/wrench.db
       # JWT_SECRET: 留空则 entrypoint 自动生成随机密钥（重启后失效，生产环境请显式设置）
       JWT_SECRET: "${JWT_SECRET:-}"
-      # WRENCH_AUTH_PASSWORD: 入口口令（可选）。留空时首次访问网页会显示「首次设置」，
-      # 用启动日志里的一次性 setup token 设置口令（PBKDF2 哈希落库，明文不落盘）：
-      #   docker logs <容器名> 2>&1 | grep -i "setup token"
+      # WRENCH_REQUIRE_AUTH: 门开关（默认 on）。设为 off 则访客零输入直进（不设入口口令）。
+      WRENCH_REQUIRE_AUTH: "${WRENCH_REQUIRE_AUTH:-on}"
+      # WRENCH_AUTH_PASSWORD: 入口口令（可选，**由部署侧提供**）。
+      # 留空且门开着（默认）时，受保护接口一律 503（fail-closed）——
+      # 不会让使用者去网页上自己设口令：要么在这里给口令，要么把门关掉（上一行）。
       WRENCH_AUTH_PASSWORD: "${WRENCH_AUTH_PASSWORD:-}"
       # WRENCH_EGRESS_ALLOW: **这台机器允许主动连到哪里**（逗号分隔的 IP[:端口] / CIDR[:端口]）。
       # 留空 = 内网/环回/链路本地/云元数据地址一律拒绝（公网目标仍可连）。

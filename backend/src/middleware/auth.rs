@@ -89,6 +89,7 @@ fn client_ip(req: &Request<Body>) -> String {
 /// 1. **门（door）**：共享入口口令换来的会话 JWT（`api+ws`），或 `/api/ws-token` 签发的
 ///    一次性短时令牌（`ws`，仅 `/ws*` 可用）。校验签名、有效期、scope 与**令牌版本**
 ///    （改口令 = 旧令牌全失效）。未配置口令时 fail-closed（503）。
+///    `WRENCH_REQUIRE_AUTH=off` 时**整层跳过**（访客零输入直进，给一个匿名会话身份）。
 /// 2. **空间（space）**：门通过之后解析当前访问者的私有空间（HttpOnly cookie 或
 ///    `X-Space-Code` 头），首次访问自动创建。空间 id 注入 `SpaceCtx` 供 handler 使用，
 ///    每个 handler 都必须用 `space.id` 去查库。
@@ -104,6 +105,17 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, mut req: Reques
         return next.run(req).await;
     }
 
+    // ── 门：本实例是否设门 ────────────────────────────────────
+    //
+    // `WRENCH_REQUIRE_AUTH=off`：不设门，访客零输入直进 —— 不校验令牌（**也不校验**可能
+    // 残留的旧令牌，避免历史令牌把人挡在门外），直接给一个匿名会话身份继续往下走。
+    // 空间隔离与门无关：下面照样解析/创建本浏览器的私有空间。
+    if !state.config.require_auth {
+        let tv = state.auth.read().token_version;
+        req.extensions_mut().insert(Claims::session(tv, false));
+        return resolve_space(&state, method, uri, req, next).await;
+    }
+
     // ── 门：服务端是否已有口令 ────────────────────────────────
     let (configured, current_tv) = {
         let auth = state.auth.read();
@@ -111,14 +123,14 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, mut req: Reques
     };
     if !configured {
         tracing::error!(
-            "[auth] {} {} — 门户口令未设置，拒绝请求（请用启动日志里的 setup token 设置口令）",
+            "[auth] {} {} — 门已开启但没有任何口令，拒绝请求（部署侧需设置 WRENCH_AUTH_PASSWORD，或设 WRENCH_REQUIRE_AUTH=off）",
             method,
             uri
         );
         return json_error(
             StatusCode::SERVICE_UNAVAILABLE,
-            "Authentication not configured. Ask the deployer for the one-time setup token shown in the server logs, \
-             then open the web UI to set the entry password.",
+            "Authentication is on (WRENCH_REQUIRE_AUTH=on) but no entry password is configured. \
+             The deployer must set WRENCH_AUTH_PASSWORD, or set WRENCH_REQUIRE_AUTH=off to allow password-free access.",
         );
     }
 
@@ -232,10 +244,23 @@ pub async fn auth_middleware(State(state): State<Arc<AppState>>, mut req: Reques
     // 把已验证的 claims 注入扩展：`/api/auth/me` 等 handler 需要它
     req.extensions_mut().insert(claims);
 
-    // ── 空间：解析或创建 ─────────────────────────────────────
+    resolve_space(&state, method, uri, req, next).await
+}
+
+/// 门之后的第二层：解析（或创建）本浏览器的私有空间，注入 [`SpaceCtx`]。
+///
+/// 与门完全解耦 —— 无论门是开是关，数据隔离都靠这里的空间 id，
+/// handler 必须用 `space.id` 查库。
+async fn resolve_space(
+    state: &Arc<AppState>,
+    method: Method,
+    uri: String,
+    mut req: Request<Body>,
+    next: Next,
+) -> Response {
     let headers = req.headers().clone();
     let ip = client_ip(&req);
-    match space::resolve_or_create(&state, &headers).await {
+    match space::resolve_or_create(state, &headers).await {
         SpaceOutcome::Existing(sp) => {
             tracing::debug!("[space] {} {} → space={}", method, uri, sp.id);
             req.extensions_mut().insert(SpaceCtx::new(sp.id));
@@ -297,7 +322,13 @@ mod tests {
             database_url: None,
             log_level: "warn".into(),
             auth_password: auth_password.map(|s| s.to_string()),
+            require_auth: true,
         }
+    }
+
+    /// 门关着（`WRENCH_REQUIRE_AUTH=off`）的配置：零输入直进
+    fn gate_off_config() -> AppConfig {
+        AppConfig { require_auth: false, auth_password: None, ..test_config(None) }
     }
 
     fn state_with_env_password(password: &str) -> Arc<AppState> {

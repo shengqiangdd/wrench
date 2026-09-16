@@ -66,8 +66,9 @@ cd frontend && npm install
 # 3. 配置后端环境变量
 cd ../backend && cp .env.example .env
 # 编辑 .env：至少设置 JWT_SECRET（openssl rand -base64 32）
-# 登录口令不必写进 .env：不设口令时后端进入「首次设置」模式，
-# 启动日志会打印一次性 setup token，在网页里粘贴即可设置口令（PBKDF2 哈希落库，明文不落盘）
+# 入口口令由部署侧决定，**不需要访问者设置任何口令**：
+#   要口令门 → 设 WRENCH_AUTH_PASSWORD=...（口令哈希落库，明文不落盘）
+#   不要口令门 → 设 WRENCH_REQUIRE_AUTH=off（访问者零输入直进）
 
 # 4. 启动后端（Rust，终端 1）
 cargo run
@@ -119,20 +120,26 @@ docker compose down
 
 Wrench **默认拒绝匿名访问**：除 `/api/health`、`/api/auth/status` 外，所有 REST 接口与
 WebSocket（终端、日志、Docker 监控）都要求先登录。因此即使端口直接暴露到公网，
-未登录的请求也拿不到任何数据或终端。
+未登录的请求也拿不到任何数据或终端。（把 `WRENCH_REQUIRE_AUTH` 设为 `off` 可以整体关掉
+这道门 —— 见下。）
 
-**首次设置（推荐）**：不用配置任何环境变量。启动后打开网页会看到「首次设置」界面，
-把启动日志里的一次性令牌贴进去设置入口口令即可：
+**口令由部署侧给，访问者永远不用设口令** —— 这是刻意的产品决定：让访问者先去容器日志里
+翻一次性令牌、再自己设一个口令，是没人愿意用的体验。两种部署姿势二选一：
 
 ```bash
-docker logs <容器名> 2>&1 | grep -i "setup token"
+# ① 要口令门：部署侧直接给出口令（PBKDF2-HMAC-SHA256，60 万次迭代 + 随机盐，明文不落盘）
+WRENCH_AUTH_PASSWORD='...'
+
+# ② 不要口令门：访问者零输入直进（内网工具站常见做法）
+WRENCH_REQUIRE_AUTH=off
 ```
 
-口令以 PBKDF2-HMAC-SHA256（60 万次迭代 + 随机盐）存进数据库，**明文不写任何文件**；
-之后在「设置 → 入口口令」里也能改（改完所有人重新登录一次）。
+门开着却没给口令时，受保护接口一律 503（fail-closed），网页显示「等待部署侧配置」，
+而不是让你去设置口令。口令之后可在「设置 → 入口口令」里改（改完所有人重新登录一次）。
 
-**legacy 方式**（可选，便于既有部署平滑升级）：设置 `WRENCH_AUTH_PASSWORD`（或
-`WRENCH_AUTH_PASSWORD_FILE`）则以环境变量为准。
+> 选 ② 时请务必收紧 `WRENCH_EGRESS_ALLOW`：没有门时，任何能访问本站的人都能把它当
+> SSH 客户端用 —— 能连到哪些机器，完全由出口白名单决定（公网目标默认仍可连，
+> `WRENCH_EGRESS_STRICT=1` 可一并管住）。
 
 ### 👥 每个人一个私有空间，互相看不见
 

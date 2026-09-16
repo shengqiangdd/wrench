@@ -10,7 +10,12 @@ let _verifyError: Error | null = null
 let _pendingVerify = false
 let _loginError: Error | null = null
 let _wsError: Error | null = null
-let _setupRequired = false
+/** 服务端门开关：true = 需要口令；false = 零输入直进 */
+let _authRequired = true
+/** 服务端是否已配置口令（门开着时才有意义） */
+let _configured = true
+/** AuthGate 从 /api/auth/status 写入的本地标志 */
+let _authDisabled = false
 
 vi.mock('../../services/auth', () => ({
   AUTH_REQUIRED_EVENT: 'wrench:auth-required',
@@ -18,7 +23,8 @@ vi.mock('../../services/auth', () => ({
   verifySession: vi.fn(async () => {
     if (_pendingVerify) return new Promise<boolean>(() => {})
     if (_verifyError) throw _verifyError
-    return _sessionValid
+    // 门关着时服务端不校验令牌：没有本地会话也算「可用」（真实实现同理）
+    return _sessionValid || _authDisabled
   }),
   login: vi.fn(async (password: string, _remember: boolean = false) => {
     if (_loginError) throw _loginError
@@ -27,18 +33,15 @@ vi.mock('../../services/auth', () => ({
     _sessionValid = true
   }),
   authStatus: vi.fn(async () => ({
-    configured: !_setupRequired,
-    setupRequired: _setupRequired,
-    source: _setupRequired ? 'none' : 'env',
-    canChangePassword: true,
+    configured: _configured,
+    authRequired: _authRequired,
+    source: !_authRequired ? 'disabled' : _configured ? 'env' : 'none',
+    canChangePassword: _configured,
     rotationLogsOutEveryone: true,
   })),
-  setupPassword: vi.fn(async (_password: string, setupToken: string) => {
-    if (setupToken !== 'good-token')
-      throw new Error('启动令牌无效，请检查服务端日志里的 setup token')
-    _setupRequired = false
-    _authenticated = true
-    _sessionValid = true
+  isAuthDisabled: vi.fn(() => _authDisabled),
+  setAuthDisabled: vi.fn((value: boolean) => {
+    _authDisabled = value
   }),
   notifyAuthRequired: vi.fn(),
   clearToken: vi.fn(),
@@ -77,7 +80,9 @@ function mockLoggedIn() {
   _pendingVerify = false
   _loginError = null
   _wsError = null
-  _setupRequired = false
+  _authRequired = true
+  _configured = true
+  _authDisabled = false
 }
 
 /** 未登录 */
@@ -88,7 +93,9 @@ function mockLoggedOut() {
   _pendingVerify = false
   _loginError = null
   _wsError = null
-  _setupRequired = false
+  _authRequired = true
+  _configured = true
+  _authDisabled = false
 }
 
 /** 有本地会话但服务端已不接受 */
@@ -296,10 +303,11 @@ describe('AuthGate', () => {
   })
 })
 
-describe('AuthGate · 首次设置', () => {
+describe('AuthGate · 不设门（WRENCH_REQUIRE_AUTH=off）', () => {
   beforeEach(() => {
-    mockLoggedOut()
-    _setupRequired = true
+    mockLoggedOut() // 连本地会话都没有：门关着时也不该看到登录框
+    _authRequired = false
+    _authDisabled = false
     document.body.innerHTML = ''
   })
 
@@ -307,127 +315,58 @@ describe('AuthGate · 首次设置', () => {
     vi.restoreAllMocks()
   })
 
-  it('shows the setup form (not the login form) when the server has no password yet', async () => {
+  it('enters the app with zero input — no login, no setup form', async () => {
     const { container, cleanup } = renderGate()
-
-    await vi.waitFor(() => {
-      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
-    })
-    expect(container.textContent).toContain('首次设置')
-    expect(container.querySelector('[data-testid="login-password"]')).toBeNull()
-    cleanup()
-  })
-
-  it('does not mention docker exec anymore (口令在网页里设置)', async () => {
-    const { container, cleanup } = renderGate()
-
-    await vi.waitFor(() => {
-      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
-    })
-    expect(container.textContent).not.toContain('docker exec')
-    cleanup()
-  })
-
-  it('sets the password with the one-time token and enters the app', async () => {
-    const { container, cleanup } = renderGate()
-
-    await vi.waitFor(() => {
-      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
-    })
-
-    typeInto(
-      container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!,
-      'good-token',
-    )
-    typeInto(
-      container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!,
-      'a-strong-password',
-    )
-    typeInto(
-      container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!,
-      'a-strong-password',
-    )
-
-    await vi.waitFor(() => {
-      expect(
-        container.querySelector<HTMLButtonElement>('[data-testid="setup-submit"]')!.disabled,
-      ).toBe(false)
-    })
-
-    container
-      .querySelector<HTMLFormElement>('form')!
-      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 
     await vi.waitFor(() => {
       expect(container.querySelector('[data-testid="children"]')).not.toBeNull()
     })
+    expect(container.querySelector('[data-testid="login-password"]')).toBeNull()
+    expect(container.textContent).not.toContain('请输入访问密码')
     cleanup()
   })
 
-  it('rejects a bad setup token with a readable error', async () => {
+  it('records the disabled gate locally so 401 handling does not bounce users to a login box', async () => {
     const { container, cleanup } = renderGate()
 
     await vi.waitFor(() => {
-      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
+      expect(container.querySelector('[data-testid="children"]')).not.toBeNull()
     })
+    expect(_authDisabled).toBe(true)
 
-    typeInto(
-      container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!,
-      'wrong-token',
-    )
-    typeInto(
-      container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!,
-      'a-strong-password',
-    )
-    typeInto(
-      container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!,
-      'a-strong-password',
-    )
-
-    await vi.waitFor(() => {
-      expect(
-        container.querySelector<HTMLButtonElement>('[data-testid="setup-submit"]')!.disabled,
-      ).toBe(false)
-    })
-
-    container
-      .querySelector<HTMLFormElement>('form')!
-      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain('启动令牌无效')
-    })
-    expect(container.querySelector('[data-testid="children"]')).toBeNull()
+    // 门关着时收到 auth-required 事件：不能把用户丢回登录界面
+    window.dispatchEvent(new CustomEvent('wrench:auth-required', { detail: { reason: '401' } }))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(container.querySelector('[data-testid="children"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="login-password"]')).toBeNull()
     cleanup()
   })
+})
 
-  it('refuses mismatched confirmation locally', async () => {
+describe('AuthGate · 门开但部署侧没配口令', () => {
+  beforeEach(() => {
+    mockLoggedOut()
+    _configured = false
+    _authRequired = true
+    document.body.innerHTML = ''
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('asks the deployer to configure — never the visitor', async () => {
     const { container, cleanup } = renderGate()
 
     await vi.waitFor(() => {
-      expect(container.querySelector('[data-testid="setup-token"]')).not.toBeNull()
+      expect(container.querySelector('[data-testid="retry-config"]')).not.toBeNull()
     })
-
-    typeInto(
-      container.querySelector<HTMLInputElement>('[data-testid="setup-token"]')!,
-      'good-token',
-    )
-    typeInto(
-      container.querySelector<HTMLInputElement>('[data-testid="setup-password"]')!,
-      'a-strong-password',
-    )
-    typeInto(
-      container.querySelector<HTMLInputElement>('[data-testid="setup-confirm"]')!,
-      'a-strong-passwerd',
-    )
-
-    container
-      .querySelector<HTMLFormElement>('form')!
-      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain('两次输入的口令不一致')
-    })
+    // 使用者没有任何可填的东西：既没有登录框，也没有「设置口令」表单
+    expect(container.querySelector('[data-testid="login-password"]')).toBeNull()
+    expect(container.textContent).not.toContain('首次设置')
+    // 两条出路都写清楚：设口令，或直接不设口令
+    expect(container.textContent).toContain('WRENCH_AUTH_PASSWORD')
+    expect(container.textContent).toContain('WRENCH_REQUIRE_AUTH=off')
     cleanup()
   })
 })

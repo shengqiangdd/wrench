@@ -22,12 +22,6 @@ pub struct LoginRequest {
     pub remember: bool,
 }
 
-/// POST /api/auth/setup 请求体（首次设置门户口令）
-#[derive(serde::Deserialize)]
-pub struct SetupRequest {
-    pub password: String,
-}
-
 /// POST /api/auth/password 请求体（修改门户口令）
 #[derive(serde::Deserialize)]
 pub struct ChangePasswordRequest {
@@ -37,15 +31,15 @@ pub struct ChangePasswordRequest {
     pub new_password: String,
 }
 
-/// GET /api/auth/status 响应：前端据此决定显示「首次设置」还是「登录」。
+/// GET /api/auth/status 响应：前端据此决定显示登录界面、配置提示，还是零输入直进。
 #[derive(serde::Serialize)]
 pub struct AuthStatusResponse {
     /// 门户口令是否已配置
     pub configured: bool,
-    /// 是否需要走首次设置（= 未配置）
-    #[serde(rename = "setupRequired")]
-    pub setup_required: bool,
-    /// 口令来源：`database` / `env` / `none`
+    /// 门是否启用（`WRENCH_REQUIRE_AUTH`）；`false` 表示零输入直进，没有登录界面
+    #[serde(rename = "authRequired")]
+    pub auth_required: bool,
+    /// 口令来源：`database` / `env` / `none` / `disabled`
     pub source: String,
     /// 是否允许在网页里修改口令（环境变量模式下也可以覆盖为数据库口令）
     #[serde(rename = "canChangePassword")]
@@ -80,77 +74,23 @@ fn sign_claims(state: &AppState, claims: &Claims) -> Result<String, ApiError> {
         .map_err(|_| ApiError::internal("Failed to sign JWT"))
 }
 
-/// 恒定时间比较一次性 setup 令牌。
-fn setup_token_matches(expected: &str, provided: &str) -> bool {
-    verify_password(provided, expected)
-}
-
 /// GET /api/auth/status（公开）——前端启动时判断显示哪种界面。
+///
+/// 三种情形：
+/// * 门关（`authRequired=false`）→ 前端直接进入，没有登录界面；
+/// * 门开且有口令 → 登录界面；
+/// * 门开但没口令 → 前端显示「请部署侧配置」的说明页（fail-closed，用户设不了口令）。
 pub async fn status(State(state): State<Arc<AppState>>) -> ApiResponse<AuthStatusResponse> {
     let auth = state.auth.read();
     let configured = auth.configured();
+    let auth_required = state.config.require_auth;
     ApiResponse::success(AuthStatusResponse {
         configured,
-        setup_required: !configured,
-        source: auth.source().to_string(),
-        can_change_password: true,
+        auth_required,
+        source: if auth_required { auth.source().to_string() } else { "disabled".into() },
+        can_change_password: auth_required && configured,
         rotation_logs_out_everyone: true,
     })
-}
-
-/// POST /api/auth/setup（公开，但需要一次性 setup token）——首次在网页里设置门户口令。
-///
-/// 这是「不再教用户去 `docker exec` 读环境变量」的正面解法：部署者从启动日志里
-/// 拿到一次性令牌，在浏览器里设口令；口令以 PBKDF2 哈希落库，明文不写任何文件。
-pub async fn setup(
-    State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
-    Json(payload): Json<SetupRequest>,
-) -> Result<ApiResponse<TokenResponse>, ApiError> {
-    let client_ip = crate::middleware::client_ip::resolve(Some(addr.ip()), &headers);
-
-    if state.auth.read().configured() {
-        state.add_audit_log(
-            "setup_rejected",
-            serde_json::json!({ "reason": "already_configured" }),
-            &client_ip,
-            "",
-        );
-        return Err(ApiError::bad_request(
-            "Entry password already configured. Log in and change it in Settings instead.",
-        ));
-    }
-
-    let provided = headers
-        .get("x-setup-token")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default();
-    if !setup_token_matches(&state.setup_token, provided) {
-        tracing::warn!("[auth] setup attempt from {client_ip} with invalid setup token");
-        state.add_audit_log("setup_rejected", serde_json::json!({ "reason": "bad_token" }), &client_ip, "");
-        return Err(ApiError::unauthorized("Invalid setup token."));
-    }
-
-    validate_password_strength(&payload.password)?;
-
-    let hashed = hash_door_password(&payload.password);
-    state
-        .set_door_password_hash(hashed)
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to store password: {e}")))?;
-
-    tracing::info!("[auth] entry password configured via web setup from {client_ip}");
-    state.add_audit_log("setup_completed", serde_json::json!({}), &client_ip, "");
-
-    // 直接给调用者一个会话，省掉再登录一次
-    let claims = Claims::session(state.auth.read().token_version, true);
-    let token = sign_claims(&state, &claims)?;
-    Ok(ApiResponse::success(TokenResponse {
-        token,
-        token_type: "Bearer".into(),
-        expires_in: SESSION_TTL_REMEMBER_SECS,
-    }))
 }
 
 /// 口令强度下限：共享入口 + 公网暴露，弱口令等于没有门。
@@ -184,8 +124,15 @@ pub async fn login(
 ) -> Result<ApiResponse<TokenResponse>, ApiError> {
     let client_ip = crate::middleware::client_ip::resolve(Some(addr.ip()), &headers);
 
+    if !state.config.require_auth {
+        // 门关着的时候没有「登录」这回事：前端压根不会调这里
+        return Err(ApiError::bad_request(
+            "Entry password is disabled on this instance (WRENCH_REQUIRE_AUTH=off).",
+        ));
+    }
+
     if !state.auth.read().configured() {
-        tracing::error!("[auth] login denied — 门户口令尚未设置（请先走 /api/auth/setup）");
+        tracing::error!("[auth] login denied — 门已开启但没有任何口令（部署侧需设置 WRENCH_AUTH_PASSWORD）");
         return Err(ApiError::not_configured());
     }
 
@@ -255,6 +202,12 @@ pub async fn change_password(
 ) -> Result<ApiResponse<serde_json::Value>, ApiError> {
     let client_ip = crate::middleware::client_ip::resolve(Some(addr.ip()), &headers);
 
+    if !state.config.require_auth {
+        return Err(ApiError::bad_request(
+            "Entry password is disabled on this instance (WRENCH_REQUIRE_AUTH=off).",
+        ));
+    }
+
     let current = payload.current_password.clone();
     let auth_snapshot = {
         let auth = state.auth.read();
@@ -304,7 +257,7 @@ pub async fn issue_ws_token(
     headers: HeaderMap,
     Extension(space): Extension<SpaceCtx>,
 ) -> Result<ApiResponse<TokenResponse>, ApiError> {
-    if !state.auth.read().configured() {
+    if state.config.require_auth && !state.auth.read().configured() {
         return Err(ApiError::not_configured());
     }
 

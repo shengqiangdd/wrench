@@ -152,11 +152,11 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         // 未认证也能查「口令是否已配置」，前端据此决定显示「首次设置」还是「登录」
         .route("/auth/status", get(api::auth::status));
 
-    // ─── Login / first-time setup routes (no session auth, but strictly rate-limited) ───
+    // ─── Login routes (no session auth, but strictly rate-limited) ───
+    // 口令由**部署侧**提供（`WRENCH_AUTH_PASSWORD`）；网页不再提供「首次设置」——
+    // 使用者不需要（也不应该）自己设口令。不想要门就把 `WRENCH_REQUIRE_AUTH` 设为 off。
     let login_api = Router::new()
         .route("/auth/login", axum::routing::post(api::auth::login))
-        // 首次设置门户口令：需要启动日志里的一次性 setup token，且仅在未配置时有效
-        .route("/auth/setup", axum::routing::post(api::auth::setup))
         .layer(axum_middleware::from_fn(middleware::rate_limit::login_rate_limit_middleware));
 
     // ─── Protected API routes (auth + rate limit required) ───

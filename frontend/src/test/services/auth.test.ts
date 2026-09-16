@@ -8,12 +8,14 @@ import {
   changePassword,
   clearSpaceResetFlag,
   getSpaceCode,
+  getWsToken,
+  isAuthDisabled,
   login,
   logout,
   rotateSpaceCode,
+  setAuthDisabled,
   setSpaceCode,
   setReloadPageForTests,
-  setupPassword,
   verifySession,
   wasSpaceReset,
 } from '../../services/auth'
@@ -104,55 +106,84 @@ describe('空间码（私有空间凭据）', () => {
   })
 })
 
-describe('认证与首次设置', () => {
+describe('认证与门开关', () => {
   beforeEach(() => {
     localStorage.clear()
+    setAuthDisabled(false)
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('authStatus 解析 setupRequired', async () => {
+  it('authStatus 解析门开关与口令来源', async () => {
     stubFetch(async () =>
       jsonResponse({
         data: {
-          configured: false,
-          setupRequired: true,
-          source: 'none',
+          configured: true,
+          authRequired: true,
+          source: 'env',
           canChangePassword: true,
           rotationLogsOutEveryone: true,
         },
       }),
     )
     const status = await authStatus()
-    expect(status.setupRequired).toBe(true)
-    expect(status.source).toBe('none')
+    expect(status.authRequired).toBe(true)
+    expect(status.configured).toBe(true)
+    expect(status.source).toBe('env')
   })
 
-  it('setupPassword 带上一次性 setup token 并保存会话', async () => {
-    const mock = stubFetch(async () =>
-      jsonResponse({ token: 'setup-token-session', expiresIn: 60 }),
+  it('门关着的实例：authRequired=false、source=disabled', async () => {
+    stubFetch(async () =>
+      jsonResponse({
+        data: {
+          configured: false,
+          authRequired: false,
+          source: 'disabled',
+          canChangePassword: false,
+          rotationLogsOutEveryone: false,
+        },
+      }),
     )
-
-    await setupPassword('a-strong-password', 'one-time-token')
-
-    const init = callInit(mock)
-    expect(new Headers(init.headers).get('X-Setup-Token')).toBe('one-time-token')
-    expect(JSON.parse(String(init.body))).toEqual({ password: 'a-strong-password' })
-
-    // 会话已生效：后续受保护请求带得上令牌
-    const next = stubFetch(async (_url, req) => {
-      expect(new Headers(req?.headers).get('Authorization')).toBe('Bearer setup-token-session')
-      return jsonResponse({ ok: true })
-    })
-    await authedFetch('/api/space/me')
-    expect(next.mock.calls.length).toBe(1)
+    const status = await authStatus()
+    expect(status.authRequired).toBe(false)
+    expect(status.source).toBe('disabled')
   })
 
-  it('setupPassword 对无效令牌给出可读错误', async () => {
-    stubFetch(async () => jsonResponse({ msg: 'bad' }, 401))
-    await expect(setupPassword('a-strong-password', 'wrong')).rejects.toThrow('启动令牌无效')
+  it('旧后端没有 authRequired 字段时按「要口令」处理（绝不因字段缺失把门敞开）', async () => {
+    stubFetch(async () =>
+      jsonResponse({ data: { configured: true, source: 'env', canChangePassword: true } }),
+    )
+    const status = await authStatus()
+    expect(status.authRequired).toBe(true)
+  })
+
+  it('门关着时不带令牌、但照样带空间码，且无本地会话也能启动', async () => {
+    setAuthDisabled(true)
+    expect(isAuthDisabled()).toBe(true)
+
+    setSpaceCode('space-code-off')
+    const mock = stubFetch(async () => jsonResponse({ ok: true }))
+    await authedFetch('/api/space/me')
+
+    const headers = new Headers(callInit(mock).headers)
+    expect(headers.get('Authorization')).toBeNull()
+    expect(headers.get('X-Space-Code')).toBe('space-code-off')
+
+    // 没有本地会话也要能过 verifySession（服务端不校验令牌）
+    const verifyMock = stubFetch(async () => jsonResponse({ data: { sub: 'visitor' } }))
+    await expect(verifySession()).resolves.toBe(true)
+    expect(new Headers(callInit(verifyMock).headers).get('Authorization')).toBeNull()
+  })
+
+  it('门关着时 WS 令牌不带 Authorization（否则会把人误导成「必须登录」）', async () => {
+    setAuthDisabled(true)
+    const mock = stubFetch(async () => jsonResponse({ token: 'ws-token', expiresIn: 600 }))
+
+    await expect(getWsToken()).resolves.toBe('ws-token')
+    expect(callUrl(mock)).toBe('/api/ws-token')
+    expect(new Headers(callInit(mock).headers).get('Authorization')).toBeNull()
   })
 
   it('changePassword 把两个口令发给服务端，401 提示当前口令错误', async () => {

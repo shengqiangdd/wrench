@@ -85,7 +85,8 @@ Wrench 采用 **前后端分离 + WebSocket 实时通道** 架构：后端是单
 frontend/src/
 ├── components/          # 通用组件
 │   ├── layout/          # Layout / Sidebar / MainContent
-│   ├── AuthGate.tsx     # 入口网关：首次设置 / 登录 / 会话恢复
+│   ├── AuthGate.tsx     # 入口网关：不设门直进 / 登录 / 会话恢复 / 等部署侧配置
+│   ├── OpenAccessNotice.tsx  # 未设入口口令时的开放访问提示条（可关闭）
 │   ├── CodeMirrorEditor.tsx, MarkdownPreview.tsx, CommandPalette.tsx
 │   ├── ConfirmModal.tsx, ResizablePanel.tsx, Skeleton.tsx, Toast.tsx
 │   ├── PluginSandbox.tsx, VirtualList.tsx, NetworkQualityIndicator.tsx
@@ -123,8 +124,9 @@ frontend/src/
 
 ### 3.1 关键模块职责
 
-- **`components/AuthGate.tsx`** — 启动时先问 `/api/auth/status`：未配置口令 → 「首次设置」（要一次性
-  setup token）；已配置 → 登录；已有有效会话 → 直接进入。登录后才挂载主应用。
+- **`components/AuthGate.tsx`** — 启动时先问 `/api/auth/status`，四种去向：**不设门**（`authRequired=false`）
+  → 零输入直接进入；门开着但没口令 → 「等待部署侧配置」说明页（使用者设不了口令，也不该由他设）；
+  已配置且无会话 → 登录；有有效会话 → 直接进入。门通过后才挂载主应用。
 - **`modules/ssh/`** — Wrench 核心：`ConnectionList`（CRUD/分组/搜索）、`ConnectionForm`、
   `Terminal`（xterm + WS，分屏与同步命令）、`SftpBrowser`/`SftpSidebar`、`AiSidebar`、
   `SshPlaceholder`（终端 Tab + 文件浏览器容器）。
@@ -160,8 +162,8 @@ backend/src/
 
 | 分组 | 前缀 | 认证 | 代表路由 |
 |---|---|---|---|
-| **Public** | `/api` | 无 | `/health`、`/auth/status`（供前端判断显示「首次设置」还是「登录」） |
-| **Login / Setup** | `/api` | 无会话，但独立限流（8 次/分钟/IP） | `/auth/login`、`/auth/setup` |
+| **Public** | `/api` | 无 | `/health`、`/auth/status`（供前端判断「直进 / 登录 / 等部署侧配置」） |
+| **Login** | `/api` | 无会话，但独立限流（8 次/分钟/IP） | `/auth/login` |
 | **Protected** | `/api` | 会话 JWT（`scope=api`）+ `SpaceCtx` | `/auth/me`、`/auth/password`、`/ws-token`、`/audit-logs`、`/hosts*`、`/connections`（只读）、`/vault*`、`/notifications*`、`/sftp/*`、`/docker/*`、`/logs/*`、`/plugins*`、`/ai/*`、`/space/{me,rotate,attach}`、`/system/db-info` |
 | **WebSocket** | `/ws` | 会话 JWT 或短时 ws token（`scope=ws`） | `/ws`、`/ws/terminal`、`/ws/logs`、`/ws/docker/stats` |
 | **Static** | `/*` | 无 | `frontend/dist` 静态资源 + SPA fallback |
@@ -342,7 +344,8 @@ Zustand，按业务域拆分（`stores/`）：
 
 - **入口口令**只负责挡住公网扫描者，不是权限模型。口令以 **PBKDF2-HMAC-SHA256（60 万次迭代 + 随机盐）**
   存库，明文不落盘；也可用 `WRENCH_AUTH_PASSWORD` 环境变量（legacy 覆盖，改它会让旧令牌立即失效）。
-- 首次部署不设口令 → **首次设置模式**：启动日志打印一次性 `setup token`，网页粘贴即可设口令。
+- **口令由部署侧提供，访问者不参与**（没有「网页首次设置」）：`WRENCH_REQUIRE_AUTH=off` 时连门都没有 ——
+  中间件跳过令牌层、注入匿名会话身份，空间解析照常，访客零输入直进。
 - **令牌分 scope**：会话 JWT（`api+ws`，7 天 / 记住设备 30 天）、WS 短时令牌（`ws`，10 分钟，
   降低 URL 查询串泄露的影响）；中间件按路径校验，`/ws*` 需 `ws`，其余 REST 需 `api`。
 - 登录接口独立限流（8 次/分钟/IP），口令校验恒定时间比较，失败统一 401。
@@ -486,10 +489,12 @@ SSH 客户端」：目标主机与端口来自客户端请求（`api/ssh.rs`、`
 
 ### ADR-7: 未配置口令时 fail-closed
 
-**决策**: 口令未配置（或数据库不可用）时，受保护接口一律 503，只放行 `/api/auth/status` 与 `/api/auth/setup`。
+**决策**: 门开着（默认）而口令未配置（或数据库不可用）时，受保护接口一律 503，只放行 `/api/auth/status`。
 
-**原因**: 「默认放行」在公网等同于裸奔。宁可让部署者看着日志里的 setup token 走一次首次设置，
-也不能出现匿名可用的窗口期。
+**原因**: 「默认放行」在公网等同于裸奔，不能出现匿名可用的窗口期。**但 fail-closed 的出口不是
+「让使用者自己设口令」**：那条路要求访问者先去容器日志里翻一次性令牌，是把部署侧的责任
+推给了使用者。正确的出口是部署者二选一 —— 给口令（`WRENCH_AUTH_PASSWORD`），或明确地把门关掉
+（`WRENCH_REQUIRE_AUTH=off`，此时匿名可用是**被显式选择**的，并伴随启动日志与界面提示条的告警）。
 
 ### ADR-8: 跳板风险用「出口白名单」根治，而不是再补一道口令
 

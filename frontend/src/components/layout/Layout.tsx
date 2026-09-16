@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react'
 import { useAppStore } from '../../stores/app-store'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
+import OpenAccessNotice from '../OpenAccessNotice'
 import MainContent from './MainContent'
 import RightPanel from './RightPanel'
 import AgentDrawer from '../agent/AgentDrawer'
@@ -98,6 +99,9 @@ export default function Layout() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-slate-950 dark:bg-slate-950">
+      {/* 未设入口口令时的开放访问提示（可关闭） */}
+      <OpenAccessNotice />
+
       {/* 离线提示条 */}
       {!isOnline && (
         <div className="flex shrink-0 items-center justify-center gap-2 bg-amber-600/20 px-3 py-1 text-xs text-amber-400">

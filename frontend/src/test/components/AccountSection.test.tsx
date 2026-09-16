@@ -36,6 +36,7 @@ vi.mock('../../services/auth', () => ({
   changePassword: vi.fn(async (current: string) => {
     if (current !== 'right') throw new Error('当前口令不正确')
   }),
+  isAuthDisabled: vi.fn(() => false),
   wasSpaceReset: vi.fn(() => false),
   clearSpaceResetFlag: vi.fn(),
   // 组件切换空间后会刷新页面；单测里拦下，别让 jsdom 报导航未实现

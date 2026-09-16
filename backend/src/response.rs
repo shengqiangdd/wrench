@@ -54,7 +54,8 @@ impl ApiError {
     pub fn not_configured() -> Self {
         Self::new(
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "Authentication not configured. Use the one-time setup token from the server logs to set the entry password.",
+            "No entry password configured on the server. The deployer must set WRENCH_AUTH_PASSWORD \
+             (or set WRENCH_REQUIRE_AUTH=off to allow password-free access).",
         )
     }
     pub fn internal(message: impl Into<String>) -> Self {
