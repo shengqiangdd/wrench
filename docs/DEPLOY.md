@@ -230,7 +230,8 @@ server {
 | `OPENROUTER_API_KEY` | 无 | AI 功能 API Key |
 | `ssh_test_host` | 无 | SSH 快速连接测试主机（开发用） |
 | `ssh_test_user` | 无 | SSH 快速连接测试用户（开发用） |
-| `ssh_test_password` | 无 | SSH 快速连接测试密码（开发用） |
+| `ssh_test_password` | 无 | SSH 快速连接测试主机密码（开发用）。**默认不回显给浏览器**：`/api/ssh/test-config` 只回 `hasPassword`，因为任何能打开网页的人都读得到它 —— 那会把「进门口令」升级成「进服务器的口令」。确实需要预填时显式打开 `WRENCH_EXPOSE_SSH_TEST_PASSWORD=1` |
+| `WRENCH_EXPOSE_SSH_TEST_PASSWORD` | `0` | 置 `1` 时 `/api/ssh/test-config` 才把 `ssh_test_password` 回显给浏览器。仅限本机开发 |
 | `GITHUB_TOKEN` | 无 | GitHub API Token（插件市场功能） |
 | `RUST_LOG` | `info` | Rust 日志级别 |
 

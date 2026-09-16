@@ -11,13 +11,43 @@ use crate::space::SpaceCtx;
 use crate::ssh::SshSession;
 use crate::ssh::client::{ConnectRequest, SshConnection};
 
-/// Get SSH test configuration from environment variables (GET /api/ssh/test-config)
-pub async fn test_config() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
+/// 是否把 `ssh_test_password` 回显给浏览器。
+///
+/// **默认关闭**：这个变量按 `docs/DEPLOY.md` 的建议是给"部署方配一台测试主机"用的，
+/// 而公网可达时 `/api/ssh/test-config` 只要过了网关口令就能读到 —— 一旦部署方设置了
+/// `ssh_test_password`，任何已登录的浏览器会话都能拿到**服务器自己的 SSH 口令**，
+/// 于是"进门口令"被升级成"进服务器的口令"。所以默认只回 `hasPassword`（供 UI 提示），
+/// 本地开发确实需要预填时显式打开：`WRENCH_EXPOSE_SSH_TEST_PASSWORD=1`。
+fn expose_test_password() -> bool {
+    matches!(
+        std::env::var("WRENCH_EXPOSE_SSH_TEST_PASSWORD").as_deref(),
+        Ok("1") | Ok("true")
+    )
+}
+
+/// 组装 `/api/ssh/test-config` 的响应体。
+///
+/// 口令作为入参而不是就地读环境变量：单测要断言"默认不回显"，
+/// 而进程级环境变量在并行测试里是共享状态，改成入参才能确定性断言。
+fn build_test_config(expose_password: bool, password: String) -> serde_json::Value {
+    let has_password = !password.is_empty();
+    let mut body = serde_json::json!({
         "host": std::env::var("ssh_test_host").unwrap_or_default(),
         "user": std::env::var("ssh_test_user").unwrap_or_default(),
-        "password": std::env::var("ssh_test_password").unwrap_or_default(),
-    }))
+        "hasPassword": has_password,
+    });
+    if expose_password && has_password {
+        body["password"] = serde_json::Value::String(password);
+    }
+    body
+}
+
+/// Get SSH test configuration from environment variables (GET /api/ssh/test-config)
+pub async fn test_config() -> Json<serde_json::Value> {
+    Json(build_test_config(
+        expose_test_password(),
+        std::env::var("ssh_test_password").unwrap_or_default(),
+    ))
 }
 
 /// Execute a command on an SSH connection (POST /api/ssh/exec)
@@ -361,4 +391,38 @@ pub async fn ensure_connection(
     }
 
     ApiResponse::error(401, "SSH authentication failed")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 默认（未显式打开 `WRENCH_EXPOSE_SSH_TEST_PASSWORD`）不得回显口令。
+    ///
+    /// 回归背景：旧实现无条件 `"password": env("ssh_test_password")`，
+    /// 公网可达时任何已登录会话都能读到服务器 SSH 口令。
+    #[test]
+    fn test_config_hides_password_by_default() {
+        let body = build_test_config(false, "s3cret".to_string());
+        assert!(
+            body.get("password").is_none(),
+            "默认响应体不得包含 password 字段，实际: {body}"
+        );
+        assert_eq!(body["hasPassword"], serde_json::json!(true));
+    }
+
+    /// 显式打开开关时保留原有的开发预填行为。
+    #[test]
+    fn test_config_returns_password_only_when_opted_in() {
+        let body = build_test_config(true, "s3cret".to_string());
+        assert_eq!(body["password"], serde_json::json!("s3cret"));
+    }
+
+    /// 没配口令时 `hasPassword` 为 false，且不因开关打开而多出空字段。
+    #[test]
+    fn test_config_reports_missing_password_without_echoing_it() {
+        let body = build_test_config(true, String::new());
+        assert!(body.get("password").is_none());
+        assert_eq!(body["hasPassword"], serde_json::json!(false));
+    }
 }
