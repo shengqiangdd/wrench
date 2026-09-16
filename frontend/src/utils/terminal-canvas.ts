@@ -158,3 +158,21 @@ export function nextCanvasRowsForBlock(input: {
   const target = Math.min(cap, Math.max(required, rows + 1))
   return target > rows ? target : 0
 }
+
+/**
+ * 画布已经长到上限、块还是放不下 —— 几何层没招了，该把用户导向 `plain` 芯片
+ * （让程序自己改成逐行追加输出），而不是让他对着继续堆的重复行发呆。
+ *
+ * 仅当「当前行数已顶到上限」且「块高 + 1 行余量仍超过上限」时为真；
+ * 调用方负责只提示一次，避免每帧刷屏。
+ */
+export function isCanvasCappedOut(input: {
+  currentRows: number
+  runTotal: number
+  cap?: number
+}): boolean {
+  const cap = Math.max(1, Math.floor(input.cap ?? CANVAS_ROWS_CAP))
+  const rows = Math.max(1, Math.floor(input.currentRows))
+  const blockRows = Math.max(0, Math.floor(input.runTotal)) + 1
+  return rows >= cap && blockRows + 1 > cap
+}

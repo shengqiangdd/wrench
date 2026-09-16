@@ -3,6 +3,7 @@ import {
   CANVAS_ROWS_CAP,
   clampWindowOffset,
   followWindowOffset,
+  isCanvasCappedOut,
   isLiveBottom,
   maxWindowOffset,
   nextCanvasRowsForBlock,
@@ -119,5 +120,32 @@ describe('nextCanvasRowsForBlock', () => {
       CANVAS_ROWS_CAP,
     )
     expect(nextCanvasRowsForBlock({ currentRows: 80, runTotal: 500, confirmations: 9 })).toBe(0)
+  })
+})
+
+describe('isCanvasCappedOut', () => {
+  it('还没顶到上限 → false（自适应增高还有余地）', () => {
+    expect(isCanvasCappedOut({ currentRows: 30, runTotal: 60 })).toBe(false)
+    expect(isCanvasCappedOut({ currentRows: CANVAS_ROWS_CAP - 1, runTotal: 500 })).toBe(false)
+  })
+
+  it('已顶到上限且块仍放不下 → true（该引导用户用 plain）', () => {
+    // 块高 100 + 1 行余量 = 101 > 80
+    expect(isCanvasCappedOut({ currentRows: CANVAS_ROWS_CAP, runTotal: 99 })).toBe(true)
+  })
+
+  it('已顶到上限但块刚好放得下（含 1 行余量）→ false', () => {
+    // runTotal 79 → 块高 80，+1 余量 = 81 > 80 仍为 true；runTotal 78 → 80 ≤ 80 → false
+    expect(isCanvasCappedOut({ currentRows: CANVAS_ROWS_CAP, runTotal: 78 })).toBe(false)
+    expect(isCanvasCappedOut({ currentRows: CANVAS_ROWS_CAP, runTotal: 79 })).toBe(true)
+  })
+
+  it('画布关（贴屏，行数 = 可视行数）不会误报：行数没到上限', () => {
+    expect(isCanvasCappedOut({ currentRows: 12, runTotal: 200 })).toBe(false)
+  })
+
+  it('自定义上限可用（与 nextCanvasRowsForBlock 的 cap 语义一致）', () => {
+    expect(isCanvasCappedOut({ currentRows: 40, runTotal: 100, cap: 40 })).toBe(true)
+    expect(isCanvasCappedOut({ currentRows: 40, runTotal: 38, cap: 40 })).toBe(false)
   })
 })

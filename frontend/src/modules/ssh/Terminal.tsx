@@ -21,6 +21,7 @@ import {
   CANVAS_ROWS_FLOOR,
   clampWindowOffset,
   followWindowOffset,
+  isCanvasCappedOut,
   isLiveBottom,
   maxWindowOffset,
   nextCanvasRowsForBlock,
@@ -436,6 +437,7 @@ export default function TerminalView({
     let blockRunTotal = 0
     let blockRunSeenAt = 0
     let blockRunConfirmations = 0
+    let canvasCapHinted = false // 「画布触顶」提示只给一次
     const cursorRunState = createCursorUpRunState()
 
     /**
@@ -620,6 +622,13 @@ export default function TerminalView({
       if (next > 0) {
         canvasGrowRows = next
         canvasRefit()
+        return
+      }
+      // 画布已顶到上限（80 行）而块还在长：几何层到此为止，给用户一条出路 ——
+      // 否则用户只会看到重复行继续堆，却不知道右上角还有个 plain 芯片。
+      if (!canvasCapHinted && isCanvasCappedOut({ currentRows: term.rows, runTotal })) {
+        canvasCapHinted = true
+        showHint('进度块高超过画布上限（80 行）：点右上 plain 可改成逐行日志')
       }
     }
 
