@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import Skeleton from '../../components/Skeleton'
 import { usePluginStore } from '../../stores/plugin-store'
+import { pluginSourceUrl } from '../../utils/plugin-source-url'
 
 // ─── 类型定义 ───
 
@@ -288,6 +289,8 @@ export default function PluginMarket() {
             const installed = installedIds.has(plugin.id)
             const installState = installStates[plugin.id]
             const isExpanded = expandedId === plugin.id
+            // 市场索引是远端数据：链接先过白名单，不安全则整个链接不渲染
+            const sourceUrl = pluginSourceUrl(plugin.manifestUrl)
 
             return (
               <div
@@ -386,7 +389,7 @@ export default function PluginMarket() {
                 </div>
 
                 {/* 展开详情 */}
-                {isExpanded && plugin.manifestUrl && (
+                {isExpanded && sourceUrl && (
                   <div className="border-t border-slate-700/30 px-3 py-2">
                     <div className="flex items-center gap-3 text-[11px] text-slate-600">
                       <span>
@@ -396,7 +399,7 @@ export default function PluginMarket() {
                         <span>更新: {new Date(plugin.updatedAt).toLocaleDateString('zh-CN')}</span>
                       )}
                       <a
-                        href={plugin.manifestUrl.replace('/manifest.json', '')}
+                        href={sourceUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-auto flex items-center gap-1 text-sky-500/60 hover:text-sky-400"
