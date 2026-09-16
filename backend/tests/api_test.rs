@@ -755,7 +755,9 @@ async fn gate_off_allows_password_free_access() {
     // 1) 无令牌访问受保护接口 → 放行（不给 401）
     let resp = app
         .clone()
-        .oneshot(with_connect_info(Request::builder().uri("/api/ai/config").body(Body::from("")).unwrap()))
+        .oneshot(with_connect_info(
+            Request::builder().uri("/api/ai/config").body(Body::from("")).unwrap(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "门关着时不应要求令牌");
@@ -763,7 +765,9 @@ async fn gate_off_allows_password_free_access() {
     // 2) 零输入首访 → 服务端直接建空间并下发一次性明文空间码
     let resp = app
         .clone()
-        .oneshot(with_connect_info(Request::builder().uri("/api/space/me").body(Body::from("")).unwrap()))
+        .oneshot(with_connect_info(
+            Request::builder().uri("/api/space/me").body(Body::from("")).unwrap(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -775,7 +779,9 @@ async fn gate_off_allows_password_free_access() {
     // 3) 状态接口明确告诉前端「不用登录」
     let resp = app
         .clone()
-        .oneshot(with_connect_info(Request::builder().uri("/api/auth/status").body(Body::from("")).unwrap()))
+        .oneshot(with_connect_info(
+            Request::builder().uri("/api/auth/status").body(Body::from("")).unwrap(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -812,14 +818,18 @@ async fn gate_on_without_password_fails_closed() {
 
     let resp = app
         .clone()
-        .oneshot(with_connect_info(Request::builder().uri("/api/plugins").body(Body::from("")).unwrap()))
+        .oneshot(with_connect_info(
+            Request::builder().uri("/api/plugins").body(Body::from("")).unwrap(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 
     let resp = app
         .clone()
-        .oneshot(with_connect_info(Request::builder().uri("/api/auth/status").body(Body::from("")).unwrap()))
+        .oneshot(with_connect_info(
+            Request::builder().uri("/api/auth/status").body(Body::from("")).unwrap(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "状态接口本身必须可访问（前端据此显示配置指引）");
@@ -844,9 +854,5 @@ async fn web_setup_endpoint_is_gone() {
         ))
         .await
         .unwrap();
-    assert_eq!(
-        resp.status(),
-        StatusCode::NOT_FOUND,
-        "不能再有「由使用者设置口令」的入口"
-    );
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND, "不能再有「由使用者设置口令」的入口");
 }
