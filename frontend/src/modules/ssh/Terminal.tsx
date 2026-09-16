@@ -49,6 +49,8 @@ import { TerminalDisplayMenu } from '../../components/terminal/TerminalDisplayMe
 import { TerminalPasteDialog } from '../../components/terminal/TerminalPasteDialog'
 import { useTerminalSearch } from '../../hooks/useTerminalSearch'
 import { useTerminalPaste } from '../../hooks/useTerminalPaste'
+import { useTerminalReconnect } from '../../hooks/useTerminalReconnect'
+import { normalizeDisconnectReason } from '../../utils/terminal-reconnect'
 import {
   FONT_SIZE_DEFAULT,
   FONT_SIZE_STEP,
@@ -62,6 +64,11 @@ import { formatFontSizeHint } from '../../utils/terminal-search'
 import { isCoarsePointer } from '../../utils/terminal-links'
 import { registerTerminalLinks } from '../../utils/terminal-link-provider'
 import { safeWriteClipboard } from '../../utils/clipboard'
+import {
+  isDuplicateDelete,
+  markDeleteSent,
+  type PendingDelete,
+} from '../../utils/terminal-delete-dedup'
 
 /** 分屏面板配置 */
 export interface SplitPanel {
@@ -184,7 +191,8 @@ export default function TerminalView({
   const [prefs, setPrefs] = useState(readTerminalPrefs)
   const prefsRef = useRef(prefs)
   // ─── 断线状态：断线不再只是终端里的一行红字，而是带"重连"出路的状态条 ───
-  const [connectionLost, setConnectionLost] = useState<string | null>(null)
+  // 断线状态条上的一切（倒计时/次数/能不能自动重连）交给 useTerminalReconnect 统一管：
+  // 以前只有一个 connectionLost 字符串，只能给一个『重连』按钮。
   // ─── 桌面端：选中文本后浮现复制按钮 ───
   const [hasSelection, setHasSelection] = useState(false)
   // ─── 上下文菜单（桌面右键 / 移动端长按共用）───
@@ -204,9 +212,10 @@ export default function TerminalView({
   const lastArrowKeyTime = useRef(0)
   // 其他快捷键防抖 ref
   const lastShortcutTime = useRef(0)
-  // 🔧 防止 Backspace/Delete 被 onData 重复发送的标记
-  // keydown 拦截已手动发送后，onData 应跳过该字符
-  const skipNextOnDataRef = useRef(false)
+  // 🔧 防止 Backspace/Delete 被 onData 重复发送的标记：绑定「字节 + 时间窗」而
+  // 不是裸布尔。裸布尔会吞掉用户后续输入的第一个真实字符（详见
+  // utils/terminal-delete-dedup.ts 顶部的成因说明）。
+  const pendingDeleteRef = useRef<PendingDelete | null>(null)
   // 🔧 粘贴（batch 2b ①）：Ctrl+V 放行给浏览器原生粘贴后，xterm 仍会按默认动作
   // 先发一个 0x16(^V)。浏览器里 Ctrl+V 只可能是"粘贴"，不可能是用户想打 ^V，
   // 所以打标记由 onData 精确丢掉紧跟其后的那一个 ^V 字符。
@@ -276,6 +285,20 @@ export default function TerminalView({
       onTerminalData?.(encoded)
     },
     emptyHint: '剪贴板里没有可粘贴的文本',
+  })
+
+  /** 真正去重开会话（连接 effect 里赋值：WS 还活着就重发 connect，死了就重开 WsClient） */
+  const reopenSessionRef = useRef<(() => void) | null>(null)
+  /** 本次 connect 是否由自动重连发起（重连成功后不清屏；超时后继续退避而不是直接放弃） */
+  const reconnectingRef = useRef(false)
+  /** 这个终端是否成功建立过 SSH 会话（区分"首次连接"与"掉线后恢复"） */
+  const sshEstablishedRef = useRef(false)
+  const reopenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnect = useTerminalReconnect({
+    onReconnect: () => reopenSessionRef.current?.(),
+    onAttempt: (attempt) => {
+      showHint(attempt > 1 ? `正在重新连接（第 ${attempt} 次）…` : '正在重新连接…')
+    },
   })
 
   /**
@@ -527,6 +550,10 @@ export default function TerminalView({
     genRef.current += 1
     const gen = genRef.current
     disposedRef.current = false
+    // 新连接（换主机/换标签）：重连状态与"建立过会话"的标记都从头开始
+    sshEstablishedRef.current = false
+    reconnectingRef.current = false
+    reconnect.dismiss()
     // 重置滚动状态
     userScrolledUpRef.current = false
     setUserScrolledUp(false)
@@ -1131,14 +1158,21 @@ export default function TerminalView({
             term.write(
               '\r\n\x1b[31m[超时] SSH 连接超时，请检查主机地址、端口和凭据是否正确\x1b[0m\r\n',
             )
-            setConnectionLost('SSH 连接超时（检查主机/端口/凭据）')
             console.error(`[Terminal] SSH connection timeout for ${creds.host}`)
+            if (reconnectingRef.current) {
+              // 自动重连期间超时（远端还在重启之类）→ 继续退避重试，不要停下
+              reconnect.notifyAttemptFailed()
+            } else {
+              reconnect.notifyLost('error', 'SSH 连接超时（检查主机/端口/凭据）')
+            }
           }
         }
       }, 20_000)
 
       try {
         console.log('[Terminal] Creating session WS client (short-lived ws token)...')
+        // 关掉上一个 WsClient：它自带退避重连，不关的话会在后台一直重连（僵尸连接）
+        termWsRef.current?.disconnect()
         const termWs = createSessionWsClient('/ws')
         console.log(
           `[Terminal] Created WsClient, URL: ${termWs['url'].split('?')[0]}, status=${termWs['status']}`,
@@ -1173,6 +1207,9 @@ export default function TerminalView({
             connectingRef.current = false
             if (gen === genRef.current && !disposedRef.current) {
               term.write(`\r\n\x1b[31m[错误] ${errMsg}\x1b[0m\r\n`)
+              if (reopenTimeoutRef.current) clearTimeout(reopenTimeoutRef.current)
+              if (reconnectingRef.current) reconnect.notifyAttemptFailed()
+              else reconnect.notifyLost('error', errMsg)
             }
             return
           }
@@ -1189,14 +1226,23 @@ export default function TerminalView({
           // SSH 连接成功 ack（dispatch type:"connected"）
           console.log('[Terminal] ✅ termWs.on("connected") fired!')
           clearTimeout(sshTimeout)
+          if (reopenTimeoutRef.current) clearTimeout(reopenTimeoutRef.current)
           connectingRef.current = false
           connectedRef.current = true
-          setConnectionLost(null)
+          const wasReconnect = reconnectingRef.current
+          reconnectingRef.current = false
+          sshEstablishedRef.current = true
+          reconnect.notifyConnected()
           // 清除 [连接中] 提示行，替换为 [已连接] 确认
           if (!disposedRef.current) {
             ansiBuf.reset()
-            // 清除 [连接中] 等状态行，让 SSH banner/prompt 从第一行开始
-            term.clear()
+            if (wasReconnect) {
+              // 重连：上一次会话的输出对用户还有用，不能清屏，只加一条分隔
+              term.write('\r\n\x1b[33m[已重新连接 · 上一次会话的输出保留在上面]\x1b[0m\r\n')
+            } else {
+              // 首次连接：清除 [连接中] 等状态行，让 SSH banner/prompt 从第一行开始
+              term.clear()
+            }
             if (canvasCtlRef.current) canvasCtlRef.current.goLive()
             else term.scrollToBottom()
           }
@@ -1258,14 +1304,72 @@ export default function TerminalView({
           }
         })
 
-        termWs.on('disconnected', () => {
+        /**
+         * 在**同一个 WS** 上（重）发一次 SSH connect。防重复：已经连上 / 有尝试在飞就返回 false。
+         * 轻量重连的价值：省一次 WS 握手与令牌刷新，也不会让旧 WsClient 留在后台退避。
+         */
+        const resendConnect = (force = false) => {
+          // force=true：本次调用就是「这一代 WS 的第一次连接」，只防"已经有会话了"，
+          // 不查 connectingRef —— 因为 initTerminalConnection 在发起连接前就把它置 true 了
+          // （见本函数上方 onStatus 里 initialConnectSent 的注释）。
+          if (force) {
+            if (connectedRef.current) return false
+          } else if (connectedRef.current || connectingRef.current) return false
+          connectingRef.current = true
+          connectedRef.current = false
+          termWs.send({
+            type: 'connect',
+            connectionId,
+            host: creds.host,
+            port: creds.port,
+            username: creds.username,
+            password: creds.password || '',
+            privateKey: creds.privateKey || '',
+            sudoPassword: creds.sudoPassword || '',
+            cols: term.cols,
+            rows: term.rows,
+          })
+          return true
+        }
+
+        /**
+         * 自动重连真正干活的地方（batch 2b ②）：倒计时到点后由 hook 调过来。
+         * - WS 还活着（WS 重连成功、或只是 SSH 通道断了）→ 重发 connect，25s 没连上就继续退避；
+         * - WS 也没了（WsClient 自己放弃了 / 令牌过期）→ 完整重连（新 WsClient + 新令牌），
+         *   超时由 initTerminalConnection 里的 20s 兜底继续退避。
+         */
+        const reopenSession = () => {
+          if (disposedRef.current || gen !== genRef.current) return
+          reconnectingRef.current = true
+          if (termWs.status === 'connected') {
+            if (reopenTimeoutRef.current) clearTimeout(reopenTimeoutRef.current)
+            reopenTimeoutRef.current = setTimeout(() => {
+              reopenTimeoutRef.current = null
+              if (disposedRef.current || gen !== genRef.current) return
+              if (!connectedRef.current) {
+                connectingRef.current = false
+                reconnect.notifyAttemptFailed()
+              }
+            }, 25_000)
+            resendConnect()
+            return
+          }
+          // WS 也没了：放开闸门走完整重连
+          connectingRef.current = false
+          connectedRef.current = false
+          void initTerminalConnection()
+        }
+        reopenSessionRef.current = reopenSession
+
+        termWs.on('disconnected', (msg) => {
           clearTimeout(sshTimeout)
+          if (reopenTimeoutRef.current) clearTimeout(reopenTimeoutRef.current)
           connectingRef.current = false
           connectedRef.current = false
           if (!disposedRef.current) {
             term.write('\r\n\x1b[31m[连接已断开]\x1b[0m\r\n')
-            // 状态条 + 一键重连：以前断线只是终端里的一行红字，用户除了关标签重连没别的出路
-            setConnectionLost('SSH 连接已断开')
+            // 后端现在带 reason：exit = 用户自己敲的退出（不自动重开），closed = 掉线（自动重连）
+            reconnect.notifyLost(normalizeDisconnectReason((msg as { reason?: unknown })?.reason))
           }
           onDisconnectedRef.current?.()
         })
@@ -1277,9 +1381,11 @@ export default function TerminalView({
           // 重置连接状态，允许重试
           clearTimeout(sshTimeout)
           connectingRef.current = false
+          if (reopenTimeoutRef.current) clearTimeout(reopenTimeoutRef.current)
           if (!disposedRef.current) {
             term.write(`\r\n\x1b[31m[错误] ${errMsg || '未知错误'}\x1b[0m\r\n`)
-            setConnectionLost(errMsg || '未知错误')
+            if (reconnectingRef.current) reconnect.notifyAttemptFailed()
+            else reconnect.notifyLost('error', errMsg || '未知错误')
           }
         })
 
@@ -1297,33 +1403,55 @@ export default function TerminalView({
         // 新建 WsClient 状态为 'disconnected'（初始值），这不是真正的断连。
         // 用 startedRef 跳过首次同步回调，只处理 connect() 之后的真实状态变化。
         let startedRef = false
+        // 这一代 WS 是否已经发过「初始连接」的 connect。
+        // ⚠️ 不能拿 connectingRef 当这个判据：initTerminalConnection 在调用 termWs.connect()
+        // 之前就把它置成了 true，而 WS 的 onStatus('connected') 是之后才回调的 ——
+        // 用 connectingRef 判会把**初始连接自己**挡掉，后端根本收不到 connect，
+        // 用户只看到 20s 后的「[超时] SSH 连接超时」（2026-09-16 在临时实例上实测复现）。
+        let initialConnectSent = false
         const unsub = termWs.onStatus((status) => {
           console.log(`[Terminal] onStatus: ${status}`)
           if (status === 'connected') {
-            unsubRef.current?.()
+            // 注意：这里**不再 unsub**。WsClient 自己会把掉线的 WS 重连回来，
+            // 而「WS 通了」不等于「SSH 会话回来了」—— 保持订阅才能在那之后重开会话，
+            // 这也是掉线后最快的一条恢复路（不用等倒计时走到下一档）。
             if (gen !== genRef.current) return
+            const recovery = sshEstablishedRef.current
+            if (!recovery) {
+              // 初始连接：这一代 WS 只发一次
+              if (initialConnectSent || connectedRef.current) {
+                console.log('[Terminal] onStatus: connected（初始连接已发过/已有会话，跳过）')
+                return
+              }
+              initialConnectSent = true
+              console.log(
+                `[Terminal] ✅ WS connected, sending initial SSH connect to ${creds.host}:${creds.port}`,
+              )
+              resendConnect(true)
+              return
+            }
+            // 断线恢复：走原来的防重复判据（有会话/有连接在飞就跳过）
+            if (connectedRef.current || connectingRef.current) {
+              console.log(
+                '[Terminal] onStatus: connected（恢复期已有会话/连接在飞，跳过重复 connect）',
+              )
+              return
+            }
+            reconnectingRef.current = true
+            reconnect.markAttempting()
+            term.write('\r\n\x1b[33m[网络恢复 · 正在重新建立 SSH 会话…]\x1b[0m\r\n')
             console.log(
               `[Terminal] ✅ WS connected, sending SSH connect to ${creds.host}:${creds.port}`,
             )
-            termWs.send({
-              type: 'connect',
-              connectionId,
-              host: creds.host,
-              port: creds.port,
-              username: creds.username,
-              password: creds.password || '',
-              privateKey: creds.privateKey || '',
-              sudoPassword: creds.sudoPassword || '',
-              cols: term.cols,
-              rows: term.rows,
-            })
+            resendConnect()
           } else if (status === 'disconnected') {
             if (!startedRef) {
               // 初始状态同步回调，忽略——connect() 还没调用
               console.log(`[Terminal] onStatus: disconnected (initial, skipping)`)
               return
             }
-            unsubRef.current?.()
+            // 这里**不能 unsub**：WsClient 自己会把 WS 重连回来，我们还要靠这个 handler
+            // 在它恢复时重开 SSH 会话（unsub 在 effect 清理时做）。
             clearTimeout(sshTimeout)
             const lastErr = termWs.lastError || '未知原因'
             console.error(
@@ -1331,16 +1459,25 @@ export default function TerminalView({
             )
             // WS 连接失败：重置状态，允许重试
             connectingRef.current = false
+            // ⚠️ 必须同时清掉 connectedRef：SSH 会话是绑在这条 WS 上的，
+            // 传输层断了会话就没了。不清的话后面每一条恢复路径都被它挡住 ——
+            // 快路径（WS 重连成功 → onStatus('connected') 的恢复分支）走不到，
+            // 倒计时里 reopenSession() 的 resendConnect() 也会被挡，
+            // 结果 WS 明明恢复了却再也建不起会话（只能刷页面）。
+            // 语义与下面 termWs.on('disconnected') 里的一致（那里也是这么清的）。
+            connectedRef.current = false
             if (!disposedRef.current) {
               term.write(`\r\n\x1b[31m[WebSocket 连接失败] ${lastErr}\x1b[0m\r\n`)
-              setConnectionLost(`连接失败：${lastErr}`)
+              // WS 断开是传输层的事：WsClient 自己会退避重连，我们负责在那之后把 SSH 会话重开
+              reconnect.notifyLost('closed', `连接中断：${lastErr}`)
             }
             onDisconnectedRef.current?.()
           }
         })
         unsubRef.current = unsub
 
-        // 注册完毕后再连接
+        // 注册完毕后再连接（新一代 WS ⇒ 初始连接标记复位）
+        initialConnectSent = false
         startedRef = true
         console.log(`[Terminal] Calling termWs.connect()...`)
         termWs.connect()
@@ -1448,8 +1585,8 @@ export default function TerminalView({
       //
       // 🔧 二次修复：移动端虚拟键盘会同时触发 keydown 和 onData，
       // 导致删除字符被发送两次（keydown 拦截一次 + onData 又一次）。
-      // 解决方案：keydown 拦截后设置 skipNextOnDataRef 标记，
-      // onData 处理器中检测到标记后跳过该字符。
+      // 解决方案：keydown 拦截后记录「本次删除序列 + 时间戳」，
+      // onData 处理器只对同字节且同窗口内的第二条通路跳过（见 utils/terminal-delete-dedup.ts）。
       if (
         type === 'keydown' &&
         !ctrlKey &&
@@ -1463,8 +1600,9 @@ export default function TerminalView({
         const encoded = btoa(unescape(encodeURIComponent(char)))
         termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
         onTerminalData?.(encoded)
-        // 标记跳过下一次 onData，防止移动端双重发送
-        skipNextOnDataRef.current = true
+        // 标记"这次删除已经发过了"：只对同字节且落在时间窗内的第二条通路生效，
+        // 不会像旧的裸布尔那样吞掉用户后面输入的第一个字符
+        pendingDeleteRef.current = markDeleteSent(char, Date.now())
         return false
       }
 
@@ -1472,11 +1610,13 @@ export default function TerminalView({
     })
 
     term.onData((data) => {
-      // 🔧 防止 Backspace/Delete 被重复发送
-      // 如果 keydown 已经手动处理了该字符，跳过 onData 的重复发送
-      if (skipNextOnDataRef.current) {
-        skipNextOnDataRef.current = false
-        return
+      // 🔧 防止 Backspace/Delete 被重复发送（第二通路）：只有**同一个删除序列**
+      // 且落在时间窗内才丢弃；其它字符一律放行 —— 旧实现无条件吞下一条数据，
+      // 桌面端会把用户紧接着输入的第一个字符吃掉（表现为"打字不显示"）。
+      if (pendingDeleteRef.current) {
+        const dup = isDuplicateDelete(pendingDeleteRef.current, data, Date.now())
+        pendingDeleteRef.current = null
+        if (dup) return
       }
       // 🔧 粘贴（batch 2b ①）：Ctrl+V 放行给浏览器原生粘贴后，xterm 会先送一个 ^V
       // （readline 会把它当 quoted-insert 吃掉粘贴内容的第一个字符）。只丢这一个字符，
@@ -1624,6 +1764,11 @@ export default function TerminalView({
       xtermViewport?.removeEventListener('contextmenu', preventContextMenu)
       xtermScreen?.removeEventListener('selectstart', preventSelectStart)
       xtermViewport?.removeEventListener('selectstart', preventSelectStart)
+      // 断线重连的兜底计时器也要清（否则旧 connectionId 的计时器会去重连新终端）
+      if (reopenTimeoutRef.current) {
+        clearTimeout(reopenTimeoutRef.current)
+        reopenTimeoutRef.current = null
+      }
       // 断开并清理独立 WebSocket
       if (termWsRef.current) {
         termWsRef.current.disconnect()
@@ -1825,28 +1970,41 @@ export default function TerminalView({
         />
       )}
 
-      {/* 断线状态条：断线后给一条明确的出路（重连），而不是让用户自己关标签 */}
-      {connectionLost && (
+      {/* 断线状态条：断线后不仅给"重连"，还能看到自动重连的倒计时与次数（batch 2b ②） */}
+      {reconnect.state && (
         <div
           data-testid="terminal-connection-lost"
           className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5"
         >
           <Unplug size={13} className="shrink-0 text-amber-400" />
-          <span className="min-w-0 flex-1 truncate text-xs text-amber-300">{connectionLost}</span>
+          <span
+            data-testid="terminal-connection-lost-text"
+            className="min-w-0 flex-1 truncate text-xs text-amber-300"
+          >
+            {reconnect.state.message}
+          </span>
+          {reconnect.state.auto && (
+            <button
+              type="button"
+              data-testid="terminal-reconnect-stop"
+              onClick={reconnect.stopAuto}
+              className="shrink-0 rounded px-2 py-0.5 text-xs text-amber-400 hover:bg-amber-500/10"
+            >
+              停止
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => {
-              setConnectionLost(null)
-              showHint('正在重新连接…')
-              connectTerminalRef.current?.()
-            }}
+            data-testid="terminal-reconnect-now"
+            onClick={reconnect.retryNow}
             className="shrink-0 rounded bg-amber-600/80 px-2 py-0.5 text-xs text-white hover:bg-amber-500"
           >
             重连
           </button>
           <button
             type="button"
-            onClick={() => setConnectionLost(null)}
+            data-testid="terminal-reconnect-dismiss"
+            onClick={reconnect.dismiss}
             className="shrink-0 rounded px-2 py-0.5 text-xs text-amber-400 hover:bg-amber-500/10"
           >
             忽略

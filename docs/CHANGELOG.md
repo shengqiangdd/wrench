@@ -2,6 +2,30 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 🕹️ 终端两个 P0：删除键吞掉下一个字符 / 初始连接被自己挡住
+
+- **P0-1「删掉命令再打字不显示」**：Backspace 的双通路去重用的是裸布尔
+  `skipNextOnDataRef`。桌面端 keydown 拦截后 xterm 不会再产生 `onData`，于是这个布尔
+  一直挂着，被用户**接着敲的第一个真实字符**吃掉（远端收不到 → 不回显）。实测未修复版本
+  `echo ZZX` → 3×退格 → 输入 `PAKB`，远端跑的是 **`echo AKB`**。
+  修法：新增 `utils/terminal-delete-dedup.ts`，标记绑定「字节 + 150ms 时间窗」，
+  只有同一个删除序列在窗口内到达才算重复，且**无论判定真假都清空**标记。
+- **P0-2「连不上，UI 显示 [超时] SSH 连接超时」**：`initTerminalConnection()` 在
+  `termWs.connect()` 之前就把 `connectingRef.current = true`，而 `onStatus('connected')`
+  里的判据是 `if (connectedRef.current || connectingRef.current) return` —— 初始连接被
+  自己这个标记挡掉，`connect` 消息**根本没发出去**（后端日志只剩 `Unknown message type: resize`）。
+  修法：区分「初始连接」与「断线恢复」，用每代 WS 一次的 `initialConnectSent` 让初始路径
+  绕过"连接在飞"判据，恢复路径保持原判据。
+- **断线自动重连（退避）**：后端 `disconnected` 现在带 `reason`
+  （`exit` = 用户自己敲的退出 / `closed` = 通道掉了 / `client` = WS 先断），
+  `utils/terminal-reconnect.ts` 据此决定要不要自动重连——只为 `closed`/`unknown` 退避重试
+  （2/3/6/12/15…秒，8 次封顶），用户敲 `exit` 之后不再硬塞一个新 shell。
+  新增 `hooks/useTerminalReconnect.ts` 管理倒计时与次数；WS 还活着就重发 `connect`
+  （省一次握手与令牌刷新），WS 也死了才走完整重连；重连成功**不清屏**，
+  只加一行「已重新连接 · 上一次会话的输出保留在上面」。
+- **测试**：`terminal-delete-dedup.test.ts` 6 例、`terminal-reconnect.test.ts` 14 例；
+  前端全量 **495 通过 / 43 文件**，lint 0 警告、`tsc --noEmit` 与 prettier 全绿。
+
 ### 🔧 让 backend 门禁转绿（此前一直是红的）
 
 - `cargo fmt --check` 在 `api/auth.rs`、`api/ssh.rs` 有历史漂移，
