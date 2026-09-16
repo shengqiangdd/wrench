@@ -635,6 +635,11 @@ export default function TerminalView({
       syncScrolledUpState()
     }
     viewport?.addEventListener('scroll', checkScrollPosition)
+    // xterm 6 的滚动条是自绘的 ScrollableElement，桌面滚轮滚回历史时**不一定**在
+    // .xterm-viewport 上派发 DOM scroll 事件；只挂 DOM 监听会出现：滚轮看历史时
+    // 「回到底部」按钮不出现、新输出还把用户拽回底部（改造前就有）。用 xterm 自己的
+    // onScroll 兜底，滚动状态才准。
+    const scrollDisposable = term.onScroll(() => syncScrolledUpState())
 
     // ─── 自定义触摸滚动处理器（含惯性滚动） ───
     // xterm.js 的 .xterm-screen 覆盖在 .xterm-viewport 之上，
@@ -1312,6 +1317,11 @@ export default function TerminalView({
       document.removeEventListener('selectionchange', handleSelectionChange)
       // 移除滚动位置监听器
       viewport?.removeEventListener('scroll', checkScrollPosition)
+      try {
+        scrollDisposable.dispose()
+      } catch {
+        /* ignore */
+      }
       // 清理画布：待执行的 rAF / 备用屏监听 / 控制器引用
       if (canvasRaf) {
         cancelAnimationFrame(canvasRaf)
