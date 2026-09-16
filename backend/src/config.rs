@@ -168,7 +168,8 @@ fn resolve_auth_password(database_url: Option<&str>) -> Option<String> {
     if let Ok(pw) = std::env::var("WRENCH_AUTH_PASSWORD") {
         let pw = pw.trim().to_string();
         if !pw.is_empty() {
-            eprintln!("🔐 认证已启用：使用 WRENCH_AUTH_PASSWORD 环境变量中的密码。");
+            // 只报「来源」；门是否开着由 app_state 统一宣布（避免出现「已启用」却门开着是关闭的错话）
+            eprintln!("🔑 入口口令来源：WRENCH_AUTH_PASSWORD 环境变量（仅在门开着时生效）。");
             return Some(pw);
         }
         eprintln!("⚠️  WRENCH_AUTH_PASSWORD 为空，忽略并继续查找其它来源。");
@@ -181,7 +182,7 @@ fn resolve_auth_password(database_url: Option<&str>) -> Option<String> {
         .unwrap_or_else(|| default_password_file(database_url));
 
     if let Some(pw) = read_password_file(&file_path) {
-        eprintln!("🔐 认证已启用：使用密码文件 {}", file_path.display());
+        eprintln!("🔑 入口口令来源：密码文件 {}（仅在门开着时生效）。", file_path.display());
         return Some(pw);
     }
 

@@ -38,12 +38,14 @@ else
   log "Generated random JWT_SECRET and saved to /data/.env"
 fi
 
-# ── 4. 登录口令（WRENCH_AUTH_PASSWORD，可选）──
+# ── 4. 入口口令（WRENCH_AUTH_PASSWORD，可选）──
 # 优先级：环境变量 > 持久化 .env。
-# 两者都没有时**故意不生成**：后端会进入「首次设置」模式，把一次性 setup token
-# 打到启动日志，由使用者在网页里自己设置口令（PBKDF2 哈希落库，明文不写任何文件）。
-# 以前这里会自动生成随机口令并写进 /data/.env，导致网页「首次设置」永远走不到，
-# 使用者只能 docker exec 进去 cat 明文口令 —— 那正是被刻意改掉的旧体验。
+# 两者都没有时**故意不生成**，也**不会把设置口令的责任推给使用者**（没有「网页首次设置」）：
+#   · 门开着（WRENCH_REQUIRE_AUTH 默认 on）→ 受保护接口一律 503（fail-closed），
+#     日志会说明部署侧该怎么配；网页显示「等待部署侧配置」。
+#   · 门关掉（WRENCH_REQUIRE_AUTH=off）→ 访问者零输入直进，不设任何口令。
+# 以前这里会自动生成随机口令并写进 /data/.env，使用者只能 docker exec 进去 cat 明文口令 ——
+# 那正是被刻意改掉的旧体验。
 if [ -n "$WRENCH_AUTH_PASSWORD" ]; then
   sed -i '/^#*WRENCH_AUTH_PASSWORD=/d' /data/.env
   # 单引号包裹，避免密码里的特殊字符被 shell 解析
@@ -53,7 +55,7 @@ elif grep -q "^WRENCH_AUTH_PASSWORD=." /data/.env 2>/dev/null; then
   export WRENCH_AUTH_PASSWORD=$(grep "^WRENCH_AUTH_PASSWORD=" /data/.env | head -1 | cut -d= -f2- | sed "s/^'//; s/'$//")
   log "Loaded WRENCH_AUTH_PASSWORD from /data/.env"
 else
-  log "未配置 WRENCH_AUTH_PASSWORD —— 后端将进入首次设置模式：用启动日志里的 setup token 在网页上设置口令。"
+  log "未配置 WRENCH_AUTH_PASSWORD —— 门开着时受保护接口将返回 503（请设 WRENCH_AUTH_PASSWORD，或设 WRENCH_REQUIRE_AUTH=off 让访客零输入直进）。"
 fi
 
 # ── 5. 启动 ──

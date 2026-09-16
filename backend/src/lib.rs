@@ -149,7 +149,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
     // 否则任何人都能凭它换取可用的全权令牌。
     let public_api = Router::new()
         .route("/health", get(api::health::health_check))
-        // 未认证也能查「口令是否已配置」，前端据此决定显示「首次设置」还是「登录」
+        // 未认证也能查「要不要口令」，前端据此决定：零输入直进 / 登录 / 「等待部署侧配置」
         .route("/auth/status", get(api::auth::status));
 
     // ─── Login routes (no session auth, but strictly rate-limited) ───
