@@ -382,8 +382,55 @@ xterm.js ◄── base64 输出帧 ◄── terminal.rs ◄┘
 
 ---
 
-## 6. 状态管理
+### 5.7 终端交互：可点链接、上下文菜单、搜索增强、显示偏好
 
+§5.4 / §5.5 / §5.6 解决的是"进度程序把屏幕刷乱"，属于**输出侧**；本节解决的是**交互侧**：
+一个网页终端该有的手感。审计发现的空洞（改造前）：
+
+| 能力 | 改造前的状态 |
+| --- | --- |
+| 桌面右键 | 容器上 `onContextMenu` 只 `preventDefault` → **右键什么都不发生** |
+| 长按菜单 | 只有移动端有，且只有"全选复制 / 选择并复制"两项 |
+| 终端里的 URL | 纯文本，点不动（只能手动选中再粘到浏览器） |
+| 字号/字体 | `fontSize: 13` 等硬编码字面量，全站没有任何终端偏好 |
+| 搜索 | 只有裸搜索：无大小写 / 整词 / 正则，无匹配计数；只有 `Ctrl+Shift+F` 能唤起 |
+| 断线 | 只往终端里写一行红字，**没有状态条、没有重连按钮**，用户只能关标签重开 |
+| 两个终端 | 容器终端（`modules/docker/DockerTerminal.tsx`）比 SSH 终端少一大截能力 |
+
+改造后共用的四件套（都在 `frontend/src/`，两个终端共用同一份实现）：
+
+- **`utils/terminal-prefs.ts`** —— 显示/交互偏好的**单一来源**。单个 localStorage 键
+  （`wrench_terminal_prefs`）+ 事件广播（同页 `CustomEvent`、跨标签页 `storage` 事件）。
+  读取永远返回完整对象、逐字段回退默认值（`normalizeTerminalPrefs` 是纯函数，有单测），
+  坏数据不会把终端打不开。设置面板（`modules/settings/TerminalSettings.tsx`）、SSH 终端、
+  容器终端、`Ctrl±` 快捷键全都只读写这一份。
+- **`utils/terminal-link-provider.ts` + `utils/terminal-links.ts`** —— 终端里的 URL 可点。
+  **自实现** `registerLinkProvider`，不引 `@xterm/addon-web-links`：上游 addon 是"点到就开"，
+  我们要的是 VS Code / ttyd 的行为 —— **桌面必须按 Ctrl/⌘**（终端里随手一点就把内容点走，
+  比不能点更糟），触摸设备没有修饰键才允许直接点；只认 `http`/`https`
+  （`javascript:` / `data:` / `file:` 一律不成链），打开时带 `noopener,noreferrer`。
+  尾部标点用"平衡括号"规则剥离（`(https://a)` 剥 `)`，维基式 `Foo_(bar)` 保留）。
+  不新增依赖也顺带避免了服务器构建期去 npm 取包（那边网络时通时断）。
+- **`components/terminal/TerminalContextMenu.tsx`** —— 桌面右键与移动长按**同一个菜单**：
+  复制 / 粘贴 / 全选 / 查找 / 清屏 / 回到底部（+ 触屏的"选择并复制…"）。菜单条目在
+  **事件处理器里**构建后存进 state —— 渲染期读终端 ref 是 React Compiler 规则禁止的，
+  这样也顺便把"右键那一刻"的可用状态固定住。
+- **`components/terminal/TerminalSearchBar.tsx` + `hooks/useTerminalSearch.ts` +
+  `utils/terminal-search.ts`** —— 搜索状态机与 UI：大小写 / 整词 / 正则三个开关、
+  匹配计数（`3/12`，靠 decorations 触发 `onDidChangeResults`）、正则非法时**给出可读提示**
+  （改造前 `[` 这种半成品正则会让搜索静默失效）。快捷键：`Ctrl+Shift+F` 全局（保持原行为）、
+  `Ctrl/⌘+F` 仅在焦点位于终端内时接管 —— 终端是唯一没有原生查找的地方，别的面板不该被抢键。
+
+其他交互改进：`Ctrl/⌘ + ±/0` 缩放字号（写偏好 → 广播 → 两个终端一起变，不与浏览器缩放
+搅在一起）；`copyOnSelect` 与 `macOptionIsMeta` 偏好项；断线状态条 + 一键重连（超时/WS 失败/
+远端断开都会给出出路）；"清屏"明确标注**仅本地视图**，避免用户以为动了远端 scrollback。
+
+**取舍记录**：① 容器终端不接画布与安静进度变量组（§5.4/§5.5）——它是短命会话、输出以
+`docker exec` 的常规命令为主，没有 compose 那种"整块重画"的进度程序，接了反而多一层几何
+风险；② 链接必须带修饰键是刻意选择，不用"单击即开"；③ `Ctrl+F` 只在本终端内接管，
+不做全局抢占。
+
+## 6. 状态管理
 Zustand，按业务域拆分（`stores/`）：
 
 - **`app-store.ts`** — 合并各 slice：`theme`、`activeNav`、`sidebarCollapsed`、命令面板、toast

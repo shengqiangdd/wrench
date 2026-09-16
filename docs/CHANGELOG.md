@@ -2,6 +2,35 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 🖱️ 整个终端的交互体验：可点链接、右键菜单、搜索增强、显示偏好、断线重连
+
+- **背景**：前面几轮都在修"compose 进度把屏幕刷乱"，那是**输出侧**。这轮把**交互侧**补齐 ——
+  一个网页终端该有的手感，两个终端（SSH + 容器）应当一致。
+- **审计出的空洞**：桌面右键被 `preventDefault` 后**什么都不发生**；终端里的 URL 点不动；
+  字号/字体硬编码（`fontSize: 13`）全站没有终端偏好；搜索只有裸搜索（无大小写/整词/正则、
+  无匹配计数，且只有 `Ctrl+Shift+F` 能唤起）；断线只写一行红字、**没有重连出路**；
+  容器终端（`DockerTerminal`）比 SSH 终端少一大截能力。
+- **共用四件套**（两个终端一份实现）：
+  - `utils/terminal-prefs.ts` —— 字号/字体/行高/光标样式/光标闪烁/滚动缓冲/选中即复制/
+    macOS Option 键，**单一存储键 + 事件广播**，坏数据逐字段回退默认值；
+  - `utils/terminal-link-provider.ts` + `terminal-links.ts` —— 终端里 URL 可点：
+    **桌面需 Ctrl/⌘**（防误点，与 VS Code / ttyd 一致），触屏直接点；只放行 http/https，
+    打开带 `noopener,noreferrer`；尾部标点按"平衡括号"规则剥离；自实现 provider，**不引新依赖**；
+  - `components/terminal/TerminalContextMenu.tsx` —— 桌面右键与移动长按同一个菜单：
+    复制/粘贴/全选/查找/清屏（仅本地视图）/回到底部（触屏另有"选择并复制…"）；
+  - `components/terminal/TerminalSearchBar.tsx` + `hooks/useTerminalSearch.ts` +
+    `utils/terminal-search.ts` —— 大小写/整词/正则开关、匹配计数（`3/12`）、
+    正则非法时给可读提示（此前 `[` 这种半成品会让搜索静默失效）。
+- **快捷键**：`Ctrl/⌘ + ±` 缩放字号、`Ctrl/⌘ + 0` 复位；`Ctrl+F` 仅在焦点位于终端内时接管
+  （终端是唯一没有原生查找的地方，其他面板不该被抢键）；`Ctrl+Shift+F` 保持全局行为不变。
+- **断线重连**：超时 / WebSocket 失败 / 远端断开都会在终端上方给出状态条与「重连」按钮，
+  不再让用户关标签重开；容器终端被关闭时同样给「重新打开」。
+- **设置面板**新增「终端」区（`modules/settings/TerminalSettings.tsx`）：字号、字体栈、
+  行高、光标、滚动缓冲、选中即复制、macOS Option 键，改完两个终端实时生效。
+- **测试**：新增 40 例（`terminal-prefs` / `terminal-links` / `terminal-search`），
+  前端合计 **430 passed / 37 files**；tsc / eslint(0 warning) / prettier 全绿。
+
+
 ### 🧭 画布触顶后给一条出路 + 堆行结论补上游对照与独立基准
 
 - **背景**：终端的"重复堆叠"一路修下来（安静变量组 → 画布），结论一直只有自家实现的观测

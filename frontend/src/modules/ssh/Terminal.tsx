@@ -5,7 +5,19 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
-import { Search, X, ChevronUp, ChevronDown, Copy, AlignLeft, Maximize2 } from 'lucide-react'
+import {
+  Search,
+  ChevronUp,
+  ChevronDown,
+  Copy,
+  AlignLeft,
+  Maximize2,
+  ArrowDownToLine,
+  ClipboardPaste,
+  Eraser,
+  TextSelect,
+  Unplug,
+} from 'lucide-react'
 import { createSessionWsClient, type WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
 import { isAtShellPrompt } from '../../utils/shell-prompt'
@@ -30,73 +42,25 @@ import {
 } from '../../utils/terminal-canvas'
 import { createCursorUpRunState, scanCursorUpRuns } from '../../utils/cursor-up-runs'
 import { on } from '../../services/event-bus'
-
-/** 安全读取剪贴板（WebView 中 navigator.clipboard 可能为 undefined） */
-async function safeReadClipboard(): Promise<string> {
-  try {
-    if (navigator.clipboard?.readText) {
-      return (await navigator.clipboard.readText()) || ''
-    }
-  } catch {
-    /* ignore — permission denied or not supported */
-  }
-  return ''
-}
-
-/** 安全写入剪贴板 — 多层 fallback：clipboard API → execCommand → 静默失败 */
-async function safeWriteClipboard(text: string): Promise<boolean> {
-  if (!text) return false
-
-  // 方案 1：Clipboard API（HTTPS + 有权限时可用）
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    /* fallthrough */
-  }
-
-  // 方案 2：execCommand('copy') — 利用 textarea + 选区触发浏览器原生复制
-  // 在移动端 WebView / HTTP 页面中仍可工作（需要用户手势触发的调用栈）
-  try {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    // 防止滚动条闪现
-    textarea.style.cssText =
-      'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;'
-    document.body.appendChild(textarea)
-    textarea.focus()
-    textarea.select()
-    // 移动端需要 setSelectionRange 确保选中
-    textarea.setSelectionRange(0, text.length)
-    const ok = document.execCommand('copy')
-    document.body.removeChild(textarea)
-    if (ok) return true
-  } catch {
-    /* fallthrough */
-  }
-
-  // 方案 3：如果在 iframe 中，尝试 parent window
-  try {
-    if (window.parent && window.parent !== window && window.parent.document) {
-      const textarea = window.parent.document.createElement('textarea')
-      textarea.value = text
-      textarea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;'
-      window.parent.document.body.appendChild(textarea)
-      textarea.focus()
-      textarea.select()
-      textarea.setSelectionRange(0, text.length)
-      const ok = window.parent.document.execCommand('copy')
-      window.parent.document.body.removeChild(textarea)
-      if (ok) return true
-    }
-  } catch {
-    /* fallthrough */
-  }
-
-  return false
-}
+import {
+  TerminalContextMenu,
+  type TerminalMenuItem,
+} from '../../components/terminal/TerminalContextMenu'
+import { TerminalSearchBar } from '../../components/terminal/TerminalSearchBar'
+import { useTerminalSearch } from '../../hooks/useTerminalSearch'
+import {
+  FONT_SIZE_DEFAULT,
+  FONT_SIZE_STEP,
+  patchTerminalPrefs,
+  readTerminalPrefs,
+  stepFontSize,
+  subscribeTerminalPrefs,
+  type TerminalPrefs,
+} from '../../utils/terminal-prefs'
+import { formatFontSizeHint } from '../../utils/terminal-search'
+import { isCoarsePointer } from '../../utils/terminal-links'
+import { registerTerminalLinks } from '../../utils/terminal-link-provider'
+import { safeReadClipboard, safeWriteClipboard } from '../../utils/clipboard'
 
 /** 分屏面板配置 */
 export interface SplitPanel {
@@ -206,22 +170,30 @@ export default function TerminalView({
   const connectedRef = useRef(false)
   const connectingRef = useRef(false)
   const disposedRef = useRef(false)
-  // 搜索状态
-  const [showSearch, setShowSearch] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchMatchIndex, _setSearchMatchIndex] = useState(0)
-  const [searchMatchCount, _setSearchMatchCount] = useState(0)
-  const searchInputRef = useRef<HTMLInputElement>(null)
+  // ─── 搜索：状态机抽到 hooks/useTerminalSearch（容器终端共用同一份）───
+  // `showSearchRef` 仍然保留给画布用：搜索面板占了几行屏幕，画布要让出去。
+  const showSearchRef = useRef(false)
+  const search = useTerminalSearch(
+    () => searchAddonRef.current,
+    (open) => {
+      showSearchRef.current = open
+    },
+  )
+  // ─── 终端显示偏好（字号/字体/光标/滚动缓冲；设置面板与本组件共用同一来源）───
+  const [prefs, setPrefs] = useState(readTerminalPrefs)
+  const prefsRef = useRef(prefs)
+  // ─── 断线状态：断线不再只是终端里的一行红字，而是带"重连"出路的状态条 ───
+  const [connectionLost, setConnectionLost] = useState<string | null>(null)
   // ─── 桌面端：选中文本后浮现复制按钮 ───
   const [hasSelection, setHasSelection] = useState(false)
-  // ─── 移动端：长按浮动菜单 ───
+  // ─── 上下文菜单（桌面右键 / 移动端长按共用）───
+  // 条目在**事件处理器里**构建好再存进 state：渲染期读取终端 ref 是 React Compiler
+  // 明令禁止的，而且这样能把"右键那一刻"的可用状态（有没有选中、能不能回到底部）固定住。
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
-    hasSelection: boolean
+    items: TerminalMenuItem[]
   } | null>(null)
-  // contextMenuRef 用于点击外部关闭
-  const contextMenuRef = useRef<HTMLDivElement>(null)
   // ─── 移动端快捷键工具栏 ref（用于 ColorOS 长按阻止） ───
   const toolbarRef = useRef<HTMLDivElement>(null)
   // ─── 移动端：选择文本模态框（textarea 让用户自由选择复制） ───
@@ -285,6 +257,190 @@ export default function TerminalView({
     if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
     hintTimerRef.current = setTimeout(() => setHint(null), 2500)
   }
+
+  /**
+   * 把一组显示偏好应用到当前终端实例。
+   * 字号/行高会改变行高像素与可视行数，所以必须让画布重算几何（`refit` 会清掉
+   * 可视行数缓存 —— 那个缓存是和字号绑定的，不清就会按旧字号算窗口平移量）。
+   */
+  const applyPrefsToTerminal = useCallback((next: TerminalPrefs) => {
+    const term = terminalRef.current
+    if (!term) return
+    term.options.fontSize = next.fontSize
+    term.options.fontFamily = next.fontFamily
+    term.options.lineHeight = next.lineHeight
+    term.options.cursorStyle = next.cursorStyle
+    term.options.cursorBlink = next.cursorBlink
+    term.options.scrollback = next.scrollback
+    term.options.macOptionIsMeta = next.macOptionIsMeta
+    canvasCtlRef.current?.refit()
+  }, [])
+
+  // 渲染期不能写 ref（React Compiler 规则），用 effect 同步
+  useEffect(() => {
+    prefsRef.current = prefs
+  }, [prefs])
+
+  // 偏好变化（设置面板 / 快捷键 / 另一个标签页）→ 同步到本实例
+  useEffect(() => {
+    return subscribeTerminalPrefs(() => setPrefs(readTerminalPrefs()))
+  }, [])
+
+  useEffect(() => {
+    applyPrefsToTerminal(prefs)
+  }, [prefs, applyPrefsToTerminal])
+
+  /**
+   * 字号缩放：Ctrl/⌘ + `+`/`-`/`0`（`Ctrl+0` 复位）。
+   * 只写偏好存储 —— 落盘 + 广播后，本组件与其他终端（含容器终端）一起更新，
+   * 不需要在这里直接碰 xterm。
+   */
+  const changeFontSize = (delta: number | 'reset') => {
+    const current = prefsRef.current.fontSize
+    const next = delta === 'reset' ? FONT_SIZE_DEFAULT : stepFontSize(current, delta)
+    if (next === current) {
+      showHint(`终端字号已到边界（${next}px）`)
+      return
+    }
+    patchTerminalPrefs({ fontSize: next })
+    showHint(formatFontSizeHint({ ...prefsRef.current, fontSize: next }))
+  }
+
+  /** 粘贴：剪贴板 → PTY（右键菜单与快捷键共用；读不到时给出可操作的提示） */
+  const pasteToPty = () => {
+    void safeReadClipboard().then((text) => {
+      if (!text) {
+        showHint('读不到剪贴板（需 HTTPS 或浏览器授权）· 可用 Ctrl+V 直接粘贴')
+        return
+      }
+      const encoded = btoa(unescape(encodeURIComponent(text)))
+      termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+      onTerminalData?.(encoded)
+    })
+  }
+  // ─── 复制 / 菜单 / 回到底部：这些要在连接 effect **之前**声明 ───
+  // （移动端长按菜单在 effect 里构建，声明晚于 effect 会被判定为 TDZ 使用）
+
+  // ─── 复制操作辅助函数 ───
+
+  /** 获取终端全部文本（优先用 buffer，fallback 到 selection API） */
+  const getTerminalAllText = useCallback((): string => {
+    const term = terminalRef.current
+    if (!term) return ''
+    // 方式 1：从 buffer 逐行读取（最可靠，不依赖 selection API）
+    try {
+      const buffer = term.buffer.active
+      const lines: string[] = []
+      for (let i = 0; i < buffer.length; i++) {
+        lines.push(buffer.getLine(i)?.translateToString(true) || '')
+      }
+      return lines.join('\n')
+    } catch {
+      // fallthrough
+    }
+    // 方式 2：selection API fallback
+    try {
+      term.selectAll()
+      const text = term.getSelection() || ''
+      term.clearSelection()
+      return text
+    } catch {
+      return ''
+    }
+  }, [])
+
+  /** 复制操作（有选区则复制选中，无则复制全部） */
+  const handleCopyAction = useCallback(() => {
+    const term = terminalRef.current
+    if (!term) return
+    // 检查是否有选区
+    const selection = term.getSelection() || ''
+    if (selection.trim()) {
+      safeWriteClipboard(selection)
+    } else {
+      const allText = getTerminalAllText()
+      if (allText) safeWriteClipboard(allText)
+    }
+  }, [getTerminalAllText])
+
+  /** 回到底部：画布开启时 = 窗口跟随光标贴底；否则直接滚到底 */
+  const goLive = () => {
+    userScrolledUpRef.current = false
+    setUserScrolledUp(false)
+    if (canvasCtlRef.current) canvasCtlRef.current.goLive()
+    else terminalRef.current?.scrollToBottom()
+  }
+
+  /**
+   * 上下文菜单条目 —— 桌面右键与移动长按**共用同一组**。
+   *
+   * 之前只有移动端长按有菜单，而且只有两项复制；桌面右键被 preventDefault 之后
+   * 什么都不发生。这里补齐"一个终端该能做的事"，也顺手把两端的操作路径统一。
+   */
+  const buildTerminalMenuItems = (hasSel: boolean): TerminalMenuItem[] => {
+    const items: TerminalMenuItem[] = [
+      {
+        id: 'copy',
+        label: hasSel ? '复制选中' : '复制全部',
+        icon: Copy,
+        shortcut: 'Ctrl+Shift+C',
+        onSelect: handleCopyAction,
+      },
+      {
+        id: 'paste',
+        label: '粘贴',
+        icon: ClipboardPaste,
+        shortcut: 'Ctrl+Shift+V',
+        onSelect: pasteToPty,
+      },
+      {
+        id: 'select-all',
+        label: '全选',
+        icon: TextSelect,
+        separatorBefore: true,
+        onSelect: () => {
+          terminalRef.current?.selectAll()
+          setHasSelection(true)
+        },
+      },
+      {
+        id: 'search',
+        label: '查找',
+        icon: Search,
+        shortcut: 'Ctrl+F',
+        onSelect: search.openSearch,
+      },
+      {
+        id: 'clear',
+        label: '清屏（仅本地视图）',
+        icon: Eraser,
+        separatorBefore: true,
+        onSelect: () => {
+          // 只清本地视口，不清远端 scrollback —— 免得用户以为把服务器输出删了
+          terminalRef.current?.clear()
+          goLive()
+        },
+      },
+      {
+        id: 'bottom',
+        label: '回到底部',
+        icon: ArrowDownToLine,
+        disabled: !userScrolledUp,
+        onSelect: goLive,
+      },
+    ]
+    // 触屏设备：手指精确选字很难，保留"弹窗里挑文本再复制"这条路
+    if (isCoarsePointer()) {
+      items.splice(1, 0, {
+        id: 'pick-copy',
+        label: '选择并复制…',
+        icon: TextSelect,
+        onSelect: () => setTimeout(() => setSelectModalText(getTerminalAllText()), 50),
+      })
+    }
+    return items
+  }
+
   // ─── 长时间运行命令检测 ───
   const [longRunning, setLongRunning] = useState<{ lines: number; seconds: number } | null>(null)
   const outputTrackerRef = useRef({
@@ -296,12 +452,10 @@ export default function TerminalView({
   // 用 ref 避免 event handler 中的闭包过期
   const onConnectedRef = useRef(onConnected)
   const onDisconnectedRef = useRef(onDisconnected)
-  const showSearchRef = useRef(showSearch)
   useEffect(() => {
     onConnectedRef.current = onConnected
     onDisconnectedRef.current = onDisconnected
-    showSearchRef.current = showSearch
-  }, [onConnected, onDisconnected, showSearch])
+  }, [onConnected, onDisconnected])
   /** generation ID：每次 mount 递增，防止旧实例的异步回调污染新实例 */
   const genRef = useRef(0)
   // 每个终端独立的 WebSocket 客户端（用于 SSH I/O）
@@ -370,14 +524,18 @@ export default function TerminalView({
     setUserScrolledUp(false)
     setLongRunning(null)
 
+    // 初始显示参数来自用户偏好（设置面板 / Ctrl± 改的都是这份；见 utils/terminal-prefs）
+    const initialPrefs = prefsRef.current
     const term = new XTerm({
-      cursorBlink: true,
-      cursorStyle: 'block',
-      fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, monospace",
+      cursorBlink: initialPrefs.cursorBlink,
+      cursorStyle: initialPrefs.cursorStyle,
+      fontSize: initialPrefs.fontSize,
+      fontFamily: initialPrefs.fontFamily,
+      lineHeight: initialPrefs.lineHeight,
+      macOptionIsMeta: initialPrefs.macOptionIsMeta,
       theme: TERMINAL_THEME,
       allowTransparency: true,
-      scrollback: 3000,
+      scrollback: initialPrefs.scrollback,
       tabStopWidth: 4,
       // 移动端优化
       screenReaderMode: false,
@@ -423,6 +581,12 @@ export default function TerminalView({
     } catch {
       // 静默降级到默认 unicode 版本
     }
+
+    // ─── 可点击链接（自实现 linkProvider，不引新依赖）───
+    // 终端里的 URL 之前是一串死文本：想让用户能点开，只能手动选中再复制到浏览器。
+    // 激活策略见 utils/terminal-links：桌面必须按 Ctrl/⌘（与 VS Code / ttyd 一致，
+    // ─── 可点击链接（共享实现，见 utils/terminal-link-provider.ts）───
+    const linkDisposable = registerTerminalLinks(term, showHint)
 
     // ─── 终端画布：逻辑尺寸与可视尺寸解耦（几何层面的根源修复）───
     // 可视区只是逻辑屏上的一扇窗：窗口偏移 W ∈ [0, 逻辑行数 − 可视行数]，
@@ -632,7 +796,17 @@ export default function TerminalView({
       }
     }
 
-    canvasCtlRef.current = { refit: canvasRefit, goLive: canvasGoLive }
+    /**
+     * 强制重算几何：`canvasVisibleRowsCache` 存的是"这扇窗有几行"，它由**行高**推出 ——
+     * 字号/行高变了以后这个缓存必然过期（不清就会按旧行高算窗口平移量）。
+     * 偏好变更（设置面板 / Ctrl±）走这里；容器尺寸变化走 `canvasRefit`（缓存可复用）。
+     */
+    const canvasHardRefit = () => {
+      canvasVisibleRowsCache = 0
+      canvasRefit()
+    }
+
+    canvasCtlRef.current = { refit: canvasHardRefit, goLive: canvasGoLive }
 
     // 备用屏（vim / less / htop / fzf 的 smcup）自动 1:1：全屏程序按可视尺寸渲染，
     // 行为与改造前一致，不受画布影响。
@@ -820,7 +994,7 @@ export default function TerminalView({
         setContextMenu({
           x: longPressTouchX,
           y: longPressTouchY,
-          hasSelection,
+          items: buildTerminalMenuItems(hasSelection),
         })
       }, 500)
     }
@@ -853,6 +1027,15 @@ export default function TerminalView({
       setHasSelection(text.trim().length > 0)
     }
     document.addEventListener('selectionchange', handleSelectionChange)
+
+    // ─── 选中即复制（偏好项，默认关）───
+    // 走自家的 safeWriteClipboard 而不是 xterm 内部复制：HTTP 页面 / 移动 WebView 里
+    // navigator.clipboard 可能不存在，需要 execCommand 兜底（见文件顶部）。
+    const selectionDisposable = term.onSelectionChange(() => {
+      if (!prefsRef.current.copyOnSelect) return
+      const sel = term.getSelection()
+      if (sel) void safeWriteClipboard(sel)
+    })
 
     // 延迟执行 fit 确保容器已渲染
     const fitTimer = setTimeout(() => {
@@ -940,6 +1123,7 @@ export default function TerminalView({
             term.write(
               '\r\n\x1b[31m[超时] SSH 连接超时，请检查主机地址、端口和凭据是否正确\x1b[0m\r\n',
             )
+            setConnectionLost('SSH 连接超时（检查主机/端口/凭据）')
             console.error(`[Terminal] SSH connection timeout for ${creds.host}`)
           }
         }
@@ -999,6 +1183,7 @@ export default function TerminalView({
           clearTimeout(sshTimeout)
           connectingRef.current = false
           connectedRef.current = true
+          setConnectionLost(null)
           // 清除 [连接中] 提示行，替换为 [已连接] 确认
           if (!disposedRef.current) {
             ansiBuf.reset()
@@ -1069,6 +1254,8 @@ export default function TerminalView({
           connectedRef.current = false
           if (!disposedRef.current) {
             term.write('\r\n\x1b[31m[连接已断开]\x1b[0m\r\n')
+            // 状态条 + 一键重连：以前断线只是终端里的一行红字，用户除了关标签重连没别的出路
+            setConnectionLost('SSH 连接已断开')
           }
           onDisconnectedRef.current?.()
         })
@@ -1082,6 +1269,7 @@ export default function TerminalView({
           connectingRef.current = false
           if (!disposedRef.current) {
             term.write(`\r\n\x1b[31m[错误] ${errMsg || '未知错误'}\x1b[0m\r\n`)
+            setConnectionLost(errMsg || '未知错误')
           }
         })
 
@@ -1135,6 +1323,7 @@ export default function TerminalView({
             connectingRef.current = false
             if (!disposedRef.current) {
               term.write(`\r\n\x1b[31m[WebSocket 连接失败] ${lastErr}\x1b[0m\r\n`)
+              setConnectionLost(`连接失败：${lastErr}`)
             }
             onDisconnectedRef.current?.()
           }
@@ -1167,7 +1356,24 @@ export default function TerminalView({
     // Ctrl+V / Shift+Insert: 粘贴
     // Ctrl+Shift+C: 强制复制 / Ctrl+Shift+V: 强制粘贴
     term.attachCustomKeyEventHandler((e) => {
-      const { key, ctrlKey, shiftKey, type } = e
+      const { key, ctrlKey, shiftKey, altKey, metaKey, type } = e
+
+      // Ctrl/⌘ + `+`/`=`/`-`/`0` → 字号缩放（`0` 复位）。
+      // 终端里最常见的"看不清/太挤"自救操作，之前只能去改浏览器缩放（会连整个界面一起变）。
+      if (type === 'keydown' && (ctrlKey || metaKey) && !altKey) {
+        if (key === '=' || key === '+') {
+          changeFontSize(FONT_SIZE_STEP)
+          return false
+        }
+        if (key === '-' || key === '_') {
+          changeFontSize(-FONT_SIZE_STEP)
+          return false
+        }
+        if (key === '0') {
+          changeFontSize('reset')
+          return false
+        }
+      }
 
       // Ctrl+Shift+C → 复制选中文本
       if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'c') {
@@ -1322,18 +1528,28 @@ export default function TerminalView({
       })
     })
 
-    // ─── Ctrl+Shift+F 搜索 ───
+    // ─── 搜索快捷键 ───
+    // · Ctrl+Shift+F：全局（保持改造前的行为，快捷键帮助里就是这么写的）
+    // · Ctrl/⌘+F：只在焦点位于本终端时接管 —— 否则会把浏览器查找键和其他面板的
+    //   查找键一起吃掉（终端是唯一"没有原生查找"的地方，它才需要这个键）
     const searchKeyHandler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'f') {
-        e.preventDefault()
-        setShowSearch((s) => !s)
-        if (!showSearchRef.current) setTimeout(() => searchInputRef.current?.focus(), 50)
-      }
       if (e.key === 'Escape') {
-        setShowSearch(false)
-        setSearchQuery('')
+        if (!showSearchRef.current) return
+        e.preventDefault()
+        search.closeSearch()
         term.focus()
+        return
       }
+      const isGlobal = e.ctrlKey && e.shiftKey && (e.key === 'f' || e.key === 'F')
+      const isLocal =
+        (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')
+      if (!isGlobal && !isLocal) return
+      if (isLocal) {
+        const target = e.target as Node | null
+        if (!target || !container.contains(target)) return
+      }
+      e.preventDefault()
+      search.toggleSearch()
     }
     window.addEventListener('keydown', searchKeyHandler)
 
@@ -1356,6 +1572,16 @@ export default function TerminalView({
       viewport?.removeEventListener('scroll', checkScrollPosition)
       try {
         scrollDisposable.dispose()
+      } catch {
+        /* ignore */
+      }
+      try {
+        linkDisposable.dispose()
+      } catch {
+        /* ignore */
+      }
+      try {
+        selectionDisposable.dispose()
       } catch {
         /* ignore */
       }
@@ -1458,63 +1684,6 @@ export default function TerminalView({
       if (longPressTimer) clearTimeout(longPressTimer)
     }
   }, []) // 只挂载一次，toolbar DOM 不变
-
-  // ─── 搜索函数 ───
-  const doSearch = useCallback((query: string, dir: 'next' | 'prev' = 'next') => {
-    const sa = searchAddonRef.current
-    if (!sa || !query.trim()) return
-    try {
-      if (dir === 'prev') {
-        sa.findPrevious(query)
-      } else {
-        sa.findNext(query)
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  // ─── 复制操作辅助函数 ───
-
-  /** 获取终端全部文本（优先用 buffer，fallback 到 selection API） */
-  const getTerminalAllText = useCallback((): string => {
-    const term = terminalRef.current
-    if (!term) return ''
-    // 方式 1：从 buffer 逐行读取（最可靠，不依赖 selection API）
-    try {
-      const buffer = term.buffer.active
-      const lines: string[] = []
-      for (let i = 0; i < buffer.length; i++) {
-        lines.push(buffer.getLine(i)?.translateToString(true) || '')
-      }
-      return lines.join('\n')
-    } catch {
-      // fallthrough
-    }
-    // 方式 2：selection API fallback
-    try {
-      term.selectAll()
-      const text = term.getSelection() || ''
-      term.clearSelection()
-      return text
-    } catch {
-      return ''
-    }
-  }, [])
-
-  /** 复制操作（有选区则复制选中，无则复制全部） */
-  const handleCopyAction = useCallback(() => {
-    const term = terminalRef.current
-    if (!term) return
-    // 检查是否有选区
-    const selection = term.getSelection() || ''
-    if (selection.trim()) {
-      safeWriteClipboard(selection)
-    } else {
-      const allText = getTerminalAllText()
-      if (allText) safeWriteClipboard(allText)
-    }
-  }, [getTerminalAllText])
 
   /** 往当前 PTY 会话写入一行命令（返回是否已送出） */
   const injectPtyLine = (line: string): boolean => {
@@ -1623,58 +1792,55 @@ export default function TerminalView({
 
   return (
     <div className={`group relative flex flex-col ${className}`} style={{ minHeight: 0 }}>
-      {/* 搜索面板 */}
-      {showSearch && (
-        <div className="absolute right-0 bottom-0 left-0 z-20 flex items-center gap-1 border-t border-slate-700/50 bg-slate-900 px-2 py-1">
-          <Search size={13} className="shrink-0 text-slate-500" />
-          <input
-            ref={searchInputRef}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') doSearch(searchQuery, e.shiftKey ? 'prev' : 'next')
-              if (e.key === 'Escape') {
-                setShowSearch(false)
-                setSearchQuery('')
-                terminalRef.current?.focus()
-              }
-            }}
-            placeholder="搜索终端内容..."
-            className="flex-1 rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-200 outline-none placeholder:text-slate-600"
-          />
-          {searchQuery.trim() && (
-            <span className="text-[10px] text-slate-600">
-              {searchMatchCount > 0 ? `${searchMatchIndex + 1}/${searchMatchCount}` : '0'}
-            </span>
-          )}
+      {/* 搜索面板（共用组件：带大小写/整词/正则开关与匹配计数，见 TerminalSearchBar） */}
+      {search.open && (
+        <TerminalSearchBar
+          query={search.query}
+          onQueryChange={search.setQuery}
+          options={search.options}
+          onOptionChange={search.updateOption}
+          matchCount={search.matchCount}
+          matchIndex={search.matchIndex}
+          error={search.error}
+          onNext={search.next}
+          onPrev={search.prev}
+          onClose={() => {
+            search.closeSearch()
+            terminalRef.current?.focus()
+          }}
+          inputRef={search.inputRef}
+        />
+      )}
+
+      {/* 断线状态条：断线后给一条明确的出路（重连），而不是让用户自己关标签 */}
+      {connectionLost && (
+        <div
+          data-testid="terminal-connection-lost"
+          className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5"
+        >
+          <Unplug size={13} className="shrink-0 text-amber-400" />
+          <span className="min-w-0 flex-1 truncate text-xs text-amber-300">{connectionLost}</span>
           <button
-            onClick={() => doSearch(searchQuery, 'prev')}
-            disabled={!searchQuery.trim()}
-            className="btn-icon text-slate-500 hover:text-slate-300 disabled:opacity-30"
-            title="上一个 (Shift+Enter)"
-          >
-            <ChevronUp size={13} />
-          </button>
-          <button
-            onClick={() => doSearch(searchQuery, 'next')}
-            disabled={!searchQuery.trim()}
-            className="btn-icon text-slate-500 hover:text-slate-300 disabled:opacity-30"
-            title="下一个 (Enter)"
-          >
-            <ChevronDown size={13} />
-          </button>
-          <button
+            type="button"
             onClick={() => {
-              setShowSearch(false)
-              setSearchQuery('')
-              terminalRef.current?.focus()
+              setConnectionLost(null)
+              showHint('正在重新连接…')
+              connectTerminalRef.current?.()
             }}
-            className="btn-icon text-slate-500 hover:text-slate-300"
+            className="shrink-0 rounded bg-amber-600/80 px-2 py-0.5 text-xs text-white hover:bg-amber-500"
           >
-            <X size={12} />
+            重连
+          </button>
+          <button
+            type="button"
+            onClick={() => setConnectionLost(null)}
+            className="shrink-0 rounded px-2 py-0.5 text-xs text-amber-400 hover:bg-amber-500/10"
+          >
+            忽略
           </button>
         </div>
       )}
+
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden bg-slate-950 px-1"
@@ -1682,7 +1848,16 @@ export default function TerminalView({
           // 阻止浏览器默认触摸行为，由自定义触摸滚动处理器接管
           touchAction: 'none',
         }}
-        onContextMenu={(e) => e.preventDefault()}
+        onContextMenu={(e) => {
+          // 右键：桌面端唯一顺手的"复制/粘贴/查找"入口（之前这里 preventDefault 之后
+          // 什么都没发生，用户会以为终端坏了）
+          e.preventDefault()
+          setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            items: buildTerminalMenuItems(!!terminalRef.current?.getSelection()),
+          })
+        }}
         onPointerDown={(e) => {
           // 移动端 tap 终端区域时，主动 focus 触发输入法键盘
           // touch-action: none 会阻止浏览器的默认 tap→focus 行为，
@@ -1787,13 +1962,7 @@ export default function TerminalView({
       {/* ─── "回到底部"浮动按钮 ─── */}
       {userScrolledUp && (
         <button
-          onClick={() => {
-            userScrolledUpRef.current = false
-            setUserScrolledUp(false)
-            // 画布开启时"回到底部"= 窗口跟随光标 + 贴底（见 canvasGoLive）
-            if (canvasCtlRef.current) canvasCtlRef.current.goLive()
-            else terminalRef.current?.scrollToBottom()
-          }}
+          onClick={goLive}
           className={`absolute right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-slate-700/90 text-slate-300 shadow-lg backdrop-blur-sm transition-all hover:bg-slate-600 hover:text-white md:bottom-6 ${
             toolbarCollapsed ? 'bottom-6' : 'bottom-28'
           }`}
@@ -1810,73 +1979,14 @@ export default function TerminalView({
         </div>
       )}
 
-      {/* ─── 移动端：长按浮动上下文菜单 ─── */}
+      {/* ─── 上下文菜单：桌面右键 / 移动端长按共用（见 components/terminal/TerminalContextMenu）─── */}
       {contextMenu && (
-        <>
-          {/* 透明遮罩：点击关闭菜单 */}
-          <div
-            className="fixed inset-0 z-40"
-            onPointerDown={(e) => {
-              e.preventDefault()
-              setContextMenu(null)
-            }}
-          />
-          <div
-            ref={contextMenuRef}
-            className="fixed z-50 overflow-hidden rounded-xl border border-slate-600/50 bg-slate-800/95 shadow-2xl backdrop-blur-md"
-            style={{
-              left: `${Math.min(contextMenu.x, window.innerWidth - 180)}px`,
-              top: `${Math.min(contextMenu.y, window.innerHeight - 120)}px`,
-              minWidth: '160px',
-            }}
-          >
-            {/* 复制全部内容 */}
-            <button
-              onPointerDown={async (e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                const text = getTerminalAllText()
-                console.log(
-                  `[Copy] 全选复制: text length=${text.length}, sample=${text.substring(0, 80)}`,
-                )
-                const ok = await safeWriteClipboard(text)
-                console.log(`[Copy] 全选复制 result: ${ok}`)
-                setContextMenu(null)
-              }}
-              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-200 active:bg-slate-700"
-            >
-              <Copy size={14} className="text-slate-400" />
-              全选复制
-            </button>
-            {/* 复制选中内容 — 弹出 textarea 让用户自由选择 */}
-            <button
-              onPointerDown={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                // 获取全部文本，弹出模态框让用户选择
-                const text = getTerminalAllText()
-                setContextMenu(null)
-                // 微延迟等菜单关闭后再弹出模态框，避免 z-index 冲突
-                setTimeout(() => setSelectModalText(text), 50)
-              }}
-              className="flex w-full items-center gap-2 border-t border-slate-700/50 px-4 py-2.5 text-left text-sm text-slate-200 active:bg-slate-700"
-            >
-              <Copy size={14} className="text-slate-400" />
-              选择并复制
-            </button>
-            {/* 取消 */}
-            <button
-              onPointerDown={(e) => {
-                e.preventDefault()
-                setContextMenu(null)
-              }}
-              className="flex w-full items-center gap-2 border-t border-slate-700/50 px-4 py-2.5 text-left text-sm text-slate-400 active:bg-slate-700"
-            >
-              <X size={14} className="text-slate-500" />
-              取消
-            </button>
-          </div>
-        </>
+        <TerminalContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={() => setContextMenu(null)}
+        />
       )}
 
       {/* ─── 移动端：选择文本模态框（textarea 让用户自由选择复制） ─── */}

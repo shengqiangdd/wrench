@@ -5,6 +5,7 @@ import SystemMaintenance from './SystemMaintenance'
 import AiSettings from './AiSettings'
 import ImportExport from './ImportExport'
 import AccountSection from './AccountSection'
+import TerminalSettings from './TerminalSettings'
 
 export default function SettingsPanel() {
   const theme = useAppStore((s) => s.theme)
@@ -73,6 +74,9 @@ export default function SettingsPanel() {
               </p>
             </div>
           </section>
+
+          {/* ─── 终端 ─── */}
+          <TerminalSettings />
 
           {/* ─── AI Agent ─── */}
           <AiSettings />
