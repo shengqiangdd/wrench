@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   QUIET_PROGRESS_ENV,
+  QUIET_PROGRESS_LEGACY_STORAGE_KEY,
+  QUIET_PROGRESS_STORAGE_KEY,
   buildQuietProgressExportLine,
   buildQuietProgressUnsetLine,
+  defaultQuietProgress,
   quietProgressVarNames,
+  resolveQuietProgress,
 } from '../../utils/quiet-env'
 
 /**
@@ -80,5 +84,41 @@ describe('quiet-env', () => {
     ] as ReadonlyArray<readonly [string, string]>
     expect(buildQuietProgressExportLine(env)).toBe('export A=1 B=x')
     expect(buildQuietProgressUnsetLine(env)).toBe('unset A B')
+  })
+})
+
+/**
+ * 默认值 = **跟随画布**。
+ *
+ * 回归背景：安静变量组最初默认开启（那时画布还不存在，只有"压成纯文本"这一条路）。
+ * 画布上线后几何层已经解决"块高 > 屏高"，默认再注入 plain 就是净损失：
+ * 看不到 compose / BuildKit 的动画进度、连接时多三行 `export` 回显。
+ */
+describe('quiet-env 默认值（跟随画布）', () => {
+  it('画布开着（默认）→ 不注入', () => {
+    expect(defaultQuietProgress(true)).toBe(false)
+  })
+
+  it('画布关掉（贴屏，没有行数兜底）→ 注入', () => {
+    expect(defaultQuietProgress(false)).toBe(true)
+  })
+
+  it('用户没选过（stored = null）→ 用画布推出来的默认值，且标记为"非显式"', () => {
+    expect(resolveQuietProgress(null, true)).toEqual({ value: false, manual: false })
+    expect(resolveQuietProgress(null, false)).toEqual({ value: true, manual: false })
+  })
+
+  it('用户显式开过 → 画布开着也照旧注入（听用户的）', () => {
+    expect(resolveQuietProgress('1', true)).toEqual({ value: true, manual: true })
+  })
+
+  it('用户显式关过 → 画布关着也照旧不注入（听用户的）', () => {
+    expect(resolveQuietProgress('0', false)).toEqual({ value: false, manual: true })
+  })
+
+  it('存储键名保持稳定（改键等于把所有人的选择丢掉）', () => {
+    expect(QUIET_PROGRESS_STORAGE_KEY).toBe('wrench_ssh_quiet_progress')
+    // 老键（语义已从"只 compose"扩到 docker 全家族）读到就当作显式选择
+    expect(QUIET_PROGRESS_LEGACY_STORAGE_KEY).toBe('wrench_ssh_compose_plain')
   })
 })

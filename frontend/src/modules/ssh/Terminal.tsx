@@ -9,7 +9,13 @@ import { Search, X, ChevronUp, ChevronDown, Copy, AlignLeft, Maximize2 } from 'l
 import { createSessionWsClient, type WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
 import { isAtShellPrompt } from '../../utils/shell-prompt'
-import { buildQuietProgressExportLine, buildQuietProgressUnsetLine } from '../../utils/quiet-env'
+import {
+  QUIET_PROGRESS_LEGACY_STORAGE_KEY,
+  QUIET_PROGRESS_STORAGE_KEY,
+  buildQuietProgressExportLine,
+  buildQuietProgressUnsetLine,
+  resolveQuietProgress,
+} from '../../utils/quiet-env'
 import {
   CANVAS_GROW_MEMORY_MS,
   CANVAS_ROWS_FLOOR,
@@ -155,6 +161,34 @@ function encodePtyLine(line: string): string {
   return btoa(unescape(encodeURIComponent(` ${line}\r`)))
 }
 
+/** 画布开关的持久化键（读不到 localStorage 时按默认开） */
+const CANVAS_STORAGE_KEY = 'wrench_ssh_canvas'
+
+/**
+ * 画布开关的初值。
+ * 抽成函数是因为「进度纯文本」的默认值要跟随画布（见 quiet-env 的
+ * `resolveQuietProgress`），两处 useState 初值得读到同一份状态。
+ */
+function readCanvasPref(): boolean {
+  try {
+    return localStorage.getItem(CANVAS_STORAGE_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+/** 已保存的「进度纯文本」选择（新键优先，兼容老键）；`null` = 用户从没选过 */
+function readQuietProgressPref(): string | null {
+  try {
+    return (
+      localStorage.getItem(QUIET_PROGRESS_STORAGE_KEY) ??
+      localStorage.getItem(QUIET_PROGRESS_LEGACY_STORAGE_KEY)
+    )
+  } catch {
+    return null
+  }
+}
+
 export default function TerminalView({
   connectionId,
   sessionId,
@@ -203,23 +237,21 @@ export default function TerminalView({
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
   // ─── 进度纯文本开关（本会话注入了哪些变量见 utils/quiet-env.ts）───
-  // 默认开启：整块重画的进度 UI（compose 的 [+]/[=> 块、BuildKit 的 TUI）靠
-  // ESC[nA"上移回块首"逐帧重绘，块高超过可见行数时，每帧会往 scrollback 永久丢
-  // (块高 − 可见行数) 行：实测 44 列 × 12 行跑一次 20 服务 compose pull = 3012 行
+  // 默认值**跟随画布**：整块重画的进度 UI（compose 的 [+]/[=> 块、BuildKit 的 TUI）
+  // 靠 ESC[nA"上移回块首"逐帧重绘，块高超过屏高时每帧会往 scrollback 永久丢
+  // (块高 − 屏高) 行：实测 44 列 × 12 行跑一次 20 服务 compose pull = 3012 行
   // （2151 行重复）；plain 是逐行追加日志，任何尺寸都稳定。
-  // 覆盖 docker 全家族（compose / buildkit / 裸 build），单行 \r 进度条不动。
-  const [composePlain, setComposePlain] = useState<boolean>(() => {
-    try {
-      // 新 key；兼容老 key（wrench_ssh_compose_plain，语义已从"只 compose"扩到 docker 全家族）
-      const v =
-        localStorage.getItem('wrench_ssh_quiet_progress') ??
-        localStorage.getItem('wrench_ssh_compose_plain')
-      return v === null ? true : v === '1'
-    } catch {
-      return true
-    }
-  })
+  // 但画布（几何层，默认开）已经把块高塞进逻辑屏、实测富进度 0 堆行 —— 这时再压成
+  // plain 就是净损失（看不到动画、回显三行 export、等于替所有人改 docker 的展示设置）。
+  // 所以：画布开 → 不注入；画布关（用户主动贴屏，行数兜底没了）→ 自动注入。
+  // 用户手动点过 plain 芯片就听用户的，画布再切也不动它（plainManualRef）。
+  const [plainInit] = useState(() =>
+    resolveQuietProgress(readQuietProgressPref(), readCanvasPref()),
+  )
+  const [composePlain, setComposePlain] = useState<boolean>(plainInit.value)
   const composePlainRef = useRef(composePlain)
+  /** 用户是否手动点过 plain 芯片（没点过 = 跟随画布） */
+  const plainManualRef = useRef(plainInit.manual)
   // ─── 终端画布开关（逻辑尺寸与可视尺寸解耦，见 utils/terminal-canvas.ts）───
   // 默认开启：窄视口（手机键盘弹起约 12 行）下把 PTY 逻辑屏抬到 30 行，
   // 可视区只是这扇屏上的一扇窗（跟随光标、可平移）。这样"整块重画"的进度 UI
@@ -227,13 +259,7 @@ export default function TerminalView({
   // compose pull：2383 行 → 0 行）。
   // 关掉 = 贴屏（逻辑尺寸 = 可视尺寸，即改造前行为），留给 tmux / top 这类
   // 非备用屏全屏程序，或不喜欢窗口平移的场景。
-  const [canvasOn, setCanvasOn] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('wrench_ssh_canvas') !== '0'
-    } catch {
-      return true
-    }
-  })
+  const [canvasOn, setCanvasOn] = useState<boolean>(readCanvasPref)
   const canvasOnRef = useRef(canvasOn)
   /** 画布控制器（终端初始化 effect 注入；供芯片 /「回到底部」按钮调用） */
   const canvasCtlRef = useRef<{ refit: () => void; goLive: () => void } | null>(null)
@@ -975,6 +1001,8 @@ export default function TerminalView({
           term.focus()
           onConnectedRef.current?.()
           // 新会话的环境变量不会自动带过来：把「安静进度」变量组重新注入一次。
+          // （只在开关打开时才注入；开关默认跟随画布 —— 画布开着就不注入，
+          //   富进度 UI 在几何层已经不堆行，见 quiet-env 的 defaultQuietProgress。）
           //
           // ⚠️ 这等于"替用户打字"，所以必须先确认他正坐在 shell 提示符上：
           //   · 全屏 TUI（vim/htop/less → xterm alternate buffer）里注入会打进 TUI；
@@ -1015,7 +1043,7 @@ export default function TerminalView({
                 if (localStorage.getItem('wrench_ssh_plain_hint_shown') !== '1') {
                   localStorage.setItem('wrench_ssh_plain_hint_shown', '1')
                   showHint(
-                    '进度输出默认纯文本（docker compose / buildkit）：动画进度块在行数不足时会重复堆叠 · 点右上 plain 可恢复动画',
+                    '已注入进度纯文本（docker compose / buildkit）：终端行数不足时动画进度块会重复堆叠 · 点右上 plain 可恢复动画',
                   )
                 }
               } catch {
@@ -1490,34 +1518,56 @@ export default function TerminalView({
   }
 
   /**
-   * 切换「进度纯文本」：在当前会话注入 / 撤销安静进度变量组
-   * （变量清单见 utils/quiet-env.ts：docker compose、BuildKit、docker 提示气泡）。
+   * 设定「进度纯文本」并尽可能在当前会话生效（注入 / 撤销安静进度变量组，
+   * 变量清单见 utils/quiet-env.ts）。
    *
    * 背景：整块重画的进度块行数 B 取决于任务规模（compose 是 1 + 服务数），
-   * 重绘需要终端有 B+1 行；只要块放不下，每帧就往下堆 (块高 − 可见行数) 行，
+   * 重绘需要终端有 B+1 行；只要块放不下，每帧就往下堆 (块高 − 屏高) 行，
    * 表现为"终端一直在重复加行"。plain 是逐行追加日志，任何行数下都稳定。
+   *
+   * @param next   目标状态
+   * @param manual 是否用户显式选择（true 才写偏好；false = 跟随画布，
+   *               不动 localStorage，画布下次切换还能带着它走）
+   * @returns `not-connected` / `busy`（本次没注入，下次连接生效）/ `applied` / `failed`
    */
-  const toggleComposePlain = () => {
-    const next = !composePlain
+  const applyComposePlain = (
+    next: boolean,
+    manual: boolean,
+  ): 'not-connected' | 'busy' | 'applied' | 'failed' => {
     setComposePlain(next)
     composePlainRef.current = next
-    try {
-      localStorage.setItem('wrench_ssh_quiet_progress', next ? '1' : '0')
-    } catch {
-      /* ignore */
+    if (manual) {
+      plainManualRef.current = true
+      try {
+        localStorage.setItem(QUIET_PROGRESS_STORAGE_KEY, next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
     }
-    if (!connectedRef.current) {
+    if (!connectedRef.current) return 'not-connected'
+    if (longRunning) return 'busy'
+    return injectPtyLine(next ? buildQuietProgressExportLine() : buildQuietProgressUnsetLine())
+      ? 'applied'
+      : 'failed'
+  }
+
+  /** 点右上 `plain` 芯片：显式选择（此后不再跟随画布） */
+  const toggleComposePlain = () => {
+    const next = !composePlain
+    const result = applyComposePlain(next, true)
+    if (result === 'not-connected') {
       showHint(next ? '进度纯文本已开启（连接后自动生效）' : '进度纯文本已关闭')
       return
     }
-    if (longRunning) {
+    if (result === 'busy') {
       showHint('命令执行中，切换将在下次连接生效')
       return
     }
-    const ok = injectPtyLine(next ? buildQuietProgressExportLine() : buildQuietProgressUnsetLine())
-    if (ok) {
+    if (result === 'applied') {
       showHint(next ? '进度输出：纯文本（不再整块重绘）' : '进度输出：恢复动画')
+      return
     }
+    showHint('连接不可用，切换将在下次连接生效')
   }
 
   /**
@@ -1527,21 +1577,38 @@ export default function TerminalView({
    *     可上下平移）。整块重画的进度 UI 因此有足够行数原地重绘，不再每帧往
    *     scrollback 丢重复块。
    * 关：贴屏（逻辑尺寸 = 可视尺寸），即改造前的行为。
+   *
+   * 安静进度变量组**跟随画布**：关掉画布 = 行数兜底没了，这时必须注入，
+   * 否则又回到"每帧堆重复行"；开着画布则不必牺牲动画（实测富进度 0 堆行）。
+   * 用户手动点过 `plain` 芯片就尊重他的选择，画布再切也不动它。
    */
   const toggleCanvas = () => {
     const next = !canvasOn
     setCanvasOn(next)
     canvasOnRef.current = next
     try {
-      localStorage.setItem('wrench_ssh_canvas', next ? '1' : '0')
+      localStorage.setItem(CANVAS_STORAGE_KEY, next ? '1' : '0')
     } catch {
       /* ignore */
     }
     canvasCtlRef.current?.refit()
+    // 画布关 → 需要 plain（!next = true）；画布开 → 不再需要（false）
+    const plainShouldBe = !next
+    const followCanvas = !plainManualRef.current && composePlainRef.current !== plainShouldBe
+    const followResult = followCanvas ? applyComposePlain(plainShouldBe, false) : null
+    const tail = !followCanvas
+      ? ''
+      : plainShouldBe
+        ? '；同时开启进度纯文本（画布关掉后没有行数兜底）'
+        : '；同时恢复进度动画（画布已能容纳进度块）'
+    const deferred =
+      followResult === 'busy' || followResult === 'not-connected' ? '（下次连接生效）' : ''
     showHint(
-      next
+      (next
         ? '画布开启：逻辑屏抬到 30 行，进度块原地重绘（可视区跟随光标，可上下平移）'
-        : '已贴屏：逻辑尺寸 = 可视尺寸（改造前行为）',
+        : '已贴屏：逻辑尺寸 = 可视尺寸（改造前行为）') +
+        tail +
+        deferred,
     )
   }
 
@@ -1636,7 +1703,7 @@ export default function TerminalView({
           title={
             composePlain
               ? '进度输出：纯文本（本会话已 export docker 全家族的安静进度变量）——点击恢复动画'
-              : '进度切纯文本：在当前会话 export COMPOSE_PROGRESS / BUILDKIT_PROGRESS=plain，终端行数放不下动画进度块时使用'
+              : '进度切纯文本：在当前会话 export COMPOSE_PROGRESS / BUILDKIT_PROGRESS=plain。想要"能滚动回看的逐行日志"、或关掉画布贴屏后防止进度块堆行时点它'
           }
         >
           <AlignLeft size={12} />
