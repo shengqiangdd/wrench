@@ -2,6 +2,45 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 📋 粘贴这条链修到底：HTTP 下也能粘、多行先过目、移动端有入口
+
+- **背景（读码 + 上游源码取证）**：本机部署是 HTTP（`http://<内网地址>:3001`，非安全上下文），而
+  `navigator.clipboard` 在规范里标了 `[SecureContext]` —— **HTTP 下它根本是 undefined**。
+  于是原来的粘贴链在自家部署上整条死掉，而且死得不体面：
+  - 右键菜单「粘贴」→ `safeReadClipboard()` 返回空串 → 提示"用 Ctrl+V 直接粘贴"；
+  - 可是 `Ctrl+V` 也被自定义键处理器拦下（`attachCustomKeyEventHandler` 返回 false 会
+    `preventDefault`）→ **两条路都不通，用户什么都粘不进去**；
+  - 顺带发现：容器终端（`DockerTerminal`）的 `Ctrl+V` 落在 `return true` 分支，
+    而 xterm 对 Ctrl+V 的默认动作是发 `0x16`(^V) —— readline 会把它当 quoted-insert
+    **吃掉粘贴内容的第一个字符**；它的 `onData` 还用 `btoa(data)` 直吃原始字节，
+    粘一段中文会直接抛异常。
+- **改法**（新增 `utils/terminal-paste.ts` 纯函数策略 + `hooks/useTerminalPaste.ts` 单一入口，
+  SSH 终端与容器终端共用）：
+  1. **Ctrl/⌘+V 放行给浏览器原生粘贴**。浏览器的 `paste` 事件不受安全上下文限制，
+     xterm 自己就把内容处理好（远端开了 bracketed paste 时自动包 `ESC[200~ … ESC[201~`）
+     —— 这是 HTTP 下唯一零摩擦的粘贴路径。放行时打一个标记，`onData` 里**精确丢掉**
+     紧跟键后那一个 `^V` 字符（浏览器里 Ctrl+V 只可能是"粘贴"，不可能有人想打 ^V）。
+  2. **读剪贴板失败不再干瞪眼**：`readClipboardText()` 把"读到空"与"读不到"分开，
+     并区分原因（HTTP → `unsupported`，有 API 被拒 → `denied`）。
+     读不到就开**粘贴框**（`components/terminal/TerminalPasteDialog.tsx`）：一个真实
+     textarea，在里面 Ctrl/⌘+V 或长按粘贴是浏览器原生行为，不受安全上下文限制
+     —— 同时顺手解决了**移动端没有 Ctrl+V** 的问题（长按菜单「粘贴」同一个入口）。
+  3. **多行粘贴先过目**：xterm `paste()` 会把 `\n` 转成 `\r`，**每个换行都是一次执行**。
+     所以多行内容若远端**没开** bracketed paste，先弹确认框：内容预览 + 「N 行 · 其中 M 条
+     会立即执行」+ 破坏性命令提醒（`rm -rf` / `mkfs` / `dd of=/dev/…` / `curl | sh` 等，
+     只提醒不阻断）。远端**开了** bracketed paste 则直接发送（shell 端整块显示、回车才执行），
+     不打扰。
+  4. **容器终端**补齐同样的粘贴入口，并把 `onData` 编码改成 UTF-8 安全
+     （`btoa(unescape(encodeURIComponent(data)))`，与 SSH 终端一致）。
+- **文案**：粘贴框顶部说清为什么读不到（"当前页面是 HTTP 访问，浏览器不允许网页直接读剪贴板
+  —— 在下面的框里粘贴，再发送到终端"）；发送后按 bracketed paste 是否生效给不同提示
+  （"Shell 会整块显示，回车才执行" / "已立即执行 N 条"）。
+- **测试**：新增 `src/test/utils/terminal-paste.test.ts`（23 例：CRLF 规范化、行数/立即执行条数、
+  危险命令识别与上限、统计文案、预览截断、四种判定分支、文案）+`src/test/components/
+  TerminalPasteDialog.test.tsx`（9 例：两种模式的说明文案、空内容禁发、原样提交、危险提示、
+  超长截断、取消不发、Esc 关闭）；全量 **471 passed / 40 files**；
+  tsc / eslint(0 warning) / prettier 全绿。
+
 ### 🎛️ 终端右上角说人话：「显示」菜单（去术语 + 字号就地可调）
 
 - **背景**：上一轮把交互能力补齐后，终端右上角还剩两个**普通人看不懂的芯片**：

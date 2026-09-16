@@ -46,7 +46,9 @@ import {
 } from '../../components/terminal/TerminalContextMenu'
 import { TerminalSearchBar } from '../../components/terminal/TerminalSearchBar'
 import { TerminalDisplayMenu } from '../../components/terminal/TerminalDisplayMenu'
+import { TerminalPasteDialog } from '../../components/terminal/TerminalPasteDialog'
 import { useTerminalSearch } from '../../hooks/useTerminalSearch'
+import { useTerminalPaste } from '../../hooks/useTerminalPaste'
 import {
   FONT_SIZE_DEFAULT,
   FONT_SIZE_STEP,
@@ -59,7 +61,7 @@ import {
 import { formatFontSizeHint } from '../../utils/terminal-search'
 import { isCoarsePointer } from '../../utils/terminal-links'
 import { registerTerminalLinks } from '../../utils/terminal-link-provider'
-import { safeReadClipboard, safeWriteClipboard } from '../../utils/clipboard'
+import { safeWriteClipboard } from '../../utils/clipboard'
 
 /** 分屏面板配置 */
 export interface SplitPanel {
@@ -205,6 +207,10 @@ export default function TerminalView({
   // 🔧 防止 Backspace/Delete 被 onData 重复发送的标记
   // keydown 拦截已手动发送后，onData 应跳过该字符
   const skipNextOnDataRef = useRef(false)
+  // 🔧 粘贴（batch 2b ①）：Ctrl+V 放行给浏览器原生粘贴后，xterm 仍会按默认动作
+  // 先发一个 0x16(^V)。浏览器里 Ctrl+V 只可能是"粘贴"，不可能是用户想打 ^V，
+  // 所以打标记由 onData 精确丢掉紧跟其后的那一个 ^V 字符。
+  const pendingPasteKeystrokeRef = useRef(false)
   // ─── 自动滚动管理 ───
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
@@ -258,6 +264,21 @@ export default function TerminalView({
   }
 
   /**
+   * 粘贴这条链的唯一入口（读剪贴板 → 直接发 / 多行确认 / 粘贴框兜底）。
+   * 声明在连接 effect 之前：菜单条目与快捷键处理器都在 effect / 长按回调里构建。
+   */
+  const paste = useTerminalPaste({
+    getTerm: () => terminalRef.current,
+    showHint,
+    fallbackSend: (text) => {
+      const encoded = btoa(unescape(encodeURIComponent(text)))
+      termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+      onTerminalData?.(encoded)
+    },
+    emptyHint: '剪贴板里没有可粘贴的文本',
+  })
+
+  /**
    * 把一组显示偏好应用到当前终端实例。
    * 字号/行高会改变行高像素与可视行数，所以必须让画布重算几何（`refit` 会清掉
    * 可视行数缓存 —— 那个缓存是和字号绑定的，不清就会按旧字号算窗口平移量）。
@@ -305,18 +326,6 @@ export default function TerminalView({
     showHint(formatFontSizeHint({ ...prefsRef.current, fontSize: next }))
   }
 
-  /** 粘贴：剪贴板 → PTY（右键菜单与快捷键共用；读不到时给出可操作的提示） */
-  const pasteToPty = () => {
-    void safeReadClipboard().then((text) => {
-      if (!text) {
-        showHint('读不到剪贴板（需 HTTPS 或浏览器授权）· 可用 Ctrl+V 直接粘贴')
-        return
-      }
-      const encoded = btoa(unescape(encodeURIComponent(text)))
-      termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-      onTerminalData?.(encoded)
-    })
-  }
   // ─── 复制 / 菜单 / 回到底部：这些要在连接 effect **之前**声明 ───
   // （移动端长按菜单在 effect 里构建，声明晚于 effect 会被判定为 TDZ 使用）
 
@@ -390,7 +399,7 @@ export default function TerminalView({
         label: '粘贴',
         icon: ClipboardPaste,
         shortcut: 'Ctrl+Shift+V',
-        onSelect: pasteToPty,
+        onSelect: () => void paste.pasteFromClipboard(),
       },
       {
         id: 'select-all',
@@ -1397,15 +1406,9 @@ export default function TerminalView({
         return false
       }
 
-      // Ctrl+Shift+V → 粘贴
+      // Ctrl+Shift+V → 粘贴（走统一入口：读得到就读，读不到就开粘贴框）
       if (type === 'keydown' && ctrlKey && shiftKey && key.toLowerCase() === 'v') {
-        safeReadClipboard().then((text) => {
-          if (text) {
-            const encoded = btoa(unescape(encodeURIComponent(text)))
-            termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-            onTerminalData?.(encoded)
-          }
-        })
+        void paste.pasteFromClipboard()
         return false
       }
 
@@ -1420,19 +1423,19 @@ export default function TerminalView({
         return true // 放行给终端（发送 SIGINT）
       }
 
-      // Ctrl+V / Shift+Insert → 粘贴
-      if (
-        type === 'keydown' &&
-        ((ctrlKey && !shiftKey && key.toLowerCase() === 'v') ||
-          (!ctrlKey && shiftKey && key === 'Insert'))
-      ) {
-        safeReadClipboard().then((text) => {
-          if (text) {
-            const encoded = btoa(unescape(encodeURIComponent(text)))
-            termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-            onTerminalData?.(encoded)
-          }
-        })
+      // Ctrl+V → **放行给浏览器原生粘贴**（batch 2b ①）：
+      // HTTP 部署下 `navigator.clipboard` 是 undefined（规范里的 [SecureContext]），
+      // 自己读剪贴板必然失败；而浏览器的 paste 事件不受安全上下文限制，
+      // xterm 自己就把原生 paste 处理好（含远端 bracketed paste 包裹）。
+      // 唯一残留：xterm 会按默认动作先发一个 0x16(^V)，由 onData 精确丢掉（见 pendingPasteKeystrokeRef）。
+      if (type === 'keydown' && ctrlKey && !shiftKey && !altKey && key.toLowerCase() === 'v') {
+        pendingPasteKeystrokeRef.current = true
+        return true
+      }
+
+      // Shift+Insert → 粘贴（X11 习惯键，浏览器没有原生粘贴，走统一入口）
+      if (type === 'keydown' && !ctrlKey && shiftKey && key === 'Insert') {
+        void paste.pasteFromClipboard()
         return false
       }
 
@@ -1469,14 +1472,21 @@ export default function TerminalView({
     })
 
     term.onData((data) => {
-      // 用户在本次连接里敲过键 → 自动注入不再打扰他（见 on('connected') 里的 plain 注入）
-      userTypedRef.current = true
       // 🔧 防止 Backspace/Delete 被重复发送
       // 如果 keydown 已经手动处理了该字符，跳过 onData 的重复发送
       if (skipNextOnDataRef.current) {
         skipNextOnDataRef.current = false
         return
       }
+      // 🔧 粘贴（batch 2b ①）：Ctrl+V 放行给浏览器原生粘贴后，xterm 会先送一个 ^V
+      // （readline 会把它当 quoted-insert 吃掉粘贴内容的第一个字符）。只丢这一个字符，
+      // 随后浏览器 paste 事件带来的正文照常通过。
+      if (pendingPasteKeystrokeRef.current) {
+        pendingPasteKeystrokeRef.current = false
+        if (data === '\x16') return
+      }
+      // 用户在本次连接里敲过键 → 自动注入不再打扰他（见 on('connected') 里的 plain 注入）
+      userTypedRef.current = true
       // 用户输入时自动滚到底部，确保看到命令输出
       userScrolledUpRef.current = false
       setUserScrolledUp(false)
@@ -1953,6 +1963,17 @@ export default function TerminalView({
           y={contextMenu.y}
           items={contextMenu.items}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* ─── 粘贴框 / 粘贴确认框（HTTP 下读不到剪贴板时的入口，也是移动端粘贴入口）─── */}
+      {paste.dialog && (
+        <TerminalPasteDialog
+          mode={paste.dialog.mode}
+          text={paste.dialog.text}
+          reason={paste.dialog.reason}
+          onSubmit={paste.submitDialog}
+          onClose={paste.closeDialog}
         />
       )}
 

@@ -425,10 +425,56 @@ xterm.js ◄── base64 输出帧 ◄── terminal.rs ◄┘
 搅在一起）；`copyOnSelect` 与 `macOptionIsMeta` 偏好项；断线状态条 + 一键重连（超时/WS 失败/
 远端断开都会给出出路）；"清屏"明确标注**仅本地视图**，避免用户以为动了远端 scrollback。
 
+**粘贴这条链（§5.8 有完整推导）**：入口收敛成一处 —— `hooks/useTerminalPaste.ts` +
+纯函数 `utils/terminal-paste.ts` + 兜底 UI `components/terminal/TerminalPasteDialog.tsx`，
+SSH 终端与容器终端共用。三条路：能读剪贴板就直接发（单行）/ 先确认（多行且远端没开
+bracketed paste）/ 读不到就开粘贴框（HTTP 部署、权限被拒、移动端没有 Ctrl+V）。
+`Ctrl+V` 放行给浏览器原生粘贴，`onData` 精确丢掉 xterm 顺带发出的那一个 `^V`。
+
 **取舍记录**：① 容器终端不接画布与安静进度变量组（§5.4/§5.5）——它是短命会话、输出以
 `docker exec` 的常规命令为主，没有 compose 那种"整块重画"的进度程序，接了反而多一层几何
 风险；② 链接必须带修饰键是刻意选择，不用"单击即开"；③ `Ctrl+F` 只在本终端内接管，
 不做全局抢占。
+
+### 5.8 粘贴：为什么 HTTP 下必须换一条路
+
+**症状**：自家部署是 HTTP（`http://<内网地址>:3001`，非安全上下文），右键菜单「粘贴」没反应（或只提示"用 Ctrl+V"），
+按 `Ctrl+V` 也没反应 —— **两条路都不通**。
+
+**三条上游事实**（都是读源码/规范得到的，不是猜的）：
+
+1. `navigator.clipboard` 在规范里标了 **`[SecureContext]`** —— 非安全上下文下**对象本身不存在**，
+   不是"调用被拒"。`utils/clipboard.ts` 旧实现把"读不到"和"读到空"都变成 `''`，
+   于是 HTTP 被当成"剪贴板是空的"，只能给一句干瞪眼的提示。
+2. xterm 对 `Ctrl+V` 的默认动作是**发送 `0x16`(^V)**（`evaluateKeyboardEvent` 里
+   `keyCode 86 → String.fromCharCode(86-64)`）。readline 的 `quoted-insert` 会因此
+   **吃掉粘贴内容的第一个字符** —— 所以"直接放行 Ctrl+V"不是办法；
+   而一旦我们自己 `preventDefault`，浏览器的原生 `paste` 事件也一起没了（这正是旧代码
+   拦下 Ctrl+V 却读不到剪贴板、最终两头落空的原因）。`DockerTerminal` 之前落在
+   `return true` 分支，则是一直在往远端送多余的 `^V`。
+3. 浏览器的 **`paste` 事件不受安全上下文限制**（它不是权限 API，是用户手势），
+   且 xterm 自己把原生 paste 处理得很好：`\r?\n → \r`，并在远端开了
+   **bracketed paste（DECSET 2004）** 时自动包 `ESC[200~ … ESC[201~`。
+
+**落地方案**（`utils/terminal-paste.ts` 定判定 / `hooks/useTerminalPaste.ts` 定入口 /
+`components/terminal/TerminalPasteDialog.tsx` 是兜底 UI，两个终端共用）：
+
+| 入口 | HTTPS / localhost | HTTP 部署 |
+|---|---|---|
+| `Ctrl/⌘+V` | 放行 → 浏览器原生粘贴（`onData` 精确丢掉那一个 `^V`） | **同左**（这是 HTTP 下唯一零摩擦路径） |
+| 菜单「粘贴」/ `Ctrl+Shift+V` / `Shift+Insert` | 读剪贴板 → 直接发；多行且远端**没开** bracketed paste → 先确认 | 读不到 → **开粘贴框**（真实 textarea，在里面 Ctrl+V / 长按粘贴是原生行为） |
+
+- **多行确认的判据是"远端当前是否开了 bracketed paste"**，不是我们的偏好：开了就直接发
+  （shell 端整块显示、回车才执行，不打扰），没开才拦一下（每个换行都是一次执行）。
+- 确认框与粘贴框都给出 `N 行 · 其中 M 条会立即执行` 与破坏性命令提醒
+  （`rm -rf` / `mkfs` / `dd of=/dev/…` / `> /dev/sdX` / fork bomb / `curl|sh` 等，**只提醒不阻断**）。
+- 发送统一走 `term.paste()`：`\n → \r`、bracketed paste 包裹都由 xterm 负责，
+  之后走各终端原有的 `onData → WS` 通道（与手打**同一条路**，画布/几何逻辑不用改）。
+- 顺手修掉：容器终端 `onData` 用 `btoa(data)` 直吃原始字节，粘一段中文会抛
+  （改成与 SSH 终端一致的 UTF-8 安全编码）。
+- **已知边界**：`paste` 事件里的内容我们看不到"是不是多行之外的危险内容"，所以对
+  单行粘贴不做拦截（粘贴一行命令与手打一行没有区别）；移动端浏览器长按系统粘贴菜单
+  弹出的位置由系统决定，我们只保证有替代入口（长按菜单「粘贴」→ 粘贴框）。
 
 ## 6. 状态管理
 Zustand，按业务域拆分（`stores/`）：

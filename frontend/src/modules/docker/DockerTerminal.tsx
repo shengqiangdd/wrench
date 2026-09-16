@@ -24,7 +24,9 @@ import { TerminalSearchBar } from '../../components/terminal/TerminalSearchBar'
 import { useTerminalSearch } from '../../hooks/useTerminalSearch'
 import { readTerminalPrefs, subscribeTerminalPrefs } from '../../utils/terminal-prefs'
 import { registerTerminalLinks } from '../../utils/terminal-link-provider'
-import { safeReadClipboard, safeWriteClipboard } from '../../utils/clipboard'
+import { TerminalPasteDialog } from '../../components/terminal/TerminalPasteDialog'
+import { useTerminalPaste } from '../../hooks/useTerminalPaste'
+import { safeWriteClipboard } from '../../utils/clipboard'
 
 const TERMINAL_THEME = {
   background: '#0f172a',
@@ -72,6 +74,9 @@ export default function DockerTerminal({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTerm | null>(null)
+  // 🔧 粘贴：Ctrl+V 放行给浏览器原生粘贴后，xterm 仍会按默认动作先发一个 0x16(^V)，
+  // 浏览器里 Ctrl+V 只可能是"粘贴"，所以打标记精确丢掉紧跟其后的那一个字符。
+  const pendingPasteKeystrokeRef = useRef(false)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const searchAddonRef = useRef<SearchAddon | null>(null)
   const openedRef = useRef(false)
@@ -156,15 +161,13 @@ export default function DockerTerminal({
     [connectionId, containerId],
   )
 
-  const pasteToShell = useCallback(() => {
-    void safeReadClipboard().then((text) => {
-      if (!text) {
-        showHint('读不到剪贴板（需 HTTPS 或浏览器授权）· 可用 Ctrl+V 直接粘贴')
-        return
-      }
-      sendData(text)
-    })
-  }, [sendData, showHint])
+  /** 粘贴统一入口（读剪贴板 → 直接发 / 多行确认 / 粘贴框兜底），与 SSH 终端同一套 */
+  const paste = useTerminalPaste({
+    getTerm: () => terminalRef.current,
+    showHint,
+    fallbackSend: sendData,
+    emptyHint: '剪贴板里没有可粘贴的文本',
+  })
 
   const goToBottom = useCallback(() => {
     terminalRef.current?.scrollToBottom()
@@ -185,7 +188,7 @@ export default function DockerTerminal({
         label: '粘贴',
         icon: ClipboardPaste,
         shortcut: 'Ctrl+Shift+V',
-        onSelect: pasteToShell,
+        onSelect: () => void paste.pasteFromClipboard(),
       },
       {
         id: 'select-all',
@@ -219,7 +222,7 @@ export default function DockerTerminal({
         onSelect: () => requestShellRef.current?.(),
       },
     ],
-    [goToBottom, handleCopy, pasteToShell, search.openSearch],
+    [goToBottom, handleCopy, paste, search.openSearch],
   )
 
   useEffect(() => {
@@ -266,10 +269,16 @@ export default function DockerTerminal({
 
     // Ctrl/⌘+F 搜当前终端内容（终端里没有原生查找，这个键不会抢浏览器行为）
     term.attachCustomKeyEventHandler((e) => {
-      const { key, ctrlKey, metaKey, shiftKey, type } = e
+      const { key, ctrlKey, metaKey, shiftKey, altKey, type } = e
       if (type === 'keydown' && (ctrlKey || metaKey) && !shiftKey && (key === 'f' || key === 'F')) {
         search.openSearch()
         return false
+      }
+      // Ctrl+V → 放行给浏览器原生粘贴（HTTP 部署下读剪贴板必然失败），
+      // 只把那一个多余的 ^V 丢掉；正文由 paste 事件带来。
+      if (type === 'keydown' && ctrlKey && !shiftKey && !altKey && key.toLowerCase() === 'v') {
+        pendingPasteKeystrokeRef.current = true
+        return true
       }
       return true
     })
@@ -354,11 +363,16 @@ export default function DockerTerminal({
 
     const disposeInput = term.onData((data) => {
       if (!connectedRef.current) return
+      if (pendingPasteKeystrokeRef.current) {
+        pendingPasteKeystrokeRef.current = false
+        if (data === '\x16') return
+      }
       wsClientRef.current?.send({
         type: 'docker_shell_data',
         connectionId,
         containerId,
-        data: btoa(data),
+        // btoa 直接吃非 ASCII 会抛（粘贴/输入法里出现中文就崩），先做 UTF-8 转换
+        data: btoa(unescape(encodeURIComponent(data))),
       })
     })
 
@@ -520,6 +534,16 @@ export default function DockerTerminal({
             y={contextMenu.y}
             items={contextMenu.items}
             onClose={() => setContextMenu(null)}
+          />
+        )}
+
+        {paste.dialog && (
+          <TerminalPasteDialog
+            mode={paste.dialog.mode}
+            text={paste.dialog.text}
+            reason={paste.dialog.reason}
+            onSubmit={paste.submitDialog}
+            onClose={paste.closeDialog}
           />
         )}
       </div>

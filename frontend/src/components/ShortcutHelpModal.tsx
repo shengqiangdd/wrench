@@ -23,6 +23,10 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: 'Ctrl+Shift+V', label: '粘贴文本' },
       { keys: 'Ctrl+C', label: '选中时复制 / 未选中时发送 SIGINT' },
       { keys: 'Ctrl+V / Shift+Insert', label: '粘贴到终端' },
+      {
+        keys: '粘贴框',
+        label: 'HTTP 访问时浏览器不给读剪贴板，「粘贴」会打开粘贴框（手机长按粘贴）',
+      },
       { keys: 'Ctrl+Shift+F', label: '搜索终端输出（全局）' },
       { keys: 'Ctrl+F', label: '搜索终端输出（焦点在终端内）' },
       { keys: 'Ctrl/⌘ + +/−', label: '放大 / 缩小终端字号' },
