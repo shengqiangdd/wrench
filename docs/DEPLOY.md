@@ -390,6 +390,32 @@ CSP 里有两处**必要**的放宽，其余都是最严：
 
 ---
 
+## 📈 终端里的进度输出（客户端已默认处理，无需配置）
+
+在手机/窄终端里跑 `docker compose pull`、`docker build` 时，动画进度块会不断重画，
+块比可见行数高时**每帧都会往滚动历史里塞重复行**（实测 44 列 × 12 行跑一次 20 服务 pull：
+3012 行、其中 2151 行重复）。这是终端语义决定的，客户端已在两处默认处理：
+
+- **注入安静进度变量**：连接后自动下发 `COMPOSE_PROGRESS=plain`、`BUILDKIT_PROGRESS=plain`、
+  `DOCKER_CLI_HINTS=false`，把 docker 家族的整块重画切成逐行日志。右上角 `plain` 芯片
+  可以随时恢复动画（选择存在浏览器本地）。
+- **提示符守卫**：只有识别到真实 shell 提示符时才注入 —— 全屏 TUI 里、`sudo`/`ssh` 密码提示里
+  不会硬注入（否则等于把你的命令敲进密码框）。
+
+需要额外注意的两点：
+
+- **容器内 / 嵌套 shell 不继承**：`docker exec -it xxx bash` 进去以后要自己 `export`，
+  或者 `docker exec -e COMPOSE_PROGRESS=plain -it xxx bash`。
+- **没有开关的程序**：极少数程序既整块重画又不自我裁剪，用管道让它退化成纯文本即可：
+
+  ```bash
+  docker pull nginx:alpine 2>&1 | cat
+  ```
+
+这一节纯客户端行为，升级镜像即生效，没有对应的环境变量。
+
+---
+
 ## 📊 健康检查
 
 ```bash

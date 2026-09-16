@@ -227,6 +227,42 @@ xterm.js ◄── base64 输出帧 ◄── terminal.rs ◄┘
 
 后端持有 `OPENROUTER_API_KEY`，浏览器不接触第三方密钥。
 
+### 5.4 终端进度输出适配（防"重复堆叠"）
+
+进度 UI 分三类，只有第三类会在窄终端里把行堆到 scrollback：
+
+| 类型 | 例子 | 在 12 行视口里的行为 |
+|---|---|---|
+| 单行 `\r` 原地刷新 | `wget` / `curl` / `pip` / `npm` / `cargo` / `rsync` | 永远覆盖同一行，不堆行（动画保留） |
+| 全屏 TUI（备用屏） | `vim` / `top` / `htop` / `fzf` | 走 alternate screen，退出后不留痕 |
+| **整块 `ESC[nA` 重画** | docker compose 的 `[+] Pulling` 块、BuildKit 的 `=>` 进度块 | 块高 > 可见行数时，**每帧往 scrollback 丢 (块高 − 可见行数) 行** |
+
+第三类的实测数字（视口固定 44 列 × 12 行 ≈ 手机键盘弹起后的高度）：
+
+- 20 服务 `docker compose pull`，未适配时 buffer **3012 行**（其中 2151 行重复，
+  单个服务行最多被重画 **281 次**）。
+- 合成用例「20 行块 + `ESC[20A` + 40 帧」留下 **≈365 行**残留（≈ 每帧溢出 8 行 = 20 − 12）；
+  同一脚本换成 8 行块（≤ 可见行数）残留 **0 行**。这条规律是终端语义本身决定的。
+
+适配方式：连接建立且**探测到真实 shell 提示符**后，注入一组"安静进度"变量
+（`frontend/src/utils/quiet-env.ts`），把这类程序切成逐行追加输出：
+
+| 变量 | 覆盖 | 实测（44 列 × 12 行） |
+|---|---|---|
+| `COMPOSE_PROGRESS=plain` | docker compose 全子命令（pull / push / build / up / down） | 20 服务 pull：943 行 / 重复 38；`up -d`：95 行 / 重复 1；`build`：114 行 / 重复 8 |
+| `BUILDKIT_PROGRESS=plain` | 裸 `docker build` / `docker buildx`（compose 的开关管不到） | 干净（BuildKit 自己也会按终端高度裁剪：30 行块 / 12 行视口仅 1 行重复） |
+| `DOCKER_CLI_HINTS=false` | 关掉 docker 的 "What's Next" 气泡 | — |
+
+- 只覆盖"整块重画"这一类；单行 `\r` 进度条**刻意不动** —— 它们不会堆行，动画对用户有用。
+- 注入等于"替用户打字"，因此先识别提示符：TUI 里或密码提示里识别不到就只提示、绝不硬注入
+  （判定见 `frontend/src/utils/shell-prompt.ts`）。右上角 `plain` 芯片可手动开/关整组，
+  选择持久化在 `wrench_ssh_quiet_progress`（兼容旧 key `wrench_ssh_compose_plain`）。
+- 裸 `docker pull` / `push` 没有 plain 开关，但 docker CLI 会按终端高度自我裁剪
+  （实测：单个 pull 与本机 20 个并发 pull 都不堆行）。
+- **没有被覆盖的情况**：既整块重画、又没有开关、也不自我裁剪的程序（少见）。应急手段是让输出
+  变成非 TTY：`docker pull x 2>&1 | cat`。容器内 / 嵌套 shell 也不会继承这组变量
+  （`docker exec` 不转发环境），需要时显式传 `-e COMPOSE_PROGRESS=plain`。
+
 ---
 
 ## 6. 状态管理

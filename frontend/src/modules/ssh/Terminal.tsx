@@ -9,6 +9,7 @@ import { Search, X, ChevronUp, ChevronDown, Copy, AlignLeft } from 'lucide-react
 import { createSessionWsClient, type WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
 import { isAtShellPrompt } from '../../utils/shell-prompt'
+import { buildQuietProgressExportLine, buildQuietProgressUnsetLine } from '../../utils/quiet-env'
 import { on } from '../../services/event-bus'
 
 /** 安全读取剪贴板（WebView 中 navigator.clipboard 可能为 undefined） */
@@ -189,23 +190,27 @@ export default function TerminalView({
   // ─── 自动滚动管理 ───
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
-  // ─── compose 纯文本进度开关（仅本会话注入 COMPOSE_PROGRESS=plain）───
-  // 默认开启：compose 的动画进度块要靠 ESC[1A 逐帧"上移回块首"重绘，块高 = 服务数+1。
-  // 窄终端下每行还会折行（44 列时 20 个服务的块≈40 物理行），只要块放不下，上移就会错位，
-  // 每帧往下堆一行：实测 21 行×44 列跑一次 20 服务 pull，往 scrollback 丢了 5047 行重复块；
-  // plain 则是纯 \r\n 追加日志（实测 0 个转义序列），任何尺寸都稳定。
+  // ─── 进度纯文本开关（本会话注入了哪些变量见 utils/quiet-env.ts）───
+  // 默认开启：整块重画的进度 UI（compose 的 [+]/[=> 块、BuildKit 的 TUI）靠
+  // ESC[nA"上移回块首"逐帧重绘，块高超过可见行数时，每帧会往 scrollback 永久丢
+  // (块高 − 可见行数) 行：实测 44 列 × 12 行跑一次 20 服务 compose pull = 3012 行
+  // （2151 行重复）；plain 是逐行追加日志，任何尺寸都稳定。
+  // 覆盖 docker 全家族（compose / buildkit / 裸 build），单行 \r 进度条不动。
   const [composePlain, setComposePlain] = useState<boolean>(() => {
     try {
-      const v = localStorage.getItem('wrench_ssh_compose_plain')
+      // 新 key；兼容老 key（wrench_ssh_compose_plain，语义已从"只 compose"扩到 docker 全家族）
+      const v =
+        localStorage.getItem('wrench_ssh_quiet_progress') ??
+        localStorage.getItem('wrench_ssh_compose_plain')
       return v === null ? true : v === '1'
     } catch {
       return true
     }
   })
   const composePlainRef = useRef(composePlain)
-  // 用户是否已在本次连接里敲过键（自动注入 plain 前用它避让）
+  // 用户是否已在本次连接里敲过键（自动注入安静进度变量前用它避让）
   const userTypedRef = useRef(false)
-  // 自动注入 plain 的"等提示符出现"轮询定时器
+  // 自动注入安静进度变量的"等提示符出现"轮询定时器
   const plainInjectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // ─── 移动端快捷键工具栏收起状态（收起＝把行数还给终端）───
   const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => {
@@ -731,7 +736,7 @@ export default function TerminalView({
           }
           term.focus()
           onConnectedRef.current?.()
-          // 新会话的环境变量不会自动带过来：把 compose plain 进度开关重新注入一次。
+          // 新会话的环境变量不会自动带过来：把「安静进度」变量组重新注入一次。
           //
           // ⚠️ 这等于"替用户打字"，所以必须先确认他正坐在 shell 提示符上：
           //   · 全屏 TUI（vim/htop/less → xterm alternate buffer）里注入会打进 TUI；
@@ -748,7 +753,7 @@ export default function TerminalView({
               if (disposedRef.current || !connectedRef.current || gen !== genRef.current) return
               if (!composePlainRef.current) return
               if (userTypedRef.current) {
-                showHint('plain 未自动注入（你已在输入）· 点右上 plain 手动开启')
+                showHint('进度纯文本未自动注入（你已在输入）· 点右上 plain 手动开启')
                 return
               }
               const t = terminalRef.current
@@ -758,21 +763,21 @@ export default function TerminalView({
                 if (n < MAX_TRIES) {
                   plainInjectTimerRef.current = setTimeout(() => tryInject(n + 1), RETRY_MS)
                 } else {
-                  showHint('未检测到 shell 提示符，plain 未自动注入 · 点右上 plain 手动开启')
+                  showHint('未检测到 shell 提示符，进度纯文本未自动注入 · 点右上 plain 手动开启')
                 }
                 return
               }
               termWsRef.current?.send({
                 type: 'exec',
                 connectionId,
-                data: encodePtyLine('export COMPOSE_PROGRESS=plain'),
+                data: encodePtyLine(buildQuietProgressExportLine()),
               })
               // 首次自动注入时说明一下默认行为（老用户会注意到变化）
               try {
                 if (localStorage.getItem('wrench_ssh_plain_hint_shown') !== '1') {
                   localStorage.setItem('wrench_ssh_plain_hint_shown', '1')
                   showHint(
-                    'compose 进度默认纯文本：动画进度块在行/列不足时会重复堆叠 · 点右上 plain 可恢复动画',
+                    '进度输出默认纯文本（docker compose / buildkit）：动画进度块在行数不足时会重复堆叠 · 点右上 plain 可恢复动画',
                   )
                 }
               } catch {
@@ -1235,32 +1240,33 @@ export default function TerminalView({
   }
 
   /**
-   * 切换 compose 纯文本进度（COMPOSE_PROGRESS=plain）。
+   * 切换「进度纯文本」：在当前会话注入 / 撤销安静进度变量组
+   * （变量清单见 utils/quiet-env.ts：docker compose、BuildKit、docker 提示气泡）。
    *
-   * 背景：compose 的动画进度块行数 B = 1 + 服务数，块重绘需要终端有 B+1 行；
-   * 终端行数恰好等于 B 时每帧就会往 scrollback 丢一行（表现为"一直在加行"）。
-   * plain 模式是纯追加日志，不做块重绘，任何行数下都不会出现该问题。
+   * 背景：整块重画的进度块行数 B 取决于任务规模（compose 是 1 + 服务数），
+   * 重绘需要终端有 B+1 行；只要块放不下，每帧就往下堆 (块高 − 可见行数) 行，
+   * 表现为"终端一直在重复加行"。plain 是逐行追加日志，任何行数下都稳定。
    */
   const toggleComposePlain = () => {
     const next = !composePlain
     setComposePlain(next)
     composePlainRef.current = next
     try {
-      localStorage.setItem('wrench_ssh_compose_plain', next ? '1' : '0')
+      localStorage.setItem('wrench_ssh_quiet_progress', next ? '1' : '0')
     } catch {
       /* ignore */
     }
     if (!connectedRef.current) {
-      showHint(next ? 'plain 进度已开启（连接后自动生效）' : 'plain 进度已关闭')
+      showHint(next ? '进度纯文本已开启（连接后自动生效）' : '进度纯文本已关闭')
       return
     }
     if (longRunning) {
       showHint('命令执行中，切换将在下次连接生效')
       return
     }
-    const ok = injectPtyLine(next ? 'export COMPOSE_PROGRESS=plain' : 'unset COMPOSE_PROGRESS')
+    const ok = injectPtyLine(next ? buildQuietProgressExportLine() : buildQuietProgressUnsetLine())
     if (ok) {
-      showHint(next ? 'compose 进度：纯文本（不再整块重绘）' : 'compose 进度：恢复动画')
+      showHint(next ? '进度输出：纯文本（不再整块重绘）' : '进度输出：恢复动画')
     }
   }
 
@@ -1336,7 +1342,7 @@ export default function TerminalView({
           }
         }}
       />
-      {/* ─── 右上角悬浮控制：compose plain 进度开关 + 快捷键栏收起 + 选中文本复制 ─── */}
+      {/* ─── 右上角悬浮控制：进度纯文本开关 + 快捷键栏收起 + 选中文本复制 ─── */}
       <div className="pointer-events-none absolute top-1 right-1 z-10 flex flex-col items-end gap-1">
         <button
           onPointerDown={(e) => {
@@ -1354,8 +1360,8 @@ export default function TerminalView({
           style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
           title={
             composePlain
-              ? 'compose 进度：纯文本（当前会话已 export COMPOSE_PROGRESS=plain）——点击恢复动画'
-              : 'compose 进度切纯文本：在当前会话执行 export COMPOSE_PROGRESS=plain，终端行数放不下动画进度块时使用'
+              ? '进度输出：纯文本（本会话已 export docker 全家族的安静进度变量）——点击恢复动画'
+              : '进度切纯文本：在当前会话 export COMPOSE_PROGRESS / BUILDKIT_PROGRESS=plain，终端行数放不下动画进度块时使用'
           }
         >
           <AlignLeft size={12} />

@@ -2,6 +2,40 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 📊 进度输出适配扩到 docker 全家族（不再只盯 compose）
+- **背景**：上一轮修的是「compose 的 plain 注入从未触发」。但"会堆行的进度输出"不是一个程序，
+  而是一类程序 —— 凡是用 `ESC[nA` 把整块进度重画的，块高超过可见行数时**每帧都会往
+  scrollback 永久丢 (块高 − 可见行数) 行**。视口 44 列 × 12 行（≈ 手机键盘弹起）实测：
+  20 服务 `docker compose pull` 堆 **3012 行**（2151 行重复，单服务最多重画 281 次）；
+  合成用例「20 行块 / 12 行视口 / 40 帧」残留 **≈365 行**（≈ 每帧 8 行），
+  同样的脚本改成 8 行块（≤ 可见行数）残留 **0 行**。
+- **改动**：注入内容从单个 `COMPOSE_PROGRESS=plain` 扩成一组「安静进度」变量
+  （`frontend/src/utils/quiet-env.ts`）：
+  - `COMPOSE_PROGRESS=plain` —— docker compose 全子命令（pull / push / build / up / down）；
+  - `BUILDKIT_PROGRESS=plain` —— 裸 `docker build` / `docker buildx`（不经 compose 时
+    compose 的开关管不到它）；
+  - `DOCKER_CLI_HINTS=false` —— 关掉 docker 的 "What's Next" 气泡，纯降噪。
+  单行 `\r` 原地刷新的进度条（wget / curl / pip / npm / cargo / rsync）**刻意不动** ——
+  它们结构上不会堆行，动画对用户更有用，静音属于倒退。
+- **覆盖清单（44 列 × 12 行实测，均为默认设置、不手动敲命令）**：
+  | 任务 | 结果 |
+  |---|---|
+  | `docker compose pull`（20 服务） | 943 行 / 重复 38（plain 的正常逐行输出） |
+  | `docker compose up -d`（20 服务） | 95 行 / 重复 1 |
+  | `docker compose build`（3 服务 × 6 层） | 114 行 / 重复 8 |
+  | 裸 `docker build`（BuildKit，30 行块 > 12 行视口） | 44 行 / 重复 1（BuildKit 自己按终端高度裁剪） |
+  | 裸 `docker pull` ×20 并发 | 280 行 / 重复 17（docker CLI 同样自我裁剪） |
+- **仍然无解的一类**：既整块重画、又没有开关、也不自我裁剪的程序 —— 这是终端语义决定的，
+  客户端改不了。应急：`命令 2>&1 | cat`（输出变非 TTY，程序自动退化成逐行文本），
+  或点右上 `plain` 芯片 / 用更大行数的终端。容器内与嵌套 shell 不继承这组变量
+  （`docker exec` 不转发环境），需要时显式 `-e COMPOSE_PROGRESS=plain`。
+- **开关**：右上角 `plain` 芯片现在控制整组变量（开 = 注入全部，关 = 整组 `unset`），
+  选择持久化在 `wrench_ssh_quiet_progress`（自动兼容旧 key `wrench_ssh_compose_plain`）。
+  自动注入仍然只在**识别到真实 shell 提示符**时发生 —— 全屏 TUI 里、`sudo`/`ssh` 密码提示里
+  绝不硬注入（那是"替用户打字"，会把命令敲成密码）。
+- **门禁**：新增 `quiet-env` 单测 7 条（含"变量名合法 / 值不含空格"守卫，防止 `export A=1 B=2`
+  被 word split 拆坏），前端全量用例、`tsc --noEmit`、ESLint `--max-warnings 0`、Prettier 全绿。
+
 ### 🖥️ 终端 `plain` 进度自动注入从未真正触发（提示符判定吃掉行尾空白）
 - **现象（线上 `3d07044b` 实测：真实浏览器 + 真 SSH + 真 compose）**：44 列 × 12 行跑一次
   20 服务 `docker compose pull`，xterm buffer 涨到 **3012 行**、其中重复 2151 行，同一个服务行
