@@ -21,13 +21,7 @@
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased">
     <div id="root"></div>
-    <script>
-      // Vite 8 + @vitejs/plugin-react v6: refresh preamble fix
-      // In non-bundled dev mode, OXC transform adds $RefreshSig$() calls
-      // but the preamble script is not injected. We define it here as a shim.
-      if (!window.$RefreshSig$) window.$RefreshSig$ = function() { return function(t) { return t; }; };
-      if (!window.$RefreshReg$) window.$RefreshReg$ = function() {};
-    </script>
+    <script src="/refresh-shim.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

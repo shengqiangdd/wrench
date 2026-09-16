@@ -9,6 +9,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { authedFetch } from '../../services/auth'
 import { Brain, Send, Terminal, Loader2, X, Sparkles, Copy, Check, Trash2 } from 'lucide-react'
 import { useAiStore } from '../../stores/ai-store'
+import { safeUrl } from '../../utils/markdown'
 import type { AiMessage } from '../../types/ai'
 
 interface Props {
@@ -253,11 +254,12 @@ function renderInline(text: string) {
         </code>,
       )
     } else if (m[6] && m[7]) {
-      // [链接](url)
+      // [链接](url) —— url 来自模型输出，不可信：只放行 http(s)/mailto/站内路径，
+      // `javascript:` / `data:` 一律降级为 `#`（点一下就会在本页执行脚本）
       parts.push(
         <a
           key={`a-${m.index}`}
-          href={m[7]}
+          href={safeUrl(m[7])}
           target="_blank"
           rel="noopener noreferrer"
           className="text-wrench-400 decoration-wrench-400/30 hover:decoration-wrench-400 underline"

@@ -108,7 +108,7 @@ pub async fn setup(
     headers: HeaderMap,
     Json(payload): Json<SetupRequest>,
 ) -> Result<ApiResponse<TokenResponse>, ApiError> {
-    let client_ip = addr.ip().to_string();
+    let client_ip = crate::middleware::client_ip::resolve(Some(addr.ip()), &headers);
 
     if state.auth.read().configured() {
         state.add_audit_log(
@@ -182,7 +182,7 @@ pub async fn login(
     headers: HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Result<ApiResponse<TokenResponse>, ApiError> {
-    let client_ip = addr.ip().to_string();
+    let client_ip = crate::middleware::client_ip::resolve(Some(addr.ip()), &headers);
 
     if !state.auth.read().configured() {
         tracing::error!("[auth] login denied — 门户口令尚未设置（请先走 /api/auth/setup）");
@@ -249,10 +249,11 @@ pub async fn login(
 pub async fn change_password(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Extension(space): Extension<SpaceCtx>,
     Json(payload): Json<ChangePasswordRequest>,
 ) -> Result<ApiResponse<serde_json::Value>, ApiError> {
-    let client_ip = addr.ip().to_string();
+    let client_ip = crate::middleware::client_ip::resolve(Some(addr.ip()), &headers);
 
     let current = payload.current_password.clone();
     let auth_snapshot = {
@@ -300,11 +301,14 @@ pub async fn change_password(
 pub async fn issue_ws_token(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Extension(space): Extension<SpaceCtx>,
 ) -> Result<ApiResponse<TokenResponse>, ApiError> {
     if !state.auth.read().configured() {
         return Err(ApiError::not_configured());
     }
+
+    let client_ip = crate::middleware::client_ip::resolve(Some(addr.ip()), &headers);
 
     let claims = Claims::ws_token(state.auth.read().token_version);
     let token = sign_claims(&state, &claims)?;
@@ -314,7 +318,7 @@ pub async fn issue_ws_token(
         token.clone(),
         crate::app_state::WsTokenInfo {
             token: token.clone(),
-            ip: addr.ip().to_string(),
+            ip: client_ip.clone(),
             expires_at: chrono::Utc::now() + chrono::Duration::seconds(crate::utils::jwt::WS_TOKEN_TTL_SECS as i64),
             space_id: space.id.clone(),
         },
@@ -323,7 +327,7 @@ pub async fn issue_ws_token(
     state.add_audit_log(
         "ws_token_issued",
         serde_json::json!({ "scope": SCOPE_WS, "ttlSeconds": crate::utils::jwt::WS_TOKEN_TTL_SECS }),
-        &addr.ip().to_string(),
+        &client_ip,
         &space.id,
     );
 

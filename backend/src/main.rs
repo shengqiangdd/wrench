@@ -178,6 +178,10 @@ async fn main() -> anyhow::Result<()> {
 
     // 出口策略：启动时读环境变量并打印一行摘要（这台机器允许主动连到哪里）
     wrench_backend::egress::init_from_env();
+    // 反向代理信任：打印一行摘要，避免「挂了代理但限流/审计全记成代理 IP」这种静默降级
+    wrench_backend::middleware::client_ip::init_from_env();
+    // 安全响应头：打印实际生效的 CSP（便于部署后核对）
+    wrench_backend::middleware::security_headers::init_from_env();
 
     eprintln!("[wrench] Config loaded, building app state...");
 

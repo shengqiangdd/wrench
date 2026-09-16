@@ -22,7 +22,7 @@ Wrench 采用 **前后端分离 + WebSocket 实时通道** 架构：后端是单
                     HTTP / WebSocket
 ┌────────────────────────────┼──────────────────────────────┐
 │             Rust 后端 (wrench-backend, axum + tokio)       │
-│  中间件链：auth（scope 校验 + SpaceCtx 注入）→ 限流 → trace  │
+│  中间件链：security_headers → auth → 限流 → trace            │
 │  ┌────────────┐ ┌──────────────┐ ┌──────────────────────┐ │
 │  │ api/*      │ │ websocket/*  │ │ ssh/* (russh 会话池)  │ │
 │  │ REST 分组  │ │ 终端/日志/stats│ │ SFTP / known_hosts   │ │
@@ -142,7 +142,7 @@ backend/src/
 ├── config.rs            # 环境变量解析（含口令来源与 fail-closed 语义）
 ├── space.rs             # 空间：SpaceCtx、空间码生成/哈希/轮换、legacy 认领
 ├── db/mod.rs            # rusqlite：schema 迁移（V1..V7）、按 space_id 分域的数据访问
-├── middleware/          # auth（scope + SpaceCtx）/ rate_limit / cors / logging
+├── middleware/          # auth（scope + SpaceCtx）/ client_ip / rate_limit / security_headers / cors / logging
 ├── api/                 # REST handler，按业务域一文件一域
 │   ├── auth.rs, space.rs, connections.rs, ssh.rs, sftp.rs
 │   ├── docker.rs, logs.rs, hosts.rs, host_health.rs, monitor.rs

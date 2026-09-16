@@ -134,8 +134,9 @@ pub async fn rate_limit_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Response {
-    // Use real connection IP
-    let client_ip = addr.ip().to_string();
+    // 真实客户端 IP：反向代理后必须靠受信代理头还原，否则所有人共用一个桶
+    // （未配置 WRENCH_TRUSTED_PROXIES 时等同对端 IP，代理头一概不采信）
+    let client_ip = crate::middleware::client_ip::resolve(Some(addr.ip()), req.headers());
 
     // Use a global static rate limiter
     use std::sync::LazyLock;
@@ -169,7 +170,7 @@ pub async fn login_rate_limit_middleware(
     use std::sync::LazyLock;
     static LOGIN_LIMITER: LazyLock<RateLimiter> = LazyLock::new(|| RateLimiter::new(60, 8));
 
-    let client_ip = addr.ip().to_string();
+    let client_ip = crate::middleware::client_ip::resolve(Some(addr.ip()), req.headers());
     if !LOGIN_LIMITER.check(&client_ip) {
         tracing::warn!("[auth] login rate limited for {}", client_ip);
         let body = serde_json::json!({
@@ -196,12 +197,8 @@ pub async fn ssh_connect_rate_limit_middleware(req: Request<Body>, next: Next) -
     use std::sync::LazyLock;
     static SSH_LIMITER: LazyLock<RateLimiter> = LazyLock::new(|| RateLimiter::new(60, 20));
 
-    // 直接从扩展里取连接信息：没有连接信息时（如进程内请求）退回同一个键，限流仍然生效
-    let client_ip = req
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|ci| ci.0.ip().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+    // 从请求里解析真实客户端 IP：没有连接信息时（如进程内请求）退回同一个键，限流仍然生效
+    let client_ip = crate::middleware::client_ip::of_request(&req);
     if !SSH_LIMITER.check(&client_ip) {
         tracing::warn!("[ssh] connect rate limited for {}", client_ip);
         let body = serde_json::json!({

@@ -327,5 +327,9 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
     Router::new()
         .merge(app_with_state)
         .fallback_service(fallback)
+        // 安全响应头在最外层：404、静态资源、SSE 响应也一并覆盖
+        .layer(axum_middleware::from_fn(
+            middleware::security_headers::security_headers_middleware,
+        ))
         .layer(TraceLayer::new_for_http())
 }

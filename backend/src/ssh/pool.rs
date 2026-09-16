@@ -116,13 +116,15 @@ impl SshSession {
 
     /// Build a client config with keepalive and nodelay enabled.
     fn build_config() -> Arc<client::Config> {
-        let mut config = client::Config::default();
-        // Send keepalive probes every 30 seconds to prevent idle disconnects
-        config.keepalive_interval = Some(std::time::Duration::from_secs(30));
-        // Close connection after 3 missed keepalives (90s total)
-        config.keepalive_max = 3;
-        // Disable Nagle's algorithm for lower latency on interactive sessions
-        config.nodelay = true;
+        let config = client::Config {
+            // Send keepalive probes every 30 seconds to prevent idle disconnects
+            keepalive_interval: Some(std::time::Duration::from_secs(30)),
+            // Close connection after 3 missed keepalives (90s total)
+            keepalive_max: 3,
+            // Disable Nagle's algorithm for lower latency on interactive sessions
+            nodelay: true,
+            ..Default::default()
+        };
         Arc::new(config)
     }
 

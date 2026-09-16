@@ -219,6 +219,9 @@ server {
 | `WRENCH_AUTH_PASSWORD_FILE` | 无 | 从文件读取登录口令（优先级低于环境变量）。不设置时回退到数据库同目录的 `auth_password` —— 只读，不会自动创建 |
 | `WRENCH_EGRESS_ALLOW` | 空 | **这台机器允许主动连到哪里**（逗号分隔的 `IP[:端口]` / `CIDR[:端口]`，只接受 IP/CIDR）。留空 = 内网/环回/链路本地/云元数据/保留地址一律拒绝。例：`192.168.1.5:22,192.168.1.6:22`。**条目越窄越安全**：每个条目都是「任何人打开网页后可以用来发起连接的目标」，不要整段放开内网 |
 | `WRENCH_EGRESS_STRICT` | `0` | 置 `1` 时公网 TCP 目标也必须在 `WRENCH_EGRESS_ALLOW` 里（只管理固定几台主机时更严） |
+| `WRENCH_TRUSTED_PROXIES` | 空 | **反向代理地址/网段**（逗号分隔的 IP/CIDR）。留空 = 完全不信任 `X-Forwarded-For`/`X-Real-IP`。挂了 HTTPS 反代却不设置，会让登录限流退化成全局共享配额、审计日志只记代理 IP |
+| `WRENCH_CSP` | `plugins` | `strict` 去掉 CSP 里的 `'unsafe-eval'`（不使用插件时更严）；`off` 关闭 CSP（不建议） |
+| `WRENCH_HSTS` | 开启 | `off` 时不主动下发 HSTS（外层代理已下发时用）；仅在请求确为 HTTPS 时生效 |
 | `VAULT_KEY` | `无` (从 JWT_SECRET 派生) | Secret Vault AES-256-GCM 加密密钥，建议显式设置 |
 | `LOG_LEVEL` | `info` | 日志级别 (trace/debug/info/warn/error) |
 | `FRONTEND_DIST` | `./frontend/dist` | 前端静态文件目录路径 |
@@ -302,6 +305,67 @@ iptables -I DOCKER-USER -s "$SUBNET" -d 172.16.0.0/12 -j DROP
 
 ---
 
+## 🔒 反向代理与安全响应头
+
+### 挂了代理就必须告诉后端「谁才是客户端」
+
+生产环境通常在前面放 Nginx / Caddy / 面板做 HTTPS，此时 TCP 对端**永远是代理的地址**。
+不配置下面这个变量会静默降级成两个真实问题：
+
+- **限流坍缩**：登录接口的「每 IP 60 秒 8 次」变成全局 8 次/分钟——别人打满你就进不来了，
+  而攻击者的尝试也不再各占配额。
+- **审计失真**：`audit_logs.ip` 全是代理地址，出事之后无法判断是谁连了哪台机器。
+
+```yaml
+environment:
+  # 你的反向代理所在地址/网段（逗号分隔，支持 IP 或 CIDR）
+  WRENCH_TRUSTED_PROXIES: "172.17.0.1,10.0.0.0/8"
+```
+
+规则（**默认不信任任何代理头**，这是刻意的）：
+
+| 情况 | 行为 |
+|------|------|
+| 未设置 `WRENCH_TRUSTED_PROXIES` | 只信 TCP 对端 IP，`X-Forwarded-For` / `X-Real-IP` **一律忽略** |
+| 对端不在受信网段内 | 同上（所以别人伪造 `X-Forwarded-For: 1.2.3.4` 无效，绕不过限流） |
+| 对端在受信网段内 | 从右往左取 `X-Forwarded-For` 里第一个不受信地址 = 真实客户端 |
+
+启动日志会打印一行确认：
+
+```bash
+docker logs wrench 2>&1 | grep client_ip
+# [client_ip] 受信代理 1 个网段（来自 WRENCH_TRUSTED_PROXIES）：限流与审计将使用代理头里的真实客户端 IP
+```
+
+> 反代要记得传 `X-Forwarded-For`（Nginx 默认 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`
+> 即可）与 `X-Forwarded-Proto`（HTTPS 识别、`Secure` cookie 与 HSTS 都依赖它）。
+
+### 安全响应头（默认开启）
+
+后端会对**所有**响应下发安全头：`Content-Security-Policy`、`X-Content-Type-Options: nosniff`、
+`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`、`Permissions-Policy`、
+`Cross-Origin-Opener-Policy`、`X-Permitted-Cross-Domain-Policies: none`；
+只有确认请求是 HTTPS（`X-Forwarded-Proto: https`）时才附加
+`Strict-Transport-Security: max-age=15552000`（132 天，刻意不含 `includeSubDomains`）。
+
+CSP 里有两处**必要**的放宽，其余都是最严：
+
+- `style-src 'unsafe-inline'`：xterm.js 运行时注入 `<style>`，React 也用 style 属性。
+- `script-src 'unsafe-eval'`：插件运行时用 `new Function` 执行插件代码。插件本来就以页面
+  同源权限运行，这条不额外扩大暴露面；**不使用插件的部署**可以关掉它：
+
+  ```yaml
+  WRENCH_CSP: "strict"   # 去掉 'unsafe-eval'（插件功能会失效，其它功能不受影响）
+  WRENCH_CSP: "off"      # 完全关闭 CSP（不建议）
+  WRENCH_HSTS: "off"     # 不下发 HSTS（例如外层代理已经自己下发）
+  ```
+
+`script-src` 里**没有** `'unsafe-inline'`：`index.html` 里的开发期热更新 shim 已挪到
+`public/refresh-shim.js`（外部文件），所以内联 `<script>` 注入这条路（XSS 最常用的入口）
+是真的被堵住的。
+
+---
+
 ## 👥 多人共用与私有空间
 
 本实例是「无角色」的多人共用：谁都可以用，**人人平等**，但每个人的数据互相看不见。
@@ -335,7 +399,8 @@ curl http://localhost:3001/api/health
 
 ## 🛡️ 安全建议
 
-1. **生产环境务必使用反向代理**（Nginx / Caddy）
+1. **生产环境务必使用反向代理**（Nginx / Caddy），并把代理地址写进 `WRENCH_TRUSTED_PROXIES`
+   （否则限流与审计日志会把所有人记成同一个 IP，见上文「反向代理与安全响应头」）
 2. **启用 HTTPS**（Let's Encrypt 免费证书）
 3. 配置 **IP 白名单**或**基础认证**
 4. 定期更新依赖：`npm audit`（前端）、`cargo audit`（后端，需 `cargo install cargo-audit`）。

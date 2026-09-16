@@ -2,6 +2,40 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 🛡️ 公网暴露加固（第二轮）：真实客户端 IP、安全响应头、Markdown 链接白名单
+- **反向代理后的真实客户端 IP（`WRENCH_TRUSTED_PROXIES`）**：挂在 Nginx/Caddy 后面的部署里，
+  TCP 对端永远是代理地址，于是登录限流的「每 IP 60 秒 8 次」静默坍缩成**全局** 8 次/分钟
+  （别人打满配额，合法用户反而进不来），审计日志的 `ip` 列也全变成代理地址 —— 出事之后
+  无法判断是谁连了哪台机器。现在默认**完全不信任**代理头，只有在 `WRENCH_TRUSTED_PROXIES`
+  里声明的来源（IP/CIDR）才被采信，取 `X-Forwarded-For` 中从右往左第一个不受信地址；
+  直连对端不受信时伪造 `X-Forwarded-For: 1.2.3.4` 无效，绕不过限流。
+  接线点：登录/改口令/ws token 审计、通用与登录限流、SSH 连接限流、认证中间件的审计 IP。
+- **安全响应头默认开启**（最外层中间件，404、静态资源、SSE 一并覆盖）：
+  `Content-Security-Policy`、`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、
+  `Referrer-Policy: no-referrer`、`Permissions-Policy`、`Cross-Origin-Opener-Policy`、
+  `X-Permitted-Cross-Domain-Policies: none`；`Strict-Transport-Security` 仅在请求确为
+  HTTPS（`X-Forwarded-Proto: https`）时下发。
+- **去掉内联脚本**：`index.html` 里的 Vite 热更新 shim 挪到 `public/refresh-shim.js`（外部文件），
+  因此 CSP 的 `script-src` **不含** `'unsafe-inline'` —— 内联 `<script>` 注入这条（XSS 最常用）
+  是真的被堵住的。刻意保留两处放宽：`style-src 'unsafe-inline'`（xterm.js 运行时注入 `<style>`）
+  与 `script-src 'unsafe-eval'`（插件运行时用 `new Function`，本来就以页面同源权限运行）。
+  不使用插件的部署可用 `WRENCH_CSP=strict` 去掉 `'unsafe-eval'`；外层代理已下发 HSTS 时用
+  `WRENCH_HSTS=off`。启动日志会打印实际生效的 CSP 与受信代理摘要（便于部署后核对，避免静默降级）。
+- **Markdown 链接白名单（存储型 XSS）**：`MarkdownPreview` 把 markdown 转成 HTML 后交给
+  `dangerouslySetInnerHTML`，而 markdown 来源并不完全可信（AI 回复、日志内容、项目文件、剪贴板）——
+  `[点我](javascript:alert(1))` 会渲染成可点击的 `<a href="javascript:...">`，点一下就在本页
+  执行脚本，而本页握着会话令牌并已连着 SSH 会话。现在只放行 `http(s)` / `mailto` / 站内相对路径
+  与锚点，`javascript:` / `data:text/html` / `vbscript:` 一律降级为 `#`；图片单独允许 `data:image/*`
+  （贴图场景，`data:text/html` 不能执行）。渲染器统一抽到 `frontend/src/utils/markdown.ts` 并导出
+  `safeUrl`，**AI 侧边栏（`modules/ssh/AiSidebar.tsx`）的链接渲染也改走同一白名单**——那里的输入
+  是模型生成的内容，是最典型的不可信 markdown 来源，此前 `href` 是原样拼进 React 树的。
+  回归测试：`frontend/src/test/utils/markdown.test.ts`（13 个用例，含引号逃逸、大小写/空白变体、
+  `data:` 图片例外）。
+- **文档/示例同步**：`docs/DEPLOY.md` 新增「反向代理与安全响应头」章节与两个变量说明，
+  `backend/.env.example`、`docker-compose.yml` 补齐 `WRENCH_TRUSTED_PROXIES` / `WRENCH_CSP` / `WRENCH_HSTS`。
+- **门禁**：后端 `151 lib + 28 api + 10 isolation`（含新增的 `client_ip`、`security_headers` 单测）、
+  前端 `29 文件 / 334` 用例、`clippy -D warnings`、`cargo fmt --check`、ESLint `--max-warnings 0` 全绿。
+
 ### 🚪 出口策略：从根上消除跳板能力（`backend/src/egress.rs`）
 - **问题被正确定位**：风险不是「谁能进门」，而是「进门之后这台机器能替谁连到哪里」。
   Wrench 的目标主机/端口来自客户端请求（`api/ssh.rs`、`websocket/terminal.rs`），

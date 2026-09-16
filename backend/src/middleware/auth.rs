@@ -5,7 +5,6 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::app_state::{AppState, WsTokenInfo};
@@ -79,10 +78,8 @@ fn is_https(req: &Request<Body>) -> bool {
 }
 
 fn client_ip(req: &Request<Body>) -> String {
-    req.extensions()
-        .get::<axum::extract::ConnectInfo<SocketAddr>>()
-        .map(|ci| ci.0.ip().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
+    // 反向代理后取真实客户端 IP（审计日志的 IP 列必须能用于事后取证）
+    crate::middleware::client_ip::of_request(req)
 }
 
 /// 认证 + 空间解析中间件。
