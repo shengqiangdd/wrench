@@ -5,6 +5,46 @@ import compression from 'vite-plugin-compression'
 import { createHtmlPlugin } from 'vite-plugin-html'
 import bundleAnalyzer from 'vite-bundle-analyzer'
 import path from 'path'
+import { brotliCompress, constants } from 'node:zlib'
+import { promisify } from 'node:util'
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
+
+const brotliCompressAsync = promisify(brotliCompress)
+
+/** Generate .br assets without the shared mtime cache collision of two compression plugin instances. */
+function brotliAssets() {
+  return {
+    name: 'wrench-brotli-assets',
+    apply: 'build' as const,
+    enforce: 'post' as const,
+    async closeBundle() {
+      const outDir = path.resolve(__dirname, 'dist')
+      let entries: import('node:fs').Dirent[]
+      try {
+        entries = await readdir(outDir, { withFileTypes: true, recursive: true })
+      } catch {
+        return
+      }
+      const candidates = entries
+        .filter((entry) => entry.isFile() && /\.(js|mjs|json|css|html)$/i.test(entry.name))
+        .map((entry) => path.join(entry.parentPath ?? outDir, entry.name))
+      await Promise.all(
+        candidates.map(async (source) => {
+          const target = `${source}.br`
+          const [input, sourceStat] = await Promise.all([readFile(source), stat(source)])
+          if (sourceStat.size < 1024) return
+          const compressed = await brotliCompressAsync(input, {
+            params: {
+              [constants.BROTLI_PARAM_QUALITY]: constants.BROTLI_MAX_QUALITY,
+              [constants.BROTLI_PARAM_MODE]: constants.BROTLI_MODE_TEXT,
+            },
+          })
+          await writeFile(target, compressed)
+        }),
+      )
+    },
+  }
+}
 
 function isExternal(id: string, pkg: string) {
   return id.includes(`/node_modules/${pkg}/`)
@@ -87,12 +127,7 @@ export default defineConfig({
       threshold: 1024,
       deleteOriginFile: false,
     }),
-    compression({
-      algorithm: 'brotliCompress',
-      ext: '.br',
-      threshold: 1024,
-      deleteOriginFile: false,
-    }),
+    brotliAssets(),
     ...(isAnalyze ? [bundleAnalyzer()] : []),
   ],
   resolve: {
