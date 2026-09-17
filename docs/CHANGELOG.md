@@ -2,6 +2,35 @@
 
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
+### 🔐 明文凭据门禁：提交前 / CI / 每周历史扫描（并查出一次真实泄露）
+
+- **先说结论**：本仓库历史里**确实有一处明文口令** —— 早期提交的 `deploy*.py`
+  （`262e629c`、`43b9cec5` 一带）里写着服务器 IP + 用户名 + 明文口令，而仓库是 public 的。
+  这几个文件在 `11a6e7ea` 已从 HEAD 删除，**但历史仍然翻得出来**（`git log -p`）。
+  全历史扫描还命中过 `AKIA` / `sk-` / `PRIVATE KEY`，逐个查证后确认是历史噪声：
+  早期 `frontend/node_modules/**` 与 `frontend/dist/**` 曾被跟踪（`5d53c750` 移除），
+  命中的是 prettier/sql.js/vite-bundle-analyzer 的字符串与 `SshPlaceholder` 的界面提示文案。
+  **用户自己的私钥、GitHub/OpenAI/AWS 令牌没有泄露。**
+- **新增 `tools/check-secrets.sh`**（提交前与 CI 共用同一份规则，避免"本地绿、CI 红"）：
+  - 高信号模式：私钥头、`ghp_/gho_/github_pat_`、`AKIA…`、`xox[baprs]-`、`sk-…`、
+    `sshpass -p …`；扫**所有**文件，包括测试（真令牌出现在夹具里同样是泄露）。
+  - 赋值式规则（`password = "字面量"`）只对会被真部署的代码生效，并排除
+    `test/fixtures/example/docs` 与 Rust `#[cfg(test)]` 块之后的内容 —— 一刀切会把门禁变成噪声源。
+  - 误报逃生口：行内标 `secret-scan:ignore`；`placeholder="-----BEGIN RSA PRIVATE KEY-----…"`
+    这类界面文案自动放行。
+  - **本机禁止串**：`$WRENCH_SECRET_DENYLIST`（默认 `~/.wrench-secret-denylist`，一行一个，
+    **不进仓库**）用来钉住「已经泄露过、但不想在仓库里明文列举」的具体口令。
+  - 三种模式：`--staged`（pre-commit）/ 默认扫已跟踪文件（CI）/ `--history`（按提交报告，
+    用 `git log -G` 而不是逐 blob 翻 —— 后者在两万多个对象上要跑十分钟，前者 40 秒）。
+  - 扫描结果**不回显命中行内容**：扫描器本身不该变成新的泄露渠道。
+- **接线**：`.github/workflows/ci-secrets.yml`（push/PR 扫全树；每周一定时扫全历史）、
+  本机 `.git/hooks/pre-commit` 经 `scripts/pre-commit-check.sh` 调 `--staged`。
+- **文档**：`docs/DEPLOY.md` 安全建议加一条「明文凭据不许进仓库」，写清这次的处置顺序
+  ——**先轮换**（唯一真正有效的动作）→ 本机 denylist 兜住 → 视需要 `git filter-repo` 重写历史
+  再 force push（需确认；且别人可能已持有旧对象，所以它只是补充而不是替代轮换）。
+- **自检**：故意植入 `password = "…"` 与假 `ghp_` 令牌，`--staged` 两处都报并退出 1；
+  植入泄露过的具体口令，`local-denylist` 报并退出 1；清理后三种模式全绿。
+
 ### 🔢 文件管理的权限列是乱码，且「修改权限」会预填危险值（同一页面上顺路发现）
 
 - **现象**（部署后在真机上看见的）：文件管理右侧权限列显示 `r-x-w-r-x`、

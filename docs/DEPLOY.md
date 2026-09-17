@@ -449,8 +449,28 @@ curl http://localhost:3001/api/health
 5. **SSH 私钥优先用 ed25519**：Rust 生态的 `rsa` crate 存在时序侧信道（`RUSTSEC-2023-0071`），
    上游至今没有补丁，而 Wrench 作为 SSH 客户端用私钥认证时正好落在这个风险面上。
    ed25519 是纯签名算法、不受影响；长期或高价值的 RSA 私钥不建议交给 Wrench 使用。
-6. 使用非 root 用户运行服务
-7. **SSH 凭据不进服务端**：服务端只保存连接元数据（`GET`/`DELETE /api/connections`，没有写入端点）。
+6. **明文凭据不许进仓库**（这条是本项目的真实教训，不是通用建议）。
+   本仓库此前把 `deploy*.py` 提交过，里面写着服务器 IP + 用户名 + **明文口令**，而仓库是公开的。
+   文件后来删了，但**删除只影响 HEAD、不影响历史** —— `git log -p` 至今仍翻得出来，
+   已经 push 出去的东西无法撤回。所以：
+
+   - 门禁：`tools/check-secrets.sh`（与 CI `.github/workflows/ci-secrets.yml` 同一份规则）
+     在**提交前**扫暂存区、CI 扫全树、每周扫一次全历史。真跑起来它不单是形式：
+     它会命中私钥头、GitHub/AWS/Slack/`sk-` 令牌、`sshpass -p`、以及
+     `password = "字面量"` 这类赋值式写法（测试夹具与 `#[cfg(test)]` 块已排除，
+     误报可在行内加 `secret-scan:ignore`）。
+   - 已经泄露过的具体口令：**轮换它**，这是唯一真正有效的动作；同时把那串写进本机
+     `~/.wrench-secret-denylist`（或 `$WRENCH_SECRET_DENYLIST` 指向的文件，一行一个，
+     **不进仓库**），防止它被再次提交。
+   - 可选（动作大、需确认）：用 `git filter-repo` 重写历史去掉那段 blob，再 force push。
+     注意：force push 后旧 commit 仍可能被 GitHub 的缓存/他人的 fork 持有，
+     所以**轮换永远是第一步**，重写历史只是补充。
+   - 部署口令一律走 `.env` / 环境变量（`.env` 已在 `.gitignore` 里）。
+     尤其是 `JWT_SECRET`：它同时是 Vault 的解密密钥来源，丢了它历史密文就解不开，
+     但它**绝不**能进仓库或出现在对话/日志里。
+
+7. 使用非 root 用户运行服务
+8. **SSH 凭据不进服务端**：服务端只保存连接元数据（`GET`/`DELETE /api/connections`，没有写入端点）。
    若你的库是从早期版本升级上来的，里面可能还躺着明文凭据的历史行（`config` 里带 `password`/
    `private_key`）：接口读取时已强制脱敏，但仍建议清掉，例如
    `curl -H "Authorization: Bearer <token>" -X DELETE https://<你的域名>/api/connections/<id>`。
