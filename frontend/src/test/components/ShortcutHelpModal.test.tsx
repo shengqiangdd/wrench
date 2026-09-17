@@ -2,6 +2,11 @@
  * ShortcutHelpModal component tests
  *
  * Uses createRoot directly to avoid React 19 CJS act issue.
+ * 注意 render() 必须把 React 的提交**等干净**再返回：早先用「固定 await 10ms」，
+ * 单跑没事，但全量并行跑时 CPU 争抢会让提交晚于 10ms，于是 `container.textContent`
+ * 还是空串、`querySelector('button')!` 直接抛 —— 实测在 pre-commit 里偶发红灯一次。
+ * 也不能用 `act`（React 19 + CJS 下 `Maximum call stack size exceeded`，实测），
+ * 所以改成「轮询到 DOM 出现内容」；唯一期望渲染为空的用例显式声明 expectEmpty。
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
@@ -21,14 +26,22 @@ afterEach(() => {
   container.parentNode?.removeChild(container)
 })
 
-async function render(el: React.ReactElement) {
+async function render(el: React.ReactElement, opts: { expectEmpty?: boolean } = {}) {
   root.render(el)
-  await new Promise<void>((r) => setTimeout(r, 10))
+  const deadline = Date.now() + 2000
+  while (Date.now() < deadline) {
+    await new Promise<void>((r) => setTimeout(r, 5))
+    if (opts.expectEmpty) {
+      if (container.innerHTML === '') return
+    } else if (container.innerHTML !== '') {
+      return
+    }
+  }
 }
 
 describe('ShortcutHelpModal', () => {
   it('returns null when not open', async () => {
-    await render(<ShortcutHelpModal open={false} onClose={vi.fn()} />)
+    await render(<ShortcutHelpModal open={false} onClose={vi.fn()} />, { expectEmpty: true })
     expect(container.innerHTML).toBe('')
   })
 
