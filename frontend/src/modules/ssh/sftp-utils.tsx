@@ -973,3 +973,88 @@ export function isBinaryContent(b64: string): boolean {
     return false
   }
 }
+
+// ─── 拖放上传：把「文件夹」从「文件」里挑出来 ───────────────────────────────
+//
+// 为什么单独处理：浏览器拖入文件夹时，会把它当成一个 **0 字节的 File** 交给页面
+// （Chrome 实测：`dataTransfer.files` 里出现 `{name:'subdir', size:0}`），于是旧代码
+// 会去 FileReader 读它、读失败、最后弹一句「读取文件失败: subdir」——用户既看不懂，
+// 也不知道下一步该干什么。文件夹的真正身份在 `DataTransferItem.webkitGetAsEntry()`
+// 里（`isDirectory === true`），据此挑出来给人话提示，而不是让它去撞读文件失败。
+//
+// `webkitGetAsEntry` 只有 Chromium/Safari 有；取不到条目时（Firefox、合成事件、测试）
+// 一律按普通文件处理，保持原行为，不做猜测。
+
+/** DataTransferItem 里我们真正用到的那部分（结构类型，便于单测喂假对象） */
+export interface DragItemLike {
+  kind?: string
+  webkitGetAsEntry?: () => { isDirectory?: boolean; name?: string } | null
+}
+
+export interface DroppedPayload {
+  /** 真正要上传的文件 */
+  files: File[]
+  /** 被跳过的文件夹名（拖入的是文件夹，当前不支持） */
+  dirNames: string[]
+  /** 是否含有「非文件」条目（拖进来的是选中的文字/链接等） */
+  hasNonFileItems: boolean
+}
+
+/**
+ * 拆分拖入内容：文件照传，文件夹挑出来单独提示。
+ *
+ * 注意：靠「文件夹名 == File 名」来剔除文件夹伪装的占位 File。同一批拖拽里
+ * 文件与同名文件夹不可能共存（同一个目录里不可能同名），跨目录同名的极端情况
+ * 会让那个文件被跳过并出现在提示里 —— 方向是保守的（宁可多提示，不会静默丢数据）。
+ */
+export function splitDroppedItems(
+  items: ArrayLike<DragItemLike> | null | undefined,
+  files: File[],
+): DroppedPayload {
+  let hasNonFileItems = false
+  const dirNameSet = new Set<string>()
+  let sawEntryApi = false
+
+  if (items && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (!item) continue
+      if (item.kind !== 'file') {
+        hasNonFileItems = true
+        continue
+      }
+      if (typeof item.webkitGetAsEntry !== 'function') continue
+      let entry: { isDirectory?: boolean; name?: string } | null
+      try {
+        entry = item.webkitGetAsEntry()
+      } catch {
+        continue // 权限/状态异常时按普通文件处理，别把上传整条路堵死
+      }
+      if (entry) {
+        sawEntryApi = true
+        if (entry.isDirectory) dirNameSet.add(entry.name || '')
+      }
+    }
+  }
+
+  if (!sawEntryApi || dirNameSet.size === 0) {
+    return { files, dirNames: [], hasNonFileItems }
+  }
+  const dirNames = Array.from(dirNameSet).filter(Boolean)
+  const keep = files.filter((f) => !dirNameSet.has(f.name))
+  return { files: keep, dirNames, hasNonFileItems }
+}
+
+/** 拖拽内容里是否有「可以上传的东西」——决定要不要亮出拖放遮罩 */
+export function hasUploadableDrag(
+  items: ArrayLike<DragItemLike> | null | undefined,
+  filesLength: number,
+): boolean {
+  if (filesLength > 0) return true
+  if (items && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      if (items[i]?.kind === 'file') return true
+    }
+  }
+  return false
+}

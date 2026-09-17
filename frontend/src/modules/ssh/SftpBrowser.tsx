@@ -94,6 +94,8 @@ import {
   isBinaryFile,
   isBinaryContent,
   sftpApi,
+  splitDroppedItems,
+  hasUploadableDrag,
   type SortKey,
   type SortDir,
 } from './sftp-utils'
@@ -1489,7 +1491,11 @@ function SftpBrowserInner({
       e.preventDefault()
       e.stopPropagation()
       dragCounterRef.current++
-      if (e.dataTransfer.items && e.dataTransfer.items.length > 0) setDragOver(true)
+      // 只认「文件」条目：拖进来的选中的文字/链接以前也会亮出「拖拽上传到当前目录」，
+      // 松手却什么都不会发生 —— 没有可传的东西就别承诺。
+      if (hasUploadableDrag(e.dataTransfer.items, e.dataTransfer.files?.length ?? 0)) {
+        setDragOver(true)
+      }
     },
     [isTouchDevice],
   )
@@ -1515,7 +1521,7 @@ function SftpBrowserInner({
   )
 
   const doUpload = useCallback(
-    async (files: File[], targetDir: string) => {
+    async (files: File[], targetDir: string, skippedDirs: string[] = []) => {
       let successCount = 0
       let errorCount = 0
       const errors: string[] = []
@@ -1533,12 +1539,20 @@ function SftpBrowserInner({
       }
       setUploadProgress(null)
       listDir(currentPath)
-      const title = errorCount === 0 ? '上传完成' : '上传完成（有错误）'
+      // 被跳过的文件夹要出现在结果里，不能只是悄悄少传了几个东西
+      const skipNote =
+        skippedDirs.length > 0
+          ? `\n\n已跳过文件夹（需先压缩成 zip）：${skippedDirs.slice(0, 5).join('、')}${
+              skippedDirs.length > 5 ? ` 等 ${skippedDirs.length} 个` : ''
+            }`
+          : ''
+      const title =
+        errorCount === 0 && skippedDirs.length === 0 ? '上传完成' : '上传完成（有跳过/错误）'
       const msg =
         errorCount === 0
-          ? `成功上传 ${successCount} 个文件到 ${targetDir}`
+          ? `成功上传 ${successCount} 个文件到 ${targetDir}${skipNote}`
           : `成功 ${successCount}，失败 ${errorCount}
-${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.length - 3} 个错误` : ''}`
+${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.length - 3} 个错误` : ''}${skipNote}`
       setAlertModal({ title, message: msg })
     },
     [uploadFile, listDir, currentPath],
@@ -1579,14 +1593,29 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       e.stopPropagation()
       setDragOver(false)
       dragCounterRef.current = 0
-      const files = Array.from(e.dataTransfer.files)
-      if (files.length === 0) return
+      const { files, dirNames } = splitDroppedItems(
+        e.dataTransfer.items,
+        Array.from(e.dataTransfer.files),
+      )
+      // 只拖了文件夹（或拖进来的压根不是文件）：给一句人能照做的解释，
+      // 而不是让文件夹去撞「读取文件失败: xxx」。
+      if (files.length === 0) {
+        if (dirNames.length > 0) {
+          setAlertModal({
+            title: '文件夹不能直接拖入',
+            message: `暂不支持上传整个文件夹：${dirNames.slice(0, 5).join('、')}${
+              dirNames.length > 5 ? ` 等 ${dirNames.length} 个` : ''
+            }\n\n两个办法：\n· 先把文件夹压成 zip，再拖进来\n· 双击进入要放东西的目录，把里面的文件一起拖过去`,
+          })
+        }
+        return
+      }
       if (!sessionId) {
         setAlertModal({ title: '无法上传', message: '请先连接到 SSH 服务器' })
         return
       }
       const confirmed = await confirmOverwrite(files, currentPath)
-      if (confirmed) doUpload(files, currentPath)
+      if (confirmed) doUpload(files, currentPath, dirNames)
     },
     [sessionId, currentPath, doUpload, confirmOverwrite, isTouchDevice],
   )
@@ -2221,6 +2250,8 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             <Upload size={32} className="mx-auto text-blue-400" />
             <p className="mt-2 text-sm font-medium text-blue-300">拖拽上传到当前目录</p>
             <p className="mt-1 text-xs text-blue-400/60">{currentPath}</p>
+            {/* 提前把限制说清，比松手后弹错误强 */}
+            <p className="mt-1 text-[10px] text-blue-400/40">文件夹请先压缩成 zip</p>
           </div>
         </div>
       )}
