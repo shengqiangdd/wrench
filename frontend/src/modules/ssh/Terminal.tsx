@@ -150,13 +150,14 @@ function readCanvasPref(): boolean {
   }
 }
 
-/** 已保存的「进度纯文本」选择（新键优先，兼容老键）；`null` = 用户从没选过 */
+/** 已保存的「进度纯文本」选择（新键优先，兼容老键）。默认策略不再持久化关闭状态。 */
 function readQuietProgressPref(): string | null {
   try {
-    return (
+    const stored =
       localStorage.getItem(QUIET_PROGRESS_STORAGE_KEY) ??
       localStorage.getItem(QUIET_PROGRESS_LEGACY_STORAGE_KEY)
-    )
+    // 旧版本可能保存过“关闭 plain”，但升级后必须恢复安全默认，不能让用户继续刷屏。
+    return stored === '1' ? '1' : null
   } catch {
     return null
   }
@@ -223,21 +224,17 @@ export default function TerminalView({
   // ─── 自动滚动管理 ───
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
-  // ─── 进度纯文本开关（本会话注入了哪些变量见 utils/quiet-env.ts）───
-  // 默认值**跟随画布**：整块重画的进度 UI（compose 的 [+]/[=> 块、BuildKit 的 TUI）
-  // 靠 ESC[nA"上移回块首"逐帧重绘，块高超过屏高时每帧会往 scrollback 永久丢
-  // (块高 − 屏高) 行：实测 44 列 × 12 行跑一次 20 服务 compose pull = 3012 行
-  // （2151 行重复）；plain 是逐行追加日志，任何尺寸都稳定。
-  // 但画布（几何层，默认开）已经把块高塞进逻辑屏、实测富进度 0 堆行 —— 这时再压成
-  // plain 就是净损失（看不到动画、回显三行 export、等于替所有人改 docker 的展示设置）。
-  // 所以：画布开 → 不注入；画布关（用户主动贴屏，行数兜底没了）→ 自动注入。
-  // 用户手动点过「日志逐行输出」就听用户的，画布再切也不动它（plainManualRef）。
+  // ─── 进度纯文本保护（本会话注入了哪些变量见 utils/quiet-env.ts）───
+  // 默认始终开启：Docker Compose / BuildKit 在移动端窄屏的整块重绘会把每帧堆进
+  // scrollback，几千行重复垃圾不是用户应该自己理解和规避的操作。
+  // 只有用户在当前会话主动关闭「日志逐行输出」时才恢复动画；该关闭不再持久化。
+  // 画布仍然保留为高级回看模式，但不再承担网络慢/窄屏下的正确性保障。
   const [plainInit] = useState(() =>
     resolveQuietProgress(readQuietProgressPref(), readCanvasPref()),
   )
   const [composePlain, setComposePlain] = useState<boolean>(plainInit.value)
   const composePlainRef = useRef(composePlain)
-  /** 用户是否手动点过「日志逐行输出」（没点过 = 跟随「进度原地刷新」） */
+  /** 用户是否手动点过「日志逐行输出」（仅用于当前连接的高级覆盖） */
   const plainManualRef = useRef(plainInit.manual)
   // ─── 终端画布开关（逻辑尺寸与可视尺寸解耦，见 utils/terminal-canvas.ts）───
   // 默认开启：窄视口（手机键盘弹起约 12 行）下把 PTY 逻辑屏抬到 30 行，
@@ -1249,8 +1246,8 @@ export default function TerminalView({
           term.focus()
           onConnectedRef.current?.()
           // 新会话的环境变量不会自动带过来：把「安静进度」变量组重新注入一次。
-          // （只在开关打开时才注入；开关默认跟随画布 —— 画布开着就不注入，
-          //   富进度 UI 在几何层已经不堆行，见 quiet-env 的 defaultQuietProgress。）
+          // 默认始终注入，不再要求用户先打开某个显示开关；显示菜单只作为高级覆盖。
+          // 画布仍可改善回看体验，但不再承担“避免几千行重复”的责任。
           //
           // ⚠️ 这等于"替用户打字"，所以必须先确认他正坐在 shell 提示符上：
           //   · 全屏 TUI（vim/htop/less → xterm alternate buffer）里注入会打进 TUI；
@@ -1288,17 +1285,8 @@ export default function TerminalView({
                 connectionId,
                 data: encodePtyLine(buildQuietProgressExportLine()),
               })
-              // 首次自动注入时说明一下默认行为（老用户会注意到变化）
-              try {
-                if (localStorage.getItem('wrench_ssh_plain_hint_shown') !== '1') {
-                  localStorage.setItem('wrench_ssh_plain_hint_shown', '1')
-                  showHint(
-                    '已开启日志逐行输出（docker compose / buildkit）：终端行数不足时动画进度块会重复堆叠 · 打开右上「显示」可恢复动画',
-                  )
-                }
-              } catch {
-                /* ignore */
-              }
+              // 自动保护默认静默，不弹“请去打开开关”的提示打扰用户。
+              // 用户需要动画时可以在「显示」里手动关闭。
             }
             plainInjectTimerRef.current = setTimeout(() => tryInject(0), 250)
           }
@@ -1873,7 +1861,8 @@ export default function TerminalView({
     if (manual) {
       plainManualRef.current = true
       try {
-        localStorage.setItem(QUIET_PROGRESS_STORAGE_KEY, next ? '1' : '0')
+        if (next) localStorage.setItem(QUIET_PROGRESS_STORAGE_KEY, '1')
+        else localStorage.removeItem(QUIET_PROGRESS_STORAGE_KEY)
       } catch {
         /* ignore */
       }
@@ -1914,9 +1903,8 @@ export default function TerminalView({
    *     scrollback 丢重复块。
    * 关：贴屏（逻辑尺寸 = 可视尺寸），即改造前的行为。
    *
-   * 安静进度变量组**跟随画布**：关掉画布 = 行数兜底没了，这时必须注入，
-   * 否则又回到"每帧堆重复行"；开着画布则不必牺牲动画（实测富进度 0 堆行）。
-   * 用户手动点过「日志逐行输出」就尊重他的选择，「进度原地刷新」再切也不动它。
+   * 安静进度变量组默认始终开启，不再要求用户先切换任何显示开关；「显示」菜单只作为
+   * 当前连接的高级覆盖。关闭后下次连接仍恢复安全默认，避免用户再次遇到刷屏。
    */
   const toggleCanvas = () => {
     const next = !canvasOn
@@ -1928,23 +1916,12 @@ export default function TerminalView({
       /* ignore */
     }
     canvasCtlRef.current?.refit()
-    // 画布关 → 需要 plain（!next = true）；画布开 → 不再需要（false）
-    const plainShouldBe = !next
-    const followCanvas = !plainManualRef.current && composePlainRef.current !== plainShouldBe
-    const followResult = followCanvas ? applyComposePlain(plainShouldBe, false) : null
-    const tail = !followCanvas
-      ? ''
-      : plainShouldBe
-        ? '；同时开启日志逐行输出（关掉「进度原地刷新」后没有行数兜底）'
-        : '；同时恢复动画进度（「进度原地刷新」已能容纳进度块）'
-    const deferred =
-      followResult === 'busy' || followResult === 'not-connected' ? '（下次连接生效）' : ''
+    // 画布只改变本地回看方式，不再联动远端 Docker/BuildKit 的输出策略。
+    // 安静进度保护默认始终开启，避免用户切换显示项后又意外回到窄屏刷屏模式。
     showHint(
-      (next
+      next
         ? '进度原地刷新：已开启（进度块原地重绘，窄窗口不刷屏；可上下平移回看）'
-        : '进度原地刷新：已关闭（严格按窗口行数渲染）') +
-        tail +
-        deferred,
+        : '进度原地刷新：已关闭（仍保留自动逐行保护；仅改变本地显示方式）',
     )
   }
 

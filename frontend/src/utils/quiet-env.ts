@@ -64,28 +64,25 @@ export const QUIET_PROGRESS_STORAGE_KEY = 'wrench_ssh_quiet_progress'
 export const QUIET_PROGRESS_LEGACY_STORAGE_KEY = 'wrench_ssh_compose_plain'
 
 /**
- * 安静变量组的**默认值：跟随画布**（`frontend/src/utils/terminal-canvas.ts`）。
+ * 安静变量组的默认值：**始终开启**。
  *
- * - 画布开着（默认）：块高 > 屏高的问题已经在几何层解决（实测富进度 0 堆行），
- *   这时再把 docker 的动画进度压成纯文本纯属净损失 —— 用户看不到 compose 的
- *   `[+] Pulling` 动画、屏幕上多出三行 `export ...` 回显，而且等于替所有人
- *   覆盖 docker 自己的展示设置。
- * - 画布关着（用户主动贴屏）：行数兜底没了，这时**必须**注入，否则又回到
- *   "每帧往 scrollback 堆重复行"的老毛病。
+ * 不把终端的可靠性押在用户是否理解某个显示开关上。Docker Compose / BuildKit 的
+ * 整块刷新在移动端窄屏下会制造成千上万行垃圾，因此新会话默认直接使用逐行输出；
+ * 用户确实需要动画进度时，仍可在「显示」菜单里手动关闭当前连接。画布与日志开关只是高级覆盖，
+ * 手动关闭不会变成下一次连接的默认值。
  *
- * 用户手动点过「显示 → 日志逐行输出」就听用户的（见 `resolveQuietProgress` 的 `manual`）。
+ * `canvasOn` 参数保留是为了兼容已有调用方和测试；默认策略不再跟随它变化。
  */
-export function defaultQuietProgress(canvasOn: boolean): boolean {
-  return !canvasOn
+export function defaultQuietProgress(_canvasOn: boolean): boolean {
+  return true
 }
 
 /**
  * 解析「进度纯文本」的初值。
  *
  * @param stored  localStorage 里读到的值（老键已合并进来）；`null` = 用户从没选过
- * @param canvasOn 画布开关的初值
+ * @param canvasOn 保留的兼容参数；默认策略不再受其影响
  * @returns `value` = 本次会话是否注入；`manual` = 是否是用户显式选过
- *          （false 时后续画布开关会继续带着它走）
  */
 export function resolveQuietProgress(
   stored: string | null,
