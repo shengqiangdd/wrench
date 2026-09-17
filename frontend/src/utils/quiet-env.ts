@@ -21,10 +21,8 @@
  * 刻意**不**覆盖单行 `\r` 原地刷新的进度条（wget / curl / pip / npm /
  * cargo / rsync）：它们永远在同一行覆盖，结构上不会堆行，保留动画更有用。
  *
- * **注入时机**：这组变量是"替用户打字"，只在探测到真实 shell 提示符后注入
- * （见 `shell-prompt.ts`），默认值**跟随终端画布**（见 `defaultQuietProgress`）——
- * 画布已经把"块高 > 屏高"在几何层修掉，此时保留 docker 的动画更划算；
- * 关掉画布（贴屏）才自动注入，兜住行数不足的场景。
+ * **注入时机**：默认不注入。这些变量只在用户主动选择「日志逐行输出」且探测到真实
+ * shell 提示符后注入（见 `shell-prompt.ts`）；默认由本地终端画布容纳进度块。
  */
 
 /** 变量名 → 值。值里不能有空格：注入行是 `export A=1 B=2` 形式，会被 word split。 */
@@ -64,17 +62,16 @@ export const QUIET_PROGRESS_STORAGE_KEY = 'wrench_ssh_quiet_progress'
 export const QUIET_PROGRESS_LEGACY_STORAGE_KEY = 'wrench_ssh_compose_plain'
 
 /**
- * 安静变量组的默认值：**始终开启**。
+ * 安静变量组的默认值：**关闭注入**。
  *
- * 不把终端的可靠性押在用户是否理解某个显示开关上。Docker Compose / BuildKit 的
- * 整块刷新在移动端窄屏下会制造成千上万行垃圾，因此新会话默认直接使用逐行输出；
- * 用户确实需要动画进度时，仍可在「显示」菜单里手动关闭当前连接。画布与日志开关只是高级覆盖，
- * 手动关闭不会变成下一次连接的默认值。
- *
+ * 不向远端 shell 注入任何 export 命令，连接体验保持干净。Docker Compose / BuildKit 的
+ * 进度保护由本地终端画布自动容纳；「日志逐行输出」只作为用户主动选择的高级兼容模式。
  * `canvasOn` 参数保留是为了兼容已有调用方和测试；默认策略不再跟随它变化。
  */
 export function defaultQuietProgress(_canvasOn: boolean): boolean {
-  return true
+  // 默认由本地终端画布容纳进度块，不向远端 shell 注入 export。
+  // 保留该函数和返回值类型，兼容显示菜单的“高级覆盖”与旧调用方。
+  return false
 }
 
 /**

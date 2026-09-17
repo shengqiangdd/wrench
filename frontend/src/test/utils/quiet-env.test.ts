@@ -91,15 +91,15 @@ describe('quiet-env', () => {
  * 默认始终开启，不要求用户理解并打开某个显示开关。
  * 画布是高级回看模式；逐行输出是移动端窄屏的默认正确性保障。
  */
-describe('quiet-env 默认值（不依赖用户开关）', () => {
-  it('画布开着或关闭都默认注入，避免移动端进度刷屏', () => {
-    expect(defaultQuietProgress(true)).toBe(true)
-    expect(defaultQuietProgress(false)).toBe(true)
+describe('quiet-env 默认值（不向远端注入）', () => {
+  it('画布开着或关闭都默认不注入，连接时不出现 export 回显', () => {
+    expect(defaultQuietProgress(true)).toBe(false)
+    expect(defaultQuietProgress(false)).toBe(false)
   })
 
-  it('用户没选过（stored = null）→ 默认注入，且标记为“非显式”', () => {
-    expect(resolveQuietProgress(null, true)).toEqual({ value: true, manual: false })
-    expect(resolveQuietProgress(null, false)).toEqual({ value: true, manual: false })
+  it('用户没选过（stored = null）→ 默认不注入，且标记为“非显式”', () => {
+    expect(resolveQuietProgress(null, true)).toEqual({ value: false, manual: false })
+    expect(resolveQuietProgress(null, false)).toEqual({ value: false, manual: false })
   })
 
   it('用户显式开过 → 画布开着也照旧注入（听用户的）', () => {

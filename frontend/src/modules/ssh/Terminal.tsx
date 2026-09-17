@@ -139,8 +139,7 @@ const CANVAS_STORAGE_KEY = 'wrench_ssh_canvas'
 
 /**
  * 画布开关的初值。
- * 抽成函数是因为「进度纯文本」的默认值要跟随画布（见 quiet-env 的
- * `resolveQuietProgress`），两处 useState 初值得读到同一份状态。
+ * 抽成函数是因为终端画布默认自动容纳进度块；它不依赖远端环境变量注入。
  */
 function readCanvasPref(): boolean {
   try {
@@ -224,11 +223,9 @@ export default function TerminalView({
   // ─── 自动滚动管理 ───
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
-  // ─── 进度纯文本保护（本会话注入了哪些变量见 utils/quiet-env.ts）───
-  // 默认始终开启：Docker Compose / BuildKit 在移动端窄屏的整块重绘会把每帧堆进
-  // scrollback，几千行重复垃圾不是用户应该自己理解和规避的操作。
-  // 只有用户在当前会话主动关闭「日志逐行输出」时才恢复动画；该关闭不再持久化。
-  // 画布仍然保留为高级回看模式，但不再承担网络慢/窄屏下的正确性保障。
+  // ─── 进度显示保护（本会话注入了哪些变量见 utils/quiet-env.ts）───
+  // 默认不向远端 shell 注入命令：本地画布自动容纳 Compose/BuildKit 的整块重绘，
+  // 用户连接时不会看到 export 回显。只有用户主动选择“日志逐行输出”时才注入 plain。
   const [plainInit] = useState(() =>
     resolveQuietProgress(readQuietProgressPref(), readCanvasPref()),
   )
@@ -1245,9 +1242,8 @@ export default function TerminalView({
           }
           term.focus()
           onConnectedRef.current?.()
-          // 新会话的环境变量不会自动带过来：把「安静进度」变量组重新注入一次。
-          // 默认始终注入，不再要求用户先打开某个显示开关；显示菜单只作为高级覆盖。
-          // 画布仍可改善回看体验，但不再承担“避免几千行重复”的责任。
+          // 新会话默认不向远端 shell 注入任何环境变量；由本地画布容纳整块进度刷新。
+          // 只有用户在「显示」菜单主动选择过“日志逐行输出”时，才在此处恢复该高级覆盖。
           //
           // ⚠️ 这等于"替用户打字"，所以必须先确认他正坐在 shell 提示符上：
           //   · 全屏 TUI（vim/htop/less → xterm alternate buffer）里注入会打进 TUI；
