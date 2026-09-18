@@ -33,7 +33,7 @@ export function OpenAccessNotice() {
     >
       <KeyRound size={12} />
       <span>
-        本实例未设入口口令 — 任何能访问此地址的人都能使用它（能连的机器由服务端出口白名单决定）
+        公共访问已开启：未设入口口令，无需注册即可使用；每个浏览器拥有独立空间。公网主机可直接连接，内网主机由部署者通过出口白名单允许。
       </span>
       <button
         data-testid="open-access-notice-close"
