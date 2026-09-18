@@ -216,7 +216,7 @@ server {
 | `BRIDGE_HOST` | `0.0.0.0` | 监听地址（注意：不是 `HOST`） |
 | `DATABASE_URL` | `无` (Docker 内默认 `/data/wrench.db`) | SQLite 数据库路径 |
 | `JWT_SECRET` | 自动生成 | 用于令牌签发和 Vault 加密密钥派生 |
-| `WRENCH_REQUIRE_AUTH` | `on` | 门开关。`off` = **不设门**：访问者零输入直进（没有登录界面，也不要求任何口令）；此时空间隔离照旧（每个浏览器一个私有空间），机器能力请靠 `WRENCH_EGRESS_ALLOW` 收敛。拼错的值一律按 `on` 处理 |
+| `WRENCH_REQUIRE_AUTH` | `on` | 门开关。公共实例应设为 `off`：访问者零输入直进（没有共享登录口令，也不要求每个客户端登录）；**数据隔离不靠这个门**，而靠每个浏览器独立的 256-bit 空间码。机器能力必须同时由 `WRENCH_EGRESS_ALLOW` + `WRENCH_EGRESS_STRICT=1` 收敛。拼错的值一律按 `on` 处理 |
 | `WRENCH_AUTH_PASSWORD` | 无 | **入口口令，由部署侧提供**（没有「网页首次设置」这条路）。设置后以 PBKDF2 哈希落库（明文不写文件），改它会让所有旧令牌立即失效。门开着却没给口令 → 受保护接口一律 503（fail-closed） |
 | `WRENCH_AUTH_PASSWORD_FILE` | 无 | 从文件读取登录口令（优先级低于环境变量）。不设置时回退到数据库同目录的 `auth_password` —— 只读，不会自动创建 |
 | `WRENCH_EGRESS_ALLOW` | 空 | **这台机器允许主动连到哪里**（逗号分隔的 `IP[:端口]` / `CIDR[:端口]`，只接受 IP/CIDR）。留空 = 内网/环回/链路本地/云元数据/保留地址一律拒绝。例：`192.168.1.5:22,192.168.1.6:22`。**条目越窄越安全**：每个条目都是「任何人打开网页后可以用来发起连接的目标」，不要整段放开内网 |
@@ -294,6 +294,30 @@ environment:
   「出口策略拒绝了SSH/SFTP 连接 192.168.1.9:22：192.168.1.9（内网地址）不在实例的可达白名单中。
   如需连接，请由实例管理员把目标加入 WRENCH_EGRESS_ALLOW（例如 192.168.1.9:22）」，
   并写入审计日志（动作 `ssh_egress_denied`）。
+
+### 公共访问推荐方案：零输入 + 每浏览器独立空间
+
+这个项目是“人人可用”的公共工具时，不应让所有用户共享一个入口密码，也不应要求每个客户端注册账号。推荐使用以下方案：
+
+- `WRENCH_REQUIRE_AUTH=off`：关闭共享入口门，访问者零输入进入。
+- 服务端首次响应为该浏览器创建随机 **256-bit 空间码**，通过 HttpOnly Cookie 和前端本地存储保存；后端只保存空间码哈希。
+- 每个浏览器默认拥有独立空间，SSH 主机配置、连接、Vault、审计和通知均按空间隔离；换设备时由用户主动粘贴自己的空间码恢复。
+- 空间码是“我的空间”唯一凭据，不能在公共场景展示或分享；忘记空间码无法由部署者找回。
+- 公网安全边界不依赖登录：严格配置 `WRENCH_EGRESS_ALLOW`，建议同时设置 `WRENCH_EGRESS_STRICT=1`，并保留 SSH / WebSocket 并发闸门。
+
+因此，公共部署的最小推荐配置是：
+
+```yaml
+environment:
+  WRENCH_REQUIRE_AUTH: "off"
+  WRENCH_EGRESS_ALLOW: "192.168.2.0/24:22"
+  WRENCH_EGRESS_STRICT: "1"
+  WRENCH_MAX_SESSIONS: "32"
+  WRENCH_MAX_SESSIONS_PER_SPACE: "8"
+  WRENCH_MAX_WS_CONNECTIONS: "128"
+```
+
+> 注意：`WRENCH_REQUIRE_AUTH=off` 只关闭共享入口口令，不会把所有用户放进同一个空间；公网用户仍共享这台实例允许访问的 SSH 目标，因此出口白名单和并发限制必须保留。
 
 ### 配套闸门：出口白名单管「连哪里」，这三条管「连多少」
 
