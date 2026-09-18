@@ -310,7 +310,8 @@ environment:
 ```yaml
 environment:
   WRENCH_REQUIRE_AUTH: "off"
-  WRENCH_EGRESS_ALLOW: "192.168.2.0/24:22"
+  # 留空：公网 SSH 目标动态输入；私网/环回/元数据地址仍由策略阻断
+  WRENCH_EGRESS_ALLOW: ""
   WRENCH_EGRESS_STRICT: "0"
   WRENCH_MAX_SESSIONS: "32"
   WRENCH_MAX_SESSIONS_PER_SPACE: "8"
