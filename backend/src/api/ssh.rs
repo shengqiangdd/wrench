@@ -132,6 +132,31 @@ pub async fn connect_ssh(
         return ApiResponse::error(403, &denied.to_string());
     }
 
+    // 并发闸门：门与出口白名单管「谁能连、能连到哪」，管不住「连多少」。
+    // 到顶就拒绝，并留下审计（用户自己能看到是哪一档到顶）。
+    if let Some(quota) = state.session_quota_reached(&space.id) {
+        tracing::warn!(
+            target: "wrench_backend",
+            "并发连接闸门拒绝 {}@{}:{} — {:?} {}/{}",
+            username, host, port, quota.scope, quota.current, quota.max
+        );
+        state.add_audit_log(
+            "ssh_session_quota",
+            serde_json::json!({
+                "action": "ssh_session_quota_denied",
+                "scope": quota.audit_scope(),
+                "current": quota.current,
+                "max": quota.max,
+                "host": host,
+                "port": port,
+                "username": username,
+            }),
+            "0.0.0.0",
+            &space.id,
+        );
+        return ApiResponse::error(429, &quota.message());
+    }
+
     // Configuration for known_hosts verification
     let known_hosts_path = body.known_hosts_path.clone();
     let strict_mode = body.strict_mode.unwrap_or(false);
@@ -313,6 +338,31 @@ pub async fn ensure_connection(
             &space.id,
         );
         return ApiResponse::error(403, &denied.to_string());
+    }
+
+    // 并发闸门：门与出口白名单管「谁能连、能连到哪」，管不住「连多少」。
+    // 到顶就拒绝，并留下审计（用户自己能看到是哪一档到顶）。
+    if let Some(quota) = state.session_quota_reached(&space.id) {
+        tracing::warn!(
+            target: "wrench_backend",
+            "并发连接闸门拒绝 {}@{}:{} — {:?} {}/{}",
+            username, host, port, quota.scope, quota.current, quota.max
+        );
+        state.add_audit_log(
+            "ssh_session_quota",
+            serde_json::json!({
+                "action": "ssh_session_quota_denied",
+                "scope": quota.audit_scope(),
+                "current": quota.current,
+                "max": quota.max,
+                "host": host,
+                "port": port,
+                "username": username,
+            }),
+            "0.0.0.0",
+            &space.id,
+        );
+        return ApiResponse::error(429, &quota.message());
     }
 
     let connection_id = uuid::Uuid::new_v4().to_string();

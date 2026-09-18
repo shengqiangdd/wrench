@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -8,6 +10,65 @@ use crate::config::AppConfig;
 use crate::db::Database;
 use crate::ssh::SshConnection;
 use crate::utils::jwt::JwtService;
+
+/// 并发闸门触顶的是哪一档。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuotaScope {
+    /// 全实例上限（不随身份变化）
+    Global,
+    /// 单空间上限（公平性）
+    Space,
+}
+
+/// 并发闸门的触顶信息，用来给访客一句能读懂的话。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionQuota {
+    pub scope: QuotaScope,
+    pub max: usize,
+    pub current: usize,
+}
+
+impl SessionQuota {
+    /// 面向使用者的原因说明（中英混排场景下带英文关键字，便于排查）。
+    pub fn message(&self) -> String {
+        match self.scope {
+            QuotaScope::Global => format!(
+                "实例同时保活的 SSH 连接已达上限（{} / {}）—— 请先关闭不用的终端再试 (max sessions reached)",
+                self.current, self.max
+            ),
+            QuotaScope::Space => format!(
+                "本空间同时保活的 SSH 连接已达上限（{} / {}）—— 请先关闭不用的终端再试 (space session limit)",
+                self.current, self.max
+            ),
+        }
+    }
+
+    /// 审计用的短标签。
+    pub fn audit_scope(&self) -> &'static str {
+        match self.scope {
+            QuotaScope::Global => "global",
+            QuotaScope::Space => "space",
+        }
+    }
+}
+
+/// 并发闸门的纯判定（把计数与判定分开，便于直接测边界）。
+///
+/// `max_*` 为 `0` 表示该档不限；全局档优先于单空间档（先撞到哪个报哪个）。
+pub(crate) fn quota_from_counts(
+    global: usize,
+    in_space: usize,
+    max_global: usize,
+    max_space: usize,
+) -> Option<SessionQuota> {
+    if max_global != 0 && global >= max_global {
+        return Some(SessionQuota { scope: QuotaScope::Global, max: max_global, current: global });
+    }
+    if max_space != 0 && in_space >= max_space {
+        return Some(SessionQuota { scope: QuotaScope::Space, max: max_space, current: in_space });
+    }
+    None
+}
 
 /// Shared application state accessible from all handlers.
 pub struct AppState {
@@ -23,8 +84,28 @@ pub struct AppState {
     pub active_logtails: DashMap<String, tokio::sync::oneshot::Sender<()>>,
     /// 门（door）运行时状态：门户口令与令牌版本。
     pub auth: RwLock<AuthRuntime>,
+    /// 当前打开的 WebSocket 连接数（用于 `WRENCH_MAX_WS_CONNECTIONS` 闸门）。
+    ///
+    /// 用原子计数而不是 DashMap：这条路径每次握手都要走，读改写必须是 O(1) 且不持锁。
+    /// 名额由 [`WsSlot`] 的 `Drop` 归还 —— 连接任务正常结束、报错退出、甚至 panic
+    /// 展开时都会归还，不需要在每个返回点手写递减。
+    pub ws_connections: Arc<AtomicUsize>,
     /// 服务器启动时间，用于计算 uptime
     pub start_time: std::time::Instant,
+}
+
+/// WebSocket 连接名额（RAII）。
+///
+/// 持有它代表「本连接占了一个名额」，丢弃即归还。字段故意不公开：外部只能通过
+/// [`AppState::try_open_ws`] 拿到它，避免有人凭空造一个把计数减成负数。
+pub struct WsSlot {
+    counter: Arc<AtomicUsize>,
+}
+
+impl Drop for WsSlot {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 /// 门的运行时状态。
@@ -225,6 +306,7 @@ impl AppState {
             marketplace_cache: RwLock::new(None),
             active_logtails: DashMap::new(),
             auth: RwLock::new(auth),
+            ws_connections: Arc::new(AtomicUsize::new(0)),
             db,
             jwt_service: RwLock::new(JwtService::from_secret(&config.jwt_secret).ok()),
             config,
@@ -304,6 +386,67 @@ impl AppState {
             .filter(|e| e.value().space_id == space_id)
             .map(|e| e.value().clone())
             .collect()
+    }
+
+    /// 并发闸门：新建 SSH 连接前调用。返回 `Some(触顶档位)` 表示**已经到顶，应当拒绝**。
+    ///
+    /// 两档闸门（都由 `AppConfig` 配置，`0` = 该档不限）：
+    /// * **全局**（`WRENCH_MAX_SESSIONS`，默认 32）—— 不随身份变化，门关着时换空间码
+    ///   也绕不过去，是「数量」这层唯一的兜底；
+    /// * **单空间**（`WRENCH_MAX_SESSIONS_PER_SPACE`，默认 8）—— 公平性，防止一个访客
+    ///   把整机额度占满。
+    ///
+    /// 计数口径：注册表里**会话已建立**（`session.is_some()`）的连接。只连上但没开出
+    /// 会话的条目不算数（它们不占 PTY / 上行通道）；反过来说，已经死掉但还没被 5 分钟
+    /// 那轮清理收走的会话仍然占额度 —— 这只会挡住**自己**的空间（配额是按空间算的），
+    /// 不会让别人连不上，属于可接受的保守。
+    pub fn session_quota_reached(&self, space_id: &str) -> Option<SessionQuota> {
+        let max_global = self.config.max_sessions;
+        let max_space = self.config.max_sessions_per_space;
+        let mut global = 0usize;
+        let mut in_space = 0usize;
+        for entry in self.connections.iter() {
+            if entry.value().session.is_none() {
+                continue;
+            }
+            global += 1;
+            if !space_id.is_empty() && entry.value().space_id == space_id {
+                in_space += 1;
+            }
+        }
+        quota_from_counts(global, in_space, max_global, max_space)
+    }
+
+    /// WebSocket 闸门：升级握手前调用。返回 `None` 表示**已达上限，应当拒绝这次升级**。
+    ///
+    /// 上限是 `WRENCH_MAX_WS_CONNECTIONS`（默认 128，`0` = 不限）。它与 SSH 会话闸门
+    /// 互补而不重复：会话闸门数的是「已经建好 SSH 会话」的连接，这一层数的是**所有**
+    /// 打开的 WS 连接 —— 包括「握手成功但一直不发 connect 消息」的那种。少了这一层，
+    /// 公网实例上只要反复握手就能把 fd / 任务 / 缓冲堆到进程撑不住。
+    ///
+    /// 返回的 [`WsSlot`] 必须活到连接结束（放进 `on_upgrade` 的 future 里），
+    /// 由它的 `Drop` 归还名额。返回 `None` 时调用方应回 503 —— 故意不做「等等再试」的
+    /// 排队：排队本身也要占资源，而且会让攻击者用慢连接把队列变成新的耗尽目标。
+    pub fn try_open_ws(&self) -> Option<WsSlot> {
+        let current = self.ws_connections.fetch_add(1, Ordering::AcqRel) + 1;
+        let max = self.config.max_ws_connections;
+        if max != 0 && current > max {
+            // 先把刚加上的减回去，再拒绝 —— 计数必须只反映真实存在的连接。
+            self.ws_connections.fetch_sub(1, Ordering::AcqRel);
+            tracing::warn!(
+                target: "wrench_backend",
+                "WebSocket 并发闸门拒绝升级：已达上限（{} / {}）",
+                current - 1,
+                max
+            );
+            return None;
+        }
+        Some(WsSlot { counter: self.ws_connections.clone() })
+    }
+
+    /// 当前打开的 WebSocket 连接数（诊断 / 测试用）。
+    pub fn ws_connection_count(&self) -> usize {
+        self.ws_connections.load(Ordering::Acquire)
     }
 
     /// 删除本空间的活连接（不是自己的连接不动）。
@@ -449,6 +592,9 @@ mod tests {
             log_level: "warn".into(),
             auth_password: Some("test-password".into()),
             require_auth: true,
+            max_sessions: crate::config::DEFAULT_MAX_SESSIONS,
+            max_sessions_per_space: crate::config::DEFAULT_MAX_SESSIONS_PER_SPACE,
+            max_ws_connections: crate::config::DEFAULT_MAX_WS_CONNECTIONS,
         }
     }
 
@@ -464,6 +610,95 @@ mod tests {
         assert!(state.ws_tokens.is_empty());
         assert!(state.marketplace_cache.read().is_none());
         assert!(state.active_logtails.is_empty());
+    }
+
+    /// 并发闸门：全局档 / 单空间档的边界，以及「0 = 不限」的语义。
+    #[test]
+    fn session_quota_edges() {        // 两档都没到 → 放行
+        assert!(quota_from_counts(3, 2, 32, 8).is_none());
+        // 单空间到顶（8/8）→ 报空间档
+        let q = quota_from_counts(9, 8, 32, 8).expect("空间档应触顶");
+        assert_eq!(q.scope, QuotaScope::Space);
+        assert_eq!((q.current, q.max), (8, 8));
+        assert!(q.message().contains("8 / 8"));
+        assert_eq!(q.audit_scope(), "space");
+        // 全局到顶（32/32）→ 报全局档（优先于空间档）
+        let q = quota_from_counts(32, 1, 32, 8).expect("全局档应触顶");
+        assert_eq!(q.scope, QuotaScope::Global);
+        assert_eq!((q.current, q.max), (32, 32));
+        assert_eq!(q.audit_scope(), "global");
+        // 刚好差一个 → 放行（上限是「可达」的：32 条允许 32 条）
+        assert!(quota_from_counts(31, 7, 32, 8).is_none());
+        // 0 = 不限
+        assert!(quota_from_counts(9999, 9999, 0, 0).is_none());
+        assert!(quota_from_counts(9999, 9999, 0, 8).is_some());
+        assert!(quota_from_counts(9999, 9999, 32, 0).is_some());
+        // 空间档在全局档关闭时照样生效
+        let q = quota_from_counts(100, 8, 0, 8).expect("空间档应触顶");
+        assert_eq!(q.scope, QuotaScope::Space);
+    }
+
+    /// 计数口径：只有「会话已建立」的连接才占额度（`session.is_none()` 不算）。
+    #[test]
+    fn session_quota_ignores_entries_without_session() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mut config = test_config();
+        config.max_sessions = 1;
+        config.max_sessions_per_space = 1;
+        let state = rt.block_on(AppState::new(config)).unwrap();
+        assert!(state.session_quota_reached("space-a").is_none());
+        // 放一条「没开出会话」的空壳连接：不该占额度
+        state.connections.insert(
+            "c-empty".into(),
+            crate::ssh::SshConnection::new(
+                "c-empty".to_string(),
+                "h".to_string(),
+                22,
+                "u".to_string(),
+                "password".to_string(),
+            )
+            .with_space("space-a"),
+        );
+        assert!(state.session_quota_reached("space-a").is_none());
+    }
+
+    /// WS 并发闸门：到顶拒绝、名额归还、`0 = 不限`。
+    #[test]
+    fn ws_gate_enforces_limit_and_returns_slots() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mut config = test_config();
+        config.max_ws_connections = 2;
+        let state = rt.block_on(AppState::new(config)).unwrap();
+
+        let a = state.try_open_ws().expect("第 1 条应放行");
+        let b = state.try_open_ws().expect("第 2 条应放行（上限是可达的）");
+        assert_eq!(state.ws_connection_count(), 2);
+        assert!(state.try_open_ws().is_none(), "第 3 条应被拒");
+        // 被拒不能把计数弄脏（否则一次拒绝会让计数永久偏高，最终谁都连不上）
+        assert_eq!(state.ws_connection_count(), 2);
+
+        // 归还一个名额 → 又能再开一条
+        drop(a);
+        assert_eq!(state.ws_connection_count(), 1);
+        let c = state.try_open_ws().expect("归还后应放行");
+        assert_eq!(state.ws_connection_count(), 2);
+        drop(b);
+        drop(c);
+        assert_eq!(state.ws_connection_count(), 0, "全部归还后应回到 0");
+    }
+
+    /// `WRENCH_MAX_WS_CONNECTIONS=0` 表示不限：不拒绝，也不把计数减成负数。
+    #[test]
+    fn ws_gate_zero_means_unlimited() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mut config = test_config();
+        config.max_ws_connections = 0;
+        let state = rt.block_on(AppState::new(config)).unwrap();
+        let slots: Vec<_> = (0..64).map(|_| state.try_open_ws().expect("0 = 不限")).collect();
+        assert_eq!(state.ws_connection_count(), 64);
+        drop(slots);
+        // 64 次归还后必须精确回到 0（多减一次就会下溢成 usize::MAX）
+        assert_eq!(state.ws_connection_count(), 0);
     }
 
     #[test]

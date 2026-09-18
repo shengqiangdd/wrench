@@ -83,12 +83,26 @@ pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
     Extension(space): Extension<SpaceCtx>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
     let space_id = space.id;
+    // WS 并发闸门：这一步挡的是「升级成功但还没开会话」的连接（会话闸门数不到它们）。
+    // 名额随 `slot` 活到连接结束，断开/报错/panic 都由 Drop 归还。
+    let Some(slot) = state.try_open_ws() else {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "error": "Too many open WebSocket connections on this instance. Please retry later.",
+                "code": "ws_limit_reached",
+            })),
+        )
+            .into_response();
+    };
     tracing::info!("[ws] WebSocket upgrade request received, returning 101 (space={})", space_id);
-    ws.on_upgrade(move |socket| {
+    ws.on_upgrade(move |socket| async move {
+        // 让名额活到连接生命周期的最后一刻（future 结束 = 连接关闭 → slot 归还）。
+        let _slot = slot;
         tracing::info!("[ws] WebSocket upgrade completed, entering message loop");
-        handle_socket(socket, state, space_id)
+        handle_socket(socket, state, space_id).await
     })
 }
 
@@ -300,6 +314,40 @@ async fn handle_terminal_connect(
             password.len(),
             private_key.len()
         );
+
+        // 并发闸门（与 REST 的 connect/ensure 同一套口径）：门与出口白名单管不住
+        // 「连多少」，到顶就在这里挡下，别让终端页把实例的连接额度开爆。
+        if let Some(quota) = state.session_quota_reached(space_id) {
+            tracing::warn!(
+                target: "wrench_backend",
+                "并发连接闸门拒绝 {}@{}:{} — {:?} {}/{}",
+                username, host, port, quota.scope, quota.current, quota.max
+            );
+            state.add_audit_log(
+                "ssh_session_quota",
+                serde_json::json!({
+                    "action": "ssh_session_quota_denied",
+                    "scope": quota.audit_scope(),
+                    "current": quota.current,
+                    "max": quota.max,
+                    "host": host,
+                    "port": port,
+                    "username": username,
+                    "source": "websocket",
+                }),
+                "0.0.0.0",
+                space_id,
+            );
+            let err = serde_json::json!({
+                "type": "error",
+                "connectionId": connection_id,
+                "message": quota.message(),
+                "error": true,
+                "requestId": request_id,
+            });
+            let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+            return;
+        }
 
         let new_session = SshSession::new(
             connection_id.clone(),

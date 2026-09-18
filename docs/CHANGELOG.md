@@ -1,5 +1,19 @@
 # 📋 变更日志
 
+## [Unreleased] - 公网可达加固第三轮：数量闸门（连多少）
+
+- **新增 SSH 会话并发闸门**：`WRENCH_MAX_SESSIONS`（默认 32，`0` = 不限）+ `WRENCH_MAX_SESSIONS_PER_SPACE`
+  （默认 8）。出口白名单管「能连到哪里」但管不住「能连多少」；门关着（`WRENCH_REQUIRE_AUTH=off`）
+  时换一个空间码就能绕开单空间额度，所以必须再有一档不随身份的全局上限。判定抽成纯函数
+  `quota_from_counts`（全局档优先），REST（`/api/ssh/connect`、`/api/ssh/ensure`）与 WS 终端三条
+  建连路径共用；到顶返回 429 + 审计 `ssh_session_quota_denied`。
+- **新增 WebSocket 连接闸门**：`WRENCH_MAX_WS_CONNECTIONS`（默认 128，`0` = 不限）。会话闸门只数
+  「已建好 SSH 会话」的连接，握手成功却一直不发 connect 消息的连接不受它约束；这一档把
+  `/ws`、`/ws/terminal`、`/ws/logs`、`/ws/docker/stats` 的所有打开连接都数进去，到顶返回
+  503（`code: ws_limit_reached`）。名额用 RAII（`WsSlot`）持有，连接结束/报错/panic 展开都会归还。
+- **WS 路由补上通用限流**：升级请求此前只有鉴权、没有限流，可以被用来高频刷「升级—断开」。
+- 文档：`docs/DEPLOY.md`（「配套闸门」章节）、`backend/.env.example`、`docs/CHANGELOG.md`。
+
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
 ### 🔐 明文凭据门禁：提交前 / CI / 每周历史扫描（并查出一次真实泄露）

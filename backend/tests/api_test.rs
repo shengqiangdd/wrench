@@ -27,6 +27,9 @@ fn test_config() -> AppConfig {
         log_level: "error".to_string(),
         auth_password: Some("test-password".to_string()),
         require_auth: true,
+        max_sessions: wrench_backend::config::DEFAULT_MAX_SESSIONS,
+        max_sessions_per_space: wrench_backend::config::DEFAULT_MAX_SESSIONS_PER_SPACE,
+        max_ws_connections: wrench_backend::config::DEFAULT_MAX_WS_CONNECTIONS,
     }
 }
 

@@ -296,7 +296,19 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/ws/terminal", get(websocket::terminal::ws_handler))
         .route("/ws/logs", get(websocket::logs::ws_handler))
         .route("/ws/docker/stats", get(websocket::docker_stats::ws_handler))
-        .layer(ws_auth_layer);
+        .layer(ws_auth_layer)
+        // 通用限流也要罩住升级请求：否则它能被用来快速刷「升级—断开」，
+        // 虽然每条的存活很短，但握手与鉴权本身的成本可以靠频率放大。
+        .layer(axum_middleware::from_fn_with_state(
+            state.clone(),
+            middleware::rate_limit::rate_limit_middleware
+                as fn(
+                    _: axum::extract::State<Arc<AppState>>,
+                    _: axum::extract::connect_info::ConnectInfo<std::net::SocketAddr>,
+                    _: axum::http::Request<Body>,
+                    _: axum_middleware::Next,
+                ) -> _,
+        ));
 
     // ─── Combine all routes ───
     let app_with_state = Router::new()

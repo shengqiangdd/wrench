@@ -37,6 +37,15 @@ services:
       WRENCH_TRUSTED_PROXIES: "${WRENCH_TRUSTED_PROXIES:-}"
       # WRENCH_CSP: strict = 去掉 CSP 的 'unsafe-eval'（不使用插件时更严）；off = 关闭 CSP（不建议）
       WRENCH_CSP: "${WRENCH_CSP:-}"
+      # WRENCH_MAX_SESSIONS: 全实例**同时保活**的 SSH 连接上限（默认 32，0 = 不限）。
+      # 门与出口白名单管「谁能连、能连到哪」，管不住「连多少」：门关着时换一个空间码
+      # 就能绕开单空间额度，所以这里留一档不随身份变化的全局闸门。
+      WRENCH_MAX_SESSIONS: "${WRENCH_MAX_SESSIONS:-32}"
+      # WRENCH_MAX_SESSIONS_PER_SPACE: 单个访客（一个空间）同时保活的连接上限（默认 8，0 = 不限）。
+      WRENCH_MAX_SESSIONS_PER_SPACE: "${WRENCH_MAX_SESSIONS_PER_SPACE:-8}"
+      # WRENCH_MAX_WS_CONNECTIONS: 全实例同时打开的 WebSocket 连接上限（默认 128，0 = 不限）。
+      # 终端/日志的长连接在「SSH 会话尚未建立」时也占资源，必须单独封顶。
+      WRENCH_MAX_WS_CONNECTIONS: "${WRENCH_MAX_WS_CONNECTIONS:-128}"
       # WRENCH_HSTS: off = 不主动下发 HSTS（外层代理已下发时用）
       WRENCH_HSTS: "${WRENCH_HSTS:-}"
       # VAULT_KEY: "${VAULT_KEY:-}"

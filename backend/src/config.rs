@@ -35,6 +35,25 @@ pub struct AppConfig {
     ///
     /// 关闭时启动日志会明确告警，界面顶部也会有一条可关闭的提示条。
     pub require_auth: bool,
+    /// 全实例同时保活的 SSH 连接上限（`WRENCH_MAX_SESSIONS`，默认 32；`0` = 不限）。
+    ///
+    /// 门与出口白名单管的是「谁能连、能连到哪里」，管不住**数量**：每条终端都是一条
+    /// 真实的 SSH 连接 + PTY + 上行日志通道。门关着（零输入）时，任何人都能靠不断
+    /// 开终端把 fd / 内存 / 带宽吃光 —— 而换一个空间码就能绕开「单空间上限」，
+    /// 所以这里必须还有一档**不随身份变化**的全局闸门。
+    pub max_sessions: usize,
+    /// 单个空间（一个浏览器访客）同时保活的 SSH 连接上限
+    /// （`WRENCH_MAX_SESSIONS_PER_SPACE`，默认 8；`0` = 不限）。
+    ///
+    /// 公平性闸门：防止一个访客把整个实例的连接额度占满，让其他人连不上。
+    pub max_sessions_per_space: usize,
+    /// 全实例同时打开的 WebSocket 连接上限（`WRENCH_MAX_WS_CONNECTIONS`，默认 128；`0` = 不限）。
+    ///
+    /// SSH 会话闸门（上面两条）只数**已经建好会话**的连接；而「升级成功但还没开会话」
+    /// 的连接同样占着 fd + 任务 + 缓冲区。公网可达的实例上，任何人可以只用握手
+    /// （不发 connect 消息）就把这类连接堆起来 —— 没有这层上限时它是唯一没有闸门的
+    /// 资源入口。到顶后新升级请求直接 503，让已连上的人保住服务。
+    pub max_ws_connections: usize,
 }
 
 impl AppConfig {
@@ -114,6 +133,16 @@ impl AppConfig {
         let log_level = std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".into());
         let auth_password = resolve_auth_password(database_url.as_deref());
         let require_auth = parse_require_auth(std::env::var("WRENCH_REQUIRE_AUTH").ok().as_deref());
+        let max_sessions =
+            parse_positive_usize(std::env::var("WRENCH_MAX_SESSIONS").ok().as_deref(), DEFAULT_MAX_SESSIONS);
+        let max_sessions_per_space = parse_positive_usize(
+            std::env::var("WRENCH_MAX_SESSIONS_PER_SPACE").ok().as_deref(),
+            DEFAULT_MAX_SESSIONS_PER_SPACE,
+        );
+        let max_ws_connections = parse_positive_usize(
+            std::env::var("WRENCH_MAX_WS_CONNECTIONS").ok().as_deref(),
+            DEFAULT_MAX_WS_CONNECTIONS,
+        );
 
         Ok(Self {
             host,
@@ -128,7 +157,34 @@ impl AppConfig {
             log_level,
             auth_password,
             require_auth,
+            max_sessions,
+            max_sessions_per_space,
+            max_ws_connections,
         })
+    }
+}
+
+/// 全实例同时保活连接数的默认上限（见 [`AppConfig::max_sessions`]）。
+pub const DEFAULT_MAX_SESSIONS: usize = 32;
+
+/// 单空间同时保活连接数的默认上限（见 [`AppConfig::max_sessions_per_space`]）。
+pub const DEFAULT_MAX_SESSIONS_PER_SPACE: usize = 8;
+
+/// 全实例同时打开的 WebSocket 连接数默认上限（见 [`AppConfig::max_ws_connections`]）。
+///
+/// 定在 128 的理由：一个正常访客同时开不了几条 WS（终端 1 条 + 日志/监控各 1 条），
+/// 128 足够十几个人同时用；同时它远低于「把 fd / 内存吃光」的量级（每条 WS 连接
+/// 约数 KB 缓冲 + 一个任务）。真要给几十人同时用，调大这个值即可。
+pub const DEFAULT_MAX_WS_CONNECTIONS: usize = 128;
+
+/// 解析「连接数上限」这类环境变量。
+///
+/// * 未设置 / 空串 / 非法值 → 默认值（**拼错不等于关掉闸门**，与门开关同一条思路）；
+/// * 显式 `0` → 不限（`0` 是合法配置，用于自建的可信环境）。
+fn parse_positive_usize(raw: Option<&str>, default: usize) -> usize {
+    match raw.map(str::trim) {
+        None | Some("") => default,
+        Some(v) => v.parse::<usize>().unwrap_or(default),
     }
 }
 
@@ -214,7 +270,35 @@ fn read_password_file(path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_require_auth;
+    use super::{DEFAULT_MAX_SESSIONS, DEFAULT_MAX_SESSIONS_PER_SPACE, parse_positive_usize, parse_require_auth};
+
+    #[test]
+    fn session_caps_default_and_explicit_zero() {
+        // 未设置 / 空串 → 默认闸门（不是不限）
+        assert_eq!(parse_positive_usize(None, DEFAULT_MAX_SESSIONS), 32);
+        assert_eq!(parse_positive_usize(Some(""), DEFAULT_MAX_SESSIONS), 32);
+        assert_eq!(parse_positive_usize(Some("   "), DEFAULT_MAX_SESSIONS_PER_SPACE), 8);
+        // 显式 0 = 不限（合法配置）
+        assert_eq!(parse_positive_usize(Some("0"), DEFAULT_MAX_SESSIONS), 0);
+        // 自定义值
+        assert_eq!(parse_positive_usize(Some(" 64 "), DEFAULT_MAX_SESSIONS), 64);
+        // 非法值回落到默认（防止手滑把闸门关掉）
+        assert_eq!(parse_positive_usize(Some("abc"), DEFAULT_MAX_SESSIONS), 32);
+        assert_eq!(parse_positive_usize(Some("-1"), DEFAULT_MAX_SESSIONS), 32);
+    }
+
+    #[test]
+    fn ws_cap_default_and_explicit_zero() {
+        use super::DEFAULT_MAX_WS_CONNECTIONS;
+        // 未设置 / 空串 → 默认闸门（不是不限）
+        assert_eq!(parse_positive_usize(None, DEFAULT_MAX_WS_CONNECTIONS), 128);
+        assert_eq!(parse_positive_usize(Some(""), DEFAULT_MAX_WS_CONNECTIONS), 128);
+        // 显式 0 = 不限
+        assert_eq!(parse_positive_usize(Some("0"), DEFAULT_MAX_WS_CONNECTIONS), 0);
+        // 自定义值 / 非法值回落
+        assert_eq!(parse_positive_usize(Some("512"), DEFAULT_MAX_WS_CONNECTIONS), 512);
+        assert_eq!(parse_positive_usize(Some("abc"), DEFAULT_MAX_WS_CONNECTIONS), 128);
+    }
 
     #[test]
     fn default_is_gate_on() {

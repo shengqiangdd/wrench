@@ -323,6 +323,9 @@ mod tests {
             log_level: "warn".into(),
             auth_password: auth_password.map(|s| s.to_string()),
             require_auth: true,
+            max_sessions: crate::config::DEFAULT_MAX_SESSIONS,
+            max_sessions_per_space: crate::config::DEFAULT_MAX_SESSIONS_PER_SPACE,
+            max_ws_connections: crate::config::DEFAULT_MAX_WS_CONNECTIONS,
         }
     }
 
