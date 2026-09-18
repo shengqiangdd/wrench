@@ -303,7 +303,7 @@ environment:
 - 服务端首次响应为该浏览器创建随机 **256-bit 空间码**，通过 HttpOnly Cookie 和前端本地存储保存；后端只保存空间码哈希。
 - 每个浏览器默认拥有独立空间，SSH 主机配置、连接、Vault、审计和通知均按空间隔离；换设备时由用户主动粘贴自己的空间码恢复。
 - 空间码是“我的空间”唯一凭据，不能在公共场景展示或分享；忘记空间码无法由部署者找回。
-- 公网安全边界不依赖登录：严格配置 `WRENCH_EGRESS_ALLOW`，建议同时设置 `WRENCH_EGRESS_STRICT=1`，并保留 SSH / WebSocket 并发闸门。
+- 公网安全边界不依赖登录：默认允许公网 TCP 主机连接，但始终阻断内网、环回、链路本地、云元数据等高风险地址；需要连接明确内网主机时，再把精确的 `IP:22` 加入 `WRENCH_EGRESS_ALLOW`。保留 SSH / WebSocket 并发闸门。
 
 因此，公共部署的最小推荐配置是：
 
@@ -311,13 +311,13 @@ environment:
 environment:
   WRENCH_REQUIRE_AUTH: "off"
   WRENCH_EGRESS_ALLOW: "192.168.2.0/24:22"
-  WRENCH_EGRESS_STRICT: "1"
+  WRENCH_EGRESS_STRICT: "0"
   WRENCH_MAX_SESSIONS: "32"
   WRENCH_MAX_SESSIONS_PER_SPACE: "8"
   WRENCH_MAX_WS_CONNECTIONS: "128"
 ```
 
-> 注意：`WRENCH_REQUIRE_AUTH=off` 只关闭共享入口口令，不会把所有用户放进同一个空间；公网用户仍共享这台实例允许访问的 SSH 目标，因此出口白名单和并发限制必须保留。
+> 注意：`WRENCH_REQUIRE_AUTH=off` 只关闭共享入口口令，不会把所有用户放进同一个空间；公网用户可以连接公网 SSH 主机，内网/环回/元数据地址仍默认禁止。若要开放内网目标，只加入精确的 `IP:22` 或窄 CIDR，并评估所有匿名访客都能使用该目标的风险。
 
 ### 配套闸门：出口白名单管「连哪里」，这三条管「连多少」
 
