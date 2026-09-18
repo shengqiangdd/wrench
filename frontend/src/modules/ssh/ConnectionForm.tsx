@@ -4,6 +4,7 @@ import { useSshStore } from '../../stores/ssh-store'
 import { getWsClientSync } from '../../services/websocket'
 import { encryptField } from '../../services/secure-store'
 import type { AuthType, SshConnection } from '../../types/ssh'
+import { presentSshError } from '../../utils/ssh-error'
 
 interface Props {
   onClose: () => void
@@ -22,7 +23,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
   const [name, setName] = useState(existing?.name || '')
   const [host, setHost] = useState(existing?.host || '')
   const [port, setPort] = useState(String(existing?.port || 22))
-  const [username, setUsername] = useState(existing?.username || 'root')
+  const [username, setUsername] = useState(existing?.username || '')
   const [authType, setAuthType] = useState<AuthType>(existing?.authType || 'password')
   // 如果是编辑已有连接，existing 中的 password/privateKey 可能是加密的
   // 这里直接展示原始值（加密字符串），让用户重新输入或覆盖
@@ -133,12 +134,12 @@ export default function ConnectionForm({ onClose, editId }: Props) {
         setTestMessage((result.message as string) || '连接成功')
       } else {
         setTestStatus('error')
-        setTestMessage((result.message as string) || '连接失败')
+        setTestMessage(presentSshError((result.message as string) || '连接失败').message)
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '连接测试超时'
       setTestStatus('error')
-      setTestMessage(msg)
+      setTestMessage(presentSshError(msg).message)
     }
   }, [host, port, username, password, privateKey, sudoPassword, authType, wsClient])
 
@@ -176,10 +177,15 @@ export default function ConnectionForm({ onClose, editId }: Props) {
               <label className="mb-1 block text-xs text-slate-500">主机 *</label>
               <input
                 className="input"
-                placeholder="192.168.1.100 或 example.com"
+                placeholder="192.168.2.7 或 server.example.com"
                 value={host}
-                onChange={(e) => setHost(e.target.value)}
+                onChange={(e) => setHost(e.target.value.trim())}
+                autoComplete="url"
+                spellCheck={false}
               />
+              <p className="mt-1 text-[11px] text-slate-600">
+                支持公网主机和已由部署策略允许的内网主机；不要填写 http:// 或路径。
+              </p>
             </div>
 
             <div>
@@ -189,8 +195,13 @@ export default function ConnectionForm({ onClose, editId }: Props) {
                 type="number"
                 min={1}
                 max={65535}
+                inputMode="numeric"
                 value={port}
                 onChange={(e) => setPort(e.target.value)}
+                onBlur={() => {
+                  const value = Number(port)
+                  if (!Number.isInteger(value) || value < 1 || value > 65535) setPort('22')
+                }}
               />
             </div>
 
@@ -198,9 +209,11 @@ export default function ConnectionForm({ onClose, editId }: Props) {
               <label className="mb-1 block text-xs text-slate-500">用户名 *</label>
               <input
                 className="input"
+                placeholder="例如：ubuntu、root"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => setUsername(e.target.value.trim())}
                 autoComplete="username"
+                spellCheck={false}
               />
             </div>
 

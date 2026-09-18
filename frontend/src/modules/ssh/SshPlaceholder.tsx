@@ -15,6 +15,30 @@ import SftpSidebar from './SftpSidebar'
 import AiSidebar from './AiSidebar'
 import type { SshSession } from '../../types/ssh'
 import { useAiStore } from '../../stores/ai-store'
+import { presentSshError } from '../../utils/ssh-error'
+
+function SshErrorBanner({ error, onClose }: { error: string; onClose: () => void }) {
+  const presentation = presentSshError(error)
+  return (
+    <div className="border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-200">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium">{presentation.title}</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-amber-300/80">
+            {presentation.message}
+          </p>
+          <details className="mt-1 text-[10px] text-amber-400/60">
+            <summary className="cursor-pointer">查看技术详情</summary>
+            <code className="mt-1 block break-all">{error}</code>
+          </details>
+        </div>
+        <button onClick={onClose} className="shrink-0 text-xs text-amber-300 underline">
+          关闭
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export default function SshPlaceholder() {
   const connections = useSshStore((s) => s.connections)
@@ -448,15 +472,7 @@ export default function SshPlaceholder() {
           <>
             {/* 连接错误提示 */}
             {connectError && (
-              <div className="flex items-center gap-2 border-b border-red-500/30 bg-red-500/10 px-3 py-2">
-                <span className="text-xs text-red-400">{connectError}</span>
-                <button
-                  onClick={() => setConnectError(null)}
-                  className="ml-auto text-xs text-red-500 underline hover:text-red-400"
-                >
-                  关闭
-                </button>
-              </div>
+              <SshErrorBanner error={connectError} onClose={() => setConnectError(null)} />
             )}
             {/* 标签栏 */}
             <div className="flex items-center border-b border-slate-700/50 bg-slate-900/50">
@@ -608,17 +624,8 @@ export default function SshPlaceholder() {
             <div className="max-w-full px-4 text-center">
               <Server size={48} className="mx-auto mb-3 text-slate-600" />
               <p className="text-sm text-slate-500">选择一个连接或新建连接</p>
-              {/* 显示 SSH 连接错误信息 */}
               {connectError && (
-                <div className="mx-auto mt-3 max-w-sm rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2">
-                  <p className="text-xs text-red-400">{connectError}</p>
-                  <button
-                    onClick={() => setConnectError(null)}
-                    className="mt-1 text-xs text-red-500 underline hover:text-red-400"
-                  >
-                    关闭
-                  </button>
-                </div>
+                <SshErrorBanner error={connectError} onClose={() => setConnectError(null)} />
               )}
               <button
                 onClick={() => setSidebarOpen(true)}
