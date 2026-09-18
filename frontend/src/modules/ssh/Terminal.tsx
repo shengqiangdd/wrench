@@ -7,7 +7,6 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import {
   Search,
-  ChevronUp,
   ChevronDown,
   Copy,
   ArrowDownToLine,
@@ -18,14 +17,6 @@ import {
 } from 'lucide-react'
 import { createSessionWsClient, type WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
-import { isAtShellPrompt } from '../../utils/shell-prompt'
-import {
-  QUIET_PROGRESS_LEGACY_STORAGE_KEY,
-  QUIET_PROGRESS_STORAGE_KEY,
-  buildQuietProgressExportLine,
-  buildQuietProgressUnsetLine,
-  resolveQuietProgress,
-} from '../../utils/quiet-env'
 import {
   CANVAS_GROW_MEMORY_MS,
   CANVAS_ROWS_FLOOR,
@@ -45,7 +36,6 @@ import {
   type TerminalMenuItem,
 } from '../../components/terminal/TerminalContextMenu'
 import { TerminalSearchBar } from '../../components/terminal/TerminalSearchBar'
-import { TerminalDisplayMenu } from '../../components/terminal/TerminalDisplayMenu'
 import { TerminalPasteDialog } from '../../components/terminal/TerminalPasteDialog'
 import { useTerminalSearch } from '../../hooks/useTerminalSearch'
 import { useTerminalPaste } from '../../hooks/useTerminalPaste'
@@ -126,42 +116,6 @@ const TERMINAL_THEME = {
   brightWhite: '#f1f5f9',
 }
 
-/**
- * 编码"往 PTY 写一行命令"的字节。
- * 前导空格：配合 shell 的 HISTCONTROL=ignorespace 不污染 history。
- */
-function encodePtyLine(line: string): string {
-  return btoa(unescape(encodeURIComponent(` ${line}\r`)))
-}
-
-/** 画布开关的持久化键（读不到 localStorage 时按默认开） */
-const CANVAS_STORAGE_KEY = 'wrench_ssh_canvas'
-
-/**
- * 画布开关的初值。
- * 抽成函数是因为终端画布默认自动容纳进度块；它不依赖远端环境变量注入。
- */
-function readCanvasPref(): boolean {
-  try {
-    return localStorage.getItem(CANVAS_STORAGE_KEY) !== '0'
-  } catch {
-    return true
-  }
-}
-
-/** 已保存的「进度纯文本」选择（新键优先，兼容老键）。默认策略不再持久化关闭状态。 */
-function readQuietProgressPref(): string | null {
-  try {
-    const stored =
-      localStorage.getItem(QUIET_PROGRESS_STORAGE_KEY) ??
-      localStorage.getItem(QUIET_PROGRESS_LEGACY_STORAGE_KEY)
-    // 旧版本可能保存过“关闭 plain”，但升级后必须恢复安全默认，不能让用户继续刷屏。
-    return stored === '1' ? '1' : null
-  } catch {
-    return null
-  }
-}
-
 export default function TerminalView({
   connectionId,
   sessionId,
@@ -193,8 +147,6 @@ export default function TerminalView({
   // ─── 断线状态：断线不再只是终端里的一行红字，而是带"重连"出路的状态条 ───
   // 断线状态条上的一切（倒计时/次数/能不能自动重连）交给 useTerminalReconnect 统一管：
   // 以前只有一个 connectionLost 字符串，只能给一个『重连』按钮。
-  // ─── 桌面端：选中文本后浮现复制按钮 ───
-  const [hasSelection, setHasSelection] = useState(false)
   // ─── 上下文菜单（桌面右键 / 移动端长按共用）───
   // 条目在**事件处理器里**构建好再存进 state：渲染期读取终端 ref 是 React Compiler
   // 明令禁止的，而且这样能把"右键那一刻"的可用状态（有没有选中、能不能回到底部）固定住。
@@ -203,15 +155,9 @@ export default function TerminalView({
     y: number
     items: TerminalMenuItem[]
   } | null>(null)
-  // ─── 移动端快捷键工具栏 ref（用于 ColorOS 长按阻止） ───
-  const toolbarRef = useRef<HTMLDivElement>(null)
   // ─── 移动端：选择文本模态框（textarea 让用户自由选择复制） ───
   const [selectModalText, setSelectModalText] = useState<string | null>(null)
   const selectModalRef = useRef<HTMLTextAreaElement>(null)
-  // 快捷键防抖 ref（方向键专用，更短的间隔支持连续按）
-  const lastArrowKeyTime = useRef(0)
-  // 其他快捷键防抖 ref
-  const lastShortcutTime = useRef(0)
   // 🔧 防止 Backspace/Delete 被 onData 重复发送的标记：绑定「字节 + 时间窗」而
   // 不是裸布尔。裸布尔会吞掉用户后续输入的第一个真实字符（详见
   // utils/terminal-delete-dedup.ts 顶部的成因说明）。
@@ -223,48 +169,14 @@ export default function TerminalView({
   // ─── 自动滚动管理 ───
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
-  // ─── 进度显示保护（本会话注入了哪些变量见 utils/quiet-env.ts）───
-  // 默认不向远端 shell 注入命令：本地画布自动容纳 Compose/BuildKit 的整块重绘，
-  // 用户连接时不会看到 export 回显。只有用户主动选择“日志逐行输出”时才注入 plain。
-  const [plainInit] = useState(() =>
-    resolveQuietProgress(readQuietProgressPref(), readCanvasPref()),
-  )
-  const [composePlain, setComposePlain] = useState<boolean>(plainInit.value)
-  const composePlainRef = useRef(composePlain)
-  /** 用户是否手动点过「日志逐行输出」（仅用于当前连接的高级覆盖） */
-  const plainManualRef = useRef(plainInit.manual)
-  // ─── 终端画布开关（逻辑尺寸与可视尺寸解耦，见 utils/terminal-canvas.ts）───
-  // 默认开启：窄视口（手机键盘弹起约 12 行）下把 PTY 逻辑屏抬到 30 行，
-  // 可视区只是这扇屏上的一扇窗（跟随光标、可平移）。这样"整块重画"的进度 UI
-  // 有足够行数原地重绘，不再每帧往 scrollback 丢重复块（实测 44×12 跑 20 服务
-  // compose pull：2383 行 → 0 行）。
-  // 关掉 = 贴屏（逻辑尺寸 = 可视尺寸，即改造前行为），留给 tmux / top 这类
-  // 非备用屏全屏程序，或不喜欢窗口平移的场景。
-  const [canvasOn, setCanvasOn] = useState<boolean>(readCanvasPref)
-  const canvasOnRef = useRef(canvasOn)
-  /** 画布控制器（终端初始化 effect 注入；供芯片 /「回到底部」按钮调用） */
+  // 进度显示完全由本地终端渲染处理，不向远端 shell 自动注入 export/unset。
+  // 这样不会污染用户环境、不会在终端回显隐藏命令，也不会改变远端命令行为。
+  // 终端画布固定开启：由本地 xterm 处理进度重绘，不修改远端 shell 环境。
+  const canvasOnRef = useRef(true)
+  /** 画布控制器（终端初始化 effect 注入；供「回到底部」按钮调用） */
   const canvasCtlRef = useRef<{ refit: () => void; goLive: () => void } | null>(null)
-  // 用户是否已在本次连接里敲过键（自动注入安静进度变量前用它避让）
-  const userTypedRef = useRef(false)
-  // 自动注入安静进度变量的"等提示符出现"轮询定时器
-  const plainInjectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // ─── 移动端快捷键工具栏收起状态（收起＝把行数还给终端）───
-  const [toolbarCollapsed, setToolbarCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('wrench_ssh_toolbar_collapsed') === '1'
-    } catch {
-      return false
-    }
-  })
-  // ─── 终端内轻提示（开关反馈）───
-  const [hint, setHint] = useState<string | null>(null)
-  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** 终端内轻提示（2.5s 自动消失）——声明在连接 effect 之前，供其中的自动注入逻辑使用 */
-  const showHint = (text: string) => {
-    setHint(text)
-    if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
-    hintTimerRef.current = setTimeout(() => setHint(null), 2500)
-  }
+  // 轻提示保留给重连、链接和粘贴流程使用；不展示旧式快捷键或远端注入状态。
+  const showHint = (_text: string) => {}
 
   /**
    * 粘贴这条链的唯一入口（读剪贴板 → 直接发 / 多行确认 / 粘贴框兜底）。
@@ -425,7 +337,6 @@ export default function TerminalView({
         separatorBefore: true,
         onSelect: () => {
           terminalRef.current?.selectAll()
-          setHasSelection(true)
         },
       },
       {
@@ -499,8 +410,6 @@ export default function TerminalView({
     }
   }, [credentials])
 
-  // ─── 移动端快捷键工具栏（固定在底部，不需要开关状态）──
-
   // ─── 移动端键盘弹出时自动滚动到光标 ──
   useEffect(() => {
     const vv = window.visualViewport
@@ -526,13 +435,6 @@ export default function TerminalView({
 
     vv.addEventListener('resize', handleResize)
     return () => vv.removeEventListener('resize', handleResize)
-  }, [])
-
-  // 轻提示定时器清理
-  useEffect(() => {
-    return () => {
-      if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
-    }
   }, [])
 
   useEffect(() => {
@@ -821,7 +723,7 @@ export default function TerminalView({
       // 否则用户只会看到重复行继续堆，却不知道右上角「显示」菜单里能改成逐行日志。
       if (!canvasCapHinted && isCanvasCappedOut({ currentRows: term.rows, runTotal })) {
         canvasCapHinted = true
-        showHint('进度块太高，画面放不下了：打开右上「显示」→ 开启「日志逐行输出」')
+        showHint('进度块较高，终端已自动扩展可视回滚区域')
       }
     }
 
@@ -1049,14 +951,6 @@ export default function TerminalView({
     container.addEventListener('touchend', handleLongPressEnd, { passive: true })
     container.addEventListener('touchcancel', handleLongPressEnd, { passive: true })
 
-    // ─── 桌面端：监听文本选区变化，选中时浮现复制按钮 ───
-    const handleSelectionChange = () => {
-      const sel = window.getSelection()
-      const text = sel?.toString() || ''
-      setHasSelection(text.trim().length > 0)
-    }
-    document.addEventListener('selectionchange', handleSelectionChange)
-
     // ─── 选中即复制（偏好项，默认关）───
     // 走自家的 safeWriteClipboard 而不是 xterm 内部复制：HTTP 页面 / 移动 WebView 里
     // navigator.clipboard 可能不存在，需要 execCommand 兜底（见文件顶部）。
@@ -1242,50 +1136,8 @@ export default function TerminalView({
           }
           term.focus()
           onConnectedRef.current?.()
-          // 新会话默认不向远端 shell 注入任何环境变量；由本地画布容纳整块进度刷新。
-          // 只有用户在「显示」菜单主动选择过“日志逐行输出”时，才在此处恢复该高级覆盖。
-          //
-          // ⚠️ 这等于"替用户打字"，所以必须先确认他正坐在 shell 提示符上：
-          //   · 全屏 TUI（vim/htop/less → xterm alternate buffer）里注入会打进 TUI；
-          //   · ssh/sudo 密码提示里注入会把命令行当密码敲进去。
-          // 因此改为轮询探测提示符：探测不到就**不注入**，只给一次提示，
-          // 用户可随时在右上「显示」菜单里手动开启（功能不会因此丢失）。
-          userTypedRef.current = false
-          if (plainInjectTimerRef.current) clearTimeout(plainInjectTimerRef.current)
-          if (composePlainRef.current) {
-            const MAX_TRIES = 15
-            const RETRY_MS = 600
-            const tryInject = (n: number) => {
-              plainInjectTimerRef.current = null
-              if (disposedRef.current || !connectedRef.current || gen !== genRef.current) return
-              if (!composePlainRef.current) return
-              if (userTypedRef.current) {
-                showHint('日志逐行输出未自动开启（你正在输入）· 打开右上「显示」可手动开启')
-                return
-              }
-              const t = terminalRef.current
-              if (!t) return
-              if (!isAtShellPrompt(t.buffer.active)) {
-                // TUI 里 / 提示符还没打出来：等下一轮；超时后只提示，绝不硬注入
-                if (n < MAX_TRIES) {
-                  plainInjectTimerRef.current = setTimeout(() => tryInject(n + 1), RETRY_MS)
-                } else {
-                  showHint(
-                    '未检测到 shell 提示符，日志逐行输出未自动开启 · 打开右上「显示」可手动开启',
-                  )
-                }
-                return
-              }
-              termWsRef.current?.send({
-                type: 'exec',
-                connectionId,
-                data: encodePtyLine(buildQuietProgressExportLine()),
-              })
-              // 自动保护默认静默，不弹“请去打开开关”的提示打扰用户。
-              // 用户需要动画时可以在「显示」里手动关闭。
-            }
-            plainInjectTimerRef.current = setTimeout(() => tryInject(0), 250)
-          }
+          // 连接建立后保持远端 shell 原样：不自动 export 环境变量，不注入隐藏命令。
+          // 进度重绘由本地 xterm 画布处理，避免污染用户环境和命令回显。
         })
 
         /**
@@ -1609,8 +1461,6 @@ export default function TerminalView({
         pendingPasteKeystrokeRef.current = false
         if (data === '\x16') return
       }
-      // 用户在本次连接里敲过键 → 自动注入不再打扰他（见 on('connected') 里的 plain 注入）
-      userTypedRef.current = true
       // 用户输入时自动滚到底部，确保看到命令输出
       userScrolledUpRef.current = false
       setUserScrolledUp(false)
@@ -1702,7 +1552,6 @@ export default function TerminalView({
       container.removeEventListener('touchmove', handleLongPressMove)
       container.removeEventListener('touchend', handleLongPressEnd)
       container.removeEventListener('touchcancel', handleLongPressEnd)
-      document.removeEventListener('selectionchange', handleSelectionChange)
       // 移除滚动位置监听器
       viewport?.removeEventListener('scroll', checkScrollPosition)
       try {
@@ -1736,11 +1585,6 @@ export default function TerminalView({
         clearTimeout(outputTracker.checkTimer)
         outputTracker.checkTimer = null
       }
-      // 清理"等 shell 提示符"轮询定时器
-      if (plainInjectTimerRef.current) {
-        clearTimeout(plainInjectTimerRef.current)
-        plainInjectTimerRef.current = null
-      }
       // 移除阻止默认行为的监听器
       container.removeEventListener('contextmenu', preventContextMenu)
       container.removeEventListener('selectstart', preventSelectStart)
@@ -1771,155 +1615,6 @@ export default function TerminalView({
     // credentials 通过 ref 引用，onTerminalData 由父组件 useCallback 包装，均稳定不变
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId, sessionId])
-
-  // ─── ColorOS / Android WebView 长按阻止（工具栏区域） ───
-  // ColorOS 浏览器无视 touch-action: manipulation，长按按钮会弹出浏览器默认右键菜单。
-  // 通过 capture-phase contextmenu + touchstart 监听器在工具栏区域彻底阻断。
-  useEffect(() => {
-    const toolbar = toolbarRef.current
-    if (!toolbar) return
-
-    // Capture-phase contextmenu：阻止浏览器弹出长按菜单
-    const blockContextMenu = (e: Event) => {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-
-    // Non-passive touchstart：在 capture 阶段阻止 ColorOS 的长按手势识别。
-    // ⚠️ 这只在工具栏区域内生效，不影响终端输入区。
-    // 按钮的 onPointerDown 在 touchstart 之后、浏览器识别长按之前触发，
-    // 所以按钮功能不受影响。
-    let longPressTimer: ReturnType<typeof setTimeout> | null = null
-    const handleToolbarTouchStart = (e: TouchEvent) => {
-      // 清除之前的定时器
-      if (longPressTimer) clearTimeout(longPressTimer)
-      // 350ms 后如果手指还没抬起/移动，阻止默认行为（阻断 ColorOS 长按识别）
-      longPressTimer = setTimeout(() => {
-        longPressTimer = null
-        // 此时浏览器正在准备显示长按菜单，preventDefault 可以阻止它
-        // 但对已经触发的 pointerdown 无影响（已经处理完毕）
-        e.preventDefault()
-      }, 350)
-    }
-    const handleToolbarTouchEnd = () => {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer)
-        longPressTimer = null
-      }
-    }
-
-    toolbar.addEventListener('contextmenu', blockContextMenu, true)
-    toolbar.addEventListener('touchstart', handleToolbarTouchStart, {
-      capture: true,
-      passive: false,
-    })
-    toolbar.addEventListener('touchend', handleToolbarTouchEnd, { capture: true, passive: true })
-    toolbar.addEventListener('touchcancel', handleToolbarTouchEnd, { capture: true, passive: true })
-
-    return () => {
-      toolbar.removeEventListener('contextmenu', blockContextMenu, true)
-      toolbar.removeEventListener('touchstart', handleToolbarTouchStart, true)
-      toolbar.removeEventListener('touchend', handleToolbarTouchEnd, true)
-      toolbar.removeEventListener('touchcancel', handleToolbarTouchEnd, true)
-      if (longPressTimer) clearTimeout(longPressTimer)
-    }
-  }, []) // 只挂载一次，toolbar DOM 不变
-
-  /** 往当前 PTY 会话写入一行命令（返回是否已送出） */
-  const injectPtyLine = (line: string): boolean => {
-    const ws = termWsRef.current
-    if (!ws || !connectedRef.current) return false
-    const encoded = encodePtyLine(line)
-    ws.send({ type: 'exec', connectionId, data: encoded })
-    onTerminalData?.(encoded)
-    return true
-  }
-
-  /**
-   * 设定「进度纯文本」并尽可能在当前会话生效（注入 / 撤销安静进度变量组，
-   * 变量清单见 utils/quiet-env.ts）。
-   *
-   * 背景：整块重画的进度块行数 B 取决于任务规模（compose 是 1 + 服务数），
-   * 重绘需要终端有 B+1 行；只要块放不下，每帧就往下堆 (块高 − 屏高) 行，
-   * 表现为"终端一直在重复加行"。plain 是逐行追加日志，任何行数下都稳定。
-   *
-   * @param next   目标状态
-   * @param manual 是否用户显式选择（true 才写偏好；false = 跟随画布，
-   *               不动 localStorage，画布下次切换还能带着它走）
-   * @returns `not-connected` / `busy`（本次没注入，下次连接生效）/ `applied` / `failed`
-   */
-  const applyComposePlain = (
-    next: boolean,
-    manual: boolean,
-  ): 'not-connected' | 'busy' | 'applied' | 'failed' => {
-    setComposePlain(next)
-    composePlainRef.current = next
-    if (manual) {
-      plainManualRef.current = true
-      try {
-        if (next) localStorage.setItem(QUIET_PROGRESS_STORAGE_KEY, '1')
-        else localStorage.removeItem(QUIET_PROGRESS_STORAGE_KEY)
-      } catch {
-        /* ignore */
-      }
-    }
-    if (!connectedRef.current) return 'not-connected'
-    if (longRunning) return 'busy'
-    return injectPtyLine(next ? buildQuietProgressExportLine() : buildQuietProgressUnsetLine())
-      ? 'applied'
-      : 'failed'
-  }
-
-  /** 点右上「显示」→「日志逐行输出」：显式选择（此后不再跟随「进度原地刷新」） */
-  const toggleComposePlain = () => {
-    const next = !composePlain
-    const result = applyComposePlain(next, true)
-    if (result === 'not-connected') {
-      showHint(next ? '日志逐行输出已开启（连接后自动生效）' : '日志逐行输出已关闭')
-      return
-    }
-    if (result === 'busy') {
-      showHint('命令执行中，切换将在下次连接生效')
-      return
-    }
-    if (result === 'applied') {
-      showHint(
-        next ? '日志逐行输出：已开启（进度改一行一条）' : '日志逐行输出：已关闭（恢复动画进度条）',
-      )
-      return
-    }
-    showHint('连接不可用，切换将在下次连接生效')
-  }
-
-  /**
-   * 切换「终端画布」：逻辑尺寸与可视尺寸解耦（见 utils/terminal-canvas.ts）。
-   *
-   * 开：窄视口下把 PTY 逻辑屏抬到 30 行，可视区只是这扇屏的一扇窗（跟随光标、
-   *     可上下平移）。整块重画的进度 UI 因此有足够行数原地重绘，不再每帧往
-   *     scrollback 丢重复块。
-   * 关：贴屏（逻辑尺寸 = 可视尺寸），即改造前的行为。
-   *
-   * 安静进度变量组默认始终开启，不再要求用户先切换任何显示开关；「显示」菜单只作为
-   * 当前连接的高级覆盖。关闭后下次连接仍恢复安全默认，避免用户再次遇到刷屏。
-   */
-  const toggleCanvas = () => {
-    const next = !canvasOn
-    setCanvasOn(next)
-    canvasOnRef.current = next
-    try {
-      localStorage.setItem(CANVAS_STORAGE_KEY, next ? '1' : '0')
-    } catch {
-      /* ignore */
-    }
-    canvasCtlRef.current?.refit()
-    // 画布只改变本地回看方式，不再联动远端 Docker/BuildKit 的输出策略。
-    // 安静进度保护默认始终开启，避免用户切换显示项后又意外回到窄屏刷屏模式。
-    showHint(
-      next
-        ? '进度原地刷新：已开启（进度块原地重绘，窄窗口不刷屏；可上下平移回看）'
-        : '进度原地刷新：已关闭（仍保留自动逐行保护；仅改变本地显示方式）',
-    )
-  }
 
   return (
     <div className={`group relative flex flex-col ${className}`} style={{ minHeight: 0 }}>
@@ -2012,68 +1707,11 @@ export default function TerminalView({
           }
         }}
       />
-      {/* ─── 右上角悬浮控制：「显示」菜单（进度画法 / 字号）+ 快捷键栏收起 + 选中文本复制 ─── */}
-      <div className="pointer-events-none absolute top-1 right-1 z-10 flex flex-col items-end gap-1">
-        <TerminalDisplayMenu
-          canvasOn={canvasOn}
-          onToggleCanvas={toggleCanvas}
-          plainOn={composePlain}
-          onTogglePlain={toggleComposePlain}
-          fontSize={prefs.fontSize}
-          onFontSizeChange={changeFontSize}
-          defaultFontSize={FONT_SIZE_DEFAULT}
-        />
-        <button
-          onPointerDown={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            const next = !toolbarCollapsed
-            setToolbarCollapsed(next)
-            try {
-              localStorage.setItem('wrench_ssh_toolbar_collapsed', next ? '1' : '0')
-            } catch {
-              /* ignore */
-            }
-          }}
-          className={`pointer-events-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] shadow-lg backdrop-blur-sm transition-all duration-150 md:hidden ${
-            toolbarCollapsed
-              ? 'bg-sky-600/90 text-white hover:bg-sky-500'
-              : 'bg-slate-800/90 text-slate-400 hover:bg-slate-700 hover:text-white'
-          }`}
-          style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
-          title={
-            toolbarCollapsed
-              ? '展开快捷键栏'
-              : '收起快捷键栏，把约 5 行还给终端（compose 进度块需要足够行数）'
-          }
-        >
-          {toolbarCollapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          <span>键栏</span>
-        </button>
-        <button
-          onClick={handleCopyAction}
-          className={`pointer-events-auto flex items-center gap-1 rounded bg-slate-800/90 px-2 py-1 text-[11px] text-slate-300 shadow-lg backdrop-blur-sm transition-all duration-150 hover:bg-slate-700 hover:text-white ${
-            hasSelection ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0'
-          }`}
-          title="复制选中文本 (Ctrl+Shift+C)"
-        >
-          <Copy size={12} />
-          <span>复制</span>
-        </button>
-        {hint && (
-          <span className="max-w-[70vw] rounded bg-slate-800/95 px-2 py-1 text-right text-[10px] leading-snug text-slate-300 shadow-lg backdrop-blur-sm">
-            {hint}
-          </span>
-        )}
-      </div>
-
       {/* ─── "回到底部"浮动按钮 ─── */}
       {userScrolledUp && (
         <button
           onClick={goLive}
-          className={`absolute right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-slate-700/90 text-slate-300 shadow-lg backdrop-blur-sm transition-all hover:bg-slate-600 hover:text-white md:bottom-6 ${
-            toolbarCollapsed ? 'bottom-6' : 'bottom-28'
-          }`}
+          className={`absolute right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-slate-700/90 text-slate-300 shadow-lg backdrop-blur-sm transition-all hover:bg-slate-600 hover:text-white md:bottom-6 ${'bottom-6'}`}
           title="回到底部"
         >
           <ChevronDown size={16} />
@@ -2183,127 +1821,6 @@ export default function TerminalView({
           />
         </div>
       )}
-
-      {/* 移动端快捷键工具栏 — 三行紧凑布局 */}
-      <div
-        ref={toolbarRef}
-        className="flex shrink-0 flex-col border-t border-slate-700/30 bg-slate-900/95 md:hidden"
-        style={
-          {
-            // 禁用长按选中复制（快捷键按钮不需要）
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-            WebkitTouchCallout: 'none',
-            touchAction: 'manipulation',
-          } as React.CSSProperties
-        }
-      >
-        {/* 快捷键三行：收起时整体 display:none（不卸载 DOM，保留长按拦截）
-            收起开关放在右上角悬浮芯片（⌨ 键栏）里，这样展开态不额外占行，
-            与改造前的高度完全一致；收起后这 3 行连同边框一起还给终端。*/}
-        {/* 第一行：控制键 */}
-        <div className={`${toolbarCollapsed ? 'hidden' : 'flex'} gap-px px-0.5 pt-0.5`}>
-          {(
-            [
-              ['ESC', '\x1b'],
-              ['TAB', '\t'],
-              ['Ctrl+C', '\x03'],
-              ['Ctrl+D', '\x04'],
-              ['Ctrl+L', '\x0c'],
-            ] as const
-          ).map(([label, seq]) => (
-            <button
-              key={label}
-              onPointerDown={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                // 防抖：50ms 内不重复发送，防止快速连击导致 WS 断连
-                const now = Date.now()
-                if (now - lastShortcutTime.current < 50) return
-                lastShortcutTime.current = now
-                const encoded = btoa(unescape(encodeURIComponent(seq)))
-                termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-                onTerminalData?.(encoded)
-                // 阻止输入法触发
-                e.currentTarget.blur()
-                containerRef.current?.focus()
-              }}
-              className="flex h-8 flex-1 items-center justify-center rounded bg-slate-800/80 font-mono text-[11px] text-slate-300 active:bg-slate-700 active:text-white"
-              style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {/* 第二行：方向键 + Home/End（支持连续按，防抖间隔更短） */}
-        <div className={`${toolbarCollapsed ? 'hidden' : 'flex'} gap-px px-0.5 pt-0.5`}>
-          {(
-            [
-              ['Hom', '\x1b[H'],
-              [' ↑ ', '\x1b[A'],
-              [' ↓ ', '\x1b[B'],
-              [' ← ', '\x1b[D'],
-              [' → ', '\x1b[C'],
-              ['End', '\x1b[F'],
-            ] as const
-          ).map(([label, seq]) => (
-            <button
-              key={label}
-              onPointerDown={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                // 方向键防抖间隔更短（30ms），支持快速连续按
-                const now = Date.now()
-                if (now - lastArrowKeyTime.current < 30) return
-                lastArrowKeyTime.current = now
-                const encoded = btoa(unescape(encodeURIComponent(seq)))
-                termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-                onTerminalData?.(encoded)
-                // 阻止输入法触发
-                e.currentTarget.blur()
-                containerRef.current?.focus()
-              }}
-              className="flex h-8 flex-1 items-center justify-center rounded bg-slate-800/80 font-mono text-[11px] text-slate-300 active:bg-slate-700 active:text-white"
-              style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {/* 第三行：翻页 + 编辑 */}
-        <div className={`${toolbarCollapsed ? 'hidden' : 'flex'} gap-px px-0.5 pt-0.5 pb-0.5`}>
-          {(
-            [
-              ['PG↑', '\x1b[5~'],
-              ['PG↓', '\x1b[6~'],
-              [' Ins', '\x1b[2~'],
-              [' Del', '\x1b[3~'],
-              ['  |  ', '\x7c'],
-            ] as const
-          ).map(([label, seq]) => (
-            <button
-              key={label}
-              onPointerDown={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                const now = Date.now()
-                if (now - lastShortcutTime.current < 50) return
-                lastShortcutTime.current = now
-                const encoded = btoa(unescape(encodeURIComponent(seq)))
-                termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-                onTerminalData?.(encoded)
-                // 阻止输入法触发
-                e.currentTarget.blur()
-                containerRef.current?.focus()
-              }}
-              className="flex h-8 flex-1 items-center justify-center rounded bg-slate-800/80 font-mono text-[11px] text-slate-300 active:bg-slate-700 active:text-white"
-              style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   )
 }
