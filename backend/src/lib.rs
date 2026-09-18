@@ -85,7 +85,10 @@ async fn static_cache_middleware(req: axum::http::Request<Body>, next: axum_midd
         return response;
     }
 
-    let cache_header: Option<&str> = match std::path::Path::new(&path).extension().and_then(|e| e.to_str()) {
+    let cache_header: Option<&str> = if path == "/" || path == "/index.html" {
+        Some("no-store, no-cache, must-revalidate, proxy-revalidate")
+    } else {
+        match std::path::Path::new(&path).extension().and_then(|e| e.to_str()) {
         // Hashed JS/CSS from Vite build — immutable cache for 1 year
         Some(ext) if matches!(ext, "js" | "mjs" | "css" | "woff2") && has_hash_in_path(&path) => {
             Some("public, max-age=31536000, immutable")
@@ -98,6 +101,7 @@ async fn static_cache_middleware(req: axum::http::Request<Body>, next: axum_midd
         Some("json" | "xml" | "map" | "txt") => Some("public, max-age=86400"),
         // Everything else — no-store
         _ => None,
+        }
     };
 
     if let Some(val) = cache_header {
