@@ -29,7 +29,7 @@ services:
       # 注意：这个列表越窄越安全——每个条目都是「任何人打开网页后可以用来发起连接的目标」。
       WRENCH_EGRESS_ALLOW: "${WRENCH_EGRESS_ALLOW:-}"
       # WRENCH_EGRESS_STRICT: 置 1 时连公网目标也必须写在白名单里（只管理固定几台机时更严）
-      WRENCH_EGRESS_STRICT: "${WRENCH_EGRESS_STRICT:-0}"
+      WRENCH_EGRESS_STRICT: "${WRENCH_EGRESS_STRICT:-1}"
       # WRENCH_TRUSTED_PROXIES: 反向代理的地址/网段（逗号分隔 IP/CIDR）。
       # 挂了 HTTPS 反代却不设置它 → 登录限流会退化成全局共享配额、审计日志只记代理 IP。
       # 留空 = 完全不信任 X-Forwarded-For / X-Real-IP（对端伪造无效）。
