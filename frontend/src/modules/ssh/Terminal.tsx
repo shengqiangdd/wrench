@@ -37,6 +37,7 @@ import {
 } from '../../components/terminal/TerminalContextMenu'
 import { TerminalSearchBar } from '../../components/terminal/TerminalSearchBar'
 import { TerminalPasteDialog } from '../../components/terminal/TerminalPasteDialog'
+import { TerminalKeyBar } from '../../components/terminal/TerminalKeyBar'
 import { useTerminalSearch } from '../../hooks/useTerminalSearch'
 import { useTerminalPaste } from '../../hooks/useTerminalPaste'
 import { useTerminalReconnect } from '../../hooks/useTerminalReconnect'
@@ -166,6 +167,7 @@ export default function TerminalView({
   // 先发一个 0x16(^V)。浏览器里 Ctrl+V 只可能是"粘贴"，不可能是用户想打 ^V，
   // 所以打标记由 onData 精确丢掉紧跟其后的那一个 ^V 字符。
   const pendingPasteKeystrokeRef = useRef(false)
+  const [keyBarCollapsed, setKeyBarCollapsed] = useState(true)
   // ─── 自动滚动管理 ───
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
@@ -1707,6 +1709,18 @@ export default function TerminalView({
           }
         }}
       />
+      <TerminalKeyBar
+        collapsed={keyBarCollapsed}
+        onToggle={() => setKeyBarCollapsed((value) => !value)}
+        onPaste={() => void paste.pasteFromClipboard()}
+        onSend={(sequence) => {
+          const encoded = btoa(unescape(encodeURIComponent(sequence)))
+          termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+          onTerminalData?.(encoded)
+          terminalRef.current?.focus()
+        }}
+      />
+
       {/* ─── "回到底部"浮动按钮 ─── */}
       {userScrolledUp && (
         <button
