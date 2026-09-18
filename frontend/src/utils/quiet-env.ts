@@ -26,6 +26,7 @@
  */
 
 /** 变量名 → 值。值里不能有空格：注入行是 `export A=1 B=2` 形式，会被 word split。 */
+/** Legacy-only compatibility helpers. Terminal runtime never imports or invokes these. */
 export const QUIET_PROGRESS_ENV: ReadonlyArray<readonly [string, string]> = [
   ['COMPOSE_PROGRESS', 'plain'],
   ['BUILDKIT_PROGRESS', 'plain'],

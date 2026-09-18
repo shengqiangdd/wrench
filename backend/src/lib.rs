@@ -59,6 +59,8 @@ if ('serviceWorker' in navigator) {
                 .status(StatusCode::OK)
                 .header(CONTENT_TYPE, "text/html; charset=utf-8")
                 .header(CACHE_CONTROL, "no-store, no-cache, must-revalidate, proxy-revalidate")
+                .header("Pragma", "no-cache")
+                .header("Expires", "0")
                 .body(Body::from(modified))
                 .unwrap()
         }

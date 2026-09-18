@@ -1,7 +1,7 @@
 /**
  * 判断终端是否"停在 shell 提示符上"——即可以安全地往 PTY 里注入一行命令。
  *
- * 为什么需要它：往 PTY 注入 `export COMPOSE_PROGRESS=plain` 等同于替用户打字，
+ * 兼容历史测试与文档；当前终端运行时不再向 PTY 注入任何 export。此前往 PTY 注入 `export COMPOSE_PROGRESS=plain` 等同于替用户打字，
  * 一旦打错地方就会造成真实打扰：
  *   · 全屏 TUI（vim / htop / less / top / man）用的是 xterm 的 **alternate buffer**，
  *     注入的字符会落进 TUI 的输入流；
