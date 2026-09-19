@@ -66,6 +66,8 @@ const POOL_DEFAULTS: PoolConfig = {
 
 class SshSessionManager {
   private sessions = new Map<string, SessionInfo>()
+  /** 同一 connectionId 的并发 SFTP 自动连接去重 */
+  private pendingSftp = new Map<string, Promise<string | null>>()
   private wsClient: WsClient | null = null
   private warmupConfig: WarmupConfig = { ...WARMUP_DEFAULTS }
   private warmupTimer: ReturnType<typeof setTimeout> | null = null
@@ -480,7 +482,34 @@ class SshSessionManager {
   ): Promise<string | null> {
     const { forceNew = false, onStatus } = options || {}
 
-    // 1. 检查是否有可复用的 SSH session
+    // 同一连接的自动恢复可能由多个 effect/StrictMode 回调同时触发。
+    // 在第一次请求完成前共享同一个 Promise，避免重复创建 SFTP/SSH 后端会话。
+    if (!forceNew) {
+      const pending = this.pendingSftp.get(connectionId)
+      if (pending) return pending
+    }
+
+    const task = this.getOrCreateSftpSessionInternal(connectionId, forceNew, onStatus)
+    if (!forceNew) {
+      this.pendingSftp.set(connectionId, task)
+      void task.then(
+        () => {
+          if (this.pendingSftp.get(connectionId) === task) this.pendingSftp.delete(connectionId)
+        },
+        () => {
+          if (this.pendingSftp.get(connectionId) === task) this.pendingSftp.delete(connectionId)
+        },
+      )
+    }
+    return task
+  }
+
+  private async getOrCreateSftpSessionInternal(
+    connectionId: string,
+    forceNew: boolean,
+    onStatus?: (msg: string) => void,
+  ): Promise<string | null> {
+    // 1. 检查是否有可复用的 SSH/SFTP session
     if (!forceNew) {
       const existingSession = this.findReusableSession(connectionId)
       if (existingSession) {
@@ -488,14 +517,10 @@ class SshSessionManager {
         const sftpReady = await this.verifySftpReady(existingSession.id)
         if (sftpReady) {
           onStatus?.('SFTP 已就绪，复用现有连接')
-
-          // 🔧 关键：如果该 session 不在 SshSessionManager.sessions 中（来自 useSshStore），
-          // 将其同步过来，确保后续查找能命中
           if (!this.sessions.has(existingSession.id)) {
             this.sessions.set(existingSession.id, existingSession)
             this.savePersistedState()
           }
-
           return existingSession.id
         }
         onStatus?.('SFTP 未就绪，创建新连接...')
@@ -750,6 +775,12 @@ class SshSessionManager {
       onStatus?.(`连接失败: ${errorType}`)
       return null
     }
+  }
+
+  /** 从本地会话池移除已断开的 session（由文件管理清理专用会话时调用）。 */
+  removeSession(sessionId: string) {
+    this.sessions.delete(sessionId)
+    this.savePersistedState()
   }
 
   /**

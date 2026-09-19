@@ -9,6 +9,7 @@ import {
   nextCanvasRowsForBlock,
   panWindow,
   resolveCanvasRows,
+  shouldAutoScrollToBottom,
 } from '../../utils/terminal-canvas'
 
 describe('resolveCanvasRows', () => {
@@ -99,6 +100,14 @@ describe('isLiveBottom', () => {
     expect(isLiveBottom({ offset: 18, followOffset: 18, viewportY: 100, baseY: 100 })).toBe(true)
     expect(isLiveBottom({ offset: 17, followOffset: 18, viewportY: 100, baseY: 100 })).toBe(false)
     expect(isLiveBottom({ offset: 18, followOffset: 18, viewportY: 99, baseY: 100 })).toBe(false)
+  })
+})
+
+describe('shouldAutoScrollToBottom', () => {
+  it('实时跟随且用户没有看历史时才自动滚底', () => {
+    expect(shouldAutoScrollToBottom({ userScrolledUp: false, windowFollowing: true })).toBe(true)
+    expect(shouldAutoScrollToBottom({ userScrolledUp: true, windowFollowing: true })).toBe(false)
+    expect(shouldAutoScrollToBottom({ userScrolledUp: false, windowFollowing: false })).toBe(false)
   })
 })
 

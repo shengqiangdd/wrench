@@ -234,7 +234,13 @@ async fn handle_terminal_connect(
     let request_id = msg.get("requestId").and_then(|v| v.as_str()).unwrap_or("");
 
     let cols = msg.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as u32;
-    let rows = msg.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as u32;
+    // 移动端给 Compose 留出足够的逻辑行，避免动态进度块因 PTY 太矮滚入 scrollback。
+    // 仅抬高初始 PTY，不改变桌面端已经传入的大尺寸。
+    let rows = msg
+        .get("rows")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(24)
+        .max(30) as u32;
 
     // Debug: log message fields (redact password)
     let has_password = msg
@@ -525,11 +531,18 @@ async fn handle_terminal_connect(
 
     info!("Terminal session connected: {}", connection_id);
 
-    // ─── Terminal I/O Loop — immediate send for low latency ───
-    // Removed output batching: each SSH output chunk is sent immediately
-    // as a WebSocket message. This eliminates the 16ms flush timer delay
-    // that caused noticeable lag during interactive typing and tab completion.
+    // ─── Terminal I/O Loop ───
+    // 合并高频 PTY 输出，避免 docker compose 动态进度每个小 chunk 都产生一次
+    // base64 + JSON + WebSocket 帧。窗口很短（8ms），交互输入延迟基本不可感知；
+    // 达到大小上限时立即发送，避免大输出占用内存。
     //
+    // 高频输出聚合：Docker Compose/BuildKit 会在极短时间内产生大量小 PTY chunk。
+    // 每 8ms 合并一次再做 base64 + JSON + WebSocket 帧，显著降低网络包和前端重绘次数。
+    // 交互输入仍走独立的 socket.recv 分支，不会被输出批处理阻塞。
+    let mut output_buf: Vec<u8> = Vec::with_capacity(16 * 1024);
+    let mut output_tick = tokio::time::interval(Duration::from_millis(8));
+    output_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     // close_reason：这个会话是**怎么结束**的，前端据此决定要不要自动重连。
     // - "exit"：远端 shell 正常退出（用户敲了 exit / Ctrl+D，拿到了 ExitStatus）→ 不要自动重开，
     //   否则用户刚退出就又被塞一个新的 shell。
@@ -598,23 +611,49 @@ async fn handle_terminal_connect(
                 }
             }
 
-            // Outgoing to WebSocket (SSH terminal output) — send immediately
+            // 输出批处理：减少 Docker 动态进度产生的 WebSocket 帧和前端重绘。
+            _ = output_tick.tick(), if !output_buf.is_empty() => {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buf);
+                output_buf.clear();
+                let output = build_terminal_output_msg(&connection_id, &encoded);
+                if socket.send(Message::Text(output)).await.is_err() {
+                    break;
+                }
+            }
+
             msg = channel.wait() => {
                 use russh::ChannelMsg;
                 match msg {
                     Some(ChannelMsg::Data { ref data }) => {
-                        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
-                        let output = build_terminal_output_msg(&connection_id, &encoded);
-                        if socket.send(Message::Text(output)).await.is_err() {
-                            break;
+                        output_buf.extend_from_slice(data);
+                        // 大块输出立即发送，避免延迟和内存增长。
+                        if output_buf.len() >= 32 * 1024 {
+                            let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buf);
+                            output_buf.clear();
+                            let output = build_terminal_output_msg(&connection_id, &encoded);
+                            if socket.send(Message::Text(output)).await.is_err() {
+                                break;
+                            }
                         }
                     }
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
+                        if !output_buf.is_empty() {
+                            let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buf);
+                            output_buf.clear();
+                            let output = build_terminal_output_msg(&connection_id, &encoded);
+                            let _ = socket.send(Message::Text(output)).await;
+                        }
                         info!("SSH channel closed (connection: {})", connection_id);
                         close_reason = "closed";
                         break;
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
+                        if !output_buf.is_empty() {
+                            let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buf);
+                            output_buf.clear();
+                            let output = build_terminal_output_msg(&connection_id, &encoded);
+                            let _ = socket.send(Message::Text(output)).await;
+                        }
                         info!("SSH shell exited with status: {}", exit_status);
                         close_reason = "exit";
                         break;

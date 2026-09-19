@@ -221,13 +221,17 @@ function FileManagerInner() {
    * connectionId 下，切到文件管理时把用户的终端踢掉是不可接受的。
    */
   const dropStaleSftpSession = useCallback(
-    (client: WsClient) => {
+    (client: WsClient, keepConnectionId?: string) => {
       const staleId = lastSftpSessionIdRef.current
-      lastSftpSessionIdRef.current = null
       if (!staleId) return
-      if (useSshStore.getState().sessions.some((s) => s.id === staleId)) {
+      const staleSession = useSshStore.getState().sessions.find((s) => s.id === staleId)
+      // 同一主机的自动恢复应复用已有 SFTP 会话，不能先删掉再创建一个新的。
+      if (keepConnectionId && staleSession?.connectionId === keepConnectionId) return
+      lastSftpSessionIdRef.current = null
+      if (staleSession) {
         client.send({ type: 'disconnect', connectionId: staleId })
         removeSession(staleId)
+        sshSessionManager.removeSession(staleId)
       }
     },
     [removeSession],
@@ -282,7 +286,7 @@ function FileManagerInner() {
     dispatch({ connecting: true })
 
     // 清理上次由文件管理自己建出来的会话（终端页的会话不能动，见 dropStaleSftpSession）
-    dropStaleSftpSession(client)
+    dropStaleSftpSession(client, cached.connId)
 
     const beforeIds = new Set(sessArr.map((s) => s.id))
     let lastStatus = ''
@@ -428,7 +432,7 @@ function FileManagerInner() {
       dispatch({ connecting: true })
 
       // 清理上次由文件管理自己建出来的会话（终端页的会话不能动，见 dropStaleSftpSession）
-      dropStaleSftpSession(client)
+      dropStaleSftpSession(client, connId)
 
       // 🔧 使用实时获取的 sessions
       const beforeIds = new Set(currentSessions.map((s) => s.id))

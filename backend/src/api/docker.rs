@@ -148,7 +148,17 @@ async fn docker_exec(
 
     // Build the docker command with proper shell escaping
     let command = {
-        let mut s = String::from("docker");
+        // Compose/BuildKit 的动态进度会通过 CSI 光标回移整块重绘，在移动端
+        // PTY 高度不足时被写入 scrollback，造成大量重复行和额外网络 I/O。
+        // 使用环境变量比拼接 --progress 更兼容不同 Docker Compose 版本。
+        let mut s = if docker_args.first() == Some(&"compose")
+            || docker_args.first() == Some(&"build")
+            || docker_args.first() == Some(&"buildx")
+        {
+            String::from("COMPOSE_PROGRESS=plain BUILDKIT_PROGRESS=plain DOCKER_CLI_HINTS=false docker")
+        } else {
+            String::from("docker")
+        };
         for arg in docker_args {
             s.push(' ');
             s.push_str(&escape_sh_arg(arg));
@@ -178,7 +188,7 @@ async fn docker_exec(
             fallback_args.push(arg);
         }
         let fallback_cmd = {
-            let mut s = String::from("docker-compose");
+            let mut s = String::from("COMPOSE_PROGRESS=plain BUILDKIT_PROGRESS=plain DOCKER_CLI_HINTS=false docker-compose");
             for arg in &fallback_args {
                 s.push(' ');
                 s.push_str(&escape_sh_arg(arg));

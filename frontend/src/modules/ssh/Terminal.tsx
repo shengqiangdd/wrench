@@ -28,6 +28,7 @@ import {
   nextCanvasRowsForBlock,
   panWindow,
   resolveCanvasRows,
+  shouldAutoScrollToBottom,
 } from '../../utils/terminal-canvas'
 import { createCursorUpRunState, scanCursorUpRuns } from '../../utils/cursor-up-runs'
 import { on } from '../../services/event-bus'
@@ -60,6 +61,19 @@ import {
   markDeleteSent,
   type PendingDelete,
 } from '../../utils/terminal-delete-dedup'
+import { TerminalSuggestionPanel } from '../../components/terminal/TerminalSuggestionPanel'
+import {
+  applyTerminalInput,
+  clearTerminalCommandHistory,
+  getTerminalSuggestions,
+  inferCwdFromPrompt,
+  readTerminalCommandHistory,
+  readTerminalCommandHistoryEnabled,
+  recordTerminalCommand,
+  writeTerminalCommandHistory,
+  type TerminalCommandHistoryEntry,
+  type TerminalSuggestion,
+} from '../../utils/terminal-suggestions'
 
 /** 分屏面板配置 */
 export interface SplitPanel {
@@ -168,6 +182,21 @@ export default function TerminalView({
   // 所以打标记由 onData 精确丢掉紧跟其后的那一个 ^V 字符。
   const pendingPasteKeystrokeRef = useRef(false)
   const [keyBarCollapsed, setKeyBarCollapsed] = useState(true)
+  const [suggestions, setSuggestions] = useState<TerminalSuggestion[]>([])
+  const [selectedSuggestion, setSelectedSuggestion] = useState(0)
+  const suggestionsRef = useRef<TerminalSuggestion[]>([])
+  const selectedSuggestionRef = useRef(0)
+  const commandHistoryRef = useRef<TerminalCommandHistoryEntry[]>([])
+  const inputLineRef = useRef({ text: '', cursor: 0, cwd: '' })
+  const suggestionRafRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    suggestionsRef.current = suggestions
+  }, [suggestions])
+
+  useEffect(() => {
+    selectedSuggestionRef.current = selectedSuggestion
+  }, [selectedSuggestion])
   // ─── 自动滚动管理 ───
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const userScrolledUpRef = useRef(false)
@@ -456,6 +485,14 @@ export default function TerminalView({
     userScrolledUpRef.current = false
     setUserScrolledUp(false)
     setLongRunning(null)
+    commandHistoryRef.current = readTerminalCommandHistoryEnabled()
+      ? readTerminalCommandHistory()
+      : []
+    inputLineRef.current = { text: '', cursor: 0, cwd: '' }
+    if (suggestionRafRef.current !== null) cancelAnimationFrame(suggestionRafRef.current)
+    suggestionRafRef.current = null
+    setSuggestions([])
+    setSelectedSuggestion(0)
 
     // 初始显示参数来自用户偏好（设置面板 / Ctrl± 改的都是这份；见 utils/terminal-prefs）
     const initialPrefs = prefsRef.current
@@ -530,6 +567,10 @@ export default function TerminalView({
     let canvasFollow = true
     let canvasGrowRows = 0 // 自适应长出来的行数（只增不减）
     let canvasAlt = false // 备用屏（vim/less/htop）内保持 1:1
+    // SSH 的 open_shell 会把 connect payload 里的 rows 固定成 PTY 初始高度。
+    // 在第一次布局完成前连接，会让移动端先以 12 行 PTY 启动，随后才 resize 到
+    // 30 行；Compose/BuildKit 可能已经把第一批 CSI A 重绘推进 scrollback。
+    let canvasLayoutReady = false
     let canvasRaf = 0
     let blockRunTotal = 0
     let blockRunSeenAt = 0
@@ -687,6 +728,7 @@ export default function TerminalView({
       canvasVisibleRowsCache = Math.max(1, Math.floor(proposed.rows))
       try {
         term.resize(proposed.cols, canvasTargetRows(proposed.rows))
+        canvasLayoutReady = true
       } catch {
         /* ignore */
       }
@@ -747,6 +789,13 @@ export default function TerminalView({
       const nextAlt = buf.type === 'alternate'
       if (nextAlt === canvasAlt) return
       canvasAlt = nextAlt
+      inputLineRef.current = { text: '', cursor: 0, cwd: '' }
+      if (suggestionRafRef.current !== null) cancelAnimationFrame(suggestionRafRef.current)
+      suggestionRafRef.current = null
+      suggestionsRef.current = []
+      selectedSuggestionRef.current = 0
+      setSuggestions([])
+      setSelectedSuggestion(0)
       // 回调发生在 term.write 解析过程中，延后一帧再 resize，避免写入中途重入
       requestAnimationFrame(() => {
         if (!disposedRef.current) canvasRefit()
@@ -1015,7 +1064,13 @@ export default function TerminalView({
       if (runTotal > 0) canvasObserveBlock(runTotal)
       term.write(ready, () => {
         canvasSync()
-        if (!userScrolledUpRef.current && !disposedRef.current) {
+        if (
+          !disposedRef.current &&
+          shouldAutoScrollToBottom({
+            userScrolledUp: userScrolledUpRef.current,
+            windowFollowing: canvasFollow,
+          })
+        ) {
           term.scrollToBottom()
         }
       })
@@ -1027,6 +1082,15 @@ export default function TerminalView({
     // 因此每个终端必须有自己的 WS 连接以支持多主机同时连接。
     const initTerminalConnection = async () => {
       if (gen !== genRef.current) return
+      // Do not open a PTY with the browser's transient/narrow height. The first
+      // resize is not retroactive: a progress block emitted before it can already
+      // have been scrolled into xterm's history by legitimate CSI A sequences.
+      if (!canvasLayoutReady) {
+        requestAnimationFrame(() => {
+          if (!disposedRef.current && gen === genRef.current) void initTerminalConnection()
+        })
+        return
+      }
       // 防止重复连接
       if (connectingRef.current || connectedRef.current) return
 
@@ -1340,9 +1404,125 @@ export default function TerminalView({
     // Ctrl+C: 选中文本时复制，未选中时发送 SIGINT
     // Ctrl+V / Shift+Insert: 粘贴
     // Ctrl+Shift+C: 强制复制 / Ctrl+Shift+V: 强制粘贴
+    const hideSuggestions = () => {
+      if (suggestionRafRef.current !== null) cancelAnimationFrame(suggestionRafRef.current)
+      suggestionRafRef.current = null
+      suggestionsRef.current = []
+      selectedSuggestionRef.current = 0
+      setSuggestions([])
+      setSelectedSuggestion(0)
+    }
+
+    const commitSuggestions = (next: TerminalSuggestion[]) => {
+      const previous = suggestionsRef.current
+      const same =
+        previous.length === next.length &&
+        previous.every(
+          (item, index) =>
+            item.command === next[index]?.command &&
+            item.source === next[index]?.source &&
+            item.cwd === next[index]?.cwd,
+        )
+      if (!same) {
+        suggestionsRef.current = next
+        setSuggestions(next)
+      }
+      if (selectedSuggestionRef.current !== 0) {
+        selectedSuggestionRef.current = 0
+        setSelectedSuggestion(0)
+      }
+    }
+
+    const updateSuggestions = () => {
+      if (suggestionRafRef.current !== null) cancelAnimationFrame(suggestionRafRef.current)
+      suggestionRafRef.current = requestAnimationFrame(() => {
+        suggestionRafRef.current = null
+        const input = inputLineRef.current
+        const next =
+          term.buffer.active.type === 'normal' && input.cursor === input.text.length
+            ? getTerminalSuggestions(input.text, commandHistoryRef.current, input.cwd)
+            : []
+        commitSuggestions(next)
+      })
+    }
+
+    const sendSuggestionSuffix = (suggestion: TerminalSuggestion | undefined) => {
+      if (!suggestion) return
+      const input = inputLineRef.current
+      const suffix = suggestion.command.slice(input.text.length)
+      if (!suffix) return
+      const encoded = btoa(unescape(encodeURIComponent(suffix)))
+      termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+      onTerminalData?.(encoded)
+      input.text += suffix
+      input.cursor = input.text.length
+      hideSuggestions()
+      term.focus()
+    }
+
+    const observeInput = (data: string) => {
+      if (term.buffer.active.type !== 'normal') {
+        inputLineRef.current = { text: '', cursor: 0, cwd: '' }
+        hideSuggestions()
+        return
+      }
+      const input = inputLineRef.current
+      const promptLine = term.buffer.active
+        .getLine(term.buffer.active.baseY + term.buffer.active.cursorY)
+        ?.translateToString(true)
+      input.cwd = inferCwdFromPrompt(promptLine || '') || input.cwd
+      const edit = applyTerminalInput(input, data)
+      if (edit.submitted) {
+        const command = input.text.trim()
+        if (command && readTerminalCommandHistoryEnabled()) {
+          commandHistoryRef.current = recordTerminalCommand(
+            commandHistoryRef.current,
+            command,
+            input.cwd,
+          )
+          writeTerminalCommandHistory(commandHistoryRef.current)
+        }
+        inputLineRef.current = { text: '', cursor: 0, cwd: input.cwd }
+        hideSuggestions()
+        return
+      }
+      if (edit.reset) {
+        inputLineRef.current = { ...input, text: '', cursor: 0 }
+        hideSuggestions()
+        return
+      }
+      if (!edit.changed) return
+      input.text = edit.state.text
+      input.cursor = edit.state.cursor
+      updateSuggestions()
+    }
+
     term.attachCustomKeyEventHandler((e) => {
       const { key, ctrlKey, shiftKey, altKey, metaKey, type } = e
 
+      if (type === 'keydown' && suggestionsRef.current.length > 0) {
+        if (key === 'Escape') {
+          hideSuggestions()
+          return false
+        }
+        if (
+          key === 'Tab' ||
+          (key === 'ArrowRight' && inputLineRef.current.cursor === inputLineRef.current.text.length)
+        ) {
+          sendSuggestionSuffix(
+            suggestionsRef.current[selectedSuggestionRef.current] || suggestionsRef.current[0],
+          )
+          return false
+        }
+        if (key === 'ArrowDown' || key === 'ArrowUp') {
+          const direction = key === 'ArrowDown' ? 1 : -1
+          const next =
+            (selectedSuggestionRef.current + direction + suggestionsRef.current.length) %
+            suggestionsRef.current.length
+          setSelectedSuggestion(next)
+          return false
+        }
+      }
       // Ctrl/⌘ + `+`/`=`/`-`/`0` → 字号缩放（`0` 复位）。
       // 终端里最常见的"看不清/太挤"自救操作，之前只能去改浏览器缩放（会连整个界面一起变）。
       if (type === 'keydown' && (ctrlKey || metaKey) && !altKey) {
@@ -1434,6 +1614,7 @@ export default function TerminalView({
         (key === 'Backspace' || key === 'Delete')
       ) {
         const char = key === 'Backspace' ? '\x7f' : '\x1b[3~'
+        observeInput(char)
         // 直接发送到服务端，不调用 term.input() 避免 xterm.js 本地解析
         const encoded = btoa(unescape(encodeURIComponent(char)))
         termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
@@ -1463,6 +1644,7 @@ export default function TerminalView({
         pendingPasteKeystrokeRef.current = false
         if (data === '\x16') return
       }
+      observeInput(data)
       // 用户输入时自动滚到底部，确保看到命令输出
       userScrolledUpRef.current = false
       setUserScrolledUp(false)
@@ -1582,6 +1764,10 @@ export default function TerminalView({
         /* ignore */
       }
       canvasCtlRef.current = null
+      if (suggestionRafRef.current !== null) {
+        cancelAnimationFrame(suggestionRafRef.current)
+        suggestionRafRef.current = null
+      }
       // 清理输出追踪定时器
       if (outputTracker.checkTimer) {
         clearTimeout(outputTracker.checkTimer)
@@ -1617,6 +1803,32 @@ export default function TerminalView({
     // credentials 通过 ref 引用，onTerminalData 由父组件 useCallback 包装，均稳定不变
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId, sessionId])
+
+  const sendSuggestionFromPanel = (suggestion: TerminalSuggestion) => {
+    const term = terminalRef.current
+    if (!term || term.buffer.active.type !== 'normal') return
+    const suffix = suggestion.command.slice(inputLineRef.current.text.length)
+    if (!suffix) return
+    const encoded = btoa(unescape(encodeURIComponent(suffix)))
+    termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+    onTerminalData?.(encoded)
+    inputLineRef.current.text += suffix
+    inputLineRef.current.cursor = inputLineRef.current.text.length
+    setSuggestions([])
+    setSelectedSuggestion(0)
+    term.focus()
+  }
+
+  const clearLocalCommandHistory = () => {
+    clearTerminalCommandHistory()
+    if (suggestionRafRef.current !== null) cancelAnimationFrame(suggestionRafRef.current)
+    suggestionRafRef.current = null
+    commandHistoryRef.current = []
+    suggestionsRef.current = []
+    selectedSuggestionRef.current = 0
+    setSuggestions([])
+    setSelectedSuggestion(0)
+  }
 
   return (
     <div className={`group relative flex flex-col ${className}`} style={{ minHeight: 0 }}>
@@ -1708,6 +1920,12 @@ export default function TerminalView({
             terminalRef.current?.focus()
           }
         }}
+      />
+      <TerminalSuggestionPanel
+        suggestions={suggestions}
+        selectedIndex={selectedSuggestion}
+        onSelect={(suggestion) => sendSuggestionFromPanel(suggestion)}
+        onClearHistory={clearLocalCommandHistory}
       />
       <TerminalKeyBar
         collapsed={keyBarCollapsed}

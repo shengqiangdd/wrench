@@ -364,7 +364,16 @@ impl SshSession {
             .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
             .await?;
 
-        channel.exec(true, "bash").await?;
+        // Docker Compose 的 TTY 进度默认使用光标回移重绘；在手机端窄 PTY 中会
+        // 把整块进度反复写入 scrollback。按 Docker Compose CLI 文档的 plain 进度
+        // 模式初始化交互 shell：只改变 Docker/BuildKit 的输出策略，不影响普通命令、
+        // 用户的 shell 配置，也允许用户随后显式覆盖这些变量。
+        channel
+            .exec(
+                true,
+                "bash -i -c 'export COMPOSE_PROGRESS=plain BUILDKIT_PROGRESS=plain DOCKER_CLI_HINTS=false; exec bash -i'",
+            )
+            .await?;
 
         Ok(channel)
     }

@@ -35,7 +35,7 @@
  * 本文件只放纯函数，便于单测；实际渲染接线在 modules/ssh/Terminal.tsx。
  */
 
-/** 逻辑画布最小行数：24 行是 compose 20 服务块（21 行）的干净阈值，30 行留余量 */
+/** 逻辑画布最小行数：覆盖常见 compose 进度块，但不人为抬到几十行。 */
 export const CANVAS_ROWS_FLOOR = 30
 
 /** 自适应增高上限：再大的块请用「显示」→「日志逐行输出」或更大的显示设备 */
@@ -133,6 +133,14 @@ export function isLiveBottom(input: {
   baseY: number
 }): boolean {
   return input.offset === input.followOffset && input.viewportY >= input.baseY
+}
+
+/** 新输出到达时是否允许把 xterm 自身滚回底部。 */
+export function shouldAutoScrollToBottom(input: {
+  userScrolledUp: boolean
+  windowFollowing: boolean
+}): boolean {
+  return input.windowFollowing && !input.userScrolledUp
 }
 
 /**
