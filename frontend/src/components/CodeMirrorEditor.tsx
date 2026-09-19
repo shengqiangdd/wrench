@@ -26,6 +26,7 @@ import { useFileStore } from '../stores/file-store'
 import { useAiStore } from '../stores/ai-store'
 import { getWsClientSync } from '../services/websocket'
 import { formatCode } from '../utils/format-code'
+import { createLocalCompletionSource } from '../utils/local-completion'
 
 // ── UTF-8 安全的 base64 编码 ──
 // btoa() 只能处理 Latin-1 字符，中文/日文/emoji 会损坏
@@ -344,6 +345,7 @@ export default function CodeMirrorEditor() {
       const contentLen = (activeTab.content || '').length
       // 大文件优化：跳过耗时的扩展以减少初始化时间
       const isLargeFile = contentLen > 500_000 // >500KB
+      const localCompletionSource = createLocalCompletionSource(activeTab.language, activeTab.name)
 
       const state = EditorState.create({
         doc: activeTab.content || '',
@@ -377,6 +379,10 @@ export default function CodeMirrorEditor() {
           ...(isLargeFile ? [] : [foldGutter()]),
           // 大文件跳过自动补全（减少解析开销）
           ...(isLargeFile ? [] : [autocompletion()]),
+          // 追加本地模板和当前文件符号建议；不覆盖语言包已有 completion，也不访问网络
+          ...(isLargeFile
+            ? []
+            : [EditorState.languageData.of(() => [{ autocomplete: localCompletionSource }])]),
           syntaxHighlighting(defaultHighlightStyle),
           oneDark,
           langExt as Extension,
