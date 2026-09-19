@@ -257,6 +257,64 @@ function symbolOptions(doc: string, prefix: string): Completion[] {
     .map((label) => ({ label, type: 'variable' as const, detail: '当前文件符号' }))
 }
 
+function supportsHashComments(language: string): boolean {
+  return ['python', 'shell'].includes(language)
+}
+
+/**
+ * Keep local suggestions out of comments and quoted literals. This is a
+ * deliberately small lexical check: it avoids parsing the document while
+ * still covering the contexts where an editor completion is most disruptive.
+ */
+function isCompletionSuppressed(doc: string, pos: number, language: string): boolean {
+  const prefix = doc.slice(0, pos)
+  const hashComments = supportsHashComments(language)
+  let quote: '"' | "'" | '`' | null = null
+  let escaped = false
+  let blockComment = false
+
+  for (let index = 0; index < prefix.length; index += 1) {
+    const character = prefix[index]
+    const next = prefix[index + 1]
+
+    if (blockComment) {
+      if (character === '*' && next === '/') {
+        blockComment = false
+        index += 1
+      }
+      continue
+    }
+
+    if (quote) {
+      if (escaped) {
+        escaped = false
+      } else if (character === '\\') {
+        escaped = true
+      } else if (character === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (character === '/' && next === '*') {
+      blockComment = true
+      index += 1
+    } else if (character === '/' && next === '/') {
+      const lineEnd = prefix.indexOf('\n', index + 2)
+      if (lineEnd === -1) return true
+      index = lineEnd
+    } else if (hashComments && character === '#') {
+      const lineEnd = prefix.indexOf('\n', index + 1)
+      if (lineEnd === -1) return true
+      index = lineEnd
+    } else if (character === '"' || character === "'" || character === '`') {
+      quote = character
+    }
+  }
+
+  return Boolean(quote || blockComment)
+}
+
 export function getLocalCompletionOptions(
   language: string,
   fileName: string,
@@ -269,9 +327,18 @@ export function getLocalCompletionOptions(
   if (!explicit && token.length === 0) return null
 
   const normalizedLanguage = normalizeCompletionLanguage(language, fileName)
+  if (isCompletionSuppressed(doc, pos, normalizedLanguage)) return null
+
+  const options = [...templateOptions(normalizedLanguage), ...symbolOptions(doc, token)]
+  const filteredOptions = token
+    ? options.filter((option) => option.label.toLowerCase().startsWith(token.toLowerCase()))
+    : options
+
+  if (filteredOptions.length === 0) return null
+
   return {
     from: pos - token.length,
-    options: [...templateOptions(normalizedLanguage), ...symbolOptions(doc, token)],
+    options: filteredOptions,
   }
 }
 

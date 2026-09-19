@@ -19,17 +19,34 @@ describe('local-completion', () => {
     const labels = result?.options.map((option) => option.label)
 
     expect(result?.from).toBe(0)
-    expect(labels).toContain('def')
-    expect(labels).toContain('class')
+    expect(labels).toEqual(['def'])
   })
 
   it('includes symbols found in the current document', () => {
     const doc = 'const importantValue = 1\nfunction renderPage() {}\nre'
     const result = getLocalCompletionOptions('javascript', 'app.js', doc, doc.length)
 
-    expect(result?.options.map((option) => option.label)).toEqual(
-      expect.arrayContaining(['importantValue', 'renderPage']),
+    expect(result?.options.map((option) => option.label)).toEqual(['renderPage'])
+    const symbolResult = getLocalCompletionOptions(
+      'javascript',
+      'app.js',
+      'const importantValue = 1\nimp',
+      32,
     )
+    expect(symbolResult?.options.map((option) => option.label)).toContain('importantValue')
+  })
+
+  it('filters suggestions by the token before the cursor', () => {
+    const result = getLocalCompletionOptions('javascript', 'app.js', 'fun', 3)
+
+    expect(result?.options.map((option) => option.label)).toEqual(['function'])
+  })
+
+  it('does not suggest inside comments or quoted strings', () => {
+    expect(getLocalCompletionOptions('javascript', 'app.js', '// fun', 6)).toBeNull()
+    expect(getLocalCompletionOptions('javascript', 'app.js', 'const value = "fun', 16)).toBeNull()
+    expect(getLocalCompletionOptions('python', 'main.py', '# def', 5)).toBeNull()
+    expect(getLocalCompletionOptions('javascript', 'app.js', '/* fun', 6)).toBeNull()
   })
 
   it('only opens implicitly when there is a prefix, but explicit completion works at whitespace', () => {
@@ -42,7 +59,7 @@ describe('local-completion', () => {
   })
 
   it('creates a CodeMirror-compatible source with a valid replacement range', () => {
-    const state = EditorState.create({ doc: 'con' })
+    const state = EditorState.create({ doc: 'fun' })
     const source = createLocalCompletionSource('javascript', 'app.js')
     const result = source(new CompletionContext(state, 3, false))
 
