@@ -217,7 +217,20 @@ export interface SftpApiResponse<T = unknown> {
 }
 
 const SFTP_METADATA_CACHE_TTL_MS = 2000
-const metadataCache = new Map<string, { expiresAt: number; value: unknown }>()
+const SFTP_METADATA_CACHE_MAX_ENTRIES = 128
+
+interface MetadataCacheEntry {
+  expiresAt: number
+  value: unknown
+  scope: string
+  path: string
+}
+
+// Map insertion order is used as the LRU order: the first key is the least
+// recently used one. The path index lets mutations evict a directory subtree
+// without scanning unrelated metadata entries.
+const metadataCache = new Map<string, MetadataCacheEntry>()
+const metadataPathIndex = new Map<string, Map<string, Set<string>>>()
 const metadataInflight = new Map<string, Promise<unknown>>()
 let activeMetadataScope: string | null = null
 let metadataRevision = 0
@@ -230,7 +243,75 @@ export function sftpMetadataCacheKey(
   endpoint: 'list' | 'stat',
   body: Record<string, unknown>,
 ): string {
-  return endpoint + '\u0000' + metadataScope(body) + '\u0000' + String(body.path || '')
+  return endpoint + '\u0000' + metadataScope(body) + '\u0000' + normalizeMetadataPath(body.path)
+}
+
+function normalizeMetadataPath(path: unknown): string {
+  const value = String(path || '/')
+  return value.length > 1 ? value.replace(/\/+$/, '') || '/' : value
+}
+
+function metadataPathAncestors(path: string): string[] {
+  const ancestors = ['/']
+  if (path === '/') return ancestors
+  let cursor = path
+  while (cursor !== '/') {
+    ancestors.push(cursor)
+    const slash = cursor.lastIndexOf('/')
+    cursor = slash <= 0 ? '/' : cursor.slice(0, slash)
+  }
+  return ancestors
+}
+
+function removeMetadataCacheEntry(key: string): void {
+  const entry = metadataCache.get(key)
+  if (!entry) return
+  metadataCache.delete(key)
+  const scopeIndex = metadataPathIndex.get(entry.scope)
+  if (!scopeIndex) return
+  for (const path of metadataPathAncestors(entry.path)) {
+    const keys = scopeIndex.get(path)
+    if (!keys) continue
+    keys.delete(key)
+    if (keys.size === 0) scopeIndex.delete(path)
+  }
+  if (scopeIndex.size === 0) metadataPathIndex.delete(entry.scope)
+}
+
+function cacheMetadata(key: string, entry: MetadataCacheEntry): void {
+  removeMetadataCacheEntry(key)
+  metadataCache.set(key, entry)
+  let scopeIndex = metadataPathIndex.get(entry.scope)
+  if (!scopeIndex) {
+    scopeIndex = new Map()
+    metadataPathIndex.set(entry.scope, scopeIndex)
+  }
+  for (const path of metadataPathAncestors(entry.path)) {
+    let keys = scopeIndex.get(path)
+    if (!keys) {
+      keys = new Set()
+      scopeIndex.set(path, keys)
+    }
+    keys.add(key)
+  }
+  while (metadataCache.size > SFTP_METADATA_CACHE_MAX_ENTRIES) {
+    const oldest = metadataCache.keys().next().value
+    if (oldest === undefined) break
+    removeMetadataCacheEntry(oldest)
+  }
+}
+
+function getCachedMetadata(key: string): unknown | undefined {
+  const entry = metadataCache.get(key)
+  if (!entry) return undefined
+  if (entry.expiresAt <= Date.now()) {
+    removeMetadataCacheEntry(key)
+    return undefined
+  }
+  // Refresh recency while keeping the original expiry (TTL, not sliding TTL).
+  metadataCache.delete(key)
+  metadataCache.set(key, entry)
+  return entry.value
 }
 
 export function sftpParentPath(path: string): string {
@@ -243,23 +324,15 @@ export function sftpParentPath(path: string): string {
 export function clearSftpMetadataCache(): void {
   metadataRevision += 1
   metadataCache.clear()
+  metadataPathIndex.clear()
   metadataInflight.clear()
   activeMetadataScope = null
 }
 
 function invalidateMetadataPath(scope: string, path: string): void {
-  for (const endpoint of ['list', 'stat'] as const) {
-    const prefix = endpoint + '\u0000' + scope + '\u0000'
-    let normalizedPath = path || '/'
-    while (normalizedPath.length > 1 && normalizedPath.endsWith('/'))
-      normalizedPath = normalizedPath.slice(0, -1)
-    for (const key of metadataCache.keys()) {
-      const cachedPath = key.slice(prefix.length)
-      if (cachedPath === path || cachedPath.startsWith(normalizedPath + '/')) {
-        metadataCache.delete(key)
-      }
-    }
-  }
+  const keys = metadataPathIndex.get(scope)?.get(normalizeMetadataPath(path))
+  if (!keys) return
+  for (const key of [...keys]) removeMetadataCacheEntry(key)
 }
 
 export function invalidateSftpMetadata(endpoint: string, body: Record<string, unknown>): void {
@@ -307,9 +380,8 @@ export async function sftpApi<T = unknown>(
   const cacheKey = isMetadataRequest ? sftpMetadataCacheKey(endpoint, body) : ''
   const requestRevision = metadataRevision
   if (isMetadataRequest) {
-    const cached = metadataCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) return cached.value as T
-    if (cached) metadataCache.delete(cacheKey)
+    const cached = getCachedMetadata(cacheKey)
+    if (cached !== undefined) return cached as T
     const pending = metadataInflight.get(cacheKey)
     if (pending) return (await pending) as T
   }
@@ -328,7 +400,12 @@ export async function sftpApi<T = unknown>(
     const value = json.data as T
     if (isMetadataRequest) {
       if (requestRevision === metadataRevision) {
-        metadataCache.set(cacheKey, { expiresAt: Date.now() + SFTP_METADATA_CACHE_TTL_MS, value })
+        cacheMetadata(cacheKey, {
+          expiresAt: Date.now() + SFTP_METADATA_CACHE_TTL_MS,
+          value,
+          scope,
+          path: normalizeMetadataPath(body.path),
+        })
       }
     } else {
       invalidateSftpMetadata(endpoint, body)

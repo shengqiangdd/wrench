@@ -53,6 +53,21 @@ describe('SFTP metadata cache', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(1)
   })
 
+  it('限制缓存容量并按最近使用顺序淘汰', async () => {
+    for (let index = 0; index < 128; index += 1) {
+      await sftpApi('list', { sessionId: 's1', connectionId: 'c1', path: `/entry-${index}` })
+    }
+
+    // Touch the oldest entry so it becomes MRU before the next insertion.
+    await sftpApi('list', { sessionId: 's1', connectionId: 'c1', path: '/entry-0' })
+    await sftpApi('list', { sessionId: 's1', connectionId: 'c1', path: '/entry-128' })
+    expect(mockedFetch).toHaveBeenCalledTimes(129)
+
+    await sftpApi('list', { sessionId: 's1', connectionId: 'c1', path: '/entry-0' })
+    await sftpApi('list', { sessionId: 's1', connectionId: 'c1', path: '/entry-1' })
+    expect(mockedFetch).toHaveBeenCalledTimes(130)
+  })
+
   it('切换连接清空缓存，写入成功失效目标文件和父目录', async () => {
     const body = { sessionId: 's1', connectionId: 'c1', path: '/dir/file' }
     await sftpApi('stat', body)
