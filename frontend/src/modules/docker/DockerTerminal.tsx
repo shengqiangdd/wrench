@@ -304,7 +304,10 @@ export default function DockerTerminal({
         const outputOff = client.on('docker_shell_output', (msg) => {
           if (msg.connectionId !== connectionId) return
           try {
-            const ready = ansiBuf.push(atob(msg.data as string))
+            const raw = msg.data
+            const text =
+              raw instanceof Uint8Array ? new TextDecoder().decode(raw) : atob(String(raw ?? ''))
+            const ready = ansiBuf.push(text)
             if (ready) term.write(ready)
           } catch {
             const ready = ansiBuf.push(String(msg.data ?? ''))

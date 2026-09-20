@@ -94,6 +94,7 @@ import {
   isBinaryFile,
   isBinaryContent,
   sftpApi,
+  clearSftpMetadataCache,
   splitDroppedItems,
   hasUploadableDrag,
   type SortKey,
@@ -566,6 +567,7 @@ function SftpBrowserInner({
 
   // sessionId 变化时加载
   useEffect(() => {
+    clearSftpMetadataCache()
     if (sessionId) {
       const startPath = initialPath || '/'
       const t1 = setTimeout(() => {

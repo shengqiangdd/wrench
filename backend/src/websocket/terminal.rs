@@ -41,29 +41,28 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Pre-allocate a JSON message buffer for terminal output.
-/// Avoids repeated serde_json::json! macro allocations in hot paths.
-fn build_terminal_output_msg(connection_id: &str, data: &str) -> axum::extract::ws::Utf8Bytes {
-    // Use string concatenation instead of json! macro for hot path
-    let mut buf = String::with_capacity(128 + data.len());
-    buf.push_str(r#"{"type":"data","connectionId":""#);
-    buf.push_str(connection_id);
-    buf.push_str(r#"","data":""#);
-    buf.push_str(data);
-    buf.push_str(r#""}"#);
-    txt(buf)
+/// Binary PTY output frame: `[kind][connection-id length (u16 BE)][id][bytes]`.
+/// Control messages remain JSON, while raw PTY bytes avoid base64 overhead.
+const PTY_BINARY_SSH: u8 = 1;
+const PTY_BINARY_DOCKER: u8 = 2;
+
+fn build_pty_output_frame(kind: u8, connection_id: &str, data: &[u8]) -> Option<Vec<u8>> {
+    let id = connection_id.as_bytes();
+    let id_len = u16::try_from(id.len()).ok()?;
+    let mut frame = Vec::with_capacity(3 + id.len() + data.len());
+    frame.push(kind);
+    frame.extend_from_slice(&id_len.to_be_bytes());
+    frame.extend_from_slice(id);
+    frame.extend_from_slice(data);
+    Some(frame)
 }
 
-fn build_docker_output_msg(connection_id: &str, container_id: &str, data: &str) -> axum::extract::ws::Utf8Bytes {
-    let mut buf = String::with_capacity(200 + data.len());
-    buf.push_str(r#"{"type":"docker_shell_output","connectionId":""#);
-    buf.push_str(connection_id);
-    buf.push_str(r#"","containerId":""#);
-    buf.push_str(container_id);
-    buf.push_str(r#"","data":""#);
-    buf.push_str(data);
-    buf.push_str(r#""}"#);
-    txt(buf)
+async fn send_pty_output(socket: &mut WebSocket, kind: u8, connection_id: &str, data: &[u8]) -> bool {
+    let Some(frame) = build_pty_output_frame(kind, connection_id, data) else {
+        warn!("PTY connection id is too long for binary frame");
+        return false;
+    };
+    socket.send(Message::Binary(frame.into())).await.is_ok()
 }
 
 /// 日志跟随（logtail）的会话键：带空间前缀，避免猜到 id 就能掐掉别人的跟随进程。
@@ -613,10 +612,8 @@ async fn handle_terminal_connect(
 
             // 输出批处理：减少 Docker 动态进度产生的 WebSocket 帧和前端重绘。
             _ = output_tick.tick(), if !output_buf.is_empty() => {
-                let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buf);
-                output_buf.clear();
-                let output = build_terminal_output_msg(&connection_id, &encoded);
-                if socket.send(Message::Text(output)).await.is_err() {
+                let data = std::mem::take(&mut output_buf);
+                if !send_pty_output(socket, PTY_BINARY_SSH, &connection_id, &data).await {
                     break;
                 }
             }
@@ -628,20 +625,16 @@ async fn handle_terminal_connect(
                         output_buf.extend_from_slice(data);
                         // 大块输出立即发送，避免延迟和内存增长。
                         if output_buf.len() >= 32 * 1024 {
-                            let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buf);
-                            output_buf.clear();
-                            let output = build_terminal_output_msg(&connection_id, &encoded);
-                            if socket.send(Message::Text(output)).await.is_err() {
+                            let data = std::mem::take(&mut output_buf);
+                            if !send_pty_output(socket, PTY_BINARY_SSH, &connection_id, &data).await {
                                 break;
                             }
                         }
                     }
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
                         if !output_buf.is_empty() {
-                            let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buf);
-                            output_buf.clear();
-                            let output = build_terminal_output_msg(&connection_id, &encoded);
-                            let _ = socket.send(Message::Text(output)).await;
+                            let data = std::mem::take(&mut output_buf);
+                            let _ = send_pty_output(socket, PTY_BINARY_SSH, &connection_id, &data).await;
                         }
                         info!("SSH channel closed (connection: {})", connection_id);
                         close_reason = "closed";
@@ -649,10 +642,8 @@ async fn handle_terminal_connect(
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         if !output_buf.is_empty() {
-                            let encoded = base64::engine::general_purpose::STANDARD.encode(&output_buf);
-                            output_buf.clear();
-                            let output = build_terminal_output_msg(&connection_id, &encoded);
-                            let _ = socket.send(Message::Text(output)).await;
+                            let data = std::mem::take(&mut output_buf);
+                            let _ = send_pty_output(socket, PTY_BINARY_SSH, &connection_id, &data).await;
                         }
                         info!("SSH shell exited with status: {}", exit_status);
                         close_reason = "exit";
@@ -1170,9 +1161,7 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, spac
             msg = channel.wait() => {
                 match msg {
                     Some(russh::ChannelMsg::Data { ref data }) => {
-                        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
-                        let output = build_docker_output_msg(&connection_id, &container_id, &encoded);
-                        if socket.send(Message::Text(output)).await.is_err() {
+                        if !send_pty_output(socket, PTY_BINARY_DOCKER, &connection_id, data).await {
                             break;
                         }
                     }
@@ -1212,7 +1201,7 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, spac
 
 #[cfg(test)]
 mod tests {
-    use super::logtail_key;
+    use super::{build_pty_output_frame, logtail_key, PTY_BINARY_SSH};
 
     /// 跟随日志的会话键必须带空间前缀：否则猜到 connectionId + 路径就能掐掉
     /// 别人的 tail -f 进程。
@@ -1223,5 +1212,20 @@ mod tests {
         assert_ne!(a, b);
         assert!(a.starts_with("space-a:"));
         assert_eq!(a, "space-a:conn-1:/var/log/syslog");
+    }
+
+    #[test]
+    fn pty_binary_frame_preserves_kind_connection_and_bytes() {
+        let frame = build_pty_output_frame(PTY_BINARY_SSH, "conn-1", b"\x1b[31mhi\0").unwrap();
+        assert_eq!(frame[0], PTY_BINARY_SSH);
+        assert_eq!(u16::from_be_bytes([frame[1], frame[2]]), 6);
+        assert_eq!(&frame[3..9], b"conn-1");
+        assert_eq!(&frame[9..], b"\x1b[31mhi\0");
+    }
+
+    #[test]
+    fn pty_binary_frame_rejects_oversized_connection_id() {
+        let id = "x".repeat(usize::from(u16::MAX) + 1);
+        assert!(build_pty_output_frame(PTY_BINARY_SSH, &id, b"data").is_none());
     }
 }

@@ -24,6 +24,13 @@ interface SessionInfo {
   username: string
 }
 
+type ConnectionLifecycleStatus = 'connecting' | 'connected' | 'closing' | 'disconnected'
+interface ConnectionLifecycle {
+  generation: number
+  status: ConnectionLifecycleStatus
+  pending?: Promise<string | null>
+}
+
 /** 持久化的连接状态 */
 interface PersistedConnectionState {
   connectionId: string
@@ -66,8 +73,8 @@ const POOL_DEFAULTS: PoolConfig = {
 
 class SshSessionManager {
   private sessions = new Map<string, SessionInfo>()
-  /** 同一 connectionId 的并发 SFTP 自动连接去重 */
-  private pendingSftp = new Map<string, Promise<string | null>>()
+  /** SSH 终端和 SFTP 自动恢复共用的连接级生命周期。 */
+  private connectionLifecycle = new Map<string, ConnectionLifecycle>()
   private wsClient: WsClient | null = null
   private warmupConfig: WarmupConfig = { ...WARMUP_DEFAULTS }
   private warmupTimer: ReturnType<typeof setTimeout> | null = null
@@ -84,6 +91,47 @@ class SshSessionManager {
   private _connectHistory: boolean[] = []
   /** 最近一次连接失败的错误类型 */
   private _lastConnectError: string | null = null
+
+  private lifecycleFor(connectionId: string): ConnectionLifecycle {
+    let lifecycle = this.connectionLifecycle.get(connectionId)
+    if (!lifecycle) {
+      lifecycle = { generation: 0, status: 'disconnected' }
+      this.connectionLifecycle.set(connectionId, lifecycle)
+    }
+    return lifecycle
+  }
+
+  private beginConnection(connectionId: string, forceNew: boolean) {
+    const lifecycle = this.lifecycleFor(connectionId)
+    lifecycle.generation += 1
+    lifecycle.status = 'connecting'
+    if (forceNew) lifecycle.pending = undefined
+    return { lifecycle, generation: lifecycle.generation }
+  }
+
+  private isCurrentAttempt(connectionId: string, generation: number) {
+    return this.lifecycleFor(connectionId).generation === generation
+  }
+
+  private markConnected(connectionId: string, generation: number) {
+    const lifecycle = this.lifecycleFor(connectionId)
+    if (lifecycle.generation !== generation || lifecycle.status === 'closing') return false
+    lifecycle.status = 'connected'
+    return true
+  }
+
+  private markDisconnected(connectionId: string, generation?: number) {
+    if (generation === undefined) return
+    const lifecycle = this.lifecycleFor(connectionId)
+    if (lifecycle.generation === generation) lifecycle.status = 'disconnected'
+  }
+
+  private discardStaleSession(sessionId: string) {
+    // ensure may return an existing backend connection; never disconnect one another owner registered.
+    const storeSession = useSshStore.getState().sessions.find((session) => session.id === sessionId)
+    if (this.sessions.has(sessionId) || storeSession?.status === 'connected') return
+    this.wsClient?.send({ type: 'disconnect', connectionId: sessionId })
+  }
 
   /**
    * 设置 WS 客户端（应用启动时调用）
@@ -156,9 +204,9 @@ class SshSessionManager {
       // 静默预热（不触发 UI 状态变化）
       try {
         if (state.type === 'sftp') {
-          await this.createSftpSession(state.connectionId)
+          await this.getOrCreateSftpSession(state.connectionId)
         } else {
-          await this.createSshSession(state.connectionId)
+          await this.getOrCreateSshSession(state.connectionId)
         }
       } catch {
         // 预热失败静默忽略，用户使用时再正式连接
@@ -451,6 +499,8 @@ class SshSessionManager {
     },
   ): Promise<string | null> {
     const { forceNew = false, onStatus } = options || {}
+    const lifecycle = this.lifecycleFor(connectionId)
+    if (!forceNew && lifecycle.pending) return lifecycle.pending
 
     // 1. 检查是否有可复用的 session
     if (!forceNew) {
@@ -461,8 +511,11 @@ class SshSessionManager {
       }
     }
 
-    // 2. 创建新连接
-    return this.createSshSession(connectionId, onStatus)
+    // 2. 创建新连接。forceNew 保持显式绕过 pending 的语义。
+    const attempt = this.beginConnection(connectionId, forceNew)
+    const task = this.createSshSession(connectionId, onStatus, attempt.generation)
+    if (!forceNew) this.trackPending(connectionId, attempt.lifecycle, task)
+    return task
   }
 
   /**
@@ -482,32 +535,41 @@ class SshSessionManager {
   ): Promise<string | null> {
     const { forceNew = false, onStatus } = options || {}
 
-    // 同一连接的自动恢复可能由多个 effect/StrictMode 回调同时触发。
-    // 在第一次请求完成前共享同一个 Promise，避免重复创建 SFTP/SSH 后端会话。
-    if (!forceNew) {
-      const pending = this.pendingSftp.get(connectionId)
-      if (pending) return pending
-    }
+    const lifecycle = this.lifecycleFor(connectionId)
+    if (!forceNew && lifecycle.pending) return lifecycle.pending
 
-    const task = this.getOrCreateSftpSessionInternal(connectionId, forceNew, onStatus)
-    if (!forceNew) {
-      this.pendingSftp.set(connectionId, task)
-      void task.then(
-        () => {
-          if (this.pendingSftp.get(connectionId) === task) this.pendingSftp.delete(connectionId)
-        },
-        () => {
-          if (this.pendingSftp.get(connectionId) === task) this.pendingSftp.delete(connectionId)
-        },
-      )
-    }
+    const attempt = this.beginConnection(connectionId, forceNew)
+    const task = this.getOrCreateSftpSessionInternal(
+      connectionId,
+      forceNew,
+      onStatus,
+      attempt.generation,
+    )
+    if (!forceNew) this.trackPending(connectionId, attempt.lifecycle, task)
     return task
+  }
+
+  private trackPending(
+    connectionId: string,
+    lifecycle: ConnectionLifecycle,
+    task: Promise<string | null>,
+  ) {
+    lifecycle.pending = task
+    void task.then(
+      () => {
+        if (this.lifecycleFor(connectionId).pending === task) lifecycle.pending = undefined
+      },
+      () => {
+        if (this.lifecycleFor(connectionId).pending === task) lifecycle.pending = undefined
+      },
+    )
   }
 
   private async getOrCreateSftpSessionInternal(
     connectionId: string,
     forceNew: boolean,
     onStatus?: (msg: string) => void,
+    generation?: number,
   ): Promise<string | null> {
     // 1. 检查是否有可复用的 SSH/SFTP session
     if (!forceNew) {
@@ -516,11 +578,14 @@ class SshSessionManager {
         onStatus?.('检测到已有连接，验证 SFTP...')
         const sftpReady = await this.verifySftpReady(existingSession.id)
         if (sftpReady) {
+          if (generation !== undefined && !this.isCurrentAttempt(connectionId, generation))
+            return null
           onStatus?.('SFTP 已就绪，复用现有连接')
           if (!this.sessions.has(existingSession.id)) {
             this.sessions.set(existingSession.id, existingSession)
             this.savePersistedState()
           }
+          if (generation !== undefined) this.markConnected(connectionId, generation)
           return existingSession.id
         }
         onStatus?.('SFTP 未就绪，创建新连接...')
@@ -528,7 +593,7 @@ class SshSessionManager {
     }
 
     // 2. 创建新的 SFTP session
-    return this.createSftpSession(connectionId, onStatus)
+    return this.createSftpSession(connectionId, onStatus, generation)
   }
 
   /**
@@ -608,6 +673,7 @@ class SshSessionManager {
   private async createSshSession(
     connectionId: string,
     onStatus?: (msg: string) => void,
+    generation?: number,
   ): Promise<string | null> {
     const conn = useSshStore.getState().getConnectionById(connectionId)
     if (!conn || !this.wsClient) return null
@@ -633,6 +699,11 @@ class SshSessionManager {
         password: decryptedConn.password,
         privateKey: decryptedConn.privateKey,
       })
+
+      if (generation !== undefined && !this.isCurrentAttempt(connectionId, generation)) {
+        this.discardStaleSession(sessionId)
+        return null
+      }
 
       useSshStore.getState().addSession({
         id: sessionId,
@@ -662,6 +733,7 @@ class SshSessionManager {
         port: conn.port,
         username: conn.username,
       })
+      if (generation !== undefined) this.markConnected(connectionId, generation)
 
       // 记录成功
       this.recordConnectResult(true)
@@ -675,6 +747,7 @@ class SshSessionManager {
       this.recordConnectResult(false, errorType)
       onStatus?.('')
       console.error('[SshSessionManager] SSH connect failed:', err)
+      this.markDisconnected(connectionId, generation)
       return null
     }
   }
@@ -685,6 +758,7 @@ class SshSessionManager {
   private async createSftpSession(
     connectionId: string,
     onStatus?: (msg: string) => void,
+    generation?: number,
   ): Promise<string | null> {
     const conn = useSshStore.getState().getConnectionById(connectionId)
     if (!conn || !this.wsClient) {
@@ -731,6 +805,11 @@ class SshSessionManager {
         throw new Error(json.error || json.msg || 'SSH connect failed')
       }
 
+      if (generation !== undefined && !this.isCurrentAttempt(connectionId, generation)) {
+        this.discardStaleSession(backendConnId)
+        return null
+      }
+
       useSshStore.getState().addSession({
         id: backendConnId,
         connectionId,
@@ -759,6 +838,7 @@ class SshSessionManager {
         port: conn.port,
         username: conn.username,
       })
+      if (generation !== undefined) this.markConnected(connectionId, generation)
 
       // 记录成功
       this.recordConnectResult(true)
@@ -772,6 +852,7 @@ class SshSessionManager {
       this.recordConnectResult(false, errorType)
       onStatus?.('')
       console.error('[SshSessionManager] SFTP createSession failed:', err)
+      this.markDisconnected(connectionId, generation)
       onStatus?.(`连接失败: ${errorType}`)
       return null
     }
@@ -787,6 +868,10 @@ class SshSessionManager {
    * 断开指定连接的所有 session
    */
   disconnectAll(connectionId: string) {
+    const lifecycle = this.lifecycleFor(connectionId)
+    lifecycle.generation += 1
+    lifecycle.status = 'closing'
+    lifecycle.pending = undefined
     const sessionsToDisconnect: string[] = []
 
     for (const [id, session] of this.sessions) {
@@ -806,6 +891,7 @@ class SshSessionManager {
 
     // 清除持久化状态
     this.clearPersistedState(connectionId)
+    lifecycle.status = 'disconnected'
   }
 
   /**

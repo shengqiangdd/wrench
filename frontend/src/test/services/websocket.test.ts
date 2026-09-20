@@ -36,7 +36,7 @@ class MockWebSocket {
 
 vi.stubGlobal('WebSocket', MockWebSocket)
 
-import { WsClient, getWsClientSync } from '../../services/websocket'
+import { decodeTerminalBinaryFrame, WsClient, getWsClientSync } from '../../services/websocket'
 
 /** Helper to access private ws property for testing */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -44,6 +44,28 @@ function getMockWs(client: WsClient): MockWebSocket {
   return (client as any).ws
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+describe('binary PTY frame compatibility', () => {
+  it('decodes SSH and Docker frames without base64', () => {
+    const id = new TextEncoder().encode('conn-1')
+    const payload = new Uint8Array([0x1b, 0x5b, 0x32, 0x6a])
+    const frame = new Uint8Array(3 + id.length + payload.length)
+    frame[0] = 1
+    frame[1] = 0
+    frame[2] = id.length
+    frame.set(id, 3)
+    frame.set(payload, 3 + id.length)
+    const decoded = decodeTerminalBinaryFrame(frame)
+    expect(decoded?.type).toBe('data')
+    expect(decoded?.connectionId).toBe('conn-1')
+    expect(Array.from(decoded?.data as Uint8Array)).toEqual(Array.from(payload))
+  })
+
+  it('rejects truncated or unknown frames', () => {
+    expect(decodeTerminalBinaryFrame(new Uint8Array([1, 0]))).toBeNull()
+    expect(decodeTerminalBinaryFrame(new Uint8Array([9, 0, 0]))).toBeNull()
+  })
+})
 
 describe('WsClient', () => {
   let client: WsClient

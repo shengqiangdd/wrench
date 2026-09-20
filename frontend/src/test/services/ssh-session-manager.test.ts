@@ -26,8 +26,10 @@ function installFakeWsClient() {
   const internals = sshSessionManager as unknown as {
     wsClient: unknown
     sessions: Map<string, unknown>
+    connectionLifecycle: Map<string, unknown>
   }
   internals.sessions.clear()
+  internals.connectionLifecycle.clear()
   internals.wsClient = {
     send: vi.fn(),
     request: vi.fn(),
@@ -70,6 +72,7 @@ function jsonResponse(body: unknown) {
 
 beforeEach(() => {
   vi.restoreAllMocks()
+  mockedFetch.mockClear()
   installFakeWsClient()
   useSshStore.setState({
     connections: [],
@@ -143,5 +146,70 @@ describe('getOrCreateSftpSession', () => {
 
     expect(sid).toBeNull()
     expect(statuses.some((s) => s.includes('连接失败'))).toBe(true)
+  })
+})
+
+describe('connection lifecycle coordination', () => {
+  it('shares one pending promise between concurrent SSH/SFTP recovery calls', async () => {
+    addConn()
+    let release!: (response: Response) => void
+    const response = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    mockedFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/ssh/ensure') return response
+      throw new Error(`unexpected call: ${url}`)
+    })
+
+    const first = sshSessionManager.getOrCreateSftpSession('c1')
+    const second = sshSessionManager.getOrCreateSftpSession('c1')
+    await vi.waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1))
+
+    release(jsonResponse({ success: true, data: { connection_id: 'shared-session' } }))
+    await expect(first).resolves.toBe('shared-session')
+    await expect(second).resolves.toBe('shared-session')
+  })
+
+  it('drops an old result after disconnect and cleans the backend session', async () => {
+    addConn()
+    let release!: (response: Response) => void
+    const response = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    mockedFetch.mockImplementation(async (url: string) => {
+      if (url === '/api/ssh/ensure') return response
+      throw new Error(`unexpected call: ${url}`)
+    })
+
+    const pending = sshSessionManager.getOrCreateSftpSession('c1')
+    sshSessionManager.disconnectAll('c1')
+    release(jsonResponse({ success: true, data: { connection_id: 'stale-session' } }))
+
+    await expect(pending).resolves.toBeNull()
+    expect(useSshStore.getState().sessions).toHaveLength(0)
+    expect(
+      (sshSessionManager as unknown as { wsClient: { send: ReturnType<typeof vi.fn> } }).wsClient
+        .send,
+    ).toHaveBeenCalledWith({ type: 'disconnect', connectionId: 'stale-session' })
+  })
+
+  it('keeps forceNew independent from the shared pending request', async () => {
+    addConn()
+    let firstRelease!: (response: Response) => void
+    const firstResponse = new Promise<Response>((resolve) => {
+      firstRelease = resolve
+    })
+    mockedFetch
+      .mockImplementationOnce(async () => firstResponse)
+      .mockResolvedValueOnce(
+        jsonResponse({ success: true, data: { connection_id: 'forced-session' } }),
+      )
+
+    const automatic = sshSessionManager.getOrCreateSftpSession('c1')
+    const forced = sshSessionManager.getOrCreateSftpSession('c1', { forceNew: true })
+    await expect(forced).resolves.toBe('forced-session')
+    firstRelease(jsonResponse({ success: true, data: { connection_id: 'old-session' } }))
+    await expect(automatic).resolves.toBeNull()
+    expect(mockedFetch).toHaveBeenCalledTimes(2)
   })
 })

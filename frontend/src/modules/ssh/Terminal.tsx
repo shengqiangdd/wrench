@@ -1168,11 +1168,18 @@ export default function TerminalView({
             return
           }
 
-          const raw = msg.data as string
+          const raw = msg.data
+          if (raw instanceof Uint8Array) {
+            // New backend path: raw PTY bytes, no base64 round-trip.
+            writePty(new TextDecoder().decode(raw))
+            return
+          }
+          const text = String(raw ?? '')
           try {
-            writePty(decodeURIComponent(escape(atob(raw))))
+            // Legacy backend path: JSON text with base64 data.
+            writePty(decodeURIComponent(escape(atob(text))))
           } catch {
-            writePty(raw)
+            writePty(text)
           }
         })
 

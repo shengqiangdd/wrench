@@ -243,7 +243,29 @@ function templateOptions(language: string): Completion[] {
   )
 }
 
-function symbolOptions(doc: string, prefix: string): Completion[] {
+const TEMPLATE_CACHE = new Map<string, Completion[]>()
+const SYMBOL_CACHE = new Map<string, readonly string[]>()
+let symbolCacheSize = 0
+const MAX_CACHED_DOCUMENT_CHARS = 256 * 1024
+const MAX_SYMBOL_CACHE_CHARS = 1024 * 1024
+const MAX_SYMBOL_CACHE_ENTRIES = 16
+const CACHEABLE_TEMPLATE_LANGUAGES = new Set([
+  ...Object.keys(TEMPLATES),
+  ...Object.values(LANGUAGE_ALIASES),
+])
+
+function cachedTemplateOptions(language: string): Completion[] {
+  // Unknown editor/plugin language identifiers are arbitrary strings; do not
+  // retain one module-level entry forever for each identifier.
+  if (!CACHEABLE_TEMPLATE_LANGUAGES.has(language)) return templateOptions(language)
+  const cached = TEMPLATE_CACHE.get(language)
+  if (cached) return cached
+  const options = templateOptions(language)
+  TEMPLATE_CACHE.set(language, options)
+  return options
+}
+
+function scanSymbolLabels(doc: string): readonly string[] {
   const symbols = new Set<string>()
   const identifierPattern = /\b[A-Za-z_$][\w$]*\b/g
   for (const match of doc.matchAll(identifierPattern)) {
@@ -251,8 +273,31 @@ function symbolOptions(doc: string, prefix: string): Completion[] {
     if (symbol.length >= 2 && !COMMON_WORDS.has(symbol)) symbols.add(symbol)
     if (symbols.size >= 80) break
   }
-
   return [...symbols]
+}
+
+function symbolOptions(doc: string, prefix: string, language: string): Completion[] {
+  // Keep this cache deliberately bounded. Large documents retain the existing
+  // behavior and are not retained in memory by the completion source.
+  const cacheKey = language + '\u0000' + doc
+  let labels = SYMBOL_CACHE.get(cacheKey)
+  if (!labels && doc.length <= MAX_CACHED_DOCUMENT_CHARS) {
+    labels = scanSymbolLabels(doc)
+    while (
+      SYMBOL_CACHE.size >= MAX_SYMBOL_CACHE_ENTRIES ||
+      symbolCacheSize + doc.length > MAX_SYMBOL_CACHE_CHARS
+    ) {
+      const oldest = SYMBOL_CACHE.keys().next().value
+      if (oldest === undefined) break
+      symbolCacheSize -= oldest.split('\u0000', 2)[1]?.length || 0
+      SYMBOL_CACHE.delete(oldest)
+    }
+    SYMBOL_CACHE.set(cacheKey, labels)
+    symbolCacheSize += doc.length
+  }
+  const symbols = labels || scanSymbolLabels(doc)
+
+  return symbols
     .filter((symbol) => symbol !== prefix)
     .map((label) => ({ label, type: 'variable' as const, detail: '当前文件符号' }))
 }
@@ -329,7 +374,10 @@ export function getLocalCompletionOptions(
   const normalizedLanguage = normalizeCompletionLanguage(language, fileName)
   if (isCompletionSuppressed(doc, pos, normalizedLanguage)) return null
 
-  const options = [...templateOptions(normalizedLanguage), ...symbolOptions(doc, token)]
+  const options = [
+    ...cachedTemplateOptions(normalizedLanguage),
+    ...symbolOptions(doc, token, normalizedLanguage),
+  ]
   const filteredOptions = token
     ? options.filter((option) => option.label.toLowerCase().startsWith(token.toLowerCase()))
     : options

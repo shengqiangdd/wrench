@@ -216,6 +216,79 @@ export interface SftpApiResponse<T = unknown> {
   error?: string
 }
 
+const SFTP_METADATA_CACHE_TTL_MS = 2000
+const metadataCache = new Map<string, { expiresAt: number; value: unknown }>()
+const metadataInflight = new Map<string, Promise<unknown>>()
+let activeMetadataScope: string | null = null
+let metadataRevision = 0
+
+function metadataScope(body: Record<string, unknown>): string {
+  return String(body.sessionId || '') + '\u0000' + String(body.connectionId || '')
+}
+
+export function sftpMetadataCacheKey(
+  endpoint: 'list' | 'stat',
+  body: Record<string, unknown>,
+): string {
+  return endpoint + '\u0000' + metadataScope(body) + '\u0000' + String(body.path || '')
+}
+
+export function sftpParentPath(path: string): string {
+  if (!path || path === '/') return '/'
+  const normalized = path.replace(/\/+$/, '') || '/'
+  const slash = normalized.lastIndexOf('/')
+  return slash <= 0 ? '/' : normalized.slice(0, slash)
+}
+
+export function clearSftpMetadataCache(): void {
+  metadataRevision += 1
+  metadataCache.clear()
+  metadataInflight.clear()
+  activeMetadataScope = null
+}
+
+function invalidateMetadataPath(scope: string, path: string): void {
+  for (const endpoint of ['list', 'stat'] as const) {
+    const prefix = endpoint + '\u0000' + scope + '\u0000'
+    let normalizedPath = path || '/'
+    while (normalizedPath.length > 1 && normalizedPath.endsWith('/'))
+      normalizedPath = normalizedPath.slice(0, -1)
+    for (const key of metadataCache.keys()) {
+      const cachedPath = key.slice(prefix.length)
+      if (cachedPath === path || cachedPath.startsWith(normalizedPath + '/')) {
+        metadataCache.delete(key)
+      }
+    }
+  }
+}
+
+export function invalidateSftpMetadata(endpoint: string, body: Record<string, unknown>): void {
+  metadataRevision += 1
+  const scope = metadataScope(body)
+  const path = String(body.path || '')
+  if (
+    endpoint === 'upload' ||
+    endpoint === 'mkdir' ||
+    endpoint === 'delete' ||
+    endpoint === 'chmod'
+  ) {
+    invalidateMetadataPath(scope, path)
+    invalidateMetadataPath(scope, sftpParentPath(path))
+  } else if (endpoint === 'rename') {
+    const from = String(body.from || '')
+    const to = String(body.to || '')
+    invalidateMetadataPath(scope, from)
+    invalidateMetadataPath(scope, to)
+    invalidateMetadataPath(scope, sftpParentPath(from))
+    invalidateMetadataPath(scope, sftpParentPath(to))
+  } else if (endpoint === 'batch-move') {
+    invalidateMetadataPath(scope, String(body.targetDir || ''))
+    for (const movedPath of Array.isArray(body.paths) ? body.paths : []) {
+      invalidateMetadataPath(scope, sftpParentPath(String(movedPath)))
+    }
+  }
+}
+
 /**
  * 通用 SFTP REST API 调用封装
  * 统一处理请求/响应格式和错误抛出
@@ -225,25 +298,49 @@ export async function sftpApi<T = unknown>(
   body: Record<string, unknown>,
   timeoutMs = 30000,
 ): Promise<T> {
+  const isMetadataRequest = endpoint === 'list' || endpoint === 'stat'
+  const scope = metadataScope(body)
+  if (isMetadataRequest && activeMetadataScope !== null && activeMetadataScope !== scope) {
+    clearSftpMetadataCache()
+  }
+  if (isMetadataRequest) activeMetadataScope = scope
+  const cacheKey = isMetadataRequest ? sftpMetadataCacheKey(endpoint, body) : ''
+  const requestRevision = metadataRevision
+  if (isMetadataRequest) {
+    const cached = metadataCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) return cached.value as T
+    if (cached) metadataCache.delete(cacheKey)
+    const pending = metadataInflight.get(cacheKey)
+    if (pending) return (await pending) as T
+  }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await authedFetch(`/api/sftp/${endpoint}`, {
+  const request = (async (): Promise<T> => {
+    const res = await authedFetch('/api/sftp/' + endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal,
     })
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-    }
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText)
     const json: SftpApiResponse<T> = await res.json()
-    if (!json.success) {
-      throw new Error(json.error || json.msg || 'SFTP 操作失败')
+    if (!json.success) throw new Error(json.error || json.msg || 'SFTP 操作失败')
+    const value = json.data as T
+    if (isMetadataRequest) {
+      if (requestRevision === metadataRevision) {
+        metadataCache.set(cacheKey, { expiresAt: Date.now() + SFTP_METADATA_CACHE_TTL_MS, value })
+      }
+    } else {
+      invalidateSftpMetadata(endpoint, body)
     }
-    return json.data as T
+    return value
+  })()
+  if (isMetadataRequest) metadataInflight.set(cacheKey, request)
+  try {
+    return await request
   } finally {
     clearTimeout(timer)
+    if (isMetadataRequest) metadataInflight.delete(cacheKey)
   }
 }
 

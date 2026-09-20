@@ -23,6 +23,22 @@ type ErrorHandler = (error: string) => void
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
 
+/** Decode the compact binary PTY frame emitted by the backend. */
+export function decodeTerminalBinaryFrame(
+  data: ArrayBuffer | Uint8Array,
+): Record<string, unknown> | null {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
+  if (bytes.length < 3) return null
+  const kind = bytes[0]
+  const idLength = (bytes[1]! << 8) | bytes[2]!
+  const payloadStart = 3 + idLength
+  if (payloadStart > bytes.length) return null
+  const connectionId = new TextDecoder().decode(bytes.subarray(3, payloadStart))
+  const type = kind === 1 ? 'data' : kind === 2 ? 'docker_shell_output' : null
+  if (!type) return null
+  return { type, connectionId, data: bytes.slice(payloadStart) }
+}
+
 import { AUTH_REQUIRED_EVENT, buildWsUrl } from './auth'
 
 interface PendingRequest {
@@ -228,6 +244,8 @@ export class WsClient {
 
     try {
       this.ws = new WebSocket(this.url)
+      // Prefer ArrayBuffer so binary PTY frames preserve ordering and avoid Blob copies.
+      this.ws.binaryType = 'arraybuffer'
       console.log(`[WsClient] WebSocket created, readyState=${this.ws.readyState}`)
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : 'WebSocket 创建失败'
@@ -290,11 +308,28 @@ export class WsClient {
         this.updateHeartbeatFromRtt()
       }
 
+      if (typeof event.data !== 'string') {
+        const binary =
+          event.data instanceof ArrayBuffer
+            ? decodeTerminalBinaryFrame(event.data)
+            : event.data instanceof Uint8Array
+              ? decodeTerminalBinaryFrame(event.data)
+              : null
+        if (binary) this.dispatch(binary)
+        else if (typeof Blob !== 'undefined' && event.data instanceof Blob) {
+          void event.data.arrayBuffer().then((buffer) => {
+            const decoded = decodeTerminalBinaryFrame(buffer)
+            if (decoded && this.ws === ws) this.dispatch(decoded)
+          })
+        }
+        return
+      }
+
       try {
-        const data = JSON.parse(event.data as string)
+        const data = JSON.parse(event.data)
         this.dispatch(data)
       } catch {
-        // 忽略无法解析的消息
+        // 兼容旧服务端之外的无效文本消息：安全忽略
       }
     }
 

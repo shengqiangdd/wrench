@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ClipboardPaste, X } from 'lucide-react'
 import {
   analyzePaste,
@@ -42,7 +42,7 @@ export function TerminalPasteDialog({ mode, text, reason, onSubmit, onClose }: P
     if (mode === 'reader') textareaRef.current?.focus()
   }, [mode])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
