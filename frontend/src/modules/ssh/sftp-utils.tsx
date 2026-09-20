@@ -335,10 +335,22 @@ function invalidateMetadataPath(scope: string, path: string): void {
   for (const key of [...keys]) removeMetadataCacheEntry(key)
 }
 
+function invalidateMetadataInflight(scope: string, paths: string[]): void {
+  const invalidatedPaths = new Set(paths.map(normalizeMetadataPath))
+  const scopeMarker = `\u0000${scope}\u0000`
+  for (const key of [...metadataInflight.keys()]) {
+    const markerIndex = key.indexOf(scopeMarker)
+    if (markerIndex === -1) continue
+    const keyPath = key.slice(markerIndex + scopeMarker.length)
+    if (invalidatedPaths.has(keyPath)) metadataInflight.delete(key)
+  }
+}
+
 export function invalidateSftpMetadata(endpoint: string, body: Record<string, unknown>): void {
   metadataRevision += 1
   const scope = metadataScope(body)
   const path = String(body.path || '')
+  const inflightPaths: string[] = []
   if (
     endpoint === 'upload' ||
     endpoint === 'mkdir' ||
@@ -347,6 +359,7 @@ export function invalidateSftpMetadata(endpoint: string, body: Record<string, un
   ) {
     invalidateMetadataPath(scope, path)
     invalidateMetadataPath(scope, sftpParentPath(path))
+    inflightPaths.push(path, sftpParentPath(path))
   } else if (endpoint === 'rename') {
     const from = String(body.from || '')
     const to = String(body.to || '')
@@ -354,12 +367,18 @@ export function invalidateSftpMetadata(endpoint: string, body: Record<string, un
     invalidateMetadataPath(scope, to)
     invalidateMetadataPath(scope, sftpParentPath(from))
     invalidateMetadataPath(scope, sftpParentPath(to))
+    inflightPaths.push(from, to, sftpParentPath(from), sftpParentPath(to))
   } else if (endpoint === 'batch-move') {
-    invalidateMetadataPath(scope, String(body.targetDir || ''))
+    const targetDir = String(body.targetDir || '')
+    invalidateMetadataPath(scope, targetDir)
+    inflightPaths.push(targetDir)
     for (const movedPath of Array.isArray(body.paths) ? body.paths : []) {
-      invalidateMetadataPath(scope, sftpParentPath(String(movedPath)))
+      const parent = sftpParentPath(String(movedPath))
+      invalidateMetadataPath(scope, parent)
+      inflightPaths.push(parent)
     }
   }
+  invalidateMetadataInflight(scope, inflightPaths)
 }
 
 /**

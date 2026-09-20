@@ -7,6 +7,7 @@ vi.mock('../../services/auth', () => ({
 import { authedFetch } from '../../services/auth'
 import {
   clearSftpMetadataCache,
+  invalidateSftpMetadata,
   sftpApi,
   sftpMetadataCacheKey,
   sftpParentPath,
@@ -93,6 +94,26 @@ describe('SFTP metadata cache', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(130)
   })
 
+  it('写操作失效目标路径的旧 metadata 请求', async () => {
+    let releaseList!: (value: Response) => void
+    const pendingList = new Promise<Response>((resolve) => {
+      releaseList = resolve
+    })
+    mockedFetch
+      .mockImplementationOnce(async () => pendingList)
+      .mockResolvedValue(response(['fresh']))
+    const body = { sessionId: 's1', connectionId: 'c1', path: '/tmp/file' }
+    const staleList = sftpApi('list', { ...body, path: '/tmp' })
+    await vi.waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1))
+    invalidateSftpMetadata('upload', body)
+
+    const freshList = sftpApi('list', { ...body, path: '/tmp' })
+    await expect(freshList).resolves.toEqual(['fresh'])
+    expect(mockedFetch).toHaveBeenCalledTimes(2)
+
+    releaseList(response(['stale']))
+    await expect(staleList).resolves.toEqual(['stale'])
+  })
   it('切换连接清空缓存，写入成功失效目标文件和父目录', async () => {
     const body = { sessionId: 's1', connectionId: 'c1', path: '/dir/file' }
     await sftpApi('stat', body)
