@@ -10,6 +10,7 @@ import {
   invalidateSftpMetadata,
   sftpApi,
   sftpMetadataCacheKey,
+  isSftpRequestCurrent,
   sftpParentPath,
 } from '../../modules/ssh/sftp-utils'
 
@@ -23,6 +24,13 @@ function response(data: unknown) {
     json: async () => ({ success: true, code: 0, msg: 'ok', data }),
   } as Response
 }
+
+describe('SFTP request lifecycle', () => {
+  it('accepts only the latest request response', () => {
+    expect(isSftpRequestCurrent(4, 4)).toBe(true)
+    expect(isSftpRequestCurrent(3, 4)).toBe(false)
+  })
+})
 
 describe('SFTP metadata cache', () => {
   beforeEach(() => {

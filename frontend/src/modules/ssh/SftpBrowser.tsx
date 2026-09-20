@@ -95,6 +95,7 @@ import {
   isBinaryContent,
   sftpApi,
   clearSftpMetadataCache,
+  isSftpRequestCurrent,
   splitDroppedItems,
   hasUploadableDrag,
   type SortKey,
@@ -506,6 +507,7 @@ function SftpBrowserInner({
   const [moveBusy, setMoveBusy] = useState(false)
 
   const retryCountRef = useRef(0)
+  const listRequestRef = useRef(0)
   const fileStore = useFileStore()
   const setActiveNav = useAppStore((s) => s.setActiveNav)
   const notifyRef = useRef<HTMLDivElement>(null)
@@ -522,6 +524,7 @@ function SftpBrowserInner({
   const listDir = useCallback(
     async function listDir(dirPath: string, retryOnNotReady = true) {
       if (!sessionId) return
+      const requestId = ++listRequestRef.current
       setLoading(true)
       setError(null)
       try {
@@ -529,11 +532,13 @@ function SftpBrowserInner({
           connectionId: sessionId,
           path: dirPath,
         })
+        if (!isSftpRequestCurrent(requestId, listRequestRef.current)) return
         setCurrentPath(dirPath)
         setEntries(files)
         setSessionLost(false)
         retryCountRef.current = 0
       } catch (err) {
+        if (!isSftpRequestCurrent(requestId, listRequestRef.current)) return
         const msg = (err as Error).message
         if (
           (msg.includes('SFTP_NOT_READY') || msg.includes('not ready')) &&
@@ -559,7 +564,9 @@ function SftpBrowserInner({
         }
         retryCountRef.current = 0
       } finally {
-        setLoading(false)
+        if (isSftpRequestCurrent(requestId, listRequestRef.current)) {
+          setLoading(false)
+        }
       }
     },
     [sessionId],
@@ -567,6 +574,8 @@ function SftpBrowserInner({
 
   // sessionId 变化时加载
   useEffect(() => {
+    // Invalidate an in-flight list before this session/path view is replaced.
+    listRequestRef.current += 1
     clearSftpMetadataCache()
     if (sessionId) {
       const startPath = initialPath || '/'
@@ -578,6 +587,7 @@ function SftpBrowserInner({
       retryCountRef.current = 0
       const t2 = setTimeout(() => listDir(startPath, true), 300)
       return () => {
+        listRequestRef.current += 1
         clearTimeout(t1)
         clearTimeout(t2)
       }
@@ -586,7 +596,10 @@ function SftpBrowserInner({
       setEntries([])
       setCurrentPath('/')
     }, 0)
-    return () => clearTimeout(t3)
+    return () => {
+      listRequestRef.current += 1
+      clearTimeout(t3)
+    }
   }, [sessionId, listDir, initialPath])
 
   // 路径变化时回调（用于持久化当前浏览路径）

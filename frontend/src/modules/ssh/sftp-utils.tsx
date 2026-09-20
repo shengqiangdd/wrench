@@ -321,6 +321,11 @@ export function sftpParentPath(path: string): string {
   return slash <= 0 ? '/' : normalized.slice(0, slash)
 }
 
+/** Only the latest directory request may update a mounted SFTP view. */
+export function isSftpRequestCurrent(requestId: number, latestRequestId: number): boolean {
+  return requestId === latestRequestId
+}
+
 export function clearSftpMetadataCache(): void {
   metadataRevision += 1
   metadataCache.clear()
