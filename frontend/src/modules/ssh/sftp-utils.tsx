@@ -342,7 +342,12 @@ function invalidateMetadataInflight(scope: string, paths: string[]): void {
     const markerIndex = key.indexOf(scopeMarker)
     if (markerIndex === -1) continue
     const keyPath = key.slice(markerIndex + scopeMarker.length)
-    if (invalidatedPaths.has(keyPath)) metadataInflight.delete(key)
+    if (
+      [...invalidatedPaths].some(
+        (path) => keyPath === path || keyPath.startsWith(path === '/' ? '/' : `${path}/`),
+      )
+    )
+      metadataInflight.delete(key)
   }
 }
 

@@ -114,6 +114,26 @@ describe('SFTP metadata cache', () => {
     releaseList(response(['stale']))
     await expect(staleList).resolves.toEqual(['stale'])
   })
+  it('目录失效会淘汰子树中的旧 metadata 请求', async () => {
+    let releaseList!: (value: Response) => void
+    const pendingList = new Promise<Response>((resolve) => {
+      releaseList = resolve
+    })
+    mockedFetch
+      .mockImplementationOnce(async () => pendingList)
+      .mockResolvedValue(response(['fresh']))
+    const body = { sessionId: 's1', connectionId: 'c1', path: '/tmp' }
+    const staleList = sftpApi('list', { ...body, path: '/tmp/sub' })
+    await vi.waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1))
+    invalidateSftpMetadata('delete', body)
+
+    const freshList = sftpApi('list', { ...body, path: '/tmp/sub' })
+    await expect(freshList).resolves.toEqual(['fresh'])
+    expect(mockedFetch).toHaveBeenCalledTimes(2)
+
+    releaseList(response(['stale']))
+    await expect(staleList).resolves.toEqual(['stale'])
+  })
   it('切换连接清空缓存，写入成功失效目标文件和父目录', async () => {
     const body = { sessionId: 's1', connectionId: 'c1', path: '/dir/file' }
     await sftpApi('stat', body)
