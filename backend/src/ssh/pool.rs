@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
 
 use russh::client;
 use russh::keys::key::PrivateKeyWithHashAlg;
@@ -322,7 +323,9 @@ impl SshSession {
     ///
     /// This keeps the historical unbounded behavior for generic SSH callers.
     pub async fn exec(&self, command: &str) -> Result<(String, String, u32), Box<dyn std::error::Error + Send + Sync>> {
-        let output = self.exec_limited(command, usize::MAX, usize::MAX).await?;
+        let output = self
+            .exec_with_limits(command, usize::MAX, usize::MAX, true, None)
+            .await?;
         Ok((output.stdout, output.stderr, output.exit_code))
     }
 
@@ -335,14 +338,35 @@ impl SshSession {
         max_stdout_bytes: usize,
         max_stderr_bytes: usize,
     ) -> Result<ExecOutput, Box<dyn std::error::Error + Send + Sync>> {
+        // Keep the bounded API path without a PTY so SSH preserves stderr.
+        self.exec_with_limits(
+            command,
+            max_stdout_bytes,
+            max_stderr_bytes,
+            false,
+            Some(Duration::from_secs(300)),
+        )
+        .await
+    }
+
+    async fn exec_with_limits(
+        &self,
+        command: &str,
+        max_stdout_bytes: usize,
+        max_stderr_bytes: usize,
+        request_pty: bool,
+        read_timeout: Option<Duration>,
+    ) -> Result<ExecOutput, Box<dyn std::error::Error + Send + Sync>> {
         self.touch_async().await;
         let mut lock = self.handle.lock().await;
         let handle = lock.as_mut().ok_or("SSH not connected")?;
 
         let mut channel = handle.channel_open_session().await?;
 
-        // Request PTY for better command compatibility
-        let _ = channel.request_pty(false, "xterm-256color", 80, 24, 0, 0, &[]).await;
+        if request_pty {
+            // Preserve the historical generic exec behavior.
+            let _ = channel.request_pty(false, "xterm-256color", 80, 24, 0, 0, &[]).await;
+        }
 
         channel.exec(true, command).await?;
 
@@ -353,22 +377,29 @@ impl SshSession {
         let mut stderr_truncated = false;
         let mut exit_code: u32 = 0;
 
-        loop {
-            match channel.wait().await {
-                Some(russh::ChannelMsg::Data { ref data }) => {
-                    stdout_truncated |= append_bounded(&mut stdout_buf, data, max_stdout_bytes);
+        let read_output = async {
+            loop {
+                match channel.wait().await {
+                    Some(russh::ChannelMsg::Data { ref data }) => {
+                        stdout_truncated |= append_bounded(&mut stdout_buf, data, max_stdout_bytes);
+                    }
+                    Some(russh::ChannelMsg::ExtendedData { ref data, .. }) => {
+                        stderr_truncated |= append_bounded(&mut stderr_buf, data, max_stderr_bytes);
+                    }
+                    Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
+                        exit_code = exit_status;
+                    }
+                    Some(russh::ChannelMsg::Eof) | None => break,
+                    _ => {}
                 }
-                Some(russh::ChannelMsg::ExtendedData { ref data, .. }) => {
-                    stderr_truncated |= append_bounded(&mut stderr_buf, data, max_stderr_bytes);
-                }
-                Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
-                    exit_code = exit_status;
-                }
-                Some(russh::ChannelMsg::Eof) | None => {
-                    break;
-                }
-                _ => {}
             }
+        };
+        if let Some(duration) = read_timeout {
+            timeout(duration, read_output)
+                .await
+                .map_err(|_| format!("SSH exec timed out after {} seconds", duration.as_secs()))?;
+        } else {
+            read_output.await;
         }
 
         let stdout = String::from_utf8_lossy(&stdout_buf).to_string();

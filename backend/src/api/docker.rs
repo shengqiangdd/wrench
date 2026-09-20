@@ -809,6 +809,12 @@ pub async fn compose_action(
             let data = result.stdout;
             let truncated = result.stdout_truncated || result.stderr_truncated;
             if action_cmd == "ps" {
+                if result.stdout_truncated {
+                    return Ok(axum::Json(serde_json::json!({
+                        "success": false,
+                        "error": "Compose service list exceeded the API output limit; narrow the project or service selection and retry"
+                    })));
+                }
                 let services = parse_compose_ps(&data);
                 Ok(axum::Json(serde_json::json!({
                     "success": true,
