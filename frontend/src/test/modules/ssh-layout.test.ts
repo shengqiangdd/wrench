@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  focusSshSftpPanel,
   focusSshTerminalInput,
   getSshTerminalPanelClass,
   SSH_SFTP_PANEL_CLASS,
@@ -39,5 +40,18 @@ it('focuses the input for the requested session instead of the first terminal', 
   expect(root.querySelector('[data-terminal-session="active"] textarea')).toBe(
     document.activeElement,
   )
+  root.remove()
+})
+
+it('focuses the SFTP panel once it is mounted', () => {
+  const root = document.createElement('div')
+  const panel = document.createElement('div')
+  panel.dataset.testid = 'ssh-sftp-panel'
+  panel.tabIndex = -1
+  root.appendChild(panel)
+  document.body.appendChild(root)
+
+  expect(focusSshSftpPanel(root)).toBe(true)
+  expect(document.activeElement).toBe(panel)
   root.remove()
 })

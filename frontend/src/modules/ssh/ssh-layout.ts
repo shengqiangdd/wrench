@@ -19,3 +19,11 @@ export function focusSshTerminalInput(sessionId: string, root: ParentNode = docu
   }
   return false
 }
+
+/** Focus the SFTP panel after it becomes visible on desktop or mobile. */
+export function focusSshSftpPanel(root: ParentNode = document): boolean {
+  const panel = root.querySelector<HTMLElement>('[data-testid="ssh-sftp-panel"]')
+  if (!panel) return false
+  panel.focus()
+  return document.activeElement === panel
+}

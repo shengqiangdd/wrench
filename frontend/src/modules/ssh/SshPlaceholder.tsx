@@ -16,7 +16,12 @@ import AiSidebar from './AiSidebar'
 import type { SshSession } from '../../types/ssh'
 import { useAiStore } from '../../stores/ai-store'
 import { presentSshError } from '../../utils/ssh-error'
-import { focusSshTerminalInput, getSshTerminalPanelClass, SSH_SFTP_PANEL_CLASS } from './ssh-layout'
+import {
+  focusSshSftpPanel,
+  focusSshTerminalInput,
+  getSshTerminalPanelClass,
+  SSH_SFTP_PANEL_CLASS,
+} from './ssh-layout'
 
 function SshErrorBanner({ error, onClose }: { error: string; onClose: () => void }) {
   const presentation = presentSshError(error)
@@ -519,9 +524,13 @@ export default function SshPlaceholder() {
                   onClick={() => {
                     if (sftpOpen) {
                       setSftpOpen(false)
+                      if (activeSession) {
+                        requestAnimationFrame(() => focusSshTerminalInput(activeSession.id))
+                      }
                     } else {
                       setAiOpen(false)
                       setSftpOpen(true)
+                      requestAnimationFrame(() => focusSshSftpPanel())
                     }
                   }}
                   className="flex items-center gap-1 px-3 py-2 text-xs text-slate-500 hover:text-slate-300"
@@ -611,7 +620,7 @@ export default function SshPlaceholder() {
 
               {/* SFTP 面板：桌面端与终端并排，移动端与终端互斥 */}
               {sftpOpen && !aiOpen && activeSession && (
-                <div data-testid="ssh-sftp-panel" className={SSH_SFTP_PANEL_CLASS}>
+                <div data-testid="ssh-sftp-panel" tabIndex={-1} className={SSH_SFTP_PANEL_CLASS}>
                   <SftpSidebar sessionId={activeSession.id} />
                 </div>
               )}
