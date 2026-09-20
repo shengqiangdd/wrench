@@ -4,7 +4,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::api_types::{SshConnectResponse, SshDisconnectRequest, SshExecRequest, SshExecResponse};
+use crate::api_types::{ExecCancelRequest, SshConnectResponse, SshDisconnectRequest, SshExecRequest, SshExecResponse};
 use crate::app_state::AppState;
 use crate::response::ApiResponse;
 use crate::space::SpaceCtx;
@@ -77,24 +77,55 @@ pub async fn exec_command(
     // Drop the read guard before awaiting (session is Arc)
     drop(conn);
 
-    // Execute command
-    match session.exec(command).await {
-        Ok((stdout, stderr, exit_code)) => {
-            // Audit log the command execution
+    let cancel = match body.request_id.as_deref() {
+        Some(id) => match state.register_exec(&space.id, id) {
+            Some(token) => Some(token),
+            None => return ApiResponse::error(409, "exec requestId is already running"),
+        },
+        None => None,
+    };
+    let result = if let Some(token) = cancel {
+        tokio::select! {
+            result = session.exec_limited(command, 2 * 1024 * 1024, 64 * 1024) => result,
+            _ = token.cancelled() => Err("SSH exec cancelled".into()),
+        }
+    } else {
+        session.exec_limited(command, 2 * 1024 * 1024, 64 * 1024).await
+    };
+    if let Some(id) = body.request_id.as_deref() {
+        state.finish_exec(&space.id, id);
+    }
+    match result {
+        Ok(output) => {
             let detail = serde_json::json!({
                 "action": "ssh_exec",
                 "command": command,
-                "exit_code": exit_code,
-                "stdout_len": stdout.len(),
-                "stderr_len": stderr.len(),
+                "exit_code": output.exit_code,
+                "stdout_len": output.stdout.len(),
+                "stderr_len": output.stderr.len(),
+                "stdout_truncated": output.stdout_truncated,
+                "stderr_truncated": output.stderr_truncated,
             });
             let ip = "0.0.0.0".to_string();
             state.add_audit_log("ssh_exec", detail, &ip, &space.id);
 
-            ApiResponse::success(SshExecResponse { stdout, stderr, exit_code: exit_code as i32 })
+            ApiResponse::success(SshExecResponse {
+                stdout: output.stdout,
+                stderr: output.stderr,
+                exit_code: output.exit_code as i32,
+            })
         }
         Err(e) => ApiResponse::error(500, &format!("SSH exec error: {}", e)),
     }
+}
+
+/// Cancel an in-flight SSH or Docker exec owned by this space.
+pub async fn cancel_exec(
+    State(state): State<Arc<AppState>>,
+    Extension(space): Extension<SpaceCtx>,
+    Json(body): Json<ExecCancelRequest>,
+) -> ApiResponse<bool> {
+    ApiResponse::success(state.cancel_exec(&space.id, &body.request_id))
 }
 
 /// Connect to an SSH server (POST /api/ssh/connect)

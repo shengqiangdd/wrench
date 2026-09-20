@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::Serialize;
+use tokio_util::sync::CancellationToken;
 
 use crate::config::AppConfig;
 use crate::db::Database;
@@ -71,6 +72,14 @@ pub(crate) fn quota_from_counts(
 }
 
 /// Shared application state accessible from all handlers.
+/// Low-cardinality counters for in-flight exec operations.
+#[derive(Default)]
+pub struct ExecMetrics {
+    pub started: AtomicU64,
+    pub completed: AtomicU64,
+    pub cancelled: AtomicU64,
+}
+
 pub struct AppState {
     pub config: AppConfig,
     pub db: Option<Database>,
@@ -82,6 +91,9 @@ pub struct AppState {
     pub jwt_service: RwLock<Option<JwtService>>,
     pub marketplace_cache: RwLock<Option<Vec<crate::models::PluginManifest>>>,
     pub active_logtails: DashMap<String, tokio::sync::oneshot::Sender<()>>,
+    /// In-flight exec operations, isolated by space and request id.
+    pub exec_cancellations: DashMap<String, CancellationToken>,
+    pub exec_metrics: Arc<ExecMetrics>,
     /// 门（door）运行时状态：门户口令与令牌版本。
     pub auth: RwLock<AuthRuntime>,
     /// 当前打开的 WebSocket 连接数（用于 `WRENCH_MAX_WS_CONNECTIONS` 闸门）。
@@ -305,6 +317,8 @@ impl AppState {
             ws_tokens: DashMap::new(),
             marketplace_cache: RwLock::new(None),
             active_logtails: DashMap::new(),
+            exec_cancellations: DashMap::new(),
+            exec_metrics: Arc::new(ExecMetrics::default()),
             auth: RwLock::new(auth),
             ws_connections: Arc::new(AtomicUsize::new(0)),
             db,
@@ -312,6 +326,47 @@ impl AppState {
             config,
             start_time: std::time::Instant::now(),
         })
+    }
+
+    pub fn exec_operation_key(space_id: &str, request_id: &str) -> String {
+        format!("{space_id}\u{001f}{request_id}")
+    }
+
+    /// Register an operation only when the caller supplied a non-empty id.
+    /// Re-registering the same id is rejected so an old operation cannot
+    /// accidentally finish and remove a newer one.
+    pub fn register_exec(&self, space_id: &str, request_id: &str) -> Option<CancellationToken> {
+        if request_id.trim().is_empty() {
+            return None;
+        }
+        let key = Self::exec_operation_key(space_id, request_id);
+        if self.exec_cancellations.contains_key(&key) {
+            return None;
+        }
+        let token = CancellationToken::new();
+        self.exec_cancellations.insert(key, token.clone());
+        self.exec_metrics.started.fetch_add(1, Ordering::Relaxed);
+        Some(token)
+    }
+
+    pub fn cancel_exec(&self, space_id: &str, request_id: &str) -> bool {
+        let key = Self::exec_operation_key(space_id, request_id);
+        self.exec_cancellations.get(&key).map(|entry| {
+            let token = entry.value();
+            let was_cancelled = token.is_cancelled();
+            token.cancel();
+            if !was_cancelled {
+                self.exec_metrics.cancelled.fetch_add(1, Ordering::Relaxed);
+            }
+            true
+        }).unwrap_or(false)
+    }
+
+    pub fn finish_exec(&self, space_id: &str, request_id: &str) {
+        let key = Self::exec_operation_key(space_id, request_id);
+        if self.exec_cancellations.remove(&key).is_some() {
+            self.exec_metrics.completed.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// 切换门户口令（DB 托管）并让所有旧令牌失效。
@@ -614,7 +669,8 @@ mod tests {
 
     /// 并发闸门：全局档 / 单空间档的边界，以及「0 = 不限」的语义。
     #[test]
-    fn session_quota_edges() {        // 两档都没到 → 放行
+    fn session_quota_edges() {
+        // 两档都没到 → 放行
         assert!(quota_from_counts(3, 2, 32, 8).is_none());
         // 单空间到顶（8/8）→ 报空间档
         let q = quota_from_counts(9, 8, 32, 8).expect("空间档应触顶");

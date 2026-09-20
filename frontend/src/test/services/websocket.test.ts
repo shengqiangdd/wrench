@@ -151,6 +151,40 @@ describe('WsClient', () => {
     expect(received).toHaveLength(1)
   })
 
+  it('flushes buffered terminal output before an explicit disconnect', async () => {
+    vi.useFakeTimers()
+    try {
+      const received: string[] = []
+      client.onTerminalOutput((data) => received.push(data))
+      client.bufferTerminalOutput('partial output')
+
+      client.disconnect()
+
+      expect(received).toEqual(['partial output'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('adapts burst threshold to measured RTT while keeping timer latency bounded', () => {
+    vi.useFakeTimers()
+    try {
+      const received: string[] = []
+      client.onTerminalOutput((data) => received.push(data))
+      client.bufferTerminalOutput('a'.repeat(8192))
+      expect(received).toEqual(['a'.repeat(8192)])
+
+      // Simulate a slow link: 12KB is retained as one batch, not flushed early.
+      ;(client as unknown as { _rttSamples: number[] })._rttSamples = [600, 600, 600]
+      client.bufferTerminalOutput('b'.repeat(8192))
+      expect(received).toEqual(['a'.repeat(8192)])
+      vi.advanceTimersByTime(16)
+      expect(received).toEqual(['a'.repeat(8192), 'b'.repeat(8192)])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('sends messages when connected', async () => {
     client.connect()
     await vi.waitFor(() => expect(client.status).toBe('connected'))

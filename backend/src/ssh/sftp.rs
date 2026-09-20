@@ -114,6 +114,7 @@ async fn open_sftp(session: &Arc<SshSession>) -> Result<Arc<SftpSession>, String
 /// enabling the frontend to follow directory symlinks on double-click.
 pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec<FileEntry>, String> {
     let sftp = open_sftp(session).await?;
+    let request_permit = session.acquire_sftp_permit().await;
     let abs_path = sftp
         .canonicalize(path)
         .await
@@ -145,6 +146,7 @@ pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec
             file_entry
         })
         .collect();
+    drop(request_permit);
 
     // Resolve symlink targets in parallel — each symlink needs up to 2 SSH roundtrips
     // (canonicalize + metadata). Use join_all to overlap them across the network.
@@ -160,8 +162,10 @@ pub async fn list_directory(session: &Arc<SshSession>, path: &str) -> Result<Vec
             .iter()
             .map(|&idx| {
                 let sftp = Arc::clone(&sftp);
+                let session = Arc::clone(session);
                 let path = entries[idx].path.clone();
                 async move {
+                    let _permit = session.acquire_sftp_permit().await;
                     // First try canonicalize (resolves relative symlinks)
                     match sftp.canonicalize(&path).await {
                         Ok(resolved) => match sftp.metadata(&resolved).await {
@@ -574,6 +578,7 @@ async fn sudo_mv(session: &Arc<SshSession>, from: &str, to: &str, sudo_password:
 /// Get file metadata (stat) via SFTP.
 pub async fn stat(session: &Arc<SshSession>, remote_path: &str) -> Result<FileEntry, String> {
     let sftp = open_sftp(session).await?;
+    let _permit = session.acquire_sftp_permit().await;
     let abs_path = sftp
         .canonicalize(remote_path)
         .await

@@ -88,9 +88,70 @@ async fn health_check_returns_200() {
     let req = Request::builder().uri("/api/health").body(Body::from("")).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+    let request_id = resp.headers().get("x-request-id").and_then(|value| value.to_str().ok());
+    assert!(request_id.is_some_and(|value| !value.is_empty()));
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(json["data"]["build"].as_str().is_some_and(|build| !build.is_empty()));
+}
+
+/// Cancellation tokens are isolated by space and request id.
+#[tokio::test]
+async fn exec_cancellation_registry_is_space_scoped() {
+    let state = AppState::new(temp_db_config()).await.unwrap();
+    let token = state.register_exec("space-a", "req-1").unwrap();
+    assert!(state.register_exec("space-a", "req-1").is_none());
+    let other_token = state.register_exec("space-b", "req-1").unwrap();
+    assert!(state.cancel_exec("space-b", "req-1"));
+    assert!(other_token.is_cancelled());
+    assert!(!token.is_cancelled());
+    assert_eq!(state.exec_metrics.started.load(std::sync::atomic::Ordering::Relaxed), 2);
+    assert_eq!(state.exec_metrics.cancelled.load(std::sync::atomic::Ordering::Relaxed), 1);
+    assert!(state.cancel_exec("space-a", "req-1"));
+    assert!(token.is_cancelled());
+    state.finish_exec("space-a", "req-1");
+    assert!(!state.cancel_exec("space-a", "req-1"));
+    assert_eq!(state.exec_metrics.completed.load(std::sync::atomic::Ordering::Relaxed), 1);
+}
+
+/// Metrics exposes low-cardinality exec lifecycle counters.
+#[tokio::test]
+async fn metrics_exposes_exec_counters() {
+    let mut config = temp_db_config();
+    config.require_auth = false;
+    config.auth_password = None;
+    let app = build_test_app_with(config).await;
+    let resp = app
+        .oneshot(with_connect_info(Request::builder().uri("/api/metrics").body(Body::empty()).unwrap()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["data"]["exec_started"], 0);
+    assert_eq!(json["data"]["exec_completed"], 0);
+    assert_eq!(json["data"]["exec_cancelled"], 0);
+    assert_eq!(json["data"]["exec_active"], 0);
+}
+
+/// Exec cancellation is exposed as a protected, space-scoped API.
+#[tokio::test]
+async fn exec_cancel_route_returns_cancellation_state() {
+    let mut config = temp_db_config();
+    config.require_auth = false;
+    let app = build_test_app_with(config).await;
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/exec/cancel")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"requestId":"missing"}"#))
+        .unwrap();
+    let resp = app.oneshot(with_connect_info(req)).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], true);
+    assert_eq!(json["data"], false);
 }
 
 /// Unknown routes return 404.

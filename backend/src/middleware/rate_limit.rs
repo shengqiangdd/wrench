@@ -55,6 +55,8 @@ impl TokenBucket {
 }
 
 /// Rate limiter with per-IP token buckets
+const MAX_RATE_LIMITER_CLIENTS: usize = 10_000;
+
 pub struct RateLimiter {
     buckets: Mutex<HashMap<String, Arc<TokenBucket>>>,
     max_requests: u64,
@@ -77,6 +79,13 @@ impl RateLimiter {
 
         let bucket = {
             let mut buckets = self.buckets.lock();
+            if !buckets.contains_key(key) && buckets.len() >= MAX_RATE_LIMITER_CLIENTS {
+                // Bound memory under many spoofed/public source IPs. The token
+                // bucket is best-effort state, so evicting one entry is safe.
+                if let Some(oldest) = buckets.keys().next().cloned() {
+                    buckets.remove(&oldest);
+                }
+            }
             buckets
                 .entry(key.to_string())
                 .or_insert_with(|| {

@@ -346,6 +346,8 @@ export class WsClient {
         this.connectTimeoutTimer = null
       }
       this.stopHeartbeat()
+      // Deliver the final PTY batch before dropping timers/state on socket close.
+      this.flushOutputBuffer()
       this.stopOutputFlush()
 
       if (this._status === 'connecting') {
@@ -382,6 +384,8 @@ export class WsClient {
 
   disconnect() {
     this.stopHeartbeat()
+    // Keep terminal output that arrived just before an explicit disconnect.
+    this.flushOutputBuffer()
     this.stopOutputFlush()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
@@ -605,10 +609,11 @@ export class WsClient {
    * 缓冲终端输出数据。达到阈值时立即 flush，否则延迟 flush。
    */
   bufferTerminalOutput(data: string) {
+    if (!data) return
     this.outputBuffer.push(data)
     this.outputBufferBytes += data.length
 
-    if (this.outputBufferBytes >= OUTPUT_BUFFER_THRESHOLD) {
+    if (this.outputBufferBytes >= this.outputBufferThreshold()) {
       this.flushOutputBuffer()
       return
     }
@@ -619,6 +624,23 @@ export class WsClient {
         this.flushOutputBuffer()
       }, OUTPUT_FLUSH_INTERVAL_MS)
     }
+  }
+
+  /**
+   * Increase the batch threshold only when the measured link is slow. The
+   * 16ms timer still bounds interactive latency, while slower links avoid
+   * producing many tiny xterm writes during a burst.
+   */
+  private outputBufferThreshold(): number {
+    const rtt = this.averageRtt
+    if (rtt >= 500) return OUTPUT_BUFFER_THRESHOLD * 2
+    if (rtt >= 100) return Math.round(OUTPUT_BUFFER_THRESHOLD * 1.5)
+    return OUTPUT_BUFFER_THRESHOLD
+  }
+
+  /** Flush output immediately (used before decoder/socket shutdown). */
+  flushTerminalOutput() {
+    this.flushOutputBuffer()
   }
 
   private flushOutputBuffer() {

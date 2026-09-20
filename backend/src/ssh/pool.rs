@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::Mutex;
-use tokio::time::{timeout, Duration};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
+use tokio::time::{Duration, timeout};
 
 use russh::client;
 use russh::keys::key::PrivateKeyWithHashAlg;
@@ -19,6 +19,10 @@ pub struct SshSession {
     last_used: Arc<Mutex<Instant>>,
     /// Cached SFTP session for re-use across operations.
     sftp_cache: Arc<Mutex<Option<Arc<SftpSession>>>>,
+    /// Serializes cache misses so concurrent first requests share one subsystem.
+    sftp_init_lock: Arc<Mutex<()>>,
+    /// Bounds metadata/stat requests sent concurrently over one SSH connection.
+    sftp_parallelism: Arc<Semaphore>,
 }
 
 // Default idle timeout: 30 minutes
@@ -105,6 +109,8 @@ impl SshSession {
             handle: Arc::new(Mutex::new(None)),
             last_used: Arc::new(Mutex::new(Instant::now())),
             sftp_cache: Arc::new(Mutex::new(None)),
+            sftp_init_lock: Arc::new(Mutex::new(())),
+            sftp_parallelism: Arc::new(Semaphore::new(8)),
         }
     }
 
@@ -291,6 +297,15 @@ impl SshSession {
             }
         }
 
+        // Serialize cache misses, then check again before opening a channel.
+        let _init_guard = self.sftp_init_lock.lock().await;
+        {
+            let cache = self.sftp_cache.lock().await;
+            if let Some(sftp) = cache.as_ref() {
+                return Ok(sftp.clone());
+            }
+        }
+
         // Create new SFTP session
         let mut handle_lock = self.handle.lock().await;
         let handle = handle_lock.as_mut().ok_or_else(|| "SSH not connected".to_string())?;
@@ -312,6 +327,14 @@ impl SshSession {
         *self.sftp_cache.lock().await = Some(sftp.clone());
 
         Ok(sftp)
+    }
+
+    pub async fn acquire_sftp_permit(&self) -> OwnedSemaphorePermit {
+        self.sftp_parallelism
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("SFTP parallelism semaphore closed")
     }
 
     /// Clear the cached SFTP session (call after a failed SFTP operation).

@@ -116,6 +116,8 @@ pub struct ComposeActionRequest {
     pub path: String,
     pub action: String,
     pub service: Option<String>,
+    #[serde(default, rename = "requestId")]
+    pub request_id: Option<String>,
 }
 
 /// Docker exec request — run command in a container
@@ -126,6 +128,8 @@ pub struct DockerExecRequest {
     pub id: String,
     pub command: String,
     pub shell: Option<String>,
+    #[serde(default, rename = "requestId")]
+    pub request_id: Option<String>,
 }
 
 // ─── Helper: execute docker command via SSH ───
@@ -147,9 +151,23 @@ async fn docker_exec(
     connection_id: &str,
     docker_args: &[&str],
 ) -> Result<String, String> {
-    docker_exec_limited(state, space_id, connection_id, docker_args, usize::MAX, usize::MAX)
-        .await
-        .map(|output| output.stdout)
+    docker_exec_limited(
+        state,
+        space_id,
+        connection_id,
+        docker_args,
+        DOCKER_API_MAX_STDOUT_BYTES,
+        DOCKER_API_MAX_STDERR_BYTES,
+        None,
+    )
+    .await
+    .map(|output| {
+        let mut stdout = output.stdout;
+        if output.stdout_truncated {
+            stdout.push_str("\n[output truncated at API limit]");
+        }
+        stdout
+    })
 }
 
 async fn docker_exec_limited(
@@ -159,6 +177,7 @@ async fn docker_exec_limited(
     docker_args: &[&str],
     max_stdout_bytes: usize,
     max_stderr_bytes: usize,
+    cancel: Option<tokio_util::sync::CancellationToken>,
 ) -> Result<DockerExecOutput, String> {
     let (host, username, session) = {
         let entry = state.connection_in(space_id, connection_id);
@@ -190,10 +209,15 @@ async fn docker_exec_limited(
         s
     };
 
-    let output = session
-        .exec_limited(&command, max_stdout_bytes, max_stderr_bytes)
-        .await
-        .map_err(|e| format!("Docker exec failed: {}", e))?;
+    let output = if let Some(cancel) = cancel.clone() {
+        tokio::select! {
+            result = session.exec_limited(&command, max_stdout_bytes, max_stderr_bytes) => result,
+            _ = cancel.cancelled() => return Err("Docker exec cancelled".to_string()),
+        }
+    } else {
+        session.exec_limited(&command, max_stdout_bytes, max_stderr_bytes).await
+    }
+    .map_err(|e| format!("Docker exec failed: {}", e))?;
     let stdout = output.stdout;
     let stderr = output.stderr;
     let stdout_truncated = output.stdout_truncated;
@@ -226,10 +250,17 @@ async fn docker_exec_limited(
             s
         };
         tracing::info!("Trying fallback: '{}'", fallback_cmd);
-        if let Ok(output2) = session
-            .exec_limited(&fallback_cmd, max_stdout_bytes, max_stderr_bytes)
-            .await
-        {
+        let fallback = if let Some(cancel) = cancel.clone() {
+            tokio::select! {
+                result = session.exec_limited(&fallback_cmd, max_stdout_bytes, max_stderr_bytes) => result,
+                _ = cancel.cancelled() => return Err("Docker exec cancelled".to_string()),
+            }
+        } else {
+            session
+                .exec_limited(&fallback_cmd, max_stdout_bytes, max_stderr_bytes)
+                .await
+        };
+        if let Ok(output2) = fallback {
             if output2.exit_code == 0 {
                 tracing::info!("Fallback succeeded, stdout_len={}", output2.stdout.len());
                 return Ok(DockerExecOutput {
@@ -583,9 +614,29 @@ pub async fn exec_container(
         vec!["exec".into(), req.id.clone(), req.command.clone()]
     };
     let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    match docker_exec(&state, &space.id, &req.connection_id, &args_ref).await {
+    let cancel = match req.request_id.as_deref() {
+        Some(id) => match state.register_exec(&space.id, id) {
+            Some(token) => Some(token),
+            None => return ApiResponse::error(409, "exec requestId is already running"),
+        },
+        None => None,
+    };
+    let result = docker_exec_limited(
+        &state,
+        &space.id,
+        &req.connection_id,
+        &args_ref,
+        DOCKER_API_MAX_STDOUT_BYTES,
+        DOCKER_API_MAX_STDERR_BYTES,
+        cancel,
+    )
+    .await;
+    if let Some(id) = req.request_id.as_deref() {
+        state.finish_exec(&space.id, id);
+    }
+    match result {
         Ok(data) => ApiResponse::success(crate::api_types::DockerExecResultResponse {
-            data: clean_ansi_output(&data),
+            data: clean_ansi_output(&data.stdout),
             exit_code: 0,
         }),
         Err(e) => ApiResponse::error(-1, &e),
@@ -915,16 +966,32 @@ pub async fn compose_action(
         args.push(service);
     }
 
-    match docker_exec_limited(
+    let cancel = match req.request_id.as_deref() {
+        Some(id) => match state.register_exec(&space.id, id) {
+            Some(token) => Some(token),
+            None => {
+                return Ok(axum::Json(serde_json::json!({
+                    "success": false,
+                    "error": "exec requestId is already running"
+                })));
+            }
+        },
+        None => None,
+    };
+    let result = docker_exec_limited(
         &state,
         &space.id,
         &req.connection_id,
         &args,
         DOCKER_API_MAX_STDOUT_BYTES,
         DOCKER_API_MAX_STDERR_BYTES,
+        cancel,
     )
-    .await
-    {
+    .await;
+    if let Some(id) = req.request_id.as_deref() {
+        state.finish_exec(&space.id, id);
+    }
+    match result {
         Ok(result) => {
             let data = result.stdout;
             let truncated = result.stdout_truncated || result.stderr_truncated;

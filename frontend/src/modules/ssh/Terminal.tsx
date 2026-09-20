@@ -1150,6 +1150,8 @@ export default function TerminalView({
           `[Terminal] Created WsClient, URL: ${termWs['url'].split('?')[0]}, status=${termWs['status']}`,
         )
         termWsRef.current = termWs
+        // Batch PTY writes for xterm, while keeping a bounded latency.
+        termWs.onTerminalOutput(writePty)
 
         // 注册事件处理器（在连接前注册，确保不遗漏）
         termWs.on('data', (msg) => {
@@ -1189,15 +1191,15 @@ export default function TerminalView({
           const raw = msg.data
           if (raw instanceof Uint8Array) {
             // New backend path: raw PTY bytes, no base64 round-trip.
-            writePty(decodePtyBytes(ptyDecoder, raw))
+            termWs.bufferTerminalOutput(decodePtyBytes(ptyDecoder, raw))
             return
           }
           const text = String(raw ?? '')
           try {
             // Legacy backend path: JSON text with base64 data.
-            writePty(decodeURIComponent(escape(atob(text))))
+            termWs.bufferTerminalOutput(decodeURIComponent(escape(atob(text))))
           } catch {
-            writePty(text)
+            termWs.bufferTerminalOutput(text)
           }
         })
 
@@ -1297,6 +1299,7 @@ export default function TerminalView({
           if (reopenTimeoutRef.current) clearTimeout(reopenTimeoutRef.current)
           connectingRef.current = false
           connectedRef.current = false
+          termWs.flushTerminalOutput()
           flushPtyDecoder()
           if (!disposedRef.current) {
             term.write('\r\n\x1b[31m[连接已断开]\x1b[0m\r\n')
@@ -1398,6 +1401,7 @@ export default function TerminalView({
             // 结果 WS 明明恢复了却再也建不起会话（只能刷页面）。
             // 语义与下面 termWs.on('disconnected') 里的一致（那里也是这么清的）。
             connectedRef.current = false
+            termWs.flushTerminalOutput()
             flushPtyDecoder()
             if (!disposedRef.current) {
               term.write(`\r\n\x1b[31m[WebSocket 连接失败] ${lastErr}\x1b[0m\r\n`)

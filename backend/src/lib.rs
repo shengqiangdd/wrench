@@ -179,6 +179,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/metrics", get(api::monitor::get_metrics))
         .route("/scripts", get(api::scripts::list_scripts))
         .route("/ssh/exec", axum::routing::post(api::ssh::exec_command))
+        .route("/exec/cancel", axum::routing::post(api::ssh::cancel_exec))
         .route("/ssh/disconnect", axum::routing::post(api::ssh::disconnect_ssh))
         .route("/ssh/test-config", get(api::ssh::test_config))
         .route("/docker/ps", axum::routing::post(api::docker::docker_ps))
@@ -358,6 +359,9 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         // 安全响应头在最外层：404、静态资源、SSE 响应也一并覆盖
         .layer(axum_middleware::from_fn(
             middleware::security_headers::security_headers_middleware,
+        ))
+        .layer(axum_middleware::from_fn(
+            middleware::request_id::request_id_middleware,
         ))
         .layer(TraceLayer::new_for_http())
 }

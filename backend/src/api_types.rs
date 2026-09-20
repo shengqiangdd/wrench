@@ -70,6 +70,10 @@ pub struct AlertsResponse {
 pub struct MetricsResponse {
     pub hosts: Vec<serde_json::Value>,
     pub timestamp: u64,
+    pub exec_started: u64,
+    pub exec_completed: u64,
+    pub exec_cancelled: u64,
+    pub exec_active: usize,
 }
 
 // ─── Scripts ───
@@ -339,6 +343,14 @@ pub struct SshExecRequest {
     #[serde(rename = "connectionId")]
     pub connection_id: String,
     pub command: String,
+    #[serde(default, rename = "requestId")]
+    pub request_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ExecCancelRequest {
+    #[serde(rename = "requestId")]
+    pub request_id: String,
 }
 
 /// Response body for SSH exec
