@@ -114,6 +114,15 @@ run_image() {
   printf 'stable after recheck: %s\n' "$HEALTH_URL"
 }
 
+deployment_diagnostics() {
+  printf '--- deployment diagnostics ---\n' >&2
+  printf 'compose service state:\n' >&2
+  compose ps >&2 || true
+  printf 'recent wrench container logs:\n' >&2
+  docker logs --tail 100 wrench >&2 || true
+  printf '%s\n' '--- end deployment diagnostics ---' >&2
+}
+
 deploy() {
   need_env WRENCH_IMAGE
   need_env WRENCH_VERSION
@@ -123,6 +132,7 @@ deploy() {
 
   if run_image "$WRENCH_IMAGE" "$WRENCH_VERSION"; then return 0; fi
 
+  deployment_diagnostics
   if [[ -n "$previous_image" ]]; then
     printf 'health check failed; restoring previous image\n' >&2
     if run_image "$previous_image" "${WRENCH_PREVIOUS_VERSION:-}"; then
@@ -140,7 +150,10 @@ rollback() {
   need_env WRENCH_IMAGE
   need_env WRENCH_VERSION
   validate_image "$WRENCH_IMAGE"
-  run_image "$WRENCH_IMAGE" "$WRENCH_VERSION"
+  if run_image "$WRENCH_IMAGE" "$WRENCH_VERSION"; then return 0; fi
+
+  deployment_diagnostics
+  return 1
 }
 
 command=${1:-}
