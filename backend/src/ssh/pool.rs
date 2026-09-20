@@ -8,6 +8,7 @@ use russh::keys::key::PrivateKeyWithHashAlg;
 use russh_sftp::client::SftpSession;
 
 use crate::ssh::known_hosts::KnownHosts;
+use crate::utils::escape_sh_arg;
 
 /// A connected SSH session wrapper around russh.
 pub struct SshSession {
@@ -27,6 +28,30 @@ pub struct SshSession {
 
 // Default idle timeout: 30 minutes
 const IDLE_TIMEOUT_SECS: u64 = 1800;
+/// Grace period between TERM and KILL when cancelling an API command.
+const EXEC_CANCEL_GRACE: Duration = Duration::from_millis(750);
+
+/// Put the user command in its own session/process group. The command is a
+/// positional argument, so it is never interpolated into the wrapper script.
+/// When sshd forwards TERM to the outer shell, the trap terminates every child
+/// in that group, waits briefly, then force-kills any stragglers.
+fn cancellable_process_group_command(command: &str) -> String {
+    const WRAPPER: &str = r#"child=''
+cleanup() {
+  if [ -n "$child" ]; then
+    kill -TERM -- "-$child" 2>/dev/null || true
+    sleep 0.75
+    kill -KILL -- "-$child" 2>/dev/null || true
+  fi
+  exit 143
+}
+trap cleanup TERM
+setsid sh -c "$1" &
+child=$!
+wait "$child""#;
+
+    format!("bash -c {} -- {}", escape_sh_arg(WRAPPER), escape_sh_arg(command))
+}
 
 /// SSH handler with host key verification.
 #[derive(Clone)]
@@ -347,7 +372,7 @@ impl SshSession {
     /// This keeps the historical unbounded behavior for generic SSH callers.
     pub async fn exec(&self, command: &str) -> Result<(String, String, u32), Box<dyn std::error::Error + Send + Sync>> {
         let output = self
-            .exec_with_limits(command, usize::MAX, usize::MAX, true, None)
+            .exec_with_limits(command, usize::MAX, usize::MAX, true, None, None)
             .await?;
         Ok((output.stdout, output.stderr, output.exit_code))
     }
@@ -368,10 +393,30 @@ impl SshSession {
             max_stderr_bytes,
             false,
             Some(Duration::from_secs(300)),
+            None,
         )
         .await
     }
 
+    /// Execute a bounded command that supports remote process-group
+    /// cancellation: SIGTERM → short wait → SIGKILL.
+    pub async fn exec_limited_cancellable(
+        &self,
+        command: &str,
+        max_stdout_bytes: usize,
+        max_stderr_bytes: usize,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<ExecOutput, Box<dyn std::error::Error + Send + Sync>> {
+        self.exec_with_limits(
+            &cancellable_process_group_command(command),
+            max_stdout_bytes,
+            max_stderr_bytes,
+            false,
+            Some(Duration::from_secs(300)),
+            Some(cancel),
+        )
+        .await
+    }
     async fn exec_with_limits(
         &self,
         command: &str,
@@ -379,12 +424,13 @@ impl SshSession {
         max_stderr_bytes: usize,
         request_pty: bool,
         read_timeout: Option<Duration>,
+        cancel: Option<tokio_util::sync::CancellationToken>,
     ) -> Result<ExecOutput, Box<dyn std::error::Error + Send + Sync>> {
         self.touch_async().await;
         let mut lock = self.handle.lock().await;
         let handle = lock.as_mut().ok_or("SSH not connected")?;
 
-        let mut channel = handle.channel_open_session().await?;
+        let channel = handle.channel_open_session().await?;
 
         if request_pty {
             // Preserve the historical generic exec behavior.
@@ -394,35 +440,59 @@ impl SshSession {
         channel.exec(true, command).await?;
 
         // Read stdout and stderr until EOF using russh's streaming API
+        let (mut channel, cancel_channel) = channel.split();
         let mut stdout_buf = Vec::new();
         let mut stderr_buf = Vec::new();
         let mut stdout_truncated = false;
         let mut stderr_truncated = false;
         let mut exit_code: u32 = 0;
 
-        let read_output = async {
-            loop {
-                match channel.wait().await {
-                    Some(russh::ChannelMsg::Data { ref data }) => {
-                        stdout_truncated |= append_bounded(&mut stdout_buf, data, max_stdout_bytes);
+        {
+            let read_output = async {
+                loop {
+                    match channel.wait().await {
+                        Some(russh::ChannelMsg::Data { ref data }) => {
+                            stdout_truncated |= append_bounded(&mut stdout_buf, data, max_stdout_bytes);
+                        }
+                        Some(russh::ChannelMsg::ExtendedData { ref data, .. }) => {
+                            stderr_truncated |= append_bounded(&mut stderr_buf, data, max_stderr_bytes);
+                        }
+                        Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
+                            exit_code = exit_status;
+                        }
+                        Some(russh::ChannelMsg::Eof) | None => break,
+                        _ => {}
                     }
-                    Some(russh::ChannelMsg::ExtendedData { ref data, .. }) => {
-                        stderr_truncated |= append_bounded(&mut stderr_buf, data, max_stderr_bytes);
-                    }
-                    Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
-                        exit_code = exit_status;
-                    }
-                    Some(russh::ChannelMsg::Eof) | None => break,
-                    _ => {}
                 }
+            };
+            let read_output = async {
+                if let Some(duration) = read_timeout {
+                    timeout(duration, read_output)
+                        .await
+                        .map_err(|_| format!("SSH exec timed out after {} seconds", duration.as_secs()))?;
+                } else {
+                    read_output.await;
+                }
+                Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+            };
+            tokio::pin!(read_output);
+
+            if let Some(cancel) = cancel {
+                // The write half signals while the read half continues draining
+                // during the grace period, allowing a clean remote exit.
+                tokio::select! {
+                    result = &mut read_output => result?,
+                    _ = cancel.cancelled() => {
+                        let _ = cancel_channel.signal(russh::Sig::TERM).await;
+                        if timeout(EXEC_CANCEL_GRACE, &mut read_output).await.is_err() {
+                            let _ = cancel_channel.signal(russh::Sig::KILL).await;
+                        }
+                        return Err("SSH exec cancelled (remote process group terminated)".into());
+                    }
+                }
+            } else {
+                read_output.await?;
             }
-        };
-        if let Some(duration) = read_timeout {
-            timeout(duration, read_output)
-                .await
-                .map_err(|_| format!("SSH exec timed out after {} seconds", duration.as_secs()))?;
-        } else {
-            read_output.await;
         }
 
         let stdout = String::from_utf8_lossy(&stdout_buf).to_string();
@@ -542,4 +612,14 @@ mod tests {
         assert!(append_bounded(&mut buffer, b"output", 0));
         assert!(buffer.is_empty());
     }
+}
+
+#[test]
+fn cancellable_command_uses_a_process_group_and_escapes_the_user_command() {
+    let wrapped = cancellable_process_group_command("sleep 30; echo '$danger'");
+    assert!(wrapped.starts_with("bash -c "));
+    assert!(wrapped.contains("setsid sh -c \"$1\""));
+    assert!(wrapped.contains("kill -TERM -- \"-$child\""));
+    assert!(wrapped.contains("kill -KILL -- \"-$child\""));
+    assert!(wrapped.ends_with("'sleep 30; echo '\\''$danger'\\'''"));
 }

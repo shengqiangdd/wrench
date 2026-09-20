@@ -85,10 +85,9 @@ pub async fn exec_command(
         None => None,
     };
     let result = if let Some(token) = cancel {
-        tokio::select! {
-            result = session.exec_limited(command, 2 * 1024 * 1024, 64 * 1024) => result,
-            _ = token.cancelled() => Err("SSH exec cancelled".into()),
-        }
+        session
+            .exec_limited_cancellable(command, 2 * 1024 * 1024, 64 * 1024, token)
+            .await
     } else {
         session.exec_limited(command, 2 * 1024 * 1024, 64 * 1024).await
     };

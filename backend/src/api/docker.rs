@@ -210,10 +210,9 @@ async fn docker_exec_limited(
     };
 
     let output = if let Some(cancel) = cancel.clone() {
-        tokio::select! {
-            result = session.exec_limited(&command, max_stdout_bytes, max_stderr_bytes) => result,
-            _ = cancel.cancelled() => return Err("Docker exec cancelled".to_string()),
-        }
+        session
+            .exec_limited_cancellable(&command, max_stdout_bytes, max_stderr_bytes, cancel)
+            .await
     } else {
         session.exec_limited(&command, max_stdout_bytes, max_stderr_bytes).await
     }
@@ -251,10 +250,12 @@ async fn docker_exec_limited(
         };
         tracing::info!("Trying fallback: '{}'", fallback_cmd);
         let fallback = if let Some(cancel) = cancel.clone() {
-            tokio::select! {
-                result = session.exec_limited(&fallback_cmd, max_stdout_bytes, max_stderr_bytes) => result,
-                _ = cancel.cancelled() => return Err("Docker exec cancelled".to_string()),
+            if cancel.is_cancelled() {
+                return Err("Docker exec cancelled".to_string());
             }
+            session
+                .exec_limited_cancellable(&fallback_cmd, max_stdout_bytes, max_stderr_bytes, cancel)
+                .await
         } else {
             session
                 .exec_limited(&fallback_cmd, max_stdout_bytes, max_stderr_bytes)
