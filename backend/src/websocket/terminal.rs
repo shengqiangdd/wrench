@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::{
     extract::{
@@ -16,6 +17,7 @@ use crate::models::{SftpRequest, SftpResponse};
 use crate::space::SpaceCtx;
 use crate::ssh::SshSession;
 use crate::ssh::client::SshConnection;
+use crate::websocket::batch::AdaptiveTerminalBatcher;
 
 /// Timeout for SSH connect + auth operations (15 seconds)
 const SSH_CONNECT_TIMEOUT_SECS: u64 = 15;
@@ -546,11 +548,11 @@ async fn handle_terminal_connect(
     // 达到大小上限时立即发送，避免大输出占用内存。
     //
     // 高频输出聚合：Docker Compose/BuildKit 会在极短时间内产生大量小 PTY chunk。
-    // 每 8ms 合并一次再做 base64 + JSON + WebSocket 帧，显著降低网络包和前端重绘次数。
-    // 交互输入仍走独立的 socket.recv 分支，不会被输出批处理阻塞。
+    // 根据实际 chunk 突发度在 8/12/16ms 和 32/48/64KB 之间切换；40ms 空闲后
+    // 立刻回到交互档。交互输入仍走独立的 socket.recv 分支，不会被输出批处理阻塞。
     let mut output_buf: Vec<u8> = Vec::with_capacity(16 * 1024);
-    let mut output_tick = tokio::time::interval(Duration::from_millis(8));
-    output_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut output_batcher = AdaptiveTerminalBatcher::default();
+    let mut output_flush = Box::pin(tokio::time::sleep(Duration::from_millis(8)));
 
     // close_reason：这个会话是**怎么结束**的，前端据此决定要不要自动重连。
     // - "exit"：远端 shell 正常退出（用户敲了 exit / Ctrl+D，拿到了 ExitStatus）→ 不要自动重开，
@@ -621,7 +623,7 @@ async fn handle_terminal_connect(
             }
 
             // 输出批处理：减少 Docker 动态进度产生的 WebSocket 帧和前端重绘。
-            _ = output_tick.tick(), if !output_buf.is_empty() => {
+            _ = &mut output_flush, if !output_buf.is_empty() => {
                 if !flush_pty_output(socket, PTY_BINARY_SSH, &connection_id, &mut output_buf).await {
                     break;
                 }
@@ -631,9 +633,14 @@ async fn handle_terminal_connect(
                 use russh::ChannelMsg;
                 match msg {
                     Some(ChannelMsg::Data { ref data }) => {
+                        let starts_batch = output_buf.is_empty();
+                        let profile = output_batcher.observe_chunk(Instant::now());
                         output_buf.extend_from_slice(data);
+                        if starts_batch {
+                            output_flush.as_mut().reset(tokio::time::Instant::now() + profile.max_interval);
+                        }
                         // 大块输出立即发送，避免延迟和内存增长。
-                        if output_buf.len() >= 32 * 1024
+                        if output_buf.len() >= profile.size_threshold
                             && !flush_pty_output(socket, PTY_BINARY_SSH, &connection_id, &mut output_buf).await
                         {
                             break;
