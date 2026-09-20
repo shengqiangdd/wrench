@@ -360,6 +360,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .layer(axum_middleware::from_fn(
             middleware::security_headers::security_headers_middleware,
         ))
+        .layer(axum_middleware::from_fn(middleware::logging::request_logger))
         .layer(axum_middleware::from_fn(middleware::request_id::request_id_middleware))
         .layer(TraceLayer::new_for_http())
 }

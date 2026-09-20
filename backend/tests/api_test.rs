@@ -85,11 +85,15 @@ async fn test_build_app_creates_router() {
 #[tokio::test]
 async fn health_check_returns_200() {
     let app = build_test_app().await;
-    let req = Request::builder().uri("/api/health").body(Body::from("")).unwrap();
+    let req = Request::builder()
+        .uri("/api/health")
+        .header("x-request-id", "health-trace-42")
+        .body(Body::from(""))
+        .unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let request_id = resp.headers().get("x-request-id").and_then(|value| value.to_str().ok());
-    assert!(request_id.is_some_and(|value| !value.is_empty()));
+    assert_eq!(request_id, Some("health-trace-42"));
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(json["data"]["build"].as_str().is_some_and(|build| !build.is_empty()));
