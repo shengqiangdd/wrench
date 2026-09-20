@@ -232,13 +232,17 @@ function DockerComposeInner({ connectionId }: Props) {
         })
         const json = (await res.json()) as ApiResponse
         if (!json.success) {
-          notify(`${action} 失败: ${json.error || json.msg || '未知错误'}`, 'error')
+          const error = json.error || json.msg || '未知错误'
+          if (action === 'logs') setLogData({ key, content: `请求失败: ${error}` })
+          notify(`${action} 失败: ${error}`, 'error')
         } else if (action === 'logs') {
           // 后端返回 { success, data: { output: "..." } } 或旧格式 { success, data: { data: "..." } }
           const output = json.data?.output ?? json.data?.data ?? json.data ?? ''
+          const content = typeof output === 'string' ? output : JSON.stringify(output) || '(empty)'
+          const truncated = json.data?.truncated === true
           setLogData({
             key,
-            content: typeof output === 'string' ? output : JSON.stringify(output) || '(empty)',
+            content: truncated ? `${content}\n\n[输出已截断：响应超过大小上限]` : content,
           })
         } else {
           notify(`${action} 成功`, 'success')

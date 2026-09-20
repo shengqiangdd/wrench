@@ -58,6 +58,26 @@ impl client::Handler for SshHandler {
     }
 }
 
+/// Result of a bounded SSH command execution.
+#[derive(Debug)]
+pub struct ExecOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: u32,
+    pub stdout_truncated: bool,
+    pub stderr_truncated: bool,
+}
+
+fn append_bounded(buffer: &mut Vec<u8>, data: &[u8], limit: usize) -> bool {
+    if buffer.len() >= limit {
+        return !data.is_empty();
+    }
+    let remaining = limit - buffer.len();
+    let take = remaining.min(data.len());
+    buffer.extend_from_slice(&data[..take]);
+    take < data.len()
+}
+
 impl SshSession {
     /// Create a new SSH session with known_hosts verification.
     ///
@@ -299,7 +319,22 @@ impl SshSession {
     }
 
     /// Execute a command and return (stdout, stderr, exit_code).
+    ///
+    /// This keeps the historical unbounded behavior for generic SSH callers.
     pub async fn exec(&self, command: &str) -> Result<(String, String, u32), Box<dyn std::error::Error + Send + Sync>> {
+        let output = self.exec_limited(command, usize::MAX, usize::MAX).await?;
+        Ok((output.stdout, output.stderr, output.exit_code))
+    }
+
+    /// A bounded command result for callers that expose remote output over an API.
+    /// The channel is still drained after the limit is reached, so the SSH session
+    /// remains reusable while memory use is bounded.
+    pub async fn exec_limited(
+        &self,
+        command: &str,
+        max_stdout_bytes: usize,
+        max_stderr_bytes: usize,
+    ) -> Result<ExecOutput, Box<dyn std::error::Error + Send + Sync>> {
         self.touch_async().await;
         let mut lock = self.handle.lock().await;
         let handle = lock.as_mut().ok_or("SSH not connected")?;
@@ -314,15 +349,17 @@ impl SshSession {
         // Read stdout and stderr until EOF using russh's streaming API
         let mut stdout_buf = Vec::new();
         let mut stderr_buf = Vec::new();
+        let mut stdout_truncated = false;
+        let mut stderr_truncated = false;
         let mut exit_code: u32 = 0;
 
         loop {
             match channel.wait().await {
                 Some(russh::ChannelMsg::Data { ref data }) => {
-                    stdout_buf.extend_from_slice(data);
+                    stdout_truncated |= append_bounded(&mut stdout_buf, data, max_stdout_bytes);
                 }
                 Some(russh::ChannelMsg::ExtendedData { ref data, .. }) => {
-                    stderr_buf.extend_from_slice(data);
+                    stderr_truncated |= append_bounded(&mut stderr_buf, data, max_stderr_bytes);
                 }
                 Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
                     exit_code = exit_status;
@@ -336,7 +373,7 @@ impl SshSession {
 
         let stdout = String::from_utf8_lossy(&stdout_buf).to_string();
         let stderr = String::from_utf8_lossy(&stderr_buf).to_string();
-        Ok((stdout, stderr, exit_code))
+        Ok(ExecOutput { stdout, stderr, exit_code, stdout_truncated, stderr_truncated })
     }
 
     /// Open an interactive shell with PTY allocation.
@@ -428,5 +465,27 @@ impl SshSession {
     pub async fn is_connected(&self) -> bool {
         let lock = self.handle.lock().await;
         lock.as_ref().is_some_and(|h| !h.is_closed())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_bounded;
+
+    #[test]
+    fn append_bounded_caps_bytes_and_reports_truncation() {
+        let mut buffer = Vec::new();
+        assert!(!append_bounded(&mut buffer, b"abc", 5));
+        assert_eq!(buffer, b"abc");
+        assert!(append_bounded(&mut buffer, b"def", 5));
+        assert_eq!(buffer, b"abcde");
+        assert!(append_bounded(&mut buffer, b"", 5) == false);
+    }
+
+    #[test]
+    fn append_bounded_handles_zero_limit() {
+        let mut buffer = Vec::new();
+        assert!(append_bounded(&mut buffer, b"output", 0));
+        assert!(buffer.is_empty());
     }
 }

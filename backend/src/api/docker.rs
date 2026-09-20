@@ -130,12 +130,36 @@ pub struct DockerExecRequest {
 
 // ─── Helper: execute docker command via SSH ───
 
+// Compose actions are user-facing API responses. Bound both streams so an
+// accidental `logs` invocation cannot grow backend memory without limit.
+const DOCKER_API_MAX_STDOUT_BYTES: usize = 2 * 1024 * 1024;
+const DOCKER_API_MAX_STDERR_BYTES: usize = 64 * 1024;
+
+struct DockerExecOutput {
+    stdout: String,
+    stdout_truncated: bool,
+    stderr_truncated: bool,
+}
+
 async fn docker_exec(
     state: &Arc<AppState>,
     space_id: &str,
     connection_id: &str,
     docker_args: &[&str],
 ) -> Result<String, String> {
+    docker_exec_limited(state, space_id, connection_id, docker_args, usize::MAX, usize::MAX)
+        .await
+        .map(|output| output.stdout)
+}
+
+async fn docker_exec_limited(
+    state: &Arc<AppState>,
+    space_id: &str,
+    connection_id: &str,
+    docker_args: &[&str],
+    max_stdout_bytes: usize,
+    max_stderr_bytes: usize,
+) -> Result<DockerExecOutput, String> {
     let (host, username, session) = {
         let entry = state.connection_in(space_id, connection_id);
         match entry {
@@ -166,10 +190,15 @@ async fn docker_exec(
         s
     };
 
-    let (stdout, stderr, exit_code) = session
-        .exec(&command)
+    let output = session
+        .exec_limited(&command, max_stdout_bytes, max_stderr_bytes)
         .await
         .map_err(|e| format!("Docker exec failed: {}", e))?;
+    let stdout = output.stdout;
+    let stderr = output.stderr;
+    let stdout_truncated = output.stdout_truncated;
+    let stderr_truncated = output.stderr_truncated;
+    let exit_code = output.exit_code;
 
     // Log docker command execution for debugging
     tracing::info!(
@@ -188,7 +217,8 @@ async fn docker_exec(
             fallback_args.push(arg);
         }
         let fallback_cmd = {
-            let mut s = String::from("COMPOSE_PROGRESS=plain BUILDKIT_PROGRESS=plain DOCKER_CLI_HINTS=false docker-compose");
+            let mut s =
+                String::from("COMPOSE_PROGRESS=plain BUILDKIT_PROGRESS=plain DOCKER_CLI_HINTS=false docker-compose");
             for arg in &fallback_args {
                 s.push(' ');
                 s.push_str(&escape_sh_arg(arg));
@@ -196,27 +226,39 @@ async fn docker_exec(
             s
         };
         tracing::info!("Trying fallback: '{}'", fallback_cmd);
-        if let Ok((out2, err2, code2)) = session.exec(&fallback_cmd).await {
-            if code2 == 0 {
-                tracing::info!("Fallback succeeded, stdout_len={}", out2.len());
-                return Ok(out2);
+        if let Ok(output2) = session
+            .exec_limited(&fallback_cmd, max_stdout_bytes, max_stderr_bytes)
+            .await
+        {
+            if output2.exit_code == 0 {
+                tracing::info!("Fallback succeeded, stdout_len={}", output2.stdout.len());
+                return Ok(DockerExecOutput {
+                    stdout: output2.stdout,
+                    stdout_truncated: output2.stdout_truncated,
+                    stderr_truncated: output2.stderr_truncated,
+                });
             }
             tracing::warn!(
                 "Fallback also failed: exit_code={} stderr={}",
-                code2,
-                err2.chars().take(300).collect::<String>()
+                output2.exit_code,
+                output2.stderr.chars().take(300).collect::<String>()
             );
         }
     }
 
     if exit_code != 0 {
         // 命令失败：优先返回 stderr，其次 stdout，最后通用错误
-        let msg = if !stderr.is_empty() {
-            stderr.trim().to_string()
+        let (msg, stream, truncated) = if !stderr.is_empty() {
+            (stderr.trim().to_string(), "stderr", stderr_truncated)
         } else if !stdout.is_empty() {
-            stdout.trim().to_string()
+            (stdout.trim().to_string(), "stdout", stdout_truncated)
         } else {
-            format!("docker command exited with code {}", exit_code)
+            (format!("docker command exited with code {}", exit_code), "", false)
+        };
+        let msg = if truncated {
+            format!("{msg}\n[{stream} output truncated at API limit]")
+        } else {
+            msg
         };
         return Err(msg);
     }
@@ -241,7 +283,7 @@ async fn docker_exec(
         );
     }
 
-    Ok(stdout)
+    Ok(DockerExecOutput { stdout, stdout_truncated, stderr_truncated })
 }
 
 // ─── Handlers ───
@@ -753,8 +795,19 @@ pub async fn compose_action(
         args.push(service);
     }
 
-    match docker_exec(&state, &space.id, &req.connection_id, &args).await {
-        Ok(data) => {
+    match docker_exec_limited(
+        &state,
+        &space.id,
+        &req.connection_id,
+        &args,
+        DOCKER_API_MAX_STDOUT_BYTES,
+        DOCKER_API_MAX_STDERR_BYTES,
+    )
+    .await
+    {
+        Ok(result) => {
+            let data = result.stdout;
+            let truncated = result.stdout_truncated || result.stderr_truncated;
             if action_cmd == "ps" {
                 let services = parse_compose_ps(&data);
                 Ok(axum::Json(serde_json::json!({
@@ -771,7 +824,7 @@ pub async fn compose_action(
                 };
                 Ok(axum::Json(serde_json::json!({
                     "success": true,
-                    "data": { "output": output }
+                    "data": { "output": output, "truncated": truncated }
                 })))
             }
         }
