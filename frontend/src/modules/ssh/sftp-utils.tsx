@@ -417,7 +417,11 @@ export async function sftpApi<T = unknown>(
     return await request
   } finally {
     clearTimeout(timer)
-    if (isMetadataRequest) metadataInflight.delete(cacheKey)
+    // A cache clear can invalidate this request while a newer request for the same key is already in flight.
+    // Only the request that currently owns the dedupe entry may remove it.
+    if (isMetadataRequest && metadataInflight.get(cacheKey) === request) {
+      metadataInflight.delete(cacheKey)
+    }
   }
 }
 

@@ -53,6 +53,31 @@ describe('SFTP metadata cache', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(1)
   })
 
+  it('旧请求不应删除新请求的去重项', async () => {
+    let releaseFirst!: (value: Response) => void
+    let releaseSecond!: (value: Response) => void
+    const firstResponse = new Promise<Response>((resolve) => {
+      releaseFirst = resolve
+    })
+    const secondResponse = new Promise<Response>((resolve) => {
+      releaseSecond = resolve
+    })
+    mockedFetch
+      .mockImplementationOnce(async () => firstResponse)
+      .mockImplementationOnce(async () => secondResponse)
+    const body = { sessionId: 's1', connectionId: 'c1', path: '/tmp' }
+    const first = sftpApi('list', body)
+    await vi.waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1))
+    clearSftpMetadataCache()
+    const second = sftpApi('list', body)
+    await vi.waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2))
+    releaseFirst(response([]))
+    await first
+    const third = sftpApi('list', body)
+    expect(mockedFetch).toHaveBeenCalledTimes(2)
+    releaseSecond(response(['fresh']))
+    await expect(Promise.all([second, third])).resolves.toEqual([['fresh'], ['fresh']])
+  })
   it('限制缓存容量并按最近使用顺序淘汰', async () => {
     for (let index = 0; index < 128; index += 1) {
       await sftpApi('list', { sessionId: 's1', connectionId: 'c1', path: `/entry-${index}` })
