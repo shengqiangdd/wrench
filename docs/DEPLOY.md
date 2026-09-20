@@ -44,6 +44,20 @@ curl -fsS http://127.0.0.1:3001/api/health
 
 回滚时只需把 `WRENCH_IMAGE` 改回上一个已验证的 digest，重新执行 `pull` 和 `up -d`；`/api/health` 的 `build` 字段可确认当前实例实际运行的构建。
 
+也可以使用仓库内脚本执行带健康确认的部署/回滚。脚本不会执行 `down`，并且只有显式提供上一个 digest 时才会自动回滚：
+
+```bash
+export WRENCH_IMAGE=ghcr.io/shengqiangdd/wrench@sha256:<new-digest>
+export WRENCH_PREVIOUS_IMAGE=ghcr.io/shengqiangdd/wrench@sha256:<known-good-digest>
+export WRENCH_VERSION=<new-commit-or-release>
+tools/deploy-prod.sh deploy
+
+# 显式回滚到已验证版本
+export WRENCH_IMAGE=$WRENCH_PREVIOUS_IMAGE
+export WRENCH_VERSION=<known-good-commit-or-release>
+tools/deploy-prod.sh rollback
+```
+
 ### 数据持久化（SQLite）
 
 Wrench 使用 SQLite 存储审计日志、告警、凭据保险箱、通知渠道和 SSH 连接配置。
