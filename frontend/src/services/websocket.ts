@@ -338,15 +338,15 @@ export class WsClient {
     }
 
     ws.onclose = (event) => {
+      // 旧 socket 的 close 不能清理新一代连接的 timer/heartbeat/output 状态。
+      if (this.ws !== ws) return
+
       if (this.connectTimeoutTimer) {
         clearTimeout(this.connectTimeoutTimer)
         this.connectTimeoutTimer = null
       }
       this.stopHeartbeat()
       this.stopOutputFlush()
-
-      // 只处理当前连接的关闭事件（避免旧连接干扰新连接）
-      if (this.ws !== ws) return
 
       if (this._status === 'connecting') {
         // close 在 open 之前发生 → HTTP upgrade 很可能被拒绝

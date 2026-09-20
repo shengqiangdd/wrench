@@ -89,6 +89,29 @@ describe('WsClient', () => {
     })
   })
 
+  it('keeps the current heartbeat when a replaced socket closes late', async () => {
+    vi.useFakeTimers()
+    try {
+      client.connect()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(client.status).toBe('connected')
+      const oldWs = getMockWs(client)
+
+      client.disconnect()
+      client.connect()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(client.status).toBe('connected')
+      const currentWs = getMockWs(client)
+
+      oldWs.onclose?.({ code: 1000, reason: 'late close' } as CloseEvent)
+      await vi.advanceTimersByTimeAsync(20_000)
+
+      expect(currentWs.sentMessages).toContain(JSON.stringify({ type: 'ping' }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('ignores onopen from a replaced socket', async () => {
     client.connect()
     await vi.waitFor(() => expect(client.status).toBe('connected'))
