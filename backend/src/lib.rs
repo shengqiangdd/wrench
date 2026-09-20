@@ -214,13 +214,11 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .route("/ai/fetch-free-models", get(api::ai::fetch_free_models))
         .route("/ai/fetch-all-models", get(api::ai::fetch_all_models))
         .route("/ai/chat", axum::routing::post(api::ai::chat_proxy))
-        .route("/sftp/list", axum::routing::post(api::sftp::sftp_list_dir))
         .route("/sftp/upload", axum::routing::post(api::sftp::sftp_upload))
         .route("/sftp/download", axum::routing::post(api::sftp::sftp_download))
         .route("/sftp/delete", axum::routing::post(api::sftp::sftp_delete))
         .route("/sftp/mkdir", axum::routing::post(api::sftp::sftp_mkdir))
         .route("/sftp/rename", axum::routing::post(api::sftp::sftp_rename))
-        .route("/sftp/stat", axum::routing::post(api::sftp::sftp_stat))
         .route("/sftp/chmod", axum::routing::post(api::sftp::sftp_chmod))
         .route("/sftp/disk-usage", axum::routing::post(api::sftp::sftp_disk_usage))
         .route("/sftp/file-hash", axum::routing::post(api::sftp::sftp_file_hash))
@@ -269,6 +267,17 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         ))
         .layer(make_auth_layer());
 
+    // Metadata reads get a dedicated per-IP bucket. Keep the normal protected
+    // API limiter and auth/space middleware on this router as well.
+    let sftp_metadata_api = Router::new()
+        .route("/sftp/list", axum::routing::post(api::sftp::sftp_list_dir))
+        .route("/sftp/stat", axum::routing::post(api::sftp::sftp_stat))
+        .layer(axum_middleware::from_fn(
+            middleware::rate_limit::sftp_metadata_rate_limit_middleware
+                as fn(_: axum::http::Request<Body>, _: axum_middleware::Next) -> _,
+        ))
+        .layer(make_auth_layer());
+
     // Combine public + login + protected API routes under /api
     // fallback：未知 /api/* 必须 404，不能被下面的 SPA fallback 兜成
     // 200 + index.html —— 那样拼错的接口会以「HTTP 200 + HTML」伪装成功，
@@ -281,6 +290,7 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
                 .merge(public_api)
                 .merge(login_api)
                 .merge(protected_api)
+                .merge(sftp_metadata_api)
                 .merge(ssh_connect_api)
                 .fallback(api_fallback),
         )

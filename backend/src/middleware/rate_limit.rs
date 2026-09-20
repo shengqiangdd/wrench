@@ -188,6 +188,34 @@ pub async fn login_rate_limit_middleware(
     next.run(req).await
 }
 
+/// SFTP metadata endpoints can be called repeatedly without opening a new SSH session.
+/// Keep a separate, generous per-IP bucket so anonymous public instances cannot be
+/// saturated by parallel list/stat requests while normal browsing remains unaffected.
+pub const SFTP_METADATA_MAX_REQUESTS_PER_MINUTE: u32 = 120;
+
+pub async fn sftp_metadata_rate_limit_middleware(req: Request<Body>, next: Next) -> Response {
+    use std::sync::LazyLock;
+    static SFTP_LIMITER: LazyLock<RateLimiter> =
+        LazyLock::new(|| RateLimiter::new(60, SFTP_METADATA_MAX_REQUESTS_PER_MINUTE));
+
+    let client_ip = crate::middleware::client_ip::of_request(&req);
+    if !SFTP_LIMITER.check(&client_ip) {
+        tracing::warn!("[sftp] metadata rate limited for {}", client_ip);
+        let body = serde_json::json!({
+            "error": "Too many SFTP metadata requests. Please slow down."
+        })
+        .to_string();
+        return Response::builder()
+            .status(StatusCode::TOO_MANY_REQUESTS)
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .header("Retry-After", "60")
+            .body(Body::from(body))
+            .unwrap();
+    }
+
+    next.run(req).await
+}
+
 /// SSH 连接接口专用限流。
 ///
 /// 公开实例上，一个新 SSH 连接意味着一次真实的外拨（可能带着口令去撞目标主机）。
@@ -219,6 +247,16 @@ pub async fn ssh_connect_rate_limit_middleware(req: Request<Body>, next: Next) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sftp_metadata_limit_is_generous_but_bounded() {
+        let limiter = RateLimiter::new(60, SFTP_METADATA_MAX_REQUESTS_PER_MINUTE);
+        for _ in 0..SFTP_METADATA_MAX_REQUESTS_PER_MINUTE {
+            assert!(limiter.check("anonymous-client"));
+        }
+        assert!(!limiter.check("anonymous-client"));
+        assert!(limiter.check("another-client"));
+    }
 
     #[test]
     fn test_rate_limiter_allow_first() {

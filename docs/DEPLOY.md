@@ -28,6 +28,7 @@ docker compose up -d
 - 命名数据卷 `wrench-data` 自动挂载到 `/data`，SQLite 数据库持久化不丢失
 - `JWT_SECRET` 从环境变量注入（必填，用于令牌签发和 Vault 加密）
 - 健康检查每 30s 探测 `/api/health`
+- SFTP `list/stat` 元数据请求按真实客户端 IP 限制为每分钟 120 次；不限制公网 SSH 目标，也不改变 `WRENCH_REQUIRE_AUTH=off`。
 
 ### 可追踪的生产镜像与安全回滚
 
