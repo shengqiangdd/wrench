@@ -59,6 +59,10 @@ export WRENCH_VERSION=<known-good-commit-or-release>
 tools/deploy-prod.sh rollback
 ```
 
+### 请求追踪与 exec 指标
+
+API、WebSocket 和静态响应都会返回 `X-Request-Id`；客户端可在排障时记录该值，服务端不会记录请求体、凭据或命令文本。受保护的 `/api/metrics` 额外返回 `exec_started`、`exec_completed`、`exec_cancelled` 和 `exec_active`，用于观察取消链路而不暴露业务内容。
+
 ### 可选真实 SSH/SFTP E2E
 
 前端 Playwright 包含一条默认跳过的真实链路 smoke test。仅在专用测试环境显式提供以下环境变量时运行；变量不会写入日志或仓库：
