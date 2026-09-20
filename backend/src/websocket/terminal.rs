@@ -65,6 +65,25 @@ async fn send_pty_output(socket: &mut WebSocket, kind: u8, connection_id: &str, 
     socket.send(Message::Binary(frame.into())).await.is_ok()
 }
 
+/// Return a sent batch buffer to the accumulator without releasing its capacity.
+fn recycle_output_buffer(output_buf: &mut Vec<u8>, data: Vec<u8>) {
+    *output_buf = data;
+    output_buf.clear();
+}
+
+/// Flush a buffered PTY batch and retain its allocation for the next batch.
+async fn flush_pty_output(
+    socket: &mut WebSocket,
+    kind: u8,
+    connection_id: &str,
+    output_buf: &mut Vec<u8>,
+) -> bool {
+    let data = std::mem::take(output_buf);
+    let sent = send_pty_output(socket, kind, connection_id, &data).await;
+    recycle_output_buffer(output_buf, data);
+    sent
+}
+
 /// 日志跟随（logtail）的会话键：带空间前缀，避免猜到 id 就能掐掉别人的跟随进程。
 fn logtail_key(space_id: &str, connection_id: &str, log_path: &str) -> String {
     format!("{}:{}:{}", space_id, connection_id, log_path)
@@ -612,8 +631,7 @@ async fn handle_terminal_connect(
 
             // 输出批处理：减少 Docker 动态进度产生的 WebSocket 帧和前端重绘。
             _ = output_tick.tick(), if !output_buf.is_empty() => {
-                let data = std::mem::take(&mut output_buf);
-                if !send_pty_output(socket, PTY_BINARY_SSH, &connection_id, &data).await {
+                if !flush_pty_output(socket, PTY_BINARY_SSH, &connection_id, &mut output_buf).await {
                     break;
                 }
             }
@@ -625,16 +643,14 @@ async fn handle_terminal_connect(
                         output_buf.extend_from_slice(data);
                         // 大块输出立即发送，避免延迟和内存增长。
                         if output_buf.len() >= 32 * 1024 {
-                            let data = std::mem::take(&mut output_buf);
-                            if !send_pty_output(socket, PTY_BINARY_SSH, &connection_id, &data).await {
+                            if !flush_pty_output(socket, PTY_BINARY_SSH, &connection_id, &mut output_buf).await {
                                 break;
                             }
                         }
                     }
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
                         if !output_buf.is_empty() {
-                            let data = std::mem::take(&mut output_buf);
-                            let _ = send_pty_output(socket, PTY_BINARY_SSH, &connection_id, &data).await;
+                            let _ = flush_pty_output(socket, PTY_BINARY_SSH, &connection_id, &mut output_buf).await;
                         }
                         info!("SSH channel closed (connection: {})", connection_id);
                         close_reason = "closed";
@@ -642,8 +658,7 @@ async fn handle_terminal_connect(
                     }
                     Some(ChannelMsg::ExitStatus { exit_status }) => {
                         if !output_buf.is_empty() {
-                            let data = std::mem::take(&mut output_buf);
-                            let _ = send_pty_output(socket, PTY_BINARY_SSH, &connection_id, &data).await;
+                            let _ = flush_pty_output(socket, PTY_BINARY_SSH, &connection_id, &mut output_buf).await;
                         }
                         info!("SSH shell exited with status: {}", exit_status);
                         close_reason = "exit";
@@ -1201,7 +1216,7 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, spac
 
 #[cfg(test)]
 mod tests {
-    use super::{build_pty_output_frame, logtail_key, PTY_BINARY_SSH};
+    use super::{build_pty_output_frame, logtail_key, recycle_output_buffer, PTY_BINARY_SSH};
 
     /// 跟随日志的会话键必须带空间前缀：否则猜到 connectionId + 路径就能掐掉
     /// 别人的 tail -f 进程。
@@ -1227,5 +1242,16 @@ mod tests {
     fn pty_binary_frame_rejects_oversized_connection_id() {
         let id = "x".repeat(usize::from(u16::MAX) + 1);
         assert!(build_pty_output_frame(PTY_BINARY_SSH, &id, b"data").is_none());
+    }
+
+    #[test]
+    fn output_buffer_reuses_capacity_after_a_flush() {
+        let mut output_buf = Vec::with_capacity(32 * 1024);
+        output_buf.extend_from_slice(b"first batch");
+        let original_capacity = output_buf.capacity();
+        let data = std::mem::take(&mut output_buf);
+        recycle_output_buffer(&mut output_buf, data);
+        assert_eq!(output_buf.len(), 0);
+        assert_eq!(output_buf.capacity(), original_capacity);
     }
 }
