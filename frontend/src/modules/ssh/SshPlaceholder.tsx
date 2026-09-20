@@ -16,6 +16,7 @@ import AiSidebar from './AiSidebar'
 import type { SshSession } from '../../types/ssh'
 import { useAiStore } from '../../stores/ai-store'
 import { presentSshError } from '../../utils/ssh-error'
+import { getSshTerminalPanelClass, SSH_SFTP_PANEL_CLASS } from './ssh-layout'
 
 function SshErrorBanner({ error, onClose }: { error: string; onClose: () => void }) {
   const presentation = presentSshError(error)
@@ -575,27 +576,30 @@ export default function SshPlaceholder() {
             {/* 中间终端区域 */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
               {splits.length > 0 ? (
-                <SplitContainer
-                  splits={splits}
-                  onSplit={handleSplit}
-                  onRemove={handleRemoveSplit}
-                  onConnectionChange={handleSplitConnectionChange}
-                  connections={connectionOptions}
-                  onToggleSync={handleToggleSync}
-                  onMerge={handleMerge}
-                  syncGroups={syncGroups}
-                  activeSplitId={activeSplitId}
-                  onSetActiveSplit={setActiveSplitId}
-                  onTerminalData={handleTerminalData}
-                  credentialsMap={sessionCredentials}
-                  resolvedCredentials={resolvedCreds}
-                />
+                <div
+                  data-testid="ssh-terminal-panel"
+                  className={getSshTerminalPanelClass(sftpOpen)}
+                >
+                  <SplitContainer
+                    splits={splits}
+                    onSplit={handleSplit}
+                    onRemove={handleRemoveSplit}
+                    onConnectionChange={handleSplitConnectionChange}
+                    connections={connectionOptions}
+                    onToggleSync={handleToggleSync}
+                    onMerge={handleMerge}
+                    syncGroups={syncGroups}
+                    activeSplitId={activeSplitId}
+                    onSetActiveSplit={setActiveSplitId}
+                    onTerminalData={handleTerminalData}
+                    credentialsMap={sessionCredentials}
+                    resolvedCredentials={resolvedCreds}
+                  />
+                </div>
               ) : activeSession ? (
                 <div
                   data-testid="ssh-terminal-panel"
-                  className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
-                    sftpOpen ? 'hidden md:flex' : 'flex'
-                  }`}
+                  className={getSshTerminalPanelClass(sftpOpen)}
                 >
                   <TerminalView
                     connectionId={activeSession.id}
@@ -608,12 +612,9 @@ export default function SshPlaceholder() {
                 </div>
               ) : null}
 
-              {/* SFTP 侧边栏（桌面端侧栏，移动端隐藏） */}
+              {/* SFTP 面板：桌面端与终端并排，移动端与终端互斥 */}
               {sftpOpen && !aiOpen && activeSession && (
-                <div
-                  data-testid="ssh-sftp-panel"
-                  className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-slate-700/50 md:h-full md:w-[min(36vw,420px)] md:max-w-[420px] md:min-w-[280px] md:flex-none"
-                >
+                <div data-testid="ssh-sftp-panel" className={SSH_SFTP_PANEL_CLASS}>
                   <SftpSidebar sessionId={activeSession.id} />
                 </div>
               )}

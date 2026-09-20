@@ -2213,8 +2213,7 @@ export function SplitContainer({
 
   return (
     <div
-      className={`flex flex-1 overflow-hidden ${firstDir === 'vertical' ? 'flex-col' : 'flex-row'}`}
-      style={{ minHeight: 0 }}
+      className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${firstDir === 'vertical' ? 'flex-col' : 'flex-row'}`}
     >
       <div
         className="flex overflow-hidden"
