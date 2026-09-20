@@ -16,7 +16,17 @@
  * - 🔧 修复：支持同时连接多个主机，不再冲突
  */
 
-import { useEffect, useCallback, useRef, useReducer, useState, useMemo, memo } from 'react'
+import {
+  useEffect,
+  useCallback,
+  useRef,
+  useReducer,
+  useState,
+  useMemo,
+  memo,
+  lazy,
+  Suspense,
+} from 'react'
 import { FileCode2, X, PanelLeftClose, PanelLeft, Loader2, ChevronDown } from 'lucide-react'
 import { useSshStore } from '../../stores/ssh-store'
 import { useAppStore } from '../../stores/app-store'
@@ -24,10 +34,10 @@ import { useFileStore } from '../../stores/file-store'
 import { getWsClientSync, WsClient } from '../../services/websocket'
 import { sshSessionManager } from '../../services/ssh-session-manager'
 import SftpBrowser from '../ssh/SftpBrowser'
-import CodeMirrorEditor from '../../components/CodeMirrorEditor'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import ResizablePanel from '../../components/ResizablePanel'
 
+const CodeMirrorEditor = lazy(() => import('../../components/CodeMirrorEditor'))
 /** 检测是否为移动端视口 */
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(() =>
@@ -728,7 +738,15 @@ function FileManagerInner() {
         {/* 编辑器 / 空状态 */}
         <div className="flex flex-1 overflow-hidden">
           {fileStore.activeTabId ? (
-            <CodeMirrorEditor />
+            <Suspense
+              fallback={
+                <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
+                  加载编辑器…
+                </div>
+              }
+            >
+              <CodeMirrorEditor />
+            </Suspense>
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <div className="text-center">
