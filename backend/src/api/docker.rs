@@ -744,21 +744,141 @@ pub struct DockerComposeRawResponse {
 
 /// Strip ANSI escape codes and normalize terminal line endings for clean API output.
 fn clean_ansi_output(s: &str) -> String {
-    // Remove CSI escape sequences (including private modes such as \`?25l\`) and OSC
-    // sequences. Compose may emit these even when plain progress is requested.
-    let re = regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]").unwrap();
-    let cleaned = re.replace_all(s, "");
-    // Also remove OSC sequences: ESC] ... BEL or ESC\
-    let re2 = regex::Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap();
-    let cleaned = re2.replace_all(&cleaned, "");
-    // Treat CR as a terminal line replacement instead of simply deleting it.
-    cleaned
-        .replace("\r\n", "\n")
-        .split('\n')
-        .map(|line| line.rsplit('\r').next().unwrap_or_default())
-        .collect::<Vec<_>>()
-        .join("\n")
-        .to_string()
+    // Compose may emit CSI/OSC even with plain progress requested. Keep this a
+    // single pass: the old regex + replace/split/join pipeline scanned and
+    // allocated the whole output several times for every compose action.
+    const ESC: char = '\x1b';
+    const BEL: char = '\x07';
+    #[derive(Clone, Copy)]
+    enum State {
+        Normal,
+        Escape,
+        Csi {
+            input_start: usize,
+            output_start: usize,
+            intermediate: bool,
+        },
+        Osc,
+        OscEscape,
+    }
+
+    let mut output = String::with_capacity(s.len());
+    let mut state = State::Normal;
+    let mut sequence_start = 0;
+    let mut output_start = 0;
+    let mut pending_cr = false;
+
+    for (index, character) in s.char_indices() {
+        if pending_cr {
+            if character == '\n' {
+                output.push('\n');
+                pending_cr = false;
+                continue;
+            }
+            if let Some(line_start) = output.rfind('\n') {
+                output.truncate(line_start + 1);
+            } else {
+                output.clear();
+            }
+            pending_cr = false;
+        }
+        match state {
+            State::Normal => match character {
+                ESC => {
+                    sequence_start = index;
+                    output_start = output.len();
+                    state = State::Escape;
+                }
+                '\r' => {
+                    // Defer CR until the next byte so CRLF remains a newline.
+                    pending_cr = true;
+                }
+                _ => output.push(character),
+            },
+            State::Escape => match character {
+                '[' => state = State::Csi { input_start: sequence_start, output_start, intermediate: false },
+                ']' => state = State::Osc,
+                _ => {
+                    // Preserve unknown ESC sequences and process this character normally.
+                    output.push_str(&s[sequence_start..index]);
+                    state = State::Normal;
+                    if character == '\r' {
+                        pending_cr = true;
+                    } else if character == ESC {
+                        sequence_start = index;
+                        output_start = output.len();
+                        state = State::Escape;
+                    } else {
+                        output.push(character);
+                    }
+                }
+            },
+            State::Csi { input_start, output_start: csi_output_start, intermediate } => {
+                let code = character as u32;
+                if (0x30..=0x3f).contains(&code) {
+                    // CSI parameter bytes.
+                } else if (0x20..=0x2f).contains(&code) && !intermediate {
+                    state = State::Csi { input_start, output_start: csi_output_start, intermediate: true };
+                } else if (0x40..=0x7e).contains(&code) {
+                    state = State::Normal;
+                    output.truncate(csi_output_start);
+                } else {
+                    // The regex only removed syntactically valid CSI. Restore
+                    // malformed/incomplete input and process this byte normally.
+                    output.push_str(&s[input_start..index]);
+                    state = State::Normal;
+                    if character == '\r' {
+                        pending_cr = true;
+                    } else if character == ESC {
+                        sequence_start = index;
+                        output_start = output.len();
+                        state = State::Escape;
+                    } else {
+                        output.push(character);
+                    }
+                }
+            }
+            State::Osc => match character {
+                BEL => {
+                    state = State::Normal;
+                    output.truncate(output_start);
+                }
+                ESC => state = State::OscEscape,
+                _ => {}
+            },
+            State::OscEscape => {
+                if character == '\\' {
+                    state = State::Normal;
+                    output.truncate(output_start);
+                } else {
+                    // An ESC inside OSC cancels that string unless followed by ST.
+                    output.push_str(&s[sequence_start..index]);
+                    state = State::Normal;
+                    if character == ESC {
+                        sequence_start = index;
+                        output_start = output.len();
+                        state = State::Escape;
+                    } else {
+                        output.push(character);
+                    }
+                }
+            }
+        }
+    }
+
+    if pending_cr {
+        if let Some(line_start) = output.rfind('\n') {
+            output.truncate(line_start + 1);
+        } else {
+            output.clear();
+        }
+    }
+
+    // Incomplete sequences were not removed by the old regex pipeline.
+    if !matches!(state, State::Normal) {
+        output.push_str(&s[sequence_start..]);
+    }
+    output
 }
 
 /// Clean Compose status output while retaining real output.
@@ -937,5 +1057,12 @@ mod tests {
         // docker_exec concatenates chunks before this whole-output cleaner is
         // called; cleaning the concatenated value must not leave chunk debris.
         assert_eq!(clean_ansi_output(&format!("{first}{second}")), "Pulling 2/2\nDone\n");
+    }
+
+    #[test]
+    fn clean_ansi_output_keeps_incomplete_and_unknown_escape_sequences() {
+        let output = "before\x1b[12\nafter\x1bX\rfinal";
+
+        assert_eq!(clean_ansi_output(output), "before\x1b[12\nfinal");
     }
 }
