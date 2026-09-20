@@ -321,6 +321,14 @@ export function sftpParentPath(path: string): string {
   return slash <= 0 ? '/' : normalized.slice(0, slash)
 }
 
+/** Keep the list spinner active while a current request has scheduled a retry. */
+export function shouldFinishSftpListLoading(
+  requestIsCurrent: boolean,
+  retryScheduled: boolean,
+): boolean {
+  return requestIsCurrent && !retryScheduled
+}
+
 /** Only the latest directory request may update a mounted SFTP view. */
 export function isSftpRequestCurrent(requestId: number, latestRequestId: number): boolean {
   return requestId === latestRequestId

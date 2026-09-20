@@ -96,6 +96,7 @@ import {
   sftpApi,
   clearSftpMetadataCache,
   isSftpRequestCurrent,
+  shouldFinishSftpListLoading,
   splitDroppedItems,
   hasUploadableDrag,
   type SortKey,
@@ -508,6 +509,7 @@ function SftpBrowserInner({
 
   const retryCountRef = useRef(0)
   const listRequestRef = useRef(0)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fileStore = useFileStore()
   const setActiveNav = useAppStore((s) => s.setActiveNav)
   const notifyRef = useRef<HTMLDivElement>(null)
@@ -525,6 +527,11 @@ function SftpBrowserInner({
     async function listDir(dirPath: string, retryOnNotReady = true) {
       if (!sessionId) return
       const requestId = ++listRequestRef.current
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = null
+      }
+      let retryScheduled = false
       setLoading(true)
       setError(null)
       try {
@@ -546,7 +553,11 @@ function SftpBrowserInner({
           retryCountRef.current < 5
         ) {
           retryCountRef.current++
-          setTimeout(() => listDir(dirPath, true), 1000)
+          retryScheduled = true
+          retryTimerRef.current = setTimeout(() => {
+            retryTimerRef.current = null
+            void listDir(dirPath, true)
+          }, 1000)
           return
         }
         // 如果连接已断开，在文件列表区显示提示
@@ -564,7 +575,12 @@ function SftpBrowserInner({
         }
         retryCountRef.current = 0
       } finally {
-        if (isSftpRequestCurrent(requestId, listRequestRef.current)) {
+        if (
+          shouldFinishSftpListLoading(
+            isSftpRequestCurrent(requestId, listRequestRef.current),
+            retryScheduled,
+          )
+        ) {
           setLoading(false)
         }
       }
@@ -588,6 +604,10 @@ function SftpBrowserInner({
       const t2 = setTimeout(() => listDir(startPath, true), 300)
       return () => {
         listRequestRef.current += 1
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current)
+          retryTimerRef.current = null
+        }
         clearTimeout(t1)
         clearTimeout(t2)
       }
@@ -598,6 +618,10 @@ function SftpBrowserInner({
     }, 0)
     return () => {
       listRequestRef.current += 1
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current)
+        retryTimerRef.current = null
+      }
       clearTimeout(t3)
     }
   }, [sessionId, listDir, initialPath])

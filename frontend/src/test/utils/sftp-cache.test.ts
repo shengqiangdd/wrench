@@ -11,6 +11,7 @@ import {
   sftpApi,
   sftpMetadataCacheKey,
   isSftpRequestCurrent,
+  shouldFinishSftpListLoading,
   sftpParentPath,
 } from '../../modules/ssh/sftp-utils'
 
@@ -29,6 +30,9 @@ describe('SFTP request lifecycle', () => {
   it('accepts only the latest request response', () => {
     expect(isSftpRequestCurrent(4, 4)).toBe(true)
     expect(isSftpRequestCurrent(3, 4)).toBe(false)
+    expect(shouldFinishSftpListLoading(true, false)).toBe(true)
+    expect(shouldFinishSftpListLoading(true, true)).toBe(false)
+    expect(shouldFinishSftpListLoading(false, false)).toBe(false)
   })
 })
 
