@@ -14,6 +14,8 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      # Optional source/image identifier exposed by /api/health.
+      WRENCH_VERSION: "${WRENCH_VERSION:-}"
       DATABASE_URL: /data/wrench.db
       # JWT_SECRET: 留空则 entrypoint 自动生成随机密钥（重启后失效，生产环境请显式设置）
       JWT_SECRET: "${JWT_SECRET:-}"

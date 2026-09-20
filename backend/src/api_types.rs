@@ -12,6 +12,8 @@ pub struct HealthResponse {
     pub status: String,
     pub uptime: u64,
     pub version: &'static str,
+    /// Deployment/build identifier (usually the source commit).
+    pub build: String,
     pub connections: ConnectionsInfo,
 }
 

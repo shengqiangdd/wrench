@@ -35,6 +35,9 @@ jobs:
           push: true
           platforms: linux/arm64
           no-cache: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          build-args: BUILD_HASH=${{ github.sha }}
           provenance: false
           sbom: false

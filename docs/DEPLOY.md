@@ -17,6 +17,8 @@
 ```bash
 # 首次使用请先设置 JWT_SECRET 环境变量
 export JWT_SECRET=$(openssl rand -hex 32)
+# 可选：为健康检查和镜像排障标记当前提交
+export WRENCH_VERSION=$(git rev-parse --short HEAD)
 
 docker compose up -d
 # 访问 http://localhost:3001
@@ -26,6 +28,21 @@ docker compose up -d
 - 命名数据卷 `wrench-data` 自动挂载到 `/data`，SQLite 数据库持久化不丢失
 - `JWT_SECRET` 从环境变量注入（必填，用于令牌签发和 Vault 加密）
 - 健康检查每 30s 探测 `/api/health`
+
+### 可追踪的生产镜像与安全回滚
+
+生产环境可使用 `docker-compose.prod.yml`，通过 `WRENCH_IMAGE` 固定镜像 tag 或 digest；它保留公网访问语义（`WRENCH_REQUIRE_AUTH=off`），不会替部署者开启认证。推荐先设置版本标识并检查健康接口，再切换流量：
+
+```bash
+export WRENCH_IMAGE=ghcr.io/shengqiangdd/wrench@sha256:<verified-digest>
+export WRENCH_VERSION=<release-or-commit>
+export JWT_SECRET=<existing-secret>
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+curl -fsS http://127.0.0.1:3001/api/health
+```
+
+回滚时只需把 `WRENCH_IMAGE` 改回上一个已验证的 digest，重新执行 `pull` 和 `up -d`；`/api/health` 的 `build` 字段可确认当前实例实际运行的构建。
 
 ### 数据持久化（SQLite）
 
@@ -485,7 +502,7 @@ CSP 里有两处**必要**的放宽，其余都是最严：
 
 ```bash
 curl http://localhost:3001/api/health
-# 返回: {"status":"ok","uptime":123}
+# 返回: {"status":"ok","version":"0.1.0","build":"<commit-or-image-hash>","uptime":123}
 ```
 
 ## 🛡️ 安全建议
