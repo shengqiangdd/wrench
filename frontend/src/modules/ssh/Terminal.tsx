@@ -63,7 +63,7 @@ import {
   type PendingDelete,
 } from '../../utils/terminal-delete-dedup'
 import { TerminalSuggestionPanel } from '../../components/terminal/TerminalSuggestionPanel'
-import { shouldClearInitialTerminal } from './terminal-output'
+import { decodePtyBytes, shouldClearInitialTerminal } from './terminal-output'
 import {
   applyTerminalInput,
   clearTerminalCommandHistory,
@@ -1027,6 +1027,7 @@ export default function TerminalView({
     const ansiBuf = new AnsiStreamBuffer()
 
     let hasPtyOutput = false
+    let ptyDecoder = new TextDecoder()
 
     // ─── 输出追踪：检测长时间运行的命令 ───
     const trackOutput = (data: string) => {
@@ -1178,7 +1179,7 @@ export default function TerminalView({
           const raw = msg.data
           if (raw instanceof Uint8Array) {
             // New backend path: raw PTY bytes, no base64 round-trip.
-            writePty(new TextDecoder().decode(raw))
+            writePty(decodePtyBytes(ptyDecoder, raw))
             return
           }
           const text = String(raw ?? '')
@@ -1234,6 +1235,8 @@ export default function TerminalView({
           } else if (connectedRef.current || connectingRef.current) return false
           connectingRef.current = true
           connectedRef.current = false
+          // A reconnect starts a new PTY byte stream; do not carry a partial UTF-8 sequence over.
+          ptyDecoder = new TextDecoder()
           termWs.send({
             type: 'connect',
             connectionId,
