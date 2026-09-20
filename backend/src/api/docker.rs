@@ -713,29 +713,18 @@ fn clean_ansi_output(s: &str) -> String {
     cleaned
         .replace("\r\n", "\n")
         .split('\n')
-        .map(|line| line.rsplit('\r').next().unwrap_or_default().trim_end())
+        .map(|line| line.rsplit('\r').next().unwrap_or_default())
         .collect::<Vec<_>>()
         .join("\n")
-        .trim()
         .to_string()
 }
 
-/// Clean Compose status output while retaining real log output. Only adjacent
-/// identical, non-empty lines are safe to collapse.
+/// Clean Compose status output while retaining real output.
 fn clean_compose_action_output(s: &str) -> String {
-    let cleaned = clean_ansi_output(s);
-    let mut result = Vec::new();
-    let mut previous = None;
-
-    for line in cleaned.lines() {
-        if !line.trim().is_empty() && previous == Some(line) {
-            continue;
-        }
-        previous = Some(line);
-        result.push(line);
-    }
-
-    result.join("\n").trim().to_string()
+    // clean_ansi_output already collapses CR-delimited redraw frames. Keep
+    // newline-delimited duplicates: two identical status/log lines may be
+    // genuine output and cannot be distinguished safely after the fact.
+    clean_ansi_output(s)
 }
 
 /// POST /api/docker/compose/action
@@ -746,11 +735,8 @@ pub async fn compose_action(
 ) -> Result<axum::Json<serde_json::Value>, axum::Json<serde_json::Value>> {
     let action_cmd: &str = &req.action;
 
-    // Build args: docker compose -f <path> <action>
+    // Build args: docker compose -f <path> <action> [options] [service]
     let mut args: Vec<&str> = vec!["compose", "-f", &req.path, action_cmd];
-    if let Some(service) = &req.service {
-        args.push(service);
-    }
     if req.action == "up" {
         args.push("-d");
     }
@@ -760,6 +746,11 @@ pub async fn compose_action(
     }
     if req.action == "logs" {
         args.push("--tail=200");
+    }
+    // Compose expects action options before positional service names. This is
+    // accepted by some versions in the reverse order, but not all of them.
+    if let Some(service) = &req.service {
+        args.push(service);
     }
 
     match docker_exec(&state, &space.id, &req.connection_id, &args).await {
@@ -855,17 +846,21 @@ mod tests {
     fn clean_ansi_output_keeps_last_carriage_return_frame() {
         let output = "Pulling 1/3\rPulling 2/3\rPulling 3/3\n\x1b[?25lDone\x1b[0m\n";
 
-        assert_eq!(clean_ansi_output(output), "Pulling 3/3\nDone");
+        assert_eq!(clean_ansi_output(output), "Pulling 3/3\nDone\n");
     }
 
     #[test]
-    fn compose_action_output_collapses_adjacent_progress_duplicates() {
+    fn clean_ansi_output_preserves_log_whitespace() {
+        let output = "  leading\nmessage\ntrailing  \n\n";
+
+        assert_eq!(clean_ansi_output(output), output);
+    }
+
+    #[test]
+    fn compose_action_output_preserves_adjacent_duplicate_lines() {
         let output = "[+] Running 2/2\n\u{2714} Container api Started\n\u{2714} Container api Started\n\nDone\nDone\n";
 
-        assert_eq!(
-            clean_compose_action_output(output),
-            "[+] Running 2/2\n\u{2714} Container api Started\n\nDone",
-        );
+        assert_eq!(clean_compose_action_output(output), output);
     }
 
     #[test]
@@ -873,5 +868,15 @@ mod tests {
         let output = "Container api Started\nContainer worker Started\nContainer api Started";
 
         assert_eq!(clean_compose_action_output(output), output);
+    }
+
+    #[test]
+    fn clean_ansi_output_handles_escape_and_carriage_return_split_at_input_boundary() {
+        let first = "Pulling 1/2\rPulling 2/2\n\x1b[?25";
+        let second = "lDone\x1b[0m\r\n";
+
+        // docker_exec concatenates chunks before this whole-output cleaner is
+        // called; cleaning the concatenated value must not leave chunk debris.
+        assert_eq!(clean_ansi_output(&format!("{first}{second}")), "Pulling 2/2\nDone\n");
     }
 }
