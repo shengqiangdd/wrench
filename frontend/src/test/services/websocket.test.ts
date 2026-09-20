@@ -32,6 +32,10 @@ class MockWebSocket {
   simulateMessage(data: Record<string, unknown>) {
     this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent)
   }
+
+  simulateRawMessage(data: ArrayBuffer | Uint8Array) {
+    this.onmessage?.({ data } as MessageEvent)
+  }
 }
 
 vi.stubGlobal('WebSocket', MockWebSocket)
@@ -83,6 +87,31 @@ describe('WsClient', () => {
     await vi.waitFor(() => {
       expect(client.status).toBe('connected')
     })
+  })
+
+  it('ignores binary messages from a replaced socket', async () => {
+    const received: Record<string, unknown>[] = []
+    client.on('data', (data) => received.push(data))
+    client.connect()
+    await vi.waitFor(() => expect(client.status).toBe('connected'))
+    const oldWs = getMockWs(client)
+
+    client.disconnect()
+    client.connect()
+    await vi.waitFor(() => expect(client.status).toBe('connected'))
+    const currentWs = getMockWs(client)
+
+    const id = new TextEncoder().encode('conn-1')
+    const frame = new Uint8Array(3 + id.length + 1)
+    frame[0] = 1
+    frame[2] = id.length
+    frame.set(id, 3)
+    frame[3 + id.length] = 0x41
+
+    oldWs.simulateRawMessage(frame)
+    expect(received).toHaveLength(0)
+    currentWs.simulateRawMessage(frame)
+    expect(received).toHaveLength(1)
   })
 
   it('sends messages when connected', async () => {

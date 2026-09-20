@@ -293,6 +293,8 @@ export class WsClient {
     }
 
     ws.onmessage = (event) => {
+      // 旧 socket 关闭后仍可能排队投递消息；不能让它污染新一代连接。
+      if (this.ws !== ws) return
       // 增强: 收到任意消息即更新心跳时间戳
       this._lastPongTime = Date.now()
 
