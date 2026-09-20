@@ -515,7 +515,14 @@ export default function SshPlaceholder() {
               {/* 工具栏按钮组 */}
               <div className="flex shrink-0 items-center">
                 <button
-                  onClick={() => setSftpOpen(!sftpOpen)}
+                  onClick={() => {
+                    if (sftpOpen) {
+                      setSftpOpen(false)
+                    } else {
+                      setAiOpen(false)
+                      setSftpOpen(true)
+                    }
+                  }}
                   className="flex items-center gap-1 px-3 py-2 text-xs text-slate-500 hover:text-slate-300"
                   title={sftpOpen ? '关闭文件面板' : '打开文件面板'}
                 >
@@ -542,14 +549,18 @@ export default function SshPlaceholder() {
                 )}
                 <button
                   onClick={() => {
+                    setSftpOpen(false)
+                    setAiOpen(false)
                     if (!activeSession && connections.length > 0) {
                       selectConnection(connections[0]!.id)
                     } else if (activeSession) {
                       // 已有连接时，聚焦终端输入区域
-                      const termEl = document.querySelector(
-                        '.xterm-helper-textarea',
-                      ) as HTMLElement | null
-                      termEl?.focus()
+                      requestAnimationFrame(() => {
+                        const termEl = document.querySelector(
+                          '.xterm-helper-textarea',
+                        ) as HTMLElement | null
+                        termEl?.focus()
+                      })
                     }
                   }}
                   className="flex items-center gap-1 px-3 py-2 text-xs text-slate-500 hover:text-slate-300"
@@ -562,7 +573,7 @@ export default function SshPlaceholder() {
             </div>
 
             {/* 中间终端区域 */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
               {splits.length > 0 ? (
                 <SplitContainer
                   splits={splits}
@@ -580,7 +591,12 @@ export default function SshPlaceholder() {
                   resolvedCredentials={resolvedCreds}
                 />
               ) : activeSession ? (
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div
+                  data-testid="ssh-terminal-panel"
+                  className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
+                    sftpOpen ? 'hidden md:flex' : 'flex'
+                  }`}
+                >
                   <TerminalView
                     connectionId={activeSession.id}
                     sessionId={activeSession.id}
@@ -594,7 +610,10 @@ export default function SshPlaceholder() {
 
               {/* SFTP 侧边栏（桌面端侧栏，移动端隐藏） */}
               {sftpOpen && !aiOpen && activeSession && (
-                <div className="hidden shrink-0 border-l border-slate-700/50 md:block">
+                <div
+                  data-testid="ssh-sftp-panel"
+                  className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-slate-700/50 md:h-full md:w-[min(36vw,420px)] md:max-w-[420px] md:min-w-[280px] md:flex-none"
+                >
                   <SftpSidebar sessionId={activeSession.id} />
                 </div>
               )}

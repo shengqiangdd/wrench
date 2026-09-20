@@ -1838,7 +1838,10 @@ export default function TerminalView({
   }
 
   return (
-    <div className={`group relative flex flex-col ${className}`} style={{ minHeight: 0 }}>
+    <div
+      data-terminal-session={sessionId}
+      className={`group relative flex min-h-0 min-w-0 flex-col ${className}`}
+    >
       {/* 搜索面板（共用组件：带大小写/整词/正则开关与匹配计数，见 TerminalSearchBar） */}
       {search.open && (
         <TerminalSearchBar
