@@ -16,7 +16,7 @@ import AiSidebar from './AiSidebar'
 import type { SshSession } from '../../types/ssh'
 import { useAiStore } from '../../stores/ai-store'
 import { presentSshError } from '../../utils/ssh-error'
-import { getSshTerminalPanelClass, SSH_SFTP_PANEL_CLASS } from './ssh-layout'
+import { focusSshTerminalInput, getSshTerminalPanelClass, SSH_SFTP_PANEL_CLASS } from './ssh-layout'
 
 function SshErrorBanner({ error, onClose }: { error: string; onClose: () => void }) {
   const presentation = presentSshError(error)
@@ -557,10 +557,7 @@ export default function SshPlaceholder() {
                     } else if (activeSession) {
                       // 已有连接时，聚焦终端输入区域
                       requestAnimationFrame(() => {
-                        const termEl = document.querySelector(
-                          '.xterm-helper-textarea',
-                        ) as HTMLElement | null
-                        termEl?.focus()
+                        focusSshTerminalInput(activeSession.id)
                       })
                     }
                   }}
