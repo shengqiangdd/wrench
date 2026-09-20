@@ -63,7 +63,7 @@ import {
   type PendingDelete,
 } from '../../utils/terminal-delete-dedup'
 import { TerminalSuggestionPanel } from '../../components/terminal/TerminalSuggestionPanel'
-import { decodePtyBytes, shouldClearInitialTerminal } from './terminal-output'
+import { decodePtyBytes, flushPtyBytes, shouldClearInitialTerminal } from './terminal-output'
 import {
   applyTerminalInput,
   clearTerminalCommandHistory,
@@ -1027,6 +1027,7 @@ export default function TerminalView({
     const ansiBuf = new AnsiStreamBuffer()
 
     let hasPtyOutput = false
+    let ptyOutputSinceConnect = false
     let ptyDecoder = new TextDecoder()
 
     // ─── 输出追踪：检测长时间运行的命令 ───
@@ -1063,7 +1064,10 @@ export default function TerminalView({
     }
 
     const writePty = (chunk: string) => {
-      if (chunk) hasPtyOutput = true
+      if (chunk) {
+        hasPtyOutput = true
+        ptyOutputSinceConnect = true
+      }
       const ready = ansiBuf.push(chunk)
       if (!ready || disposedRef.current) return
       // 探测"整块重画"（连续回移光标累计行数 = 块高 − 1）：块高超过画布就把画布长高。
@@ -1083,6 +1087,12 @@ export default function TerminalView({
         }
       })
       trackOutput(ready)
+    }
+
+    const flushPtyDecoder = () => {
+      const tail = flushPtyBytes(ptyDecoder)
+      ptyDecoder = new TextDecoder()
+      if (tail) writePty(tail)
     }
 
     // ─── 创建独立 WebSocket 连接用于此终端 ───
@@ -1205,7 +1215,7 @@ export default function TerminalView({
           // 清除 [连接中] 提示行，替换为 [已连接] 确认
           if (!disposedRef.current) {
             if (wasReconnect) {
-              ansiBuf.reset()
+              if (!ptyOutputSinceConnect) ansiBuf.reset()
               // 重连：上一次会话的输出对用户还有用，不能清屏，只加一条分隔
               term.write('\r\n\x1b[33m[已重新连接 · 上一次会话的输出保留在上面]\x1b[0m\r\n')
             } else if (shouldClearInitialTerminal(hasPtyOutput)) {
@@ -1235,6 +1245,7 @@ export default function TerminalView({
           } else if (connectedRef.current || connectingRef.current) return false
           connectingRef.current = true
           connectedRef.current = false
+          ptyOutputSinceConnect = false
           // A reconnect starts a new PTY byte stream; do not carry a partial UTF-8 sequence over.
           ptyDecoder = new TextDecoder()
           termWs.send({
@@ -1286,6 +1297,7 @@ export default function TerminalView({
           if (reopenTimeoutRef.current) clearTimeout(reopenTimeoutRef.current)
           connectingRef.current = false
           connectedRef.current = false
+          flushPtyDecoder()
           if (!disposedRef.current) {
             term.write('\r\n\x1b[31m[连接已断开]\x1b[0m\r\n')
             // 后端现在带 reason：exit = 用户自己敲的退出（不自动重开），closed = 掉线（自动重连）
@@ -1386,6 +1398,7 @@ export default function TerminalView({
             // 结果 WS 明明恢复了却再也建不起会话（只能刷页面）。
             // 语义与下面 termWs.on('disconnected') 里的一致（那里也是这么清的）。
             connectedRef.current = false
+            flushPtyDecoder()
             if (!disposedRef.current) {
               term.write(`\r\n\x1b[31m[WebSocket 连接失败] ${lastErr}\x1b[0m\r\n`)
               // WS 断开是传输层的事：WsClient 自己会退避重连，我们负责在那之后把 SSH 会话重开

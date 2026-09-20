@@ -7,3 +7,8 @@ export function shouldClearInitialTerminal(hasPtyOutput: boolean): boolean {
 export function decodePtyBytes(decoder: TextDecoder, bytes: Uint8Array): string {
   return decoder.decode(bytes, { stream: true })
 }
+
+/** Flush a streaming PTY decoder at the end of a byte stream. */
+export function flushPtyBytes(decoder: TextDecoder): string {
+  return decoder.decode()
+}
