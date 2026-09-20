@@ -700,16 +700,42 @@ pub struct DockerComposeRawResponse {
     pub output: String,
 }
 
-/// Strip ANSI escape codes and normalize line endings for clean log output
+/// Strip ANSI escape codes and normalize terminal line endings for clean API output.
 fn clean_ansi_output(s: &str) -> String {
-    // Remove ANSI escape sequences: ESC[ ... m, ESC[ ... H, ESC[ ... J, etc.
-    let re = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+    // Remove CSI escape sequences (including private modes such as \`?25l\`) and OSC
+    // sequences. Compose may emit these even when plain progress is requested.
+    let re = regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]").unwrap();
     let cleaned = re.replace_all(s, "");
     // Also remove OSC sequences: ESC] ... BEL or ESC\
     let re2 = regex::Regex::new(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap();
     let cleaned = re2.replace_all(&cleaned, "");
-    // Normalize \r\n → \n, strip standalone \r, strip trailing whitespace
-    cleaned.replace("\r\n", "\n").replace('\r', "").trim().to_string()
+    // Treat CR as a terminal line replacement instead of simply deleting it.
+    cleaned
+        .replace("\r\n", "\n")
+        .split('\n')
+        .map(|line| line.rsplit('\r').next().unwrap_or_default().trim_end())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// Clean Compose status output while retaining real log output. Only adjacent
+/// identical, non-empty lines are safe to collapse.
+fn clean_compose_action_output(s: &str) -> String {
+    let cleaned = clean_ansi_output(s);
+    let mut result = Vec::new();
+    let mut previous = None;
+
+    for line in cleaned.lines() {
+        if !line.trim().is_empty() && previous == Some(line) {
+            continue;
+        }
+        previous = Some(line);
+        result.push(line);
+    }
+
+    result.join("\n").trim().to_string()
 }
 
 /// POST /api/docker/compose/action
@@ -745,11 +771,12 @@ pub async fn compose_action(
                     "data": { "services": services }
                 })))
             } else {
-                // For non-ps actions (up, down, logs, start, stop), return raw output
+                // Logs retain repeated lines; status/progress output gets terminal-aware
+                // cleanup so Compose redraws do not become duplicate API/UI lines.
                 let output = if action_cmd == "logs" {
                     clean_ansi_output(&data)
                 } else {
-                    data
+                    clean_compose_action_output(&data)
                 };
                 Ok(axum::Json(serde_json::json!({
                     "success": true,
@@ -818,4 +845,33 @@ pub async fn docker_diagnose(
         raw_stats,
         raw_compose_ls,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clean_ansi_output, clean_compose_action_output};
+
+    #[test]
+    fn clean_ansi_output_keeps_last_carriage_return_frame() {
+        let output = "Pulling 1/3\rPulling 2/3\rPulling 3/3\n\x1b[?25lDone\x1b[0m\n";
+
+        assert_eq!(clean_ansi_output(output), "Pulling 3/3\nDone");
+    }
+
+    #[test]
+    fn compose_action_output_collapses_adjacent_progress_duplicates() {
+        let output = "[+] Running 2/2\n\u{2714} Container api Started\n\u{2714} Container api Started\n\nDone\nDone\n";
+
+        assert_eq!(
+            clean_compose_action_output(output),
+            "[+] Running 2/2\n\u{2714} Container api Started\n\nDone",
+        );
+    }
+
+    #[test]
+    fn compose_action_output_does_not_collapse_non_adjacent_repeated_lines() {
+        let output = "Container api Started\nContainer worker Started\nContainer api Started";
+
+        assert_eq!(clean_compose_action_output(output), output);
+    }
 }
