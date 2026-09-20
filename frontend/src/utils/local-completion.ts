@@ -247,6 +247,10 @@ const TEMPLATE_CACHE = new Map<string, Completion[]>()
 const SYMBOL_CACHE = new Map<string, readonly string[]>()
 let symbolCacheSize = 0
 const MAX_CACHED_DOCUMENT_CHARS = 256 * 1024
+// Generated files and pasted logs can be much larger than the editor region
+// where completion is being requested. Keep symbol discovery local in that
+// case; templates and lexical suppression still use the complete document.
+const MAX_SYMBOL_SCAN_CHARS = 512 * 1024
 const MAX_SYMBOL_CACHE_CHARS = 1024 * 1024
 const MAX_SYMBOL_CACHE_ENTRIES = 16
 const CACHEABLE_TEMPLATE_LANGUAGES = new Set([
@@ -265,10 +269,13 @@ function cachedTemplateOptions(language: string): Completion[] {
   return options
 }
 
-function scanSymbolLabels(doc: string): readonly string[] {
+function scanSymbolLabels(doc: string, cursor = doc.length): readonly string[] {
   const symbols = new Set<string>()
   const identifierPattern = /\b[A-Za-z_$][\w$]*\b/g
-  for (const match of doc.matchAll(identifierPattern)) {
+  const scanStart = Math.max(0, cursor - MAX_SYMBOL_SCAN_CHARS)
+  identifierPattern.lastIndex = scanStart
+  let match: RegExpExecArray | null
+  while ((match = identifierPattern.exec(doc))) {
     const symbol = match[0]
     if (symbol.length >= 2 && !COMMON_WORDS.has(symbol)) symbols.add(symbol)
     if (symbols.size >= 80) break
@@ -276,13 +283,18 @@ function scanSymbolLabels(doc: string): readonly string[] {
   return [...symbols]
 }
 
-function symbolOptions(doc: string, prefix: string, language: string): Completion[] {
+function symbolOptions(
+  doc: string,
+  prefix: string,
+  language: string,
+  cursor: number,
+): Completion[] {
   // Keep this cache deliberately bounded. Large documents retain the existing
   // behavior and are not retained in memory by the completion source.
   const cacheKey = language + '\u0000' + doc
   let labels = SYMBOL_CACHE.get(cacheKey)
   if (!labels && doc.length <= MAX_CACHED_DOCUMENT_CHARS) {
-    labels = scanSymbolLabels(doc)
+    labels = scanSymbolLabels(doc, cursor)
     while (
       SYMBOL_CACHE.size >= MAX_SYMBOL_CACHE_ENTRIES ||
       symbolCacheSize + doc.length > MAX_SYMBOL_CACHE_CHARS
@@ -295,7 +307,7 @@ function symbolOptions(doc: string, prefix: string, language: string): Completio
     SYMBOL_CACHE.set(cacheKey, labels)
     symbolCacheSize += doc.length
   }
-  const symbols = labels || scanSymbolLabels(doc)
+  const symbols = labels || scanSymbolLabels(doc, cursor)
 
   return symbols
     .filter((symbol) => symbol !== prefix)
@@ -376,7 +388,7 @@ export function getLocalCompletionOptions(
 
   const options = [
     ...cachedTemplateOptions(normalizedLanguage),
-    ...symbolOptions(doc, token, normalizedLanguage),
+    ...symbolOptions(doc, token, normalizedLanguage, pos),
   ]
   const filteredOptions = token
     ? options.filter((option) => option.label.toLowerCase().startsWith(token.toLowerCase()))

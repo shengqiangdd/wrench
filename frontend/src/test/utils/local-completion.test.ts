@@ -36,6 +36,16 @@ describe('local-completion', () => {
     expect(symbolResult?.options.map((option) => option.label)).toContain('importantValue')
   })
 
+  it('limits symbol discovery to the local window for very large documents', () => {
+    const distantSymbol = 'distantSymbol'
+    const nearbySymbol = 'nearbySymbol'
+    const doc = distantSymbol + '\n' + 'x '.repeat(300_000) + nearbySymbol + '\nnea'
+    const result = getLocalCompletionOptions('javascript', 'app.js', doc, doc.length)
+
+    expect(result?.options.map((option) => option.label)).toContain(nearbySymbol)
+    expect(result?.options.map((option) => option.label)).not.toContain(distantSymbol)
+  })
+
   it('filters suggestions by the token before the cursor', () => {
     const result = getLocalCompletionOptions('javascript', 'app.js', 'fun', 3)
 
