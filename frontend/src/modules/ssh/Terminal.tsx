@@ -62,6 +62,7 @@ import {
   type PendingDelete,
 } from '../../utils/terminal-delete-dedup'
 import { TerminalSuggestionPanel } from '../../components/terminal/TerminalSuggestionPanel'
+import { shouldClearInitialTerminal } from './terminal-output'
 import {
   applyTerminalInput,
   clearTerminalCommandHistory,
@@ -1022,6 +1023,8 @@ export default function TerminalView({
     // 跨 WebSocket 分片拼接未完成 ESC/CSI；光标序列原样交给 xterm.js
     const ansiBuf = new AnsiStreamBuffer()
 
+    let hasPtyOutput = false
+
     // ─── 输出追踪：检测长时间运行的命令 ───
     const trackOutput = (data: string) => {
       const tracker = outputTrackerRef.current
@@ -1056,6 +1059,7 @@ export default function TerminalView({
     }
 
     const writePty = (chunk: string) => {
+      if (chunk) hasPtyOutput = true
       const ready = ansiBuf.push(chunk)
       if (!ready || disposedRef.current) return
       // 探测"整块重画"（连续回移光标累计行数 = 块高 − 1）：块高超过画布就把画布长高。
@@ -1196,12 +1200,13 @@ export default function TerminalView({
           reconnect.notifyConnected()
           // 清除 [连接中] 提示行，替换为 [已连接] 确认
           if (!disposedRef.current) {
-            ansiBuf.reset()
             if (wasReconnect) {
+              ansiBuf.reset()
               // 重连：上一次会话的输出对用户还有用，不能清屏，只加一条分隔
               term.write('\r\n\x1b[33m[已重新连接 · 上一次会话的输出保留在上面]\x1b[0m\r\n')
-            } else {
-              // 首次连接：清除 [连接中] 等状态行，让 SSH banner/prompt 从第一行开始
+            } else if (shouldClearInitialTerminal(hasPtyOutput)) {
+              // 只有尚未收到 PTY 输出时才清除 [连接中] 状态行，避免早到的首批输出消失。
+              ansiBuf.reset()
               term.clear()
             }
             if (canvasCtlRef.current) canvasCtlRef.current.goLive()
