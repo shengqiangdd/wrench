@@ -271,6 +271,8 @@ export class WsClient {
     }, WS_CONNECT_TIMEOUT_MS)
 
     ws.onopen = () => {
+      // 被替换的旧 socket 可能迟到触发 onopen，不能改变新连接状态。
+      if (this.ws !== ws) return
       console.log(`[WsClient] onopen — connected to ${this.url.split('?')[0]}`)
       if (this.connectTimeoutTimer) {
         clearTimeout(this.connectTimeoutTimer)

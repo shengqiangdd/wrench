@@ -89,6 +89,20 @@ describe('WsClient', () => {
     })
   })
 
+  it('ignores onopen from a replaced socket', async () => {
+    client.connect()
+    await vi.waitFor(() => expect(client.status).toBe('connected'))
+    const oldWs = getMockWs(client)
+
+    client.disconnect()
+    client.connect()
+    expect(client.status).toBe('connecting')
+    oldWs.onopen?.()
+    expect(client.status).toBe('connecting')
+
+    await vi.waitFor(() => expect(client.status).toBe('connected'))
+  })
+
   it('ignores binary messages from a replaced socket', async () => {
     const received: Record<string, unknown>[] = []
     client.on('data', (data) => received.push(data))
