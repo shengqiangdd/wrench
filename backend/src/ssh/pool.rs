@@ -533,7 +533,7 @@ mod tests {
         assert_eq!(buffer, b"abc");
         assert!(append_bounded(&mut buffer, b"def", 5));
         assert_eq!(buffer, b"abcde");
-        assert!(append_bounded(&mut buffer, b"", 5) == false);
+        assert!(!append_bounded(&mut buffer, b"", 5));
     }
 
     #[test]

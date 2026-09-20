@@ -351,15 +351,18 @@ impl AppState {
 
     pub fn cancel_exec(&self, space_id: &str, request_id: &str) -> bool {
         let key = Self::exec_operation_key(space_id, request_id);
-        self.exec_cancellations.get(&key).map(|entry| {
-            let token = entry.value();
-            let was_cancelled = token.is_cancelled();
-            token.cancel();
-            if !was_cancelled {
-                self.exec_metrics.cancelled.fetch_add(1, Ordering::Relaxed);
-            }
-            true
-        }).unwrap_or(false)
+        self.exec_cancellations
+            .get(&key)
+            .map(|entry| {
+                let token = entry.value();
+                let was_cancelled = token.is_cancelled();
+                token.cancel();
+                if !was_cancelled {
+                    self.exec_metrics.cancelled.fetch_add(1, Ordering::Relaxed);
+                }
+                true
+            })
+            .unwrap_or(false)
     }
 
     pub fn finish_exec(&self, space_id: &str, request_id: &str) {

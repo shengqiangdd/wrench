@@ -104,6 +104,14 @@ run_image() {
   WRENCH_IMAGE="$image" WRENCH_VERSION="$version" compose pull wrench
   WRENCH_IMAGE="$image" WRENCH_VERSION="$version" compose up -d --no-build wrench
   wait_for_health "$version"
+  # A container can pass its first probe while still restarting. Re-run the
+  # same checks after one interval before declaring deploy/rollback stable.
+  sleep "$HEALTH_DELAY"
+  check_health_once "$version" || {
+    printf 'error: post-deploy health recheck failed\n' >&2
+    return 1
+  }
+  printf 'stable after recheck: %s\n' "$HEALTH_URL"
 }
 
 deploy() {

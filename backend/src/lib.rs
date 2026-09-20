@@ -89,18 +89,18 @@ async fn static_cache_middleware(req: axum::http::Request<Body>, next: axum_midd
         Some("no-store, no-cache, must-revalidate, proxy-revalidate")
     } else {
         match std::path::Path::new(&path).extension().and_then(|e| e.to_str()) {
-        // Hashed JS/CSS from Vite build — immutable cache for 1 year
-        Some(ext) if matches!(ext, "js" | "mjs" | "css" | "woff2") && has_hash_in_path(&path) => {
-            Some("public, max-age=31536000, immutable")
-        }
-        // Images and fonts — 7 days
-        Some("png" | "jpg" | "jpeg" | "gif" | "svg" | "ico" | "webp" | "woff" | "ttf" | "eot") => {
-            Some("public, max-age=604800")
-        }
-        // Other static files — 1 day
-        Some("json" | "xml" | "map" | "txt") => Some("public, max-age=86400"),
-        // Everything else — no-store
-        _ => None,
+            // Hashed JS/CSS from Vite build — immutable cache for 1 year
+            Some(ext) if matches!(ext, "js" | "mjs" | "css" | "woff2") && has_hash_in_path(&path) => {
+                Some("public, max-age=31536000, immutable")
+            }
+            // Images and fonts — 7 days
+            Some("png" | "jpg" | "jpeg" | "gif" | "svg" | "ico" | "webp" | "woff" | "ttf" | "eot") => {
+                Some("public, max-age=604800")
+            }
+            // Other static files — 1 day
+            Some("json" | "xml" | "map" | "txt") => Some("public, max-age=86400"),
+            // Everything else — no-store
+            _ => None,
         }
     };
 
@@ -360,8 +360,6 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         .layer(axum_middleware::from_fn(
             middleware::security_headers::security_headers_middleware,
         ))
-        .layer(axum_middleware::from_fn(
-            middleware::request_id::request_id_middleware,
-        ))
+        .layer(axum_middleware::from_fn(middleware::request_id::request_id_middleware))
         .layer(TraceLayer::new_for_http())
 }

@@ -59,9 +59,6 @@ mod tests {
     fn build_info_parser_ignores_empty_and_default_values() {
         let info = "BUILD_HASH=0\nBUILD_TIME=2026-09-20T00:00:00Z\n";
         assert_eq!(build_info_value(info, "BUILD_HASH"), None);
-        assert_eq!(
-            build_info_value("BUILD_HASH=abc123\n", "BUILD_HASH"),
-            Some("abc123".into())
-        );
+        assert_eq!(build_info_value("BUILD_HASH=abc123\n", "BUILD_HASH"), Some("abc123".into()));
     }
 }

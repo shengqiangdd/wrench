@@ -30,9 +30,11 @@ pub async fn request_id_middleware(mut request: Request<Body>, next: Next) -> Re
 }
 
 fn is_safe_request_id(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 128 && value.bytes().all(|byte| {
-        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
-    })
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
 }
 
 #[cfg(test)]

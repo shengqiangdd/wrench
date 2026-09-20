@@ -13,10 +13,7 @@ use tracing::info;
 use crate::app_state::AppState;
 
 /// WebSocket log stream handler (/ws/logs)
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> axum::response::Response {
+pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> axum::response::Response {
     // 与终端共用同一档 WS 并发闸门：每条日志流也是一个长连接 + 任务，
     // 不设上限时它同样能用来把实例的连接数堆满。
     let Some(slot) = state.try_open_ws() else {

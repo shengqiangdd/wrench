@@ -122,7 +122,9 @@ async fn metrics_exposes_exec_counters() {
     config.auth_password = None;
     let app = build_test_app_with(config).await;
     let resp = app
-        .oneshot(with_connect_info(Request::builder().uri("/api/metrics").body(Body::empty()).unwrap()))
+        .oneshot(with_connect_info(
+            Request::builder().uri("/api/metrics").body(Body::empty()).unwrap(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);

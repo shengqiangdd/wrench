@@ -15,10 +15,7 @@ use crate::app_state::AppState;
 /// This endpoint is **deprecated**. Docker stats are now served via the
 /// REST API `GET /api/docker/stats`. The WebSocket handler sends a
 /// deprecation notice and closes the connection immediately.
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> axum::response::Response {
+pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> axum::response::Response {
     // 统一走 WS 并发闸门（这条虽是 legacy stub，也不能成为绕过闸门的入口）。
     let Some(slot) = state.try_open_ws() else {
         return (

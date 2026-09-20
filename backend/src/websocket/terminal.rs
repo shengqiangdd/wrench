@@ -72,12 +72,7 @@ fn recycle_output_buffer(output_buf: &mut Vec<u8>, data: Vec<u8>) {
 }
 
 /// Flush a buffered PTY batch and retain its allocation for the next batch.
-async fn flush_pty_output(
-    socket: &mut WebSocket,
-    kind: u8,
-    connection_id: &str,
-    output_buf: &mut Vec<u8>,
-) -> bool {
+async fn flush_pty_output(socket: &mut WebSocket, kind: u8, connection_id: &str, output_buf: &mut Vec<u8>) -> bool {
     let data = std::mem::take(output_buf);
     let sent = send_pty_output(socket, kind, connection_id, &data).await;
     recycle_output_buffer(output_buf, data);
@@ -254,11 +249,7 @@ async fn handle_terminal_connect(
     let cols = msg.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as u32;
     // 移动端给 Compose 留出足够的逻辑行，避免动态进度块因 PTY 太矮滚入 scrollback。
     // 仅抬高初始 PTY，不改变桌面端已经传入的大尺寸。
-    let rows = msg
-        .get("rows")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(24)
-        .max(30) as u32;
+    let rows = msg.get("rows").and_then(|v| v.as_u64()).unwrap_or(24).max(30) as u32;
 
     // Debug: log message fields (redact password)
     let has_password = msg
@@ -642,10 +633,10 @@ async fn handle_terminal_connect(
                     Some(ChannelMsg::Data { ref data }) => {
                         output_buf.extend_from_slice(data);
                         // 大块输出立即发送，避免延迟和内存增长。
-                        if output_buf.len() >= 32 * 1024 {
-                            if !flush_pty_output(socket, PTY_BINARY_SSH, &connection_id, &mut output_buf).await {
-                                break;
-                            }
+                        if output_buf.len() >= 32 * 1024
+                            && !flush_pty_output(socket, PTY_BINARY_SSH, &connection_id, &mut output_buf).await
+                        {
+                            break;
                         }
                     }
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
@@ -1216,7 +1207,7 @@ async fn handle_docker_shell(socket: &mut WebSocket, state: &Arc<AppState>, spac
 
 #[cfg(test)]
 mod tests {
-    use super::{build_pty_output_frame, logtail_key, recycle_output_buffer, PTY_BINARY_SSH};
+    use super::{PTY_BINARY_SSH, build_pty_output_frame, logtail_key, recycle_output_buffer};
 
     /// 跟随日志的会话键必须带空间前缀：否则猜到 connectionId + 路径就能掐掉
     /// 别人的 tail -f 进程。
