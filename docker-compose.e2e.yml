@@ -1,0 +1,34 @@
+# Isolated real-chain E2E stack. It intentionally does not alter the
+# production compose files or their public SSH egress behaviour.
+services:
+  wrench:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: /data/wrench.db
+      JWT_SECRET: e2e-only-not-a-production-secret
+      # Preserve the application's open-access deployment semantics.
+      WRENCH_REQUIRE_AUTH: "off"
+      # The internal test SSH service is private, so allow precisely its fixed
+      # test IP. Public SSH remains allowed exactly as in normal deployments.
+      WRENCH_EGRESS_ALLOW: "172.30.0.10:22"
+      WRENCH_EGRESS_STRICT: "0"
+    networks:
+      e2e_net:
+
+  sshd:
+    build:
+      context: .
+      dockerfile: e2e/sshd.Dockerfile
+    networks:
+      e2e_net:
+        ipv4_address: 172.30.0.10
+
+networks:
+  e2e_net:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

@@ -33,6 +33,7 @@ test('real SSH terminal and SFTP smoke path', async ({ page }) => {
   // Exercise the actual PTY input path without exposing command output in logs.
   await terminal.locator('.xterm-helper-textarea').pressSequentially('printf e2e-ok')
   await terminal.locator('.xterm-helper-textarea').press('Enter')
+  await expect(terminal.locator('.xterm-rows')).toContainText('e2e-ok', { timeout: 15_000 })
 
   await page.getByRole('button', { name: '文件' }).click()
   const sftp = page.getByTestId('ssh-sftp-panel')
@@ -40,6 +41,7 @@ test('real SSH terminal and SFTP smoke path', async ({ page }) => {
   const sftpBox = await sftp.boundingBox()
   expect(sftpBox?.width).toBeGreaterThan(0)
   expect(sftpBox?.height).toBeGreaterThan(0)
+  await expect(sftp.locator('.sftp-file-entry').first()).toBeVisible({ timeout: 30_000 })
 
   await page.getByRole('button', { name: '终端' }).click()
   await expect(sftp).toBeHidden()
