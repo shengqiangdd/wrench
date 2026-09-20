@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { lazy, Suspense, useState, useCallback } from 'react'
 import { useSyncExternalStore } from 'react'
 import { useAppStore } from '../../stores/app-store'
 import Sidebar from './Sidebar'
@@ -7,12 +7,13 @@ import OpenAccessNotice from '../OpenAccessNotice'
 import MainContent from './MainContent'
 import RightPanel from './RightPanel'
 import AgentDrawer from '../agent/AgentDrawer'
-import AgentPanel from '../agent/AgentPanel'
-import HostPickerModal from '../agent/HostPickerModal'
 import { useSshStore } from '../../stores/ssh-store'
 import { ensureSshConnection } from '../../services/ssh-ensure'
 import { authedFetch } from '../../services/auth'
 import { notify } from '../../services/event-bus'
+
+const AgentPanel = lazy(() => import('../agent/AgentPanel'))
+const HostPickerModal = lazy(() => import('../agent/HostPickerModal'))
 
 /** 订阅 navigator.onLine 变化 */
 function getOnlineSnapshot() {
@@ -124,32 +125,36 @@ export default function Layout() {
 
         {/* 全局 AI Agent 抽屉 */}
         <AgentDrawer onExecuteCommand={handleQuickExecute}>
-          <AgentPanel />
+          <Suspense fallback={null}>
+            <AgentPanel />
+          </Suspense>
         </AgentDrawer>
       </div>
 
       {/* 主机选择弹窗 */}
       {pendingCommand && (
-        <HostPickerModal
-          command={pendingCommand}
-          onClose={() => setPendingCommand(null)}
-          onExecute={(connId, conn) => {
-            // 如果主机有凭据且未连接，先自动连接再执行
-            if (conn?.password || conn?.privateKey) {
-              ensureSshConnection({
-                host: conn.host,
-                port: conn.port,
-                username: conn.username,
-                password: conn.password,
-                privateKey: conn.privateKey,
-              })
-                .then((cid) => handleHostSelected(cid, pendingCommand))
-                .catch(() => handleHostSelected(connId, pendingCommand))
-            } else {
-              handleHostSelected(connId, pendingCommand)
-            }
-          }}
-        />
+        <Suspense fallback={null}>
+          <HostPickerModal
+            command={pendingCommand}
+            onClose={() => setPendingCommand(null)}
+            onExecute={(connId, conn) => {
+              // 如果主机有凭据且未连接，先自动连接再执行
+              if (conn?.password || conn?.privateKey) {
+                ensureSshConnection({
+                  host: conn.host,
+                  port: conn.port,
+                  username: conn.username,
+                  password: conn.password,
+                  privateKey: conn.privateKey,
+                })
+                  .then((cid) => handleHostSelected(cid, pendingCommand))
+                  .catch(() => handleHostSelected(connId, pendingCommand))
+              } else {
+                handleHostSelected(connId, pendingCommand)
+              }
+            }}
+          />
+        </Suspense>
       )}
 
       {/* 移动端底部导航 */}

@@ -12,14 +12,13 @@ import { refreshSshStore } from './stores/ssh-store'
 import { refreshAlertStore } from './stores/alert-store'
 import { refreshPluginStore } from './stores/plugin-store'
 import { initGlobalAPI } from './global-api'
-import { ensureClientDbInit } from './services/client-db-init'
 import { on } from './services/event-bus'
 
 // 初始化插件全局 API
 initGlobalAPI()
 
-// 初始化客户端 SQLite 数据库（异步，后台加载）
-ensureClientDbInit()
+// 初始化客户端 SQLite 数据库（异步，后台加载）。保持 sql.js/WASM 不进入首屏主包。
+void import('./services/client-db-init').then(({ ensureClientDbInit }) => ensureClientDbInit())
 
 /** NavId → URL path 映射 */
 const NAV_PATH: Record<NavId, string> = {
