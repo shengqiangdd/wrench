@@ -218,6 +218,8 @@ export interface SftpApiResponse<T = unknown> {
 
 const SFTP_METADATA_CACHE_TTL_MS = 2000
 const SFTP_METADATA_CACHE_MAX_ENTRIES = 128
+const SFTP_METADATA_MAX_CONCURRENT = 4
+const SFTP_METADATA_LIST_PRIORITY = 0
 
 interface MetadataCacheEntry {
   expiresAt: number
@@ -226,6 +228,14 @@ interface MetadataCacheEntry {
   path: string
 }
 
+interface MetadataTask<T> {
+  priority: number
+  sequence: number
+  revision: number
+  run: () => Promise<T>
+  resolve: (value: T) => void
+  reject: (reason: unknown) => void
+}
 // Map insertion order is used as the LRU order: the first key is the least
 // recently used one. The path index lets mutations evict a directory subtree
 // without scanning unrelated metadata entries.
@@ -233,8 +243,55 @@ const metadataCache = new Map<string, MetadataCacheEntry>()
 const metadataPathIndex = new Map<string, Map<string, Set<string>>>()
 const metadataInflight = new Map<string, Promise<unknown>>()
 let activeMetadataScope: string | null = null
+const metadataQueue: MetadataTask<unknown>[] = []
+let activeMetadataTasks = 0
+let metadataTaskSequence = 0
 let metadataRevision = 0
 
+/** Directory refreshes unblock navigation, so they run before detail stats. */
+export function sftpMetadataPriority(endpoint: 'list' | 'stat'): number {
+  return endpoint === 'list' ? SFTP_METADATA_LIST_PRIORITY : SFTP_METADATA_LIST_PRIORITY + 1
+}
+
+function drainMetadataQueue(): void {
+  while (activeMetadataTasks < SFTP_METADATA_MAX_CONCURRENT && metadataQueue.length > 0) {
+    const task = metadataQueue.shift()
+    if (!task) return
+    // A queued task from an old session/mutation must not consume a remote
+    // request slot after its view has already been replaced.
+    if (task.revision !== metadataRevision) {
+      task.reject(new Error('SFTP metadata request superseded'))
+      continue
+    }
+    activeMetadataTasks += 1
+    void task
+      .run()
+      .then(task.resolve, task.reject)
+      .finally(() => {
+        activeMetadataTasks -= 1
+        drainMetadataQueue()
+      })
+  }
+}
+
+function scheduleMetadataRequest<T>(
+  endpoint: 'list' | 'stat',
+  revision: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    metadataQueue.push({
+      priority: sftpMetadataPriority(endpoint),
+      sequence: metadataTaskSequence++,
+      revision,
+      run: () => run(),
+      resolve: (value) => resolve(value as T),
+      reject,
+    })
+    metadataQueue.sort((a, b) => a.priority - b.priority || a.sequence - b.sequence)
+    drainMetadataQueue()
+  })
+}
 function metadataScope(body: Record<string, unknown>): string {
   return String(body.sessionId || '') + '\u0000' + String(body.connectionId || '')
 }
@@ -424,7 +481,7 @@ export async function sftpApi<T = unknown>(
   }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
-  const request = (async (): Promise<T> => {
+  const executeRequest = async (): Promise<T> => {
     const res = await authedFetch('/api/sftp/' + endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -448,7 +505,11 @@ export async function sftpApi<T = unknown>(
       invalidateSftpMetadata(endpoint, body)
     }
     return value
-  })()
+  }
+  const request = isMetadataRequest
+    ? scheduleMetadataRequest(endpoint as 'list' | 'stat', requestRevision, executeRequest)
+    : executeRequest()
+
   if (isMetadataRequest) metadataInflight.set(cacheKey, request)
   try {
     return await request

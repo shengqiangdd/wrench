@@ -13,6 +13,7 @@ import {
   isSftpRequestCurrent,
   shouldFinishSftpListLoading,
   sftpParentPath,
+  sftpMetadataPriority,
 } from '../../modules/ssh/sftp-utils'
 
 const mockedFetch = vi.mocked(authedFetch)
@@ -37,6 +38,10 @@ describe('SFTP request lifecycle', () => {
 })
 
 describe('SFTP metadata cache', () => {
+  it('prioritizes directory navigation over metadata detail reads', () => {
+    expect(sftpMetadataPriority('list')).toBeLessThan(sftpMetadataPriority('stat'))
+  })
+
   beforeEach(() => {
     clearSftpMetadataCache()
     vi.clearAllMocks()
