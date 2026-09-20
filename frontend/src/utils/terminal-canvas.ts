@@ -35,6 +35,11 @@
  * 本文件只放纯函数，便于单测；实际渲染接线在 modules/ssh/Terminal.tsx。
  */
 
+/** Keep the xterm root and hidden input at the viewport origin while scrolling the screen. */
+export function getCanvasPaintTarget(root: HTMLElement): HTMLElement {
+  return root.querySelector('.xterm-screen') ?? root
+}
+
 /** 逻辑画布最小行数：覆盖常见 compose 进度块，但不人为抬到几十行。 */
 export const CANVAS_ROWS_FLOOR = 30
 

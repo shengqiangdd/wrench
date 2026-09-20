@@ -3,6 +3,7 @@ import {
   CANVAS_ROWS_CAP,
   clampWindowOffset,
   followWindowOffset,
+  getCanvasPaintTarget,
   isCanvasCappedOut,
   isLiveBottom,
   maxWindowOffset,
@@ -11,6 +12,23 @@ import {
   resolveCanvasRows,
   shouldAutoScrollToBottom,
 } from '../../utils/terminal-canvas'
+
+describe('getCanvasPaintTarget', () => {
+  it('moves only the screen so the xterm root remains at y=0', () => {
+    const root = document.createElement('div')
+    const screen = document.createElement('div')
+    screen.className = 'xterm-screen'
+    root.appendChild(screen)
+
+    expect(getCanvasPaintTarget(root)).toBe(screen)
+  })
+
+  it('falls back to the root for non-xterm test containers', () => {
+    const root = document.createElement('div')
+
+    expect(getCanvasPaintTarget(root)).toBe(root)
+  })
+})
 
 describe('resolveCanvasRows', () => {
   it('窄视口抬到下限（手机键盘弹起 12 行 → 30 行画布）', () => {

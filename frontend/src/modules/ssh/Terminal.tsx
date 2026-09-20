@@ -22,6 +22,7 @@ import {
   CANVAS_ROWS_FLOOR,
   clampWindowOffset,
   followWindowOffset,
+  getCanvasPaintTarget,
   isCanvasCappedOut,
   isLiveBottom,
   maxWindowOffset,
@@ -635,16 +636,18 @@ export default function TerminalView({
       }
     }
 
-    /** 把窗口偏移写进 DOM（transform 不参与布局，FitAddon 的计算不受影响） */
+    /** 把窗口偏移写到 screen，不移动 xterm 根节点/隐藏输入框（避免根节点落到视口外） */
     const canvasPaint = () => {
       const el = term.element
       if (!el || disposedRef.current) return
+      const paintTarget = getCanvasPaintTarget(el)
       const visibleRows = canvasVisibleRows()
       const maxOffset = maxWindowOffset(term.rows, visibleRows)
       if (maxOffset <= 0) {
         canvasOffset = 0
         canvasFollow = true
-        if (el.style.transform) el.style.transform = ''
+        paintTarget.style.transform = ''
+        if (paintTarget !== el) el.style.transform = ''
         return
       }
       const followOff = canvasFollowOffset(maxOffset, visibleRows)
@@ -665,7 +668,7 @@ export default function TerminalView({
       } else {
         canvasOffset = followOff
       }
-      el.style.transform =
+      paintTarget.style.transform =
         canvasOffset === 0 ? '' : `translateY(${-canvasOffset * canvasCellHeight()}px)`
     }
 
