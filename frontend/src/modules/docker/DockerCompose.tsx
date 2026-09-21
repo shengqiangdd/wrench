@@ -251,6 +251,9 @@ function DockerComposeInner({ connectionId }: Props) {
     const task = composeTask
     if (!task || task.status !== 'running') return
     composeAbortRef.current?.abort()
+    if (composeTimerRef.current) clearTimeout(composeTimerRef.current)
+    composeTimerRef.current = null
+    composeRequestIdRef.current = null
     void authedFetch('/api/exec/cancel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -272,7 +275,9 @@ function DockerComposeInner({ connectionId }: Props) {
         status: 'running',
       })
       composeTimerRef.current = setTimeout(() => {
+        if (composeRequestIdRef.current !== requestId) return
         controller.abort()
+        composeRequestIdRef.current = null
         void authedFetch('/api/exec/cancel', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -295,6 +300,7 @@ function DockerComposeInner({ connectionId }: Props) {
           body: JSON.stringify({ connectionId, filePath: path, action, service, requestId }),
         })
         const json = (await res.json()) as ApiResponse
+        if (composeRequestIdRef.current !== requestId) return
         if (!json.success) {
           const error = json.error || json.msg || '未知错误'
           if (action === 'logs') setLogData({ key, content: `请求失败: ${error}` })
@@ -316,6 +322,7 @@ function DockerComposeInner({ connectionId }: Props) {
         }
         if (json.success) setComposeTask(null)
       } catch (err: unknown) {
+        if (composeRequestIdRef.current !== requestId) return
         const msg = err instanceof Error ? err.message : '请求失败'
         if (action === 'logs') {
           setComposeTask({ requestId, label: `Compose ${action}`, status: 'failed', detail: msg })
