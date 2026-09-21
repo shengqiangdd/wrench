@@ -70,7 +70,7 @@ function DockerComposeInner({ connectionId }: Props) {
         })
       }
     },
-    [],
+    [connectionId],
   )
 
   // 加载项目列表
