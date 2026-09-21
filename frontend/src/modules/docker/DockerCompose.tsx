@@ -1,4 +1,4 @@
-import { memo, useCallback, useState, useEffect } from 'react'
+import { memo, useCallback, useState, useEffect, useRef } from 'react'
 import { authedFetch } from '../../services/auth'
 import { notify } from '../../services/event-bus'
 import {
@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Search,
   RotateCcw,
+  X,
 } from 'lucide-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,6 +35,14 @@ interface ComposeService {
 interface Props {
   connectionId: string
 }
+interface ComposeTask {
+  requestId: string
+  label: string
+  status: 'running' | 'cancelled' | 'timed_out' | 'failed'
+  detail?: string
+}
+
+const COMPOSE_TASK_TIMEOUT_MS = 60_000
 
 function DockerComposeInner({ connectionId }: Props) {
   const [projects, setProjects] = useState<ComposeProject[]>([])
@@ -43,6 +52,17 @@ function DockerComposeInner({ connectionId }: Props) {
   const [logData, setLogData] = useState<{ key: string; content: string } | null>(null)
   const [search, setSearch] = useState('')
   const [manualPath, setManualPath] = useState('')
+  const [composeTask, setComposeTask] = useState<ComposeTask | null>(null)
+  const composeAbortRef = useRef<AbortController | null>(null)
+  const composeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      composeAbortRef.current?.abort()
+      if (composeTimerRef.current) clearTimeout(composeTimerRef.current)
+    },
+    [],
+  )
 
   // 加载项目列表
   const discoverProjects = useCallback(async () => {
@@ -218,22 +238,57 @@ function DockerComposeInner({ connectionId }: Props) {
   }
 
   // Compose 操作
+  const cancelComposeTask = useCallback(() => {
+    const task = composeTask
+    if (!task || task.status !== 'running') return
+    composeAbortRef.current?.abort()
+    void authedFetch('/api/exec/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId: task.requestId }),
+    })
+    setComposeTask({ ...task, status: 'cancelled', detail: '已请求取消远端 Compose 操作' })
+  }, [composeTask])
   const doAction = useCallback(
     async (path: string, action: string, service?: string) => {
       const key = `${action}:${path}:${service || ''}`
       if (actionLoading) return
+      const requestId = `compose-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const controller = new AbortController()
+      composeAbortRef.current = controller
+      setComposeTask({
+        requestId,
+        label: `Compose ${action}${service ? ` · ${service}` : ''}`,
+        status: 'running',
+      })
+      composeTimerRef.current = setTimeout(() => {
+        controller.abort()
+        void authedFetch('/api/exec/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId }),
+        })
+        setComposeTask({
+          requestId,
+          label: `Compose ${action}`,
+          status: 'timed_out',
+          detail: '超过 60 秒，已请求取消远端任务',
+        })
+      }, COMPOSE_TASK_TIMEOUT_MS)
       setActionLoading(key)
       if (action === 'logs') setLogData({ key, content: '' })
       try {
         const res = await authedFetch('/api/docker/compose/action', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ connectionId, filePath: path, action, service }),
+          signal: controller.signal,
+          body: JSON.stringify({ connectionId, filePath: path, action, service, requestId }),
         })
         const json = (await res.json()) as ApiResponse
         if (!json.success) {
           const error = json.error || json.msg || '未知错误'
           if (action === 'logs') setLogData({ key, content: `请求失败: ${error}` })
+          setComposeTask({ requestId, label: `Compose ${action}`, status: 'failed', detail: error })
           notify(`${action} 失败: ${error}`, 'error')
         } else if (action === 'logs') {
           // 后端返回 { success, data: { output: "..." } } 或旧格式 { success, data: { data: "..." } }
@@ -249,14 +304,19 @@ function DockerComposeInner({ connectionId }: Props) {
           // 操作完成后自动刷新状态
           setTimeout(() => fetchServices(path), 800)
         }
+        if (json.success) setComposeTask(null)
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '请求失败'
         if (action === 'logs') {
+          setComposeTask({ requestId, label: `Compose ${action}`, status: 'failed', detail: msg })
           setLogData({ key, content: `请求失败: ${msg}` })
         }
         notify(`${action} 请求失败: ${msg}`, 'error')
       } finally {
         setActionLoading(null)
+        if (composeTimerRef.current) clearTimeout(composeTimerRef.current)
+        composeTimerRef.current = null
+        composeAbortRef.current = null
       }
     },
     [connectionId, actionLoading, fetchServices],
@@ -291,6 +351,39 @@ function DockerComposeInner({ connectionId }: Props) {
           刷新
         </button>
       </div>
+      {composeTask && (
+        <div
+          data-testid="compose-task"
+          className="mb-3 flex items-center gap-2 rounded-md border border-slate-700/60 bg-slate-800/70 px-3 py-2 text-xs"
+        >
+          {composeTask.status === 'running' && (
+            <Loader2 size={14} className="animate-spin text-sky-400" />
+          )}
+          <span className="min-w-0 flex-1 text-slate-300">
+            {composeTask.label} ·{' '}
+            {composeTask.status === 'running' ? '运行中' : composeTask.detail || composeTask.status}
+          </span>
+          {composeTask.status === 'running' ? (
+            <button
+              type="button"
+              onClick={cancelComposeTask}
+              className="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-amber-300 hover:bg-amber-500/10"
+            >
+              <X size={12} />
+              取消
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setComposeTask(null)}
+              className="shrink-0 rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-200"
+              aria-label="关闭任务状态"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 手动输入路径 */}
       <div className="mb-3 flex shrink-0 items-center gap-2">
