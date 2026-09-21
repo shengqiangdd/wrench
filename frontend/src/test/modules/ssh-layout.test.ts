@@ -7,20 +7,23 @@ import {
 } from '../../modules/ssh/ssh-layout'
 
 describe('SSH terminal and SFTP layout contract', () => {
-  it('keeps the terminal bounded and visible beside SFTP on desktop', () => {
+  it('keeps the terminal bounded and visible beside desktop SFTP', () => {
     const className = getSshTerminalPanelClass(true)
 
     expect(className).toContain('min-h-0')
     expect(className).toContain('min-w-0')
-    expect(className).toContain('hidden md:flex')
+    expect(className).toContain('flex')
+    expect(className.split(' ')).not.toContain('hidden')
+    expect(SSH_SFTP_PANEL_CLASS).toContain('hidden')
+    expect(SSH_SFTP_PANEL_CLASS).toContain('md:flex')
     expect(SSH_SFTP_PANEL_CLASS).toContain('md:min-w-[280px]')
     expect(SSH_SFTP_PANEL_CLASS).toContain('md:w-[min(36vw,420px)]')
     expect(SSH_SFTP_PANEL_CLASS).toContain('md:flex-none')
   })
 
-  it('makes the terminal the only panel on mobile when SFTP is closed', () => {
-    expect(getSshTerminalPanelClass(false)).toContain('flex')
-    expect(getSshTerminalPanelClass(false)).not.toContain('hidden md:flex')
+  it('keeps the terminal visible on mobile even when desktop SFTP is open', () => {
+    expect(getSshTerminalPanelClass(true)).toContain('flex')
+    expect(getSshTerminalPanelClass(true).split(' ')).not.toContain('hidden')
   })
 })
 

@@ -118,17 +118,18 @@ describe('BottomNav', () => {
     expect(moreBtn!.className).toContain('wrench')
   })
 
-  it('hides when SSH terminal is fullscreen', () => {
+  it('keeps the Files menu available while an SSH terminal is connected', () => {
     setAppState({
       activeNav: 'ssh',
       sshSessions: [{ id: 's1', host: 'test' }],
       sshSftpOpen: false,
     })
     const { container } = render(<BottomNav />)
-    expect(container.innerHTML).toBe('')
+    clickButton(container, '文件')
+    expect(mockSetActiveNav).toHaveBeenCalledWith('files')
   })
 
-  it('shows SSH page with sftp open', () => {
+  it('shows SSH page with desktop SFTP state open', () => {
     setAppState({
       activeNav: 'ssh',
       sshSessions: [{ id: 's1', host: 'test' }],

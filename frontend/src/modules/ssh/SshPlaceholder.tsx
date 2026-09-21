@@ -561,7 +561,7 @@ export default function SshPlaceholder() {
                       requestAnimationFrame(() => focusSshSftpPanel())
                     }
                   }}
-                  className="flex items-center gap-1 px-3 py-2 text-xs text-slate-500 hover:text-slate-300"
+                  className="hidden items-center gap-1 px-3 py-2 text-xs text-slate-500 hover:text-slate-300 md:flex"
                   title={sftpOpen ? '关闭文件面板' : '打开文件面板'}
                 >
                   {sftpOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}

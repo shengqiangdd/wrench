@@ -42,17 +42,12 @@ export default function BottomNav() {
   const activeNav = useAppStore((s) => s.activeNav)
   const setActiveNav = useAppStore((s) => s.setActiveNav)
   const sshSessions = useAppStore((s) => s.sshSessions)
-  const sshSftpOpen = useAppStore((s) => s.sshSftpOpen)
   const agentOpen = useAppStore((s) => s.agentOpen)
   const setAgentOpen = useAppStore((s) => s.setAgentOpen)
   const aiEnabled = useAiStore((s) => s.config.enabled)
 
   const [moreOpen, setMoreOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
-
-  const isSshPage = activeNav === 'ssh'
-  const hasActiveSession = sshSessions.length > 0
-  const isHidden = isSshPage && hasActiveSession && !sshSftpOpen
 
   // 当前是否在"更多"面板中的某个页面
   const isMoreActive = moreNavItems.some((item) => item.id === activeNav)
@@ -88,8 +83,6 @@ export default function BottomNav() {
     setActiveNav(id as NavId)
     setMoreOpen(false)
   }
-
-  if (isHidden) return null
 
   return (
     <nav

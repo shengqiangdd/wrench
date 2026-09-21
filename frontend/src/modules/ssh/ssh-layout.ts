@@ -1,11 +1,14 @@
-export function getSshTerminalPanelClass(sftpOpen: boolean): string {
-  return `flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
-    sftpOpen ? 'hidden md:flex' : 'flex'
-  }`
+/**
+ * The SSH page always keeps its terminal mounted and visible. The embedded
+ * SFTP browser is a desktop-only companion; on narrow screens file management
+ * is reached through the global Files page instead.
+ */
+export function getSshTerminalPanelClass(_sftpOpen: boolean): string {
+  return 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
 }
 
 export const SSH_SFTP_PANEL_CLASS =
-  'flex min-h-0 min-w-0 flex-1 flex-col border-l border-slate-700/50 md:h-full md:w-[min(36vw,420px)] md:max-w-[420px] md:min-w-[280px] md:flex-none'
+  'hidden min-h-0 min-w-0 flex-1 flex-col border-l border-slate-700/50 md:flex md:h-full md:w-[min(36vw,420px)] md:max-w-[420px] md:min-w-[280px] md:flex-none'
 
 /** Focus the xterm input belonging to a specific SSH session. */
 export function focusSshTerminalInput(sessionId: string, root: ParentNode = document): boolean {
