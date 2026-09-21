@@ -55,6 +55,10 @@ const OUTPUT_BUFFER_THRESHOLD = 8_192
 /** 终端输出 flush 间隔（毫秒）— 保证最大延迟，更短的间隔减少历史命令和Tab补全的显示延迟 */
 const OUTPUT_FLUSH_INTERVAL_MS = 16
 
+/** Bound queued keystrokes while a terminal WebSocket is reconnecting. */
+const MAX_TERMINAL_INPUT_QUEUE_MESSAGES = 128
+const MAX_TERMINAL_INPUT_QUEUE_BYTES = 16 * 1024
+
 // ─── 重连参数 ───
 /** 初始重连延迟（毫秒） */
 const INITIAL_RECONNECT_DELAY_MS = 2_000
@@ -98,6 +102,10 @@ export class WsClient {
 
   // ─── 增强: 消息队列（连接断开期间暂存，恢复后重发）───
   private _messageQueue: string[] = []
+
+  /** Keystrokes are kept separate from control messages and flushed first. */
+  private terminalInputQueue: string[] = []
+  private terminalInputQueueBytes = 0
 
   // ─── 增强: 重连失败计数（超过 5 次用于 UI 显示 "Connection Lost"）───
   private _reconnectFailedCount = 0
@@ -148,6 +156,11 @@ export class WsClient {
   /** 获取当前心跳间隔（毫秒） */
   get currentHeartbeatInterval(): number {
     return this._currentHeartbeatInterval
+  }
+
+  /** Number of terminal input frames waiting for a reconnect; always bounded. */
+  get queuedTerminalInputCount(): number {
+    return this.terminalInputQueue.length
   }
 
   private setStatus(status: WsStatus) {
@@ -284,6 +297,9 @@ export class WsClient {
       this._lastPongTime = Date.now()
       this.setStatus('connected')
       this.startHeartbeat()
+      // Keystrokes have an interactive latency budget; flush them before
+      // background/control messages and never wait for PTY output batching.
+      this.flushTerminalInputQueue()
       // 增强: 连接恢复后重发消息队列
       this.flushMessageQueue()
       // 增强: 触发 onReconnected 回调
@@ -398,6 +414,8 @@ export class WsClient {
     this.reconnectAttempts = this.maxReconnectAttempts // 禁止自动重连
     this._reconnectFailedCount = 0 // 重置失败计数
     this._messageQueue = [] // 清空消息队列
+    this.terminalInputQueue = []
+    this.terminalInputQueueBytes = 0
     if (this.ws) {
       this.ws.close()
       this.ws = null
@@ -490,6 +508,43 @@ export class WsClient {
         this.ws.send(msg)
       }
     }
+  }
+
+  /** Flush terminal input ahead of non-interactive messages after reconnecting. */
+  private flushTerminalInputQueue() {
+    if (this.terminalInputQueue.length === 0) return
+    const queue = this.terminalInputQueue
+    this.terminalInputQueue = []
+    this.terminalInputQueueBytes = 0
+    for (const msg of queue) {
+      if (this.ws?.readyState !== WebSocket.OPEN) break
+      this.ws.send(msg)
+    }
+  }
+
+  /**
+   * Send terminal input without involving inbound PTY output batching. During
+   * connection establishment only, retain a small bounded queue so a weak
+   * network cannot grow browser memory or replay an unbounded command stream.
+   */
+  sendTerminalInput(data: Record<string, unknown>): boolean {
+    const msg = JSON.stringify(data)
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(msg)
+      return true
+    }
+    if (this._status !== 'connecting' && this._status !== 'reconnecting') return false
+    if (
+      msg.length > MAX_TERMINAL_INPUT_QUEUE_BYTES ||
+      this.terminalInputQueue.length >= MAX_TERMINAL_INPUT_QUEUE_MESSAGES ||
+      this.terminalInputQueueBytes + msg.length > MAX_TERMINAL_INPUT_QUEUE_BYTES
+    ) {
+      this.setError('终端输入暂存已满；请等待连接恢复后继续输入')
+      return false
+    }
+    this.terminalInputQueue.push(msg)
+    this.terminalInputQueueBytes += msg.length
+    return true
   }
 
   // ─── 心跳（增强: 动态间隔 + RTT 监测）───

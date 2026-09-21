@@ -1,6 +1,7 @@
 # 📋 变更日志
 
 ## [Unreleased] - 公网可达加固第三轮：数量闸门（连多少）
+- **移动终端键栏与弱网输入**：SSH 移动端键栏提供 Ctrl/Alt 一次性修饰、Esc、Tab、方向键、Enter、粘贴及展开后的常用控制/导航键；按键不抢占系统输入法焦点。终端输入走独立即时 WebSocket 路径，PTY 输出仍在接收侧批处理；重连期间输入暂存限制为 128 帧或 16 KiB，并优先于普通控制消息恢复发送。
 
 - **新增 SSH 会话并发闸门**：`WRENCH_MAX_SESSIONS`（默认 32，`0` = 不限）+ `WRENCH_MAX_SESSIONS_PER_SPACE`
   （默认 8）。出口白名单管「能连到哪里」但管不住「能连多少」；门关着（`WRENCH_REQUIRE_AUTH=off`）

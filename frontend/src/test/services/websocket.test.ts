@@ -185,6 +185,28 @@ describe('WsClient', () => {
     }
   })
 
+  it('sends terminal input immediately while PTY output is buffered', async () => {
+    const received: string[] = []
+    client.onTerminalOutput((data) => received.push(data))
+    client.connect()
+    await vi.waitFor(() => expect(client.status).toBe('connected'))
+    client.bufferTerminalOutput('pending output')
+
+    expect(client.sendTerminalInput({ type: 'exec', data: 'a' })).toBe(true)
+    expect(getMockWs(client).sentMessages).toContain(JSON.stringify({ type: 'exec', data: 'a' }))
+    expect(received).toEqual([])
+  })
+
+  it('bounds terminal input queued during reconnecting', () => {
+    ;(client as unknown as { _status: string })._status = 'reconnecting'
+    for (let i = 0; i < 128; i++) {
+      expect(client.sendTerminalInput({ type: 'exec', data: String(i) })).toBe(true)
+    }
+    expect(client.queuedTerminalInputCount).toBe(128)
+    expect(client.sendTerminalInput({ type: 'exec', data: 'overflow' })).toBe(false)
+    expect(client.queuedTerminalInputCount).toBe(128)
+  })
+
   it('sends messages when connected', async () => {
     client.connect()
     await vi.waitFor(() => expect(client.status).toBe('connected'))

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { ChevronUp, ChevronDown, ClipboardPaste } from 'lucide-react'
 
 interface Props {
@@ -8,17 +9,19 @@ interface Props {
 }
 
 const PRIMARY_KEYS = [
-  ['Ctrl+C', '\x03'],
-  ['Ctrl+D', '\x04'],
   ['Tab', '\t'],
   ['Esc', '\x1b'],
   ['↑', '\x1b[A'],
   ['↓', '\x1b[B'],
   ['←', '\x1b[D'],
   ['→', '\x1b[C'],
+  ['Enter', String.fromCharCode(13)],
 ] as const
 
 const MORE_KEYS = [
+  ['C', 'c'],
+  ['D', 'd'],
+  ['L', 'l'],
   ['Home', '\x1b[H'],
   ['End', '\x1b[F'],
   ['PgUp', '\x1b[5~'],
@@ -26,7 +29,57 @@ const MORE_KEYS = [
   ['Ctrl+L', '\x0c'],
 ] as const
 
+type TerminalKeyModifier = 'ctrl' | 'alt'
+
+/** Apply one-shot modifiers only to literal quick keys; escape sequences stay intact. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function applyTerminalKeyModifiers(
+  sequence: string,
+  modifiers: Set<TerminalKeyModifier>,
+): string {
+  let result = sequence
+  if (modifiers.has('ctrl') && /^[a-z]$/i.test(result)) {
+    result = String.fromCharCode(result.toUpperCase().charCodeAt(0) & 0x1f)
+  }
+  if (modifiers.has('alt')) result = String.fromCharCode(27) + result
+  return result
+}
+
 export function TerminalKeyBar({ collapsed, onToggle, onSend, onPaste }: Props) {
+  const [modifiers, setModifiers] = useState<Set<TerminalKeyModifier>>(() => new Set())
+  const repeatDelayRef = useRef<number | null>(null)
+  const repeatIntervalRef = useRef<number | null>(null)
+
+  const stopRepeat = () => {
+    if (repeatDelayRef.current !== null) window.clearTimeout(repeatDelayRef.current)
+    if (repeatIntervalRef.current !== null) window.clearInterval(repeatIntervalRef.current)
+    repeatDelayRef.current = null
+    repeatIntervalRef.current = null
+  }
+
+  useEffect(() => stopRepeat, [])
+
+  const sendKey = (sequence: string) => {
+    onSend(applyTerminalKeyModifiers(sequence, modifiers))
+    if (modifiers.size) setModifiers(new Set())
+  }
+
+  const startRepeat = (label: string, sequence: string) => {
+    if (!/^[↑↓←→]$/.test(label)) return
+    repeatDelayRef.current = window.setTimeout(() => {
+      repeatIntervalRef.current = window.setInterval(() => sendKey(sequence), 70)
+    }, 350)
+  }
+
+  const toggleModifier = (modifier: TerminalKeyModifier) => {
+    setModifiers((current) => {
+      const next = new Set(current)
+      if (next.has(modifier)) next.delete(modifier)
+      else next.add(modifier)
+      return next
+    })
+  }
+
   const button = (label: string, sequence: string) => (
     <button
       key={label}
@@ -34,9 +87,13 @@ export function TerminalKeyBar({ collapsed, onToggle, onSend, onPaste }: Props) 
       onPointerDown={(event) => {
         event.preventDefault()
         event.stopPropagation()
-        onSend(sequence)
+        sendKey(sequence)
+        startRepeat(label, sequence)
       }}
       className="h-8 shrink-0 rounded-md bg-slate-800 px-3 font-mono text-[11px] text-slate-200 active:bg-sky-700"
+      onPointerUp={stopRepeat}
+      onPointerLeave={stopRepeat}
+      onPointerCancel={stopRepeat}
       style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none' }}
     >
       {label}
@@ -61,6 +118,25 @@ export function TerminalKeyBar({ collapsed, onToggle, onSend, onPaste }: Props) 
         >
           {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
+        {(['ctrl', 'alt'] as const).map((modifier) => (
+          <button
+            key={modifier}
+            type="button"
+            aria-pressed={modifiers.has(modifier)}
+            onPointerDown={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              toggleModifier(modifier)
+            }}
+            className={
+              modifiers.has(modifier)
+                ? 'h-8 shrink-0 rounded-md bg-sky-700 px-2.5 font-mono text-[11px] text-white active:bg-sky-700'
+                : 'h-8 shrink-0 rounded-md bg-slate-800 px-2.5 font-mono text-[11px] text-slate-200 active:bg-sky-700'
+            }
+          >
+            {modifier === 'ctrl' ? 'Ctrl' : 'Alt'}
+          </button>
+        ))}
         {PRIMARY_KEYS.map(([label, sequence]) => button(label, sequence))}
         <button
           type="button"

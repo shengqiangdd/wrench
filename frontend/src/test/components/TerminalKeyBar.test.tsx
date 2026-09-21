@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { TerminalKeyBar } from '../../components/terminal/TerminalKeyBar'
+import { applyTerminalKeyModifiers, TerminalKeyBar } from '../../components/terminal/TerminalKeyBar'
 
 describe('TerminalKeyBar', () => {
   it('默认顺序优先中断、退出、补全和方向键', () => {
@@ -13,9 +13,10 @@ describe('TerminalKeyBar', () => {
         onPaste: vi.fn(),
       }),
     )
-    expect(html.indexOf('Ctrl+C')).toBeLessThan(html.indexOf('Ctrl+D'))
-    expect(html.indexOf('Ctrl+D')).toBeLessThan(html.indexOf('Tab'))
+    expect(html.indexOf('Ctrl')).toBeLessThan(html.indexOf('Alt'))
+    expect(html.indexOf('Alt')).toBeLessThan(html.indexOf('Tab'))
     expect(html.indexOf('Tab')).toBeLessThan(html.indexOf('Esc'))
+    expect(html).toContain('Enter')
     expect(html).toContain('粘贴')
     expect(html).not.toContain('Home')
   })
@@ -33,5 +34,12 @@ describe('TerminalKeyBar', () => {
     expect(html).toContain('End')
     expect(html).toContain('PgUp')
     expect(html).toContain('Ctrl+L')
+    expect(html).toContain('C')
+  })
+
+  it('applies Ctrl and Alt as one-shot modifiers for literal quick keys', () => {
+    expect(applyTerminalKeyModifiers('c', new Set(['ctrl']))).toBe('')
+    expect(applyTerminalKeyModifiers('d', new Set(['alt']))).toBe('d')
+    expect(applyTerminalKeyModifiers('[A', new Set(['ctrl']))).toBe('[A')
   })
 })

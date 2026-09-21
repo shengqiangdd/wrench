@@ -212,6 +212,17 @@ export default function TerminalView({
   // 轻提示保留给重连、链接和粘贴流程使用；不展示旧式快捷键或远端注入状态。
   const showHint = (_text: string) => {}
 
+  /** Send keystrokes immediately when open; WsClient owns the bounded reconnect queue. */
+  const sendTerminalInput = useCallback(
+    (text: string) => {
+      const encoded = btoa(unescape(encodeURIComponent(text)))
+      return (
+        termWsRef.current?.sendTerminalInput({ type: 'exec', connectionId, data: encoded }) ?? false
+      )
+    },
+    [connectionId],
+  )
+
   /**
    * 粘贴这条链的唯一入口（读剪贴板 → 直接发 / 多行确认 / 粘贴框兜底）。
    * 声明在连接 effect 之前：菜单条目与快捷键处理器都在 effect / 长按回调里构建。
@@ -220,8 +231,7 @@ export default function TerminalView({
     getTerm: () => terminalRef.current,
     showHint,
     fallbackSend: (text) => {
-      const encoded = btoa(unescape(encodeURIComponent(text)))
-      termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+      sendTerminalInput(text)
     },
     emptyHint: '剪贴板里没有可粘贴的文本',
   })
@@ -1490,8 +1500,7 @@ export default function TerminalView({
       const input = inputLineRef.current
       const suffix = suggestion.command.slice(input.text.length)
       if (!suffix) return
-      const encoded = btoa(unescape(encodeURIComponent(suffix)))
-      termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+      sendTerminalInput(suffix)
       input.text += suffix
       input.cursor = input.text.length
       hideSuggestions()
@@ -1658,8 +1667,7 @@ export default function TerminalView({
         const char = key === 'Backspace' ? '\x7f' : '\x1b[3~'
         observeInput(char)
         // 直接发送到服务端，不调用 term.input() 避免 xterm.js 本地解析
-        const encoded = btoa(unescape(encodeURIComponent(char)))
-        termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+        sendTerminalInput(char)
         // 标记"这次删除已经发过了"：只对同字节且落在时间窗内的第二条通路生效，
         // 不会像旧的裸布尔那样吞掉用户后面输入的第一个字符
         pendingDeleteRef.current = markDeleteSent(char, Date.now())
@@ -1689,13 +1697,8 @@ export default function TerminalView({
       // 用户输入时自动滚到底部，确保看到命令输出
       userScrolledUpRef.current = false
       setUserScrolledUp(false)
-      // 将用户输入以 base64 编码发送
-      const encoded = btoa(unescape(encodeURIComponent(data)))
-      termWsRef.current?.send({
-        type: 'exec',
-        connectionId,
-        data: encoded,
-      })
+      // 输入走独立的立即发送路径；不会等待接收侧 PTY 输出 flush。
+      sendTerminalInput(data)
     })
 
     // 监听来自命令页"再次执行"的事件
@@ -1703,8 +1706,7 @@ export default function TerminalView({
       if (command && termWsRef.current) {
         // 追加换行符模拟回车
         const text = command + '\n'
-        const encoded = btoa(unescape(encodeURIComponent(text)))
-        termWsRef.current.send({ type: 'exec', connectionId, data: encoded })
+        sendTerminalInput(text)
       }
     })
     // 分屏同步只接收父组件风险校验并经用户确认后的完整命令；接收端再次防御。
@@ -1718,8 +1720,7 @@ export default function TerminalView({
         !termWsRef.current
       )
         return
-      const encoded = btoa(unescape(encodeURIComponent(`${command}\n`)))
-      termWsRef.current.send({ type: 'exec', connectionId, data: encoded })
+      sendTerminalInput(`${command}\n`)
     })
 
     // Resize 监听 — 只有尺寸真正变化时才 fit，避免清空内容
@@ -1856,15 +1857,14 @@ export default function TerminalView({
     // connectionId/sessionId 变化时重新创建终端连接
     // credentials 和命令回调都通过 ref 读取，避免父组件状态变化时重连终端
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, sessionId])
+  }, [connectionId, sendTerminalInput, sessionId])
 
   const sendSuggestionFromPanel = (suggestion: TerminalSuggestion) => {
     const term = terminalRef.current
     if (!term || term.buffer.active.type !== 'normal') return
     const suffix = suggestion.command.slice(inputLineRef.current.text.length)
     if (!suffix) return
-    const encoded = btoa(unescape(encodeURIComponent(suffix)))
-    termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+    sendTerminalInput(suffix)
     inputLineRef.current.text += suffix
     inputLineRef.current.cursor = inputLineRef.current.text.length
     setSuggestions([])
@@ -1988,8 +1988,7 @@ export default function TerminalView({
         onToggle={() => setKeyBarCollapsed((value) => !value)}
         onPaste={() => void paste.pasteFromClipboard()}
         onSend={(sequence) => {
-          const encoded = btoa(unescape(encodeURIComponent(sequence)))
-          termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
+          sendTerminalInput(sequence)
           terminalRef.current?.focus()
         }}
       />
