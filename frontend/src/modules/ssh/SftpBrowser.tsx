@@ -102,6 +102,7 @@ import {
   type SortKey,
   type SortDir,
 } from './sftp-utils'
+import { getSftpVirtualWindow, SFTP_VIRTUALIZE_AFTER } from '../../utils/sftp-virtual-list'
 
 // ─── 文件查看/编辑模态框 ───
 
@@ -435,6 +436,10 @@ function SftpBrowserInner({
 }: SftpBrowserProps) {
   const [currentPath, setCurrentPath] = useState(initialPath || '/')
   const [entries, setEntries] = useState<SftpEntry[]>([])
+  // stat 结果仅补充当前可视窗口中列表缺失的信息，避免大目录一次请求全部详情。
+  const [entryDetails, setEntryDetails] = useState<Record<string, Partial<SftpEntry>>>({})
+  const [listScrollTop, setListScrollTop] = useState(0)
+  const [listViewportHeight, setListViewportHeight] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** 错误是否属于「会话没了」：此时「重试」应该重建会话，而不是重发同一个失效 id */
@@ -515,6 +520,34 @@ function SftpBrowserInner({
   const notifyRef = useRef<HTMLDivElement>(null)
   const dragCounterRef = useRef(0)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const detailRevisionRef = useRef(0)
+  const requestedDetailPathsRef = useRef(new Set<string>())
+  const entryDetailsRef = useRef<Record<string, Partial<SftpEntry>>>({})
+
+  useEffect(() => {
+    entryDetailsRef.current = entryDetails
+  }, [entryDetails])
+
+  // 切换目录或会话时，旧的 stat 结果不能覆盖新视图；已入队请求由既有 metadata
+  // revision/缓存链路处理，本地 guard 只负责忽略过期回填。
+  useEffect(() => {
+    detailRevisionRef.current += 1
+    requestedDetailPathsRef.current.clear()
+    setEntryDetails({})
+    setListScrollTop(0)
+    listRef.current?.scrollTo({ top: 0 })
+  }, [sessionId, currentPath])
+
+  useEffect(() => {
+    const element = listRef.current
+    if (!element) return
+    const update = () => setListViewportHeight(element.clientHeight)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   // 检测是否为触摸设备（移动端禁用拖拽上传）
   const isTouchDevice = useMemo(() => {
@@ -1704,9 +1737,71 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
     return all.filter((e) => e.name.toLowerCase().includes(q))
   }, [allEntries, searchQuery, sortedEntries, sortKey, sortDir])
 
+  const virtualized = displayEntries.length >= SFTP_VIRTUALIZE_AFTER
+  const virtualWindow = useMemo(
+    () =>
+      getSftpVirtualWindow({
+        count: displayEntries.length,
+        scrollTop: virtualized ? listScrollTop : 0,
+        viewportHeight: virtualized ? listViewportHeight : Number.MAX_SAFE_INTEGER,
+      }),
+    [displayEntries.length, listScrollTop, listViewportHeight, virtualized],
+  )
+  const visibleEntries = useMemo(
+    () => displayEntries.slice(virtualWindow.start, virtualWindow.end),
+    [displayEntries, virtualWindow.end, virtualWindow.start],
+  )
+
+  const needsProgressiveDetail = useCallback(
+    (entry: SftpEntry) =>
+      (entry.type === 'symlink' && !entry.targetType) ||
+      !entry.permissions ||
+      !Number.isFinite(entry.modifyTime),
+    [],
+  )
+
+  const loadEntryDetails = useCallback(
+    async (entry: SftpEntry) => {
+      if (!sessionId || !needsProgressiveDetail(entry)) return
+      if (entryDetailsRef.current[entry.path] || requestedDetailPathsRef.current.has(entry.path))
+        return
+      requestedDetailPathsRef.current.add(entry.path)
+      const revision = detailRevisionRef.current
+      try {
+        const stat = await sftpApi<SftpEntry>('stat', {
+          connectionId: sessionId,
+          path: entry.path,
+        })
+        if (revision !== detailRevisionRef.current) return
+        setEntryDetails((previous) => ({
+          ...previous,
+          [entry.path]: {
+            size: stat.size,
+            permissions: stat.permissions,
+            owner: stat.owner,
+            group: stat.group,
+            modifyTime: stat.modifyTime,
+            // stat resolves a symlink target; preserve the list entry itself but enrich its target type.
+            ...(entry.type === 'symlink' ? { targetType: stat.type } : {}),
+          },
+        }))
+      } catch {
+        // Details are supplemental. A failed stat must not make directory navigation unusable.
+      }
+    },
+    [needsProgressiveDetail, sessionId],
+  )
+
+  useEffect(() => {
+    for (const entry of visibleEntries) void loadEntryDetails(entry)
+  }, [loadEntryDetails, visibleEntries])
+
   // ─── VirtualList 渲染项 ───
   const renderFileItem = useCallback(
-    (entry: SftpEntry, _index: number) => {
+    (sourceEntry: SftpEntry, _index: number) => {
+      const entry = entryDetails[sourceEntry.path]
+        ? { ...sourceEntry, ...entryDetails[sourceEntry.path] }
+        : sourceEntry
       const isRenaming = renaming === entry.path
       const isDir = entry.type === 'directory'
       const isSymlink = entry.type === 'symlink'
@@ -1833,6 +1928,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
       toggleSelect,
       isSelectMode,
       isTouchDevice,
+      entryDetails,
     ],
   )
 
@@ -1874,6 +1970,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         <span>
           {sortedEntries.dirs.length} 目录 · {sortedEntries.files.length} 文件 ·{' '}
           {formatSize(totalSize)}
+          {virtualized && ` · 渲染 ${visibleEntries.length}/${displayEntries.length}`}
         </span>
         <span className="text-slate-700">
           排序: {sortLabel}
@@ -1882,7 +1979,17 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         </span>
       </div>
     )
-  }, [sortedEntries.dirs.length, sortedEntries.files.length, entries, sortKey, sortDir, clipboard])
+  }, [
+    sortedEntries.dirs.length,
+    sortedEntries.files.length,
+    entries,
+    sortKey,
+    sortDir,
+    clipboard,
+    virtualized,
+    visibleEntries.length,
+    displayEntries.length,
+  ])
 
   // ── 批量选择工具栏 —— 固定在底部的操作栏 ──
   const selectionBar = useMemo(() => {
@@ -2307,6 +2414,8 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
+        onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}
+        ref={listRef}
       >
         {!loading && displayEntries.length === 0 ? (
           <div
@@ -2362,7 +2471,13 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
             )}
           </div>
         ) : (
-          displayEntries.map((entry, i) => renderFileItem(entry, i))
+          <>
+            {virtualized && <div aria-hidden="true" style={{ height: virtualWindow.topSpacer }} />}
+            {visibleEntries.map((entry, i) => renderFileItem(entry, virtualWindow.start + i))}
+            {virtualized && (
+              <div aria-hidden="true" style={{ height: virtualWindow.bottomSpacer }} />
+            )}
+          </>
         )}
       </div>
 
