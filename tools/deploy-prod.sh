@@ -106,6 +106,23 @@ current_build() {
     printf "%s" "${BASH_REMATCH[1]}"
   fi
 }
+ensure_local_image() {
+  local image="$1"
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    printf "error: rollback image is not present locally; refusing to change the running service\n" >&2
+    return 1
+  fi
+}
+
+validate_rollback_target() {
+  local image="$1"
+  local expected_version="${2:-}"
+  ensure_local_image "$image" || return 1
+  if [[ -n "$expected_version" ]] && ! check_health_once "$expected_version"; then
+    printf "error: current health build does not match the rollback target; refusing to change the running service\n" >&2
+    return 1
+  fi
+}
 
 run_image() {
   local image="$1"
@@ -143,6 +160,10 @@ deploy() {
     if [[ -z "$previous_version" ]]; then previous_version="$(current_build)"; fi
   fi
 
+  if [[ -n "$previous_image" ]] && ! validate_rollback_target "$previous_image" "$previous_version"; then
+    return 1
+  fi
+
   if run_image "$WRENCH_IMAGE" "$WRENCH_VERSION"; then return 0; fi
 
   deployment_diagnostics
@@ -163,16 +184,19 @@ rollback() {
   need_env WRENCH_IMAGE
   need_env WRENCH_VERSION
   validate_image "$WRENCH_IMAGE"
+  ensure_local_image "$WRENCH_IMAGE" || return 1
   if run_image "$WRENCH_IMAGE" "$WRENCH_VERSION"; then return 0; fi
 
   deployment_diagnostics
   return 1
 }
 
-command=${1:-}
-case "$command" in
-  deploy) deploy ;;
-  rollback) rollback ;;
-  -h|--help|help) usage ;;
-  *) usage >&2; exit 2 ;;
-esac
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  command=${1:-}
+  case "$command" in
+    deploy) deploy ;;
+    rollback) rollback ;;
+    -h|--help|help) usage ;;
+    *) usage >&2; exit 2 ;;
+  esac
+fi

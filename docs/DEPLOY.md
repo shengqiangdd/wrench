@@ -45,7 +45,7 @@ curl -fsS http://127.0.0.1:3001/api/health
 
 回滚时只需把 `WRENCH_IMAGE` 改回上一个已验证的 digest，重新执行 `pull` 和 `up -d`；`/api/health` 的 `build` 字段可确认当前实例实际运行的构建。
 
-也可以使用仓库内脚本执行带版本确认的健康检查和回滚。脚本不会执行 `down`；自动回滚时会读取当前容器镜像和当前 health 的 `build`，并在恢复后验证两者对应的旧 build。当前容器不可用或要指定其他目标时，可显式提供上一个 digest 与 `WRENCH_PREVIOUS_VERSION`。默认检查 `/api/health` 的 `build` 字段，并在首次成功后再做一次稳定性复核；设置 `WRENCH_WS_HEALTH_URL` 可增加 WebSocket 101 握手检查，设置 `WRENCH_SFTP_HEALTH_URL` 与不含凭据的 `WRENCH_SFTP_HEALTH_BODY` 可增加 SFTP list 探针：
+也可以使用仓库内脚本执行带版本确认的健康检查和回滚。脚本不会执行 `down`；开始升级前，自动回滚目标会先经 `docker image inspect` 确认本机存在；若设置了 `WRENCH_PREVIOUS_VERSION`，还必须与当前 health 的 `build` 一致，否则脚本明确失败且不切换当前服务。自动回滚时会读取当前容器镜像和当前 health 的 `build`，并在恢复后验证两者对应的旧 build。当前容器不可用或要指定其他目标时，可显式提供上一个 digest 与 `WRENCH_PREVIOUS_VERSION`。默认检查 `/api/health` 的 `build` 字段，并在首次成功后再做一次稳定性复核；设置 `WRENCH_WS_HEALTH_URL` 可增加 WebSocket 101 握手检查，设置 `WRENCH_SFTP_HEALTH_URL` 与不含凭据的 `WRENCH_SFTP_HEALTH_BODY` 可增加 SFTP list 探针：
 
 ```bash
 export WRENCH_IMAGE=ghcr.io/shengqiangdd/wrench@sha256:<new-digest>
