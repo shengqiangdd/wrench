@@ -14,8 +14,9 @@ Usage:
   WRENCH_IMAGE=<registry/image@sha256:...> WRENCH_VERSION=<id> tools/deploy-prod.sh deploy
   WRENCH_IMAGE=<known-good@sha256:...> WRENCH_VERSION=<id> tools/deploy-prod.sh rollback
 
-Deploy captures the currently running image automatically for rollback. Set
-WRENCH_PREVIOUS_IMAGE explicitly when the current container is unavailable.
+Deploy captures the currently running image and, when available, its health build
+identifier automatically for rollback. Set WRENCH_PREVIOUS_IMAGE and
+WRENCH_PREVIOUS_VERSION explicitly when the current container is unavailable.
 Optional checks:
   WRENCH_WS_HEALTH_URL=<ws://.../ws> checks a WebSocket 101 handshake.
   WRENCH_SFTP_HEALTH_URL=<http://.../api/sftp/list>
@@ -97,6 +98,14 @@ wait_for_health() {
 current_image() {
   docker inspect --format '{{.Config.Image}}' wrench 2>/dev/null || true
 }
+current_build() {
+  local body
+  local build_pattern='"build":"([^"]*)"'
+  body="$(curl --fail --silent --show-error --max-time 5 "$HEALTH_URL")" || return 0
+  if [[ "$body" =~ $build_pattern ]]; then
+    printf "%s" "${BASH_REMATCH[1]}"
+  fi
+}
 
 run_image() {
   local image="$1"
@@ -128,14 +137,18 @@ deploy() {
   need_env WRENCH_VERSION
   validate_image "$WRENCH_IMAGE"
   local previous_image="${WRENCH_PREVIOUS_IMAGE:-}"
-  if [[ -z "$previous_image" ]]; then previous_image="$(current_image)"; fi
+  local previous_version="${WRENCH_PREVIOUS_VERSION:-}"
+  if [[ -z "$previous_image" ]]; then
+    previous_image="$(current_image)"
+    if [[ -z "$previous_version" ]]; then previous_version="$(current_build)"; fi
+  fi
 
   if run_image "$WRENCH_IMAGE" "$WRENCH_VERSION"; then return 0; fi
 
   deployment_diagnostics
   if [[ -n "$previous_image" ]]; then
     printf 'health check failed; restoring previous image\n' >&2
-    if run_image "$previous_image" "${WRENCH_PREVIOUS_VERSION:-}"; then
+    if run_image "$previous_image" "$previous_version"; then
       printf 'previous image restored successfully\n' >&2
     else
       printf 'error: automatic rollback also failed\n' >&2
