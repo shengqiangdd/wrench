@@ -15,6 +15,12 @@ export interface SftpVirtualWindow {
 
 export const SFTP_VIRTUAL_ROW_HEIGHT = 28
 export const SFTP_VIRTUALIZE_AFTER = 160
+/** Narrow viewports allow file names and metadata to wrap, so their rows are not reliably fixed-height. */
+export const SFTP_VIRTUALIZE_MIN_VIEWPORT_WIDTH = 768
+
+export function shouldVirtualizeSftpList(count: number, viewportWidth: number): boolean {
+  return count >= SFTP_VIRTUALIZE_AFTER && viewportWidth >= SFTP_VIRTUALIZE_MIN_VIEWPORT_WIDTH
+}
 
 /**
  * Return a bounded render window for the fixed-height SFTP file rows.

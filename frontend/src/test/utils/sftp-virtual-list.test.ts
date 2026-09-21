@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { getSftpVirtualWindow } from '../../utils/sftp-virtual-list'
+import {
+  getSftpVirtualWindow,
+  shouldVirtualizeSftpList,
+  SFTP_VIRTUALIZE_AFTER,
+} from '../../utils/sftp-virtual-list'
 
 describe('SFTP virtual list window', () => {
+  it('keeps large directories non-virtualized on narrow viewports', () => {
+    expect(shouldVirtualizeSftpList(SFTP_VIRTUALIZE_AFTER + 1, 767)).toBe(false)
+  })
+
+  it('retains virtualization only at the desktop threshold', () => {
+    expect(shouldVirtualizeSftpList(SFTP_VIRTUALIZE_AFTER - 1, 1440)).toBe(false)
+    expect(shouldVirtualizeSftpList(SFTP_VIRTUALIZE_AFTER, 768)).toBe(true)
+  })
+
   it('keeps the initial viewport and a bounded overscan', () => {
     expect(getSftpVirtualWindow({ count: 1_000, scrollTop: 0, viewportHeight: 280 })).toEqual({
       start: 0,

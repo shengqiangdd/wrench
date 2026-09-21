@@ -102,7 +102,7 @@ import {
   type SortKey,
   type SortDir,
 } from './sftp-utils'
-import { getSftpVirtualWindow, SFTP_VIRTUALIZE_AFTER } from '../../utils/sftp-virtual-list'
+import { getSftpVirtualWindow, shouldVirtualizeSftpList } from '../../utils/sftp-virtual-list'
 
 // ─── 文件查看/编辑模态框 ───
 
@@ -440,6 +440,9 @@ function SftpBrowserInner({
   const [entryDetails, setEntryDetails] = useState<Record<string, Partial<SftpEntry>>>({})
   const [listScrollTop, setListScrollTop] = useState(0)
   const [listViewportHeight, setListViewportHeight] = useState(0)
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 768 : window.innerWidth,
+  )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** 错误是否属于「会话没了」：此时「重试」应该重建会话，而不是重发同一个失效 id */
@@ -547,6 +550,12 @@ function SftpBrowserInner({
     const observer = new ResizeObserver(update)
     observer.observe(element)
     return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const update = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
   }, [])
 
   // 检测是否为触摸设备（移动端禁用拖拽上传）
@@ -1737,7 +1746,7 @@ ${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...还有 ${errors.leng
     return all.filter((e) => e.name.toLowerCase().includes(q))
   }, [allEntries, searchQuery, sortedEntries, sortKey, sortDir])
 
-  const virtualized = displayEntries.length >= SFTP_VIRTUALIZE_AFTER
+  const virtualized = shouldVirtualizeSftpList(displayEntries.length, viewportWidth)
   const virtualWindow = useMemo(
     () =>
       getSftpVirtualWindow({
