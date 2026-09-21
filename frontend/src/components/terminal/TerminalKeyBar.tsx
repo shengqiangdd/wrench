@@ -18,7 +18,7 @@ const PRIMARY_KEYS = [
   ['Enter', String.fromCharCode(13)],
 ] as const
 
-const MORE_KEYS = [
+const MORE_NAVIGATION_KEYS = [
   ['C', 'c'],
   ['D', 'd'],
   ['L', 'l'],
@@ -26,7 +26,36 @@ const MORE_KEYS = [
   ['End', '\x1b[F'],
   ['PgUp', '\x1b[5~'],
   ['PgDn', '\x1b[6~'],
+  ['Ins', String.fromCharCode(27) + '[2~'],
+  ['Del', String.fromCharCode(27) + '[3~'],
   ['Ctrl+L', '\x0c'],
+] as const
+
+// Shell text, not browser keyboard events: this preserves IME behavior.
+const SHELL_SYMBOL_KEYS = [
+  ['-', '-'],
+  ['_', '_'],
+  ['|', '|'],
+  ['/', '/'],
+  [String.fromCharCode(92), String.fromCharCode(92)],
+  ['.', '.'],
+  ['..', '..'],
+  ['~', '~'],
+  [String.fromCharCode(36), String.fromCharCode(36)],
+  ['*', '*'],
+  ['?', '?'],
+  [':', ':'],
+  [';', ';'],
+  ['&&', '&&'],
+  ['>', '>'],
+  ['>>', '>>'],
+  ['<', '<'],
+  ['()', '()'],
+  ['[]', '[]'],
+  ['{}', '{}'],
+  [String.fromCharCode(39), String.fromCharCode(39)],
+  [String.fromCharCode(34), String.fromCharCode(34)],
+  [String.fromCharCode(96), String.fromCharCode(96)],
 ] as const
 
 type TerminalKeyModifier = 'ctrl' | 'alt'
@@ -151,7 +180,14 @@ export function TerminalKeyBar({ collapsed, onToggle, onSend, onPaste }: Props) 
           <ClipboardPaste size={13} />
           粘贴
         </button>
-        {!collapsed && MORE_KEYS.map(([label, sequence]) => button(label, sequence))}
+        {!collapsed && (
+          <>
+            <span aria-hidden className="h-5 w-px shrink-0 bg-slate-700" />
+            {MORE_NAVIGATION_KEYS.map(([label, sequence]) => button(label, sequence))}
+            <span aria-hidden className="h-5 w-px shrink-0 bg-slate-700" />
+            {SHELL_SYMBOL_KEYS.map(([label, sequence]) => button(label, sequence))}
+          </>
+        )}
       </div>
     </div>
   )

@@ -35,6 +35,12 @@ describe('TerminalKeyBar', () => {
     expect(html).toContain('PgUp')
     expect(html).toContain('Ctrl+L')
     expect(html).toContain('C')
+    for (const label of ['Ins', 'Del', '-', '|', '/', '..', '()', '[]', '{}']) {
+      expect(html).toContain(label)
+    }
+    expect(html).toContain('&amp;&amp;')
+    expect(html).toContain('&gt;&gt;')
+    expect(html).toContain('overflow-x-auto')
   })
 
   it('applies Ctrl and Alt as one-shot modifiers for literal quick keys', () => {
