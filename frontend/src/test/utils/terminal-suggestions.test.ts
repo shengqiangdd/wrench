@@ -34,7 +34,13 @@ describe('terminal suggestions', () => {
 
   it('provides safe shell symbol suggestions when history has no match', () => {
     expect(getTerminalSuggestions('cle', [])).toEqual([
-      { command: 'clear', source: 'builtin', category: 'shell', reason: '安全的内置终端命令' },
+      {
+        command: 'clear',
+        source: 'builtin',
+        category: 'shell',
+        risk: 'safe',
+        reason: '安全的内置终端命令',
+      },
     ])
   })
 

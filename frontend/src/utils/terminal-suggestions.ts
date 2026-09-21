@@ -1,3 +1,5 @@
+import { assessTerminalCommand, type TerminalCommandRisk } from './terminal-command-safety'
+
 export const TERMINAL_HISTORY_STORAGE_KEY = 'wrench-terminal-command-history-v1'
 export const TERMINAL_HISTORY_ENABLED_STORAGE_KEY = 'wrench-terminal-command-history-enabled-v1'
 export const TERMINAL_HISTORY_LIMIT = 100
@@ -16,6 +18,7 @@ export interface TerminalSuggestion {
   cwd?: string
   category: 'history' | 'project' | 'shell'
   reason: string
+  risk: TerminalCommandRisk
 }
 
 export interface TerminalContext {
@@ -250,6 +253,7 @@ export function getTerminalSuggestions(
       cwd: entry.cwd,
       category: 'history' as const,
       reason: entry.cwd && cwd && entry.cwd === cwd ? '当前目录的本地历史' : '本地命令历史',
+      risk: assessTerminalCommand(entry.command).risk,
     }))
 
   const builtins = getBuiltinSuggestions(prefix, context).filter(
@@ -395,6 +399,7 @@ function getBuiltinSuggestions(prefix: string, context: TerminalContext): Termin
       source: 'builtin' as const,
       category,
       reason,
+      risk: assessTerminalCommand(command).risk,
     }))
 }
 

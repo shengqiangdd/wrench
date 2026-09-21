@@ -41,6 +41,15 @@ export function TerminalSuggestionPanel({
         >
           <span className="min-w-0 flex-1 truncate">{suggestion.command}</span>
           <span className="shrink-0 text-right text-[10px] text-slate-500">
+            {suggestion.risk !== 'safe' && (
+              <span
+                className={
+                  suggestion.risk === 'dangerous' ? 'block text-rose-300' : 'block text-amber-300'
+                }
+              >
+                {suggestion.risk === 'dangerous' ? '危险' : '有副作用'}
+              </span>
+            )}
             <span className="block">
               {suggestion.category === 'project'
                 ? '项目'
