@@ -56,10 +56,19 @@ function DockerComposeInner({ connectionId }: Props) {
   const composeAbortRef = useRef<AbortController | null>(null)
   const composeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const composeRequestIdRef = useRef<string | null>(null)
   useEffect(
     () => () => {
+      const requestId = composeRequestIdRef.current
       composeAbortRef.current?.abort()
       if (composeTimerRef.current) clearTimeout(composeTimerRef.current)
+      if (requestId) {
+        void authedFetch('/api/exec/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId }),
+        })
+      }
     },
     [],
   )
@@ -256,6 +265,7 @@ function DockerComposeInner({ connectionId }: Props) {
       const requestId = `compose-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const controller = new AbortController()
       composeAbortRef.current = controller
+      composeRequestIdRef.current = requestId
       setComposeTask({
         requestId,
         label: `Compose ${action}${service ? ` · ${service}` : ''}`,
@@ -316,6 +326,7 @@ function DockerComposeInner({ connectionId }: Props) {
         setActionLoading(null)
         if (composeTimerRef.current) clearTimeout(composeTimerRef.current)
         composeTimerRef.current = null
+        if (composeRequestIdRef.current === requestId) composeRequestIdRef.current = null
         composeAbortRef.current = null
       }
     },
