@@ -19,6 +19,7 @@ import AlertSettings from './AlertSettings'
 import AlertHistory from './AlertHistory'
 import HostHealthOverview from './HostHealthOverview'
 import type { HealthData, HostStats, HistoryPoint } from './types'
+import { summarizeExecMetrics, type ExecMetricsSnapshot } from '../../utils/exec-metrics'
 
 // ─── 工具函数 ───
 
@@ -108,6 +109,71 @@ const MiniChart = memo(function MiniChart({
       <path d={`${d} L${w},${height} L0,${height} Z`} fill={`url(#g-${color.replace('#', '')})`} />
       <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
     </svg>
+  )
+})
+
+const ExecMetricsPanel = memo(function ExecMetricsPanel({
+  snapshot,
+  activeHistory,
+}: {
+  snapshot: ExecMetricsSnapshot | null
+  activeHistory: number[]
+}) {
+  if (!snapshot) return null
+  const summary = summarizeExecMetrics(snapshot)
+  return (
+    <section className="shrink-0 border-b border-slate-700/50 bg-slate-900/60 px-4 py-2.5">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-300">
+          <Activity className="h-3.5 w-3.5 text-cyan-400" /> 执行概览
+        </div>
+        <span className="text-[10px] text-slate-600">仅聚合计数，不含命令、主机或请求标识</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-md bg-slate-800/70 px-2 py-1.5">
+          <div className="text-[10px] text-slate-500">发起</div>
+          <div className="text-sm font-medium text-slate-200 tabular-nums">
+            {snapshot.exec_started}
+          </div>
+        </div>
+        <div className="rounded-md bg-slate-800/70 px-2 py-1.5">
+          <div className="text-[10px] text-slate-500">已结束</div>
+          <div className="text-sm font-medium text-emerald-400 tabular-nums">
+            {summary.finished}
+          </div>
+        </div>
+        <div className="rounded-md bg-slate-800/70 px-2 py-1.5">
+          <div className="text-[10px] text-slate-500">已取消</div>
+          <div className="text-sm font-medium text-amber-400 tabular-nums">
+            {snapshot.exec_cancelled}
+          </div>
+        </div>
+        <div className="rounded-md bg-slate-800/70 px-2 py-1.5">
+          <div className="text-[10px] text-slate-500">进行中</div>
+          <div className="text-sm font-medium text-cyan-400 tabular-nums">
+            {snapshot.exec_active}
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-[1fr_96px] gap-3 rounded-md bg-slate-800/40 px-2 py-1.5">
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-[10px] text-slate-500">
+            <span>结束率</span>
+            <span className="text-slate-300 tabular-nums">{summary.completionRate}%</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded bg-slate-700">
+            <div
+              className="h-full rounded bg-emerald-400 transition-all"
+              style={{ width: `${summary.completionRate}%` }}
+            />
+          </div>
+          <div className="text-[10px] text-slate-600">
+            取消率 {summary.cancellationRate}% · 正常结束 {summary.completedWithoutCancellation}
+          </div>
+        </div>
+        <MiniChart points={activeHistory} height={34} color="#22d3ee" />
+      </div>
+    </section>
   )
 })
 
@@ -289,6 +355,8 @@ export default function MonitorPage() {
   >({})
   const [health, setHealth] = useState<HealthData | null>(null)
   const [healthError, setHealthError] = useState(false)
+  const [execMetrics, setExecMetrics] = useState<ExecMetricsSnapshot | null>(null)
+  const [execActiveHistory, setExecActiveHistory] = useState<number[]>([])
   const alertHistory = useAlertStore((s) => s.history)
   const savedConnections = useSshStore((s) => s.connections)
 
@@ -392,6 +460,21 @@ export default function MonitorPage() {
     } catch {
       setHosts([])
       setSelected([])
+    }
+  }, [])
+
+  // 仅拉取服务端低基数执行计数；不读取或缓存任何命令文本、主机或 request_id。
+  const fetchExecMetrics = useCallback(async () => {
+    try {
+      const response = await authedFetch('/api/metrics')
+      if (!response.ok) return
+      const body = (await response.json()) as { data?: ExecMetricsSnapshot }
+      const snapshot = body.data
+      if (!snapshot) return
+      setExecMetrics(snapshot)
+      setExecActiveHistory((previous) => [...previous, snapshot.exec_active].slice(-30))
+    } catch {
+      // Monitoring remains usable when the optional aggregate endpoint is unavailable.
     }
   }, [])
 
@@ -616,6 +699,35 @@ export default function MonitorPage() {
   }, [fetchHealth])
 
   useEffect(() => {
+    const refresh = () => void fetchExecMetrics()
+    refresh()
+    let timer: ReturnType<typeof setInterval> | null = null
+    const start = () => {
+      if (timer || document.visibilityState !== 'visible') return
+      timer = setInterval(refresh, 15_000)
+    }
+    const stop = () => {
+      if (!timer) return
+      clearInterval(timer)
+      timer = null
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refresh()
+        start()
+      } else {
+        stop()
+      }
+    }
+    start()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [fetchExecMetrics])
+
+  useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         scanHosts()
@@ -644,7 +756,8 @@ export default function MonitorPage() {
   const handleRefresh = useCallback(() => {
     collectAll()
     scanHosts()
-  }, [collectAll, scanHosts])
+    void fetchExecMetrics()
+  }, [collectAll, fetchExecMetrics, scanHosts])
 
   const handleIntervalChange = useCallback(
     (v: number) => {
@@ -752,6 +865,8 @@ export default function MonitorPage() {
       )}
       {alertPanel === 'settings' && <AlertSettings />}
       {alertPanel === 'history' && <AlertHistory />}
+
+      <ExecMetricsPanel snapshot={execMetrics} activeHistory={execActiveHistory} />
 
       {/* 主机列表 */}
       <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-700/50 px-4 py-2">
