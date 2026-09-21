@@ -14,6 +14,7 @@ export interface WrenchEventMap {
   'wrench-config-imported': void
   'wrench:send-to-terminal': { command: string }
   'wrench:send-to-batch': { command: string }
+  'wrench:split-command': { targetSessionIds: string[]; command: string }
 }
 
 export type WrenchEventName = keyof WrenchEventMap

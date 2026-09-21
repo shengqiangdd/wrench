@@ -62,6 +62,7 @@ import {
   markDeleteSent,
   type PendingDelete,
 } from '../../utils/terminal-delete-dedup'
+import { assessTerminalCommand } from '../../utils/terminal-command-safety'
 import { TerminalSuggestionPanel } from '../../components/terminal/TerminalSuggestionPanel'
 import { decodePtyBytes, flushPtyBytes, shouldClearInitialTerminal } from './terminal-output'
 import {
@@ -103,8 +104,8 @@ interface Props {
   className?: string
   onConnected?: () => void
   onDisconnected?: () => void
-  /** 命令同步：收到用户输入时回调（用于广播到同组其他分屏） */
-  onTerminalData?: (data: string) => void
+  /** 仅在本地用户提交完整命令时调用；绝不接收按键流 */
+  onTerminalCommand?: (command: string) => void
   /** SSH 连接凭据（用于建立独立 WebSocket 连接） */
   credentials?: SshCredentials
 }
@@ -139,7 +140,7 @@ export default function TerminalView({
   className = '',
   onConnected,
   onDisconnected,
-  onTerminalData,
+  onTerminalCommand,
   credentials,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -221,7 +222,6 @@ export default function TerminalView({
     fallbackSend: (text) => {
       const encoded = btoa(unescape(encodeURIComponent(text)))
       termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-      onTerminalData?.(encoded)
     },
     emptyHint: '剪贴板里没有可粘贴的文本',
   })
@@ -421,10 +421,14 @@ export default function TerminalView({
   // 用 ref 避免 event handler 中的闭包过期
   const onConnectedRef = useRef(onConnected)
   const onDisconnectedRef = useRef(onDisconnected)
+  const onTerminalCommandRef = useRef(onTerminalCommand)
   useEffect(() => {
     onConnectedRef.current = onConnected
     onDisconnectedRef.current = onDisconnected
   }, [onConnected, onDisconnected])
+  useEffect(() => {
+    onTerminalCommandRef.current = onTerminalCommand
+  }, [onTerminalCommand])
   /** generation ID：每次 mount 递增，防止旧实例的异步回调污染新实例 */
   const genRef = useRef(0)
   // 每个终端独立的 WebSocket 客户端（用于 SSH I/O）
@@ -1488,7 +1492,6 @@ export default function TerminalView({
       if (!suffix) return
       const encoded = btoa(unescape(encodeURIComponent(suffix)))
       termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-      onTerminalData?.(encoded)
       input.text += suffix
       input.cursor = input.text.length
       hideSuggestions()
@@ -1509,6 +1512,10 @@ export default function TerminalView({
       const edit = applyTerminalInput(input, data)
       if (edit.submitted) {
         const command = input.text.trim()
+        if (command) {
+          // 仅提交完整命令；不会把按键流、粘贴内容或控制序列交给同步逻辑。
+          onTerminalCommandRef.current?.(command)
+        }
         if (command && readTerminalCommandHistoryEnabled()) {
           commandHistoryRef.current = recordTerminalCommand(
             commandHistoryRef.current,
@@ -1653,7 +1660,6 @@ export default function TerminalView({
         // 直接发送到服务端，不调用 term.input() 避免 xterm.js 本地解析
         const encoded = btoa(unescape(encodeURIComponent(char)))
         termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-        onTerminalData?.(encoded)
         // 标记"这次删除已经发过了"：只对同字节且落在时间窗内的第二条通路生效，
         // 不会像旧的裸布尔那样吞掉用户后面输入的第一个字符
         pendingDeleteRef.current = markDeleteSent(char, Date.now())
@@ -1690,8 +1696,6 @@ export default function TerminalView({
         connectionId,
         data: encoded,
       })
-      // 命令同步：广播到同组其他分屏
-      onTerminalData?.(encoded)
     })
 
     // 监听来自命令页"再次执行"的事件
@@ -1701,9 +1705,23 @@ export default function TerminalView({
         const text = command + '\n'
         const encoded = btoa(unescape(encodeURIComponent(text)))
         termWsRef.current.send({ type: 'exec', connectionId, data: encoded })
-        onTerminalData?.(encoded)
       }
     })
+    // 分屏同步只接收父组件风险校验并经用户确认后的完整命令；接收端再次防御。
+    const unsubSplitCommand = on('wrench:split-command', ({ targetSessionIds, command }) => {
+      const risk = assessTerminalCommand(command).risk
+      if (
+        !targetSessionIds.includes(sessionId) ||
+        !command ||
+        risk === 'blocked' ||
+        risk === 'dangerous' ||
+        !termWsRef.current
+      )
+        return
+      const encoded = btoa(unescape(encodeURIComponent(`${command}\n`)))
+      termWsRef.current.send({ type: 'exec', connectionId, data: encoded })
+    })
+
     // Resize 监听 — 只有尺寸真正变化时才 fit，避免清空内容
     let lastFitWidth = 0
     let lastFitHeight = 0
@@ -1763,6 +1781,7 @@ export default function TerminalView({
       observer.disconnect()
       window.removeEventListener('keydown', searchKeyHandler)
       unsubTerminal()
+      unsubSplitCommand()
       // 移除触摸事件监听器
       container.removeEventListener('touchstart', handleTouchStart)
       container.removeEventListener('touchmove', handleTouchMove)
@@ -1835,7 +1854,7 @@ export default function TerminalView({
       searchAddonRef.current = null
     }
     // connectionId/sessionId 变化时重新创建终端连接
-    // credentials 通过 ref 引用，onTerminalData 由父组件 useCallback 包装，均稳定不变
+    // credentials 和命令回调都通过 ref 读取，避免父组件状态变化时重连终端
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId, sessionId])
 
@@ -1846,7 +1865,6 @@ export default function TerminalView({
     if (!suffix) return
     const encoded = btoa(unescape(encodeURIComponent(suffix)))
     termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-    onTerminalData?.(encoded)
     inputLineRef.current.text += suffix
     inputLineRef.current.cursor = inputLineRef.current.text.length
     setSuggestions([])
@@ -1972,7 +1990,6 @@ export default function TerminalView({
         onSend={(sequence) => {
           const encoded = btoa(unescape(encodeURIComponent(sequence)))
           termWsRef.current?.send({ type: 'exec', connectionId, data: encoded })
-          onTerminalData?.(encoded)
           terminalRef.current?.focus()
         }}
       />
@@ -2129,8 +2146,8 @@ interface SplitContainerProps {
   /** 当前活跃的分屏 ID */
   activeSplitId?: string | null
   onSetActiveSplit?: (id: string) => void
-  /** 命令同步：分屏收到的终端输入 */
-  onTerminalData?: (sessionId: string, data: string) => void
+  /** 仅在分屏提交完整命令时调用 */
+  onTerminalCommand?: (sessionId: string, command: string) => void
   /** 每个 session 的 SSH 凭据（用于建立独立 WS 连接） */
   credentialsMap?: Map<string, SshCredentials>
   /** 异步解密兜底凭据（页面刷新后内存 Map 为空时使用） */
@@ -2148,7 +2165,7 @@ export function SplitContainer({
   syncGroups,
   activeSplitId,
   onSetActiveSplit,
-  onTerminalData,
+  onTerminalCommand,
   credentialsMap,
   resolvedCredentials,
 }: SplitContainerProps) {
@@ -2174,7 +2191,7 @@ export function SplitContainer({
         syncGroups={syncGroups}
         activeSplitId={activeSplitId}
         onSetActiveSplit={onSetActiveSplit}
-        onTerminalData={onTerminalData}
+        onTerminalCommand={onTerminalCommand}
         credentialsMap={credentialsMap}
         getCreds={getCreds}
       />
@@ -2225,7 +2242,7 @@ export function SplitContainer({
               syncGroups={syncGroups}
               activeSplitId={activeSplitId}
               onSetActiveSplit={onSetActiveSplit}
-              onTerminalData={onTerminalData}
+              onTerminalCommand={onTerminalCommand}
               credentialsMap={credentialsMap}
               getCreds={getCreds}
             />
@@ -2259,7 +2276,7 @@ export function SplitContainer({
           syncGroups={syncGroups}
           activeSplitId={activeSplitId}
           onSetActiveSplit={onSetActiveSplit}
-          onTerminalData={onTerminalData}
+          onTerminalCommand={onTerminalCommand}
           credentialsMap={credentialsMap}
           resolvedCredentials={resolvedCredentials}
         />
@@ -2283,7 +2300,7 @@ export function SplitContainer({
           syncGroups={syncGroups}
           activeSplitId={activeSplitId}
           onSetActiveSplit={onSetActiveSplit}
-          onTerminalData={onTerminalData}
+          onTerminalCommand={onTerminalCommand}
           credentialsMap={credentialsMap}
           resolvedCredentials={resolvedCredentials}
         />
@@ -2304,7 +2321,7 @@ function SplitPane({
   syncGroups,
   activeSplitId,
   onSetActiveSplit,
-  onTerminalData,
+  onTerminalCommand,
   credentialsMap,
   getCreds,
 }: {
@@ -2322,7 +2339,7 @@ function SplitPane({
   syncGroups?: Record<string, string[]>
   activeSplitId?: string | null
   onSetActiveSplit?: (id: string) => void
-  onTerminalData?: (sessionId: string, data: string) => void
+  onTerminalCommand?: (sessionId: string, command: string) => void
   credentialsMap?: Map<string, SshCredentials>
   getCreds?: (sessionId: string) => SshCredentials | undefined
 }) {
@@ -2472,7 +2489,11 @@ function SplitPane({
               className={`btn-icon relative ${
                 isSyncOn ? 'text-cyan-400' : 'text-slate-600 hover:text-slate-400'
               }`}
-              title={isSyncOn ? `命令同步中 (${groupMembers.length} 个分屏)` : '开启命令同步'}
+              title={
+                isSyncOn
+                  ? `移出同步目标 (${groupMembers.length} 个已选分屏)`
+                  : '加入同步目标（默认关闭）'
+              }
             >
               <svg
                 width="12"
@@ -2563,8 +2584,10 @@ function SplitPane({
         connectionId={split.connectionId}
         sessionId={split.sessionId}
         className="flex-1"
-        onTerminalData={
-          onTerminalData ? (data: string) => onTerminalData(split.sessionId, data) : undefined
+        onTerminalCommand={
+          onTerminalCommand
+            ? (command: string) => onTerminalCommand(split.sessionId, command)
+            : undefined
         }
         credentials={getCreds?.(split.sessionId) || credentialsMap?.get(split.sessionId)}
       />

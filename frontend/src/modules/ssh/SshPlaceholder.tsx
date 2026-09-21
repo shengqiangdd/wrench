@@ -16,6 +16,9 @@ import AiSidebar from './AiSidebar'
 import type { SshSession } from '../../types/ssh'
 import { useAiStore } from '../../stores/ai-store'
 import { presentSshError } from '../../utils/ssh-error'
+import { ConfirmModal } from '../../components/ConfirmModal'
+import { assessTerminalCommand } from '../../utils/terminal-command-safety'
+import { emit, notify } from '../../services/event-bus'
 import {
   focusSshSftpPanel,
   focusSshTerminalInput,
@@ -67,6 +70,11 @@ export default function SshPlaceholder() {
   const [aiOpen, setAiOpen] = useState(false)
   const aiEnabled = useAiStore((s) => s.config.enabled)
   const [connectError, setConnectError] = useState<string | null>(null)
+  const [pendingSplitBroadcast, setPendingSplitBroadcast] = useState<{
+    command: string
+    targetSessionIds: string[]
+    targetNames: string[]
+  } | null>(null)
 
   // ─── 建立 SSH 连接（防重复点击） ───
 
@@ -388,13 +396,33 @@ export default function SshPlaceholder() {
       : connections.map((c) => ({ id: c.id, name: c.name }))
 
   // ─── 命令同步广播 ───
-  // TODO: 分屏命令同步需要每个终端的 WS 引用，当前暂不实现。
-  // 每个 Terminal 创建独立 WS，父组件无法直接访问它们的 WS client。
-  // 替代方案：通过 BroadcastChannel 或后端 relay 实现。
-
-  const handleTerminalData = useCallback((_sessionId: string, _data: string) => {
-    // 命令同步功能暂未实现（每个终端使用独立 WS 连接）
-  }, [])
+  // 默认关闭；只有用户逐个加入同一同步组的分屏会成为目标。命令只在本地内存事件
+  // 中传递，既不持久化也不上传；输入中的按键流从不参与同步。
+  const handleTerminalCommand = useCallback(
+    (originSessionId: string, command: string) => {
+      const assessment = assessTerminalCommand(command)
+      if (assessment.risk === 'blocked' || assessment.risk === 'dangerous') {
+        notify(`已阻止同步：${assessment.reason || '该命令不允许广播'}`, 'info')
+        return
+      }
+      const origin = splits.find((split) => split.sessionId === originSessionId)
+      if (!origin?.syncGroup) return
+      const targets = splits.filter(
+        (split) => split.syncGroup === origin.syncGroup && split.sessionId !== originSessionId,
+      )
+      if (targets.length === 0) return
+      setPendingSplitBroadcast({
+        command,
+        targetSessionIds: targets.map((split) => split.sessionId),
+        targetNames: targets.map(
+          (split) =>
+            connections.find((connection) => connection.id === split.connectionId)?.name ||
+            split.connectionId,
+        ),
+      })
+    },
+    [connections, splits],
+  )
 
   // ─── 渲染 ───
 
@@ -579,6 +607,23 @@ export default function SshPlaceholder() {
               </div>
             </div>
 
+            {pendingSplitBroadcast && (
+              <ConfirmModal
+                open
+                title="确认同步命令"
+                message={`将向 ${pendingSplitBroadcast.targetNames.join('、')} 执行：${pendingSplitBroadcast.command}`}
+                confirmText="发送到选中分屏"
+                onConfirm={() => {
+                  emit('wrench:split-command', {
+                    targetSessionIds: pendingSplitBroadcast.targetSessionIds,
+                    command: pendingSplitBroadcast.command,
+                  })
+                  setPendingSplitBroadcast(null)
+                }}
+                onCancel={() => setPendingSplitBroadcast(null)}
+              />
+            )}
+
             {/* 中间终端区域 */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
               {splits.length > 0 ? (
@@ -597,7 +642,7 @@ export default function SshPlaceholder() {
                     syncGroups={syncGroups}
                     activeSplitId={activeSplitId}
                     onSetActiveSplit={setActiveSplitId}
-                    onTerminalData={handleTerminalData}
+                    onTerminalCommand={handleTerminalCommand}
                     credentialsMap={sessionCredentials}
                     resolvedCredentials={resolvedCreds}
                   />
