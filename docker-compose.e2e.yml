@@ -6,15 +6,15 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "${WRENCH_E2E_PORT:-3001}:3001"
     environment:
       DATABASE_URL: /data/wrench.db
       JWT_SECRET: e2e-only-not-a-production-secret
       # Preserve the application's open-access deployment semantics.
       WRENCH_REQUIRE_AUTH: "off"
-      # The internal test SSH service is private, so allow precisely its fixed
+      # The internal test SSH service is private, so allow precisely its configurable
       # test IP. Public SSH remains allowed exactly as in normal deployments.
-      WRENCH_EGRESS_ALLOW: "172.30.0.10:22"
+      WRENCH_EGRESS_ALLOW: "${WRENCH_E2E_SSH_IP:-172.30.0.10}:22"
       WRENCH_EGRESS_STRICT: "0"
     networks:
       e2e_net:
@@ -25,10 +25,10 @@ services:
       dockerfile: e2e/sshd.Dockerfile
     networks:
       e2e_net:
-        ipv4_address: 172.30.0.10
+        ipv4_address: "${WRENCH_E2E_SSH_IP:-172.30.0.10}"
 
 networks:
   e2e_net:
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        - subnet: "${WRENCH_E2E_SUBNET:-172.30.0.0/24}"
