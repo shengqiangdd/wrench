@@ -145,6 +145,12 @@ struct DockerExecOutput {
     stderr_truncated: bool,
 }
 
+/// Legacy `docker-compose` already is the Compose command, unlike the v2
+/// plugin form (`docker compose`). Remove only that v2 prefix on fallback.
+fn legacy_compose_args<'a>(docker_args: &'a [&'a str]) -> &'a [&'a str] {
+    docker_args.get(1..).unwrap_or_default()
+}
+
 async fn docker_exec(
     state: &Arc<AppState>,
     space_id: &str,
@@ -234,15 +240,10 @@ async fn docker_exec_limited(
 
     // If docker command fails, try docker-compose fallback for compose subcommands
     if exit_code != 0 && !docker_args.is_empty() && docker_args[0] == "compose" {
-        let mut fallback_args = Vec::with_capacity(docker_args.len());
-        fallback_args.push("compose");
-        for arg in &docker_args[1..] {
-            fallback_args.push(arg);
-        }
         let fallback_cmd = {
             let mut s =
                 String::from("COMPOSE_PROGRESS=plain BUILDKIT_PROGRESS=plain DOCKER_CLI_HINTS=false docker-compose");
-            for arg in &fallback_args {
+            for arg in legacy_compose_args(docker_args) {
                 s.push(' ');
                 s.push_str(&escape_sh_arg(arg));
             }
@@ -1087,7 +1088,14 @@ pub async fn docker_diagnose(
 
 #[cfg(test)]
 mod tests {
-    use super::{clean_ansi_output, clean_compose_action_output};
+    use super::{clean_ansi_output, clean_compose_action_output, legacy_compose_args};
+
+    #[test]
+    fn legacy_compose_fallback_drops_only_the_v2_compose_prefix() {
+        let args = ["compose", "-f", "/srv/app/compose.yml", "up", "-d"];
+
+        assert_eq!(legacy_compose_args(&args), ["-f", "/srv/app/compose.yml", "up", "-d"]);
+    }
 
     #[test]
     fn clean_ansi_output_keeps_last_carriage_return_frame() {
