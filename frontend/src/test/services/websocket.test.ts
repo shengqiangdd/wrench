@@ -207,6 +207,12 @@ describe('WsClient', () => {
     expect(client.queuedTerminalInputCount).toBe(128)
   })
 
+  it('rejects a terminal input frame larger than the byte budget', () => {
+    ;(client as unknown as { _status: string })._status = 'reconnecting'
+    expect(client.sendTerminalInput({ type: 'exec', data: 'a'.repeat(16 * 1024) })).toBe(false)
+    expect(client.queuedTerminalInputCount).toBe(0)
+  })
+
   it('sends messages when connected', async () => {
     client.connect()
     await vi.waitFor(() => expect(client.status).toBe('connected'))

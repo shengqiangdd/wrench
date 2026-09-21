@@ -134,6 +134,14 @@ const TERMINAL_THEME = {
   brightWhite: '#f1f5f9',
 }
 
+/** Fast path for the overwhelmingly common ASCII keystrokes; preserve UTF-8 for pasted Unicode. */
+function encodeTerminalInput(text: string): string {
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) > 0x7f) return btoa(unescape(encodeURIComponent(text)))
+  }
+  return btoa(text)
+}
+
 export default function TerminalView({
   connectionId,
   sessionId,
@@ -185,6 +193,10 @@ export default function TerminalView({
   // 所以打标记由 onData 精确丢掉紧跟其后的那一个 ^V 字符。
   const pendingPasteKeystrokeRef = useRef(false)
   const [keyBarCollapsed, setKeyBarCollapsed] = useState(true)
+  const [inputQueueNotice, setInputQueueNotice] = useState<{
+    queued: number
+    dropped: boolean
+  } | null>(null)
   const [suggestions, setSuggestions] = useState<TerminalSuggestion[]>([])
   const [selectedSuggestion, setSelectedSuggestion] = useState(0)
   const suggestionsRef = useRef<TerminalSuggestion[]>([])
@@ -215,10 +227,19 @@ export default function TerminalView({
   /** Send keystrokes immediately when open; WsClient owns the bounded reconnect queue. */
   const sendTerminalInput = useCallback(
     (text: string) => {
-      const encoded = btoa(unescape(encodeURIComponent(text)))
-      return (
-        termWsRef.current?.sendTerminalInput({ type: 'exec', connectionId, data: encoded }) ?? false
-      )
+      const client = termWsRef.current
+      if (!client) return false
+      const accepted = client.sendTerminalInput({
+        type: 'exec',
+        connectionId,
+        data: encodeTerminalInput(text),
+      })
+      // Keep the hot connected path allocation- and render-free. Only surface
+      // state while a weak link is reconnecting and input must be retained.
+      if (client.status !== 'connected') {
+        setInputQueueNotice({ queued: client.queuedTerminalInputCount, dropped: !accepted })
+      }
+      return accepted
     },
     [connectionId],
   )
@@ -1361,6 +1382,9 @@ export default function TerminalView({
         const unsub = termWs.onStatus((status) => {
           console.log(`[Terminal] onStatus: ${status}`)
           if (status === 'connected') {
+            requestAnimationFrame(() => {
+              if (!disposedRef.current && termWs.status === 'connected') setInputQueueNotice(null)
+            })
             // 注意：这里**不再 unsub**。WsClient 自己会把掉线的 WS 重连回来，
             // 而「WS 通了」不等于「SSH 会话回来了」—— 保持订阅才能在那之后重开会话，
             // 这也是掉线后最快的一条恢复路（不用等倒计时走到下一档）。
@@ -1947,6 +1971,21 @@ export default function TerminalView({
           >
             忽略
           </button>
+        </div>
+      )}
+
+      {inputQueueNotice && (
+        <div
+          data-testid="terminal-input-queue"
+          className={
+            inputQueueNotice.dropped
+              ? 'flex shrink-0 items-center border-b border-red-500/30 bg-red-500/10 px-3 py-1 text-xs text-red-300'
+              : 'flex shrink-0 items-center border-b border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-300'
+          }
+        >
+          {inputQueueNotice.dropped
+            ? '网络恢复前输入暂存已满；后续按键未发送，请在重连后确认命令。'
+            : '网络不稳定：已暂存 ' + inputQueueNotice.queued + ' 个输入，恢复后将优先发送。'}
         </div>
       )}
 
