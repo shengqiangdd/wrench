@@ -1,0 +1,73 @@
+name: Package Local SSH Agent
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-agent:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+          - os: macos-latest
+            platform: macos
+          - os: windows-latest
+            platform: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Test Agent
+        run: cargo test --locked --bin wrench-agent
+        working-directory: backend
+      - name: Build release Agent
+        run: cargo build --release --locked --bin wrench-agent
+        working-directory: backend
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          package="wrench-agent-${{ matrix.platform }}"
+          mkdir -p "dist/$package"
+          cp target/release/wrench-agent "dist/$package/wrench-agent"
+          cp docs/LOCAL-SSH-AGENT.md "dist/$package/README.md"
+          cp LICENSE "dist/$package/LICENSE"
+          tar -C dist -czf "dist/$package.tar.gz" "$package"
+          cd dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$package.tar.gz" > "$package.tar.gz.sha256"
+          else
+            shasum -a 256 "$package.tar.gz" > "$package.tar.gz.sha256"
+          fi
+      - name: Package Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $package = 'wrench-agent-${{ matrix.platform }}'
+          New-Item -ItemType Directory -Force "dist/$package" | Out-Null
+          Copy-Item target/release/wrench-agent.exe "dist/$package/wrench-agent.exe"
+          Copy-Item docs/LOCAL-SSH-AGENT.md "dist/$package/README.md"
+          Copy-Item LICENSE "dist/$package/LICENSE"
+          Compress-Archive -Path "dist/$package" -DestinationPath "dist/$package.zip"
+          $hash = (Get-FileHash -Algorithm SHA256 "dist/$package.zip").Hash.ToLower()
+          "$hash  $package.zip" | Set-Content "dist/$package.zip.sha256"
+      - uses: actions/upload-artifact@v4
+        if: runner.os != 'Windows'
+        with:
+          name: wrench-agent-${{ matrix.platform }}
+          path: dist/*.tar.gz*
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: wrench-agent-${{ matrix.platform }}
+          path: dist/*.zip*
+          if-no-files-found: error
+          retention-days: 30

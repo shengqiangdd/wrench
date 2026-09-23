@@ -4,12 +4,12 @@
 
 ## 构建和启动
 
-需要仓库固定的 Rust 工具链（见 `rust-toolchain.toml`）。在用户自己的电脑上从源码构建：
+需要仓库固定的 Rust 工具链（见 `rust-toolchain.toml`）。在用户自己的电脑上从源码构建（仓库将 Cargo 输出目录设在根目录的 `target/` 下）：
 
 ```sh
 cd backend
 cargo build --release --bin wrench-agent
-./target/release/wrench-agent https://wrench.example.com
+../target/release/wrench-agent https://wrench.example.com
 ```
 
 Windows PowerShell：
@@ -17,14 +17,16 @@ Windows PowerShell：
 ```powershell
 cd backend
 cargo build --release --bin wrench-agent
-.\target\release\wrench-agent.exe https://wrench.example.com
+..\target\release\wrench-agent.exe https://wrench.example.com
 ```
+
+维护者可在 GitHub Actions 的 **Package Local SSH Agent** 手动运行打包工作流。它会在 Linux、macOS、Windows 原生 runner 上分别运行 Agent 单测并构建 release binary，生成包含二进制、运行说明和 MIT LICENSE 的压缩包及 SHA-256 校验文件，作为 workflow artifact 提供下载；它不会创建 GitHub Release，也不会部署 Agent。artifact 有效期为 30 天。首次发布或升级前应先完成对应平台下载包的安装和启动验证。
 
 参数必须是浏览器地址栏里的**精确网页 origin**（协议、主机和非默认端口），不带路径。Agent 在终端输出随机的 `http://127.0.0.1:<port>` 地址和一次性 pairing token。保持 Agent 前台运行；首次构建、重启 Agent 后需重新配对。不要以 root/管理员身份运行 Agent。
 
 在 Wrench 的「设置 → 本机 SSH Agent」粘贴地址和一次性 token，配对后，在新建/编辑 SSH 连接时选择「本机 Agent」。连接目标必须填写 IPv4/IPv6 字面地址；只接受 RFC1918 私网、IPv6 ULA 或 IPv4 链路本地地址，拒绝域名、公网、loopback、unspecified 和 multicast。Agent 不提供通用 TCP/SOCKS/HTTP 代理。
 
-每次建立 SSH 连接，Agent 终端会显示用户名、IP 和端口并要求输入 `yes`。首次遇到该目标的 SSH host key 时，还要在本机终端检查并确认显示的 SHA256 指纹；Agent 将接受的 host key 保存在 `~/.wrench-agent/known_hosts`（Windows 位于用户 home 下同名目录）。之后 key 变化会拒绝连接。密码和私钥通过浏览器到 loopback WebSocket 发送给 Agent，不发给 Wrench 服务端。配对令牌只允许使用一次，配对后的 session token 仅保存在当前浏览器标签页的 `sessionStorage`，并绑定当前 Wrench space code；切换空间或轮换空间码后须重启 Agent 并重新配对。
+每次建立 SSH 连接，Agent 终端会显示用户名、IP 和端口并要求输入 `yes`。首次遇到该目标的 SSH host key 时，还要在本机终端检查并确认显示的 SHA256 指纹；Agent 将接受的 host key 保存在 `~/.wrench-agent/known_hosts`（Windows 位于用户 home 下同名目录）。之后 key 变化会拒绝连接。密码和私钥通过浏览器到 loopback WebSocket 发送给 Agent，不发给 Wrench 服务端；私钥在本机解析，目前不支持需要口令解锁的加密私钥。配对令牌只允许使用一次，配对后的 session token 仅保存在当前浏览器标签页的 `sessionStorage`，并绑定当前 Wrench space code；切换空间或轮换空间码后须重启 Agent 并重新配对。
 
 ## 网络和权限边界
 
