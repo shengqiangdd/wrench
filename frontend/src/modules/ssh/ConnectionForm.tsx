@@ -5,6 +5,7 @@ import { getWsClientSync } from '../../services/websocket'
 import { encryptField } from '../../services/secure-store'
 import type { AuthType, SshConnection } from '../../types/ssh'
 import { presentSshError } from '../../utils/ssh-error'
+import { getLocalAgentPlatform } from '../../services/local-agent-platform'
 
 interface Props {
   onClose: () => void
@@ -19,6 +20,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
   const updateConnection = useSshStore((s) => s.updateConnection)
 
   const existing = editId ? useSshStore.getState().getConnectionById(editId) : null
+  const localAgentPlatform = getLocalAgentPlatform()
 
   const [name, setName] = useState(existing?.name || '')
   const [host, setHost] = useState(existing?.host || '')
@@ -255,8 +257,14 @@ export default function ConnectionForm({ onClose, editId }: Props) {
               </div>
               <p className="mt-1 text-[11px] text-slate-500">
                 {clientMode === 'server'
-                  ? '由 Wrench 服务器连接；受部署端 WRENCH_EGRESS_ALLOW / STRICT 管理。'
-                  : 'SSH 从此浏览器所在电脑发起；凭据留在本机。仅支持 IP 地址，连接和新 host key 需在 Agent 终端确认。SFTP 尚未实现。'}
+                  ? localAgentPlatform === 'desktop'
+                    ? '由 Wrench 服务器连接；受部署端 WRENCH_EGRESS_ALLOW / STRICT 管理。'
+                    : '手机浏览器只负责控制，SSH 实际从 Wrench 服务器连接。目标必须能从服务器路由到并通过 egress 策略；SSH 凭据会交给服务端。'
+                  : localAgentPlatform === 'ios'
+                    ? '此 iPhone/iPad 无法运行当前本机 Agent。若明确改选服务端模式，SSH 将从 Wrench 服务器发起，凭据会交给服务端；不会自动切换。'
+                    : localAgentPlatform === 'android'
+                      ? 'SSH 从此手机运行的 Agent 发起；Android/Termux 目前未打包或真机验证。需要本机终端逐次批准。SFTP 尚未实现。'
+                      : 'SSH 从此浏览器所在设备发起；凭据留在本机。仅支持 IP 地址，连接和新 host key 需在 Agent 终端确认。SFTP 尚未实现。'}
               </p>
             </div>
 

@@ -28,6 +28,16 @@ cargo build --release --bin wrench-agent
 
 每次建立 SSH 连接，Agent 终端会显示用户名、IP 和端口并要求输入 `yes`。首次遇到该目标的 SSH host key 时，还要在本机终端检查并确认显示的 SHA256 指纹；Agent 将接受的 host key 保存在 `~/.wrench-agent/known_hosts`（Windows 位于用户 home 下同名目录）。之后 key 变化会拒绝连接。密码和私钥通过浏览器到 loopback WebSocket 发送给 Agent，不发给 Wrench 服务端；私钥在本机解析，目前不支持需要口令解锁的加密私钥。配对令牌只允许使用一次，配对后的 session token 仅保存在当前浏览器标签页的 `sessionStorage`，并绑定当前 Wrench space code；切换空间或轮换空间码后须重启 Agent 并重新配对。
 
+## 手机浏览器
+
+Agent 必须与浏览器运行在同一台设备上。把 Agent 安装在桌面电脑后，手机浏览器不能通过当前实现连接那台电脑的 Agent；Agent 只绑定 loopback，也没有远程中继或通用代理。
+
+- **当前可用的手机方案：Wrench 服务端模式。** 手机网页只负责控制，实际 SSH 连接从 Wrench 服务器发起。只有在服务器有到目标内网的路由，并且管理员的 `WRENCH_EGRESS_ALLOW` / `WRENCH_EGRESS_STRICT` 允许时才可用。该模式会把 SSH 凭据交给 Wrench 服务端，连接来源也是服务端。
+- **Android：本机 Termux 路径仍属实验。** 需要在同一台 Android 设备本机运行 Android 可执行的 Agent；当前没有 Android 下载包，也没有完成 Termux 构建、浏览器本地权限及真机 SSH 验证。Linux/macOS/Windows 下载包不能用于 Android。不要据此把 Agent 改成监听 Wi-Fi/LAN 地址。
+- **iPhone/iPad：当前没有本机 Agent 支持。** Safari 不能启动这个 Rust 可执行程序；请使用上述服务端模式（服务器必须能到达目标），或在已运行 Agent 的桌面设备上使用桌面浏览器。
+
+Android 上若未来运行了兼容 Agent，浏览器对本机网络访问可能要求用户授权；Chrome 的 Local Network Access 权限从 Chrome 142 开始推出，仍须按实际浏览器版本验证。[Chrome Local Network Access 说明](https://developer.chrome.com/blog/local-network-access)
+
 ## 网络和权限边界
 
 - Agent 只绑定 `127.0.0.1` 上的随机端口；不监听 LAN 地址。

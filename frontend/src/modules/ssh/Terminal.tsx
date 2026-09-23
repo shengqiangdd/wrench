@@ -16,6 +16,10 @@ import {
   Unplug,
 } from 'lucide-react'
 import { createSessionWsClient, WsClient } from '../../services/websocket'
+import {
+  getLocalAgentPlatform,
+  getLocalAgentUnavailableMessage,
+} from '../../services/local-agent-platform'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
 import {
   CANVAS_GROW_MEMORY_MS,
@@ -1186,7 +1190,7 @@ export default function TerminalView({
         termWsRef.current?.disconnect()
         const localAgent = creds.clientMode === 'local'
         if (localAgent && (!creds.agentWsUrl || !creds.agentToken))
-          throw new Error('本机 Agent 未配对；请到设置中完成配对')
+          throw new Error(getLocalAgentUnavailableMessage(getLocalAgentPlatform()))
         const termWs = localAgent ? new WsClient(creds.agentWsUrl!) : createSessionWsClient('/ws')
         console.log(
           `[Terminal] Created WsClient, URL: ${termWs['url'].split('?')[0]}, status=${termWs['status']}`,
