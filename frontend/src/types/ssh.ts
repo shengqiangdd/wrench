@@ -7,6 +7,7 @@ export interface SshConnection {
   port: number
   username: string
   authType: AuthType
+  clientMode?: 'server' | 'local'
   password?: string
   privateKey?: string
   /** sudo 密码，用于 sudo -S 提权执行日志读取/文件操作等 */

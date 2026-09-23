@@ -47,6 +47,7 @@ function rowToLocal(row: {
     privateKey: (parsedConfig.private_key as string) || undefined,
     sudoPassword: (parsedConfig.sudo_password as string) || undefined,
     group: (parsedConfig.group as string) || undefined,
+    clientMode: parsedConfig.client_mode === 'local' ? 'local' : 'server',
     createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
   }
 }
@@ -58,6 +59,7 @@ function localToRow(conn: SshConnection) {
   if (conn.privateKey) config.private_key = conn.privateKey
   if (conn.sudoPassword) config.sudo_password = conn.sudoPassword
   if (conn.group) config.group = conn.group
+  if (conn.clientMode === 'local') config.client_mode = 'local'
 
   const now = new Date().toISOString()
   return {

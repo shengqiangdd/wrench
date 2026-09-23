@@ -15,7 +15,7 @@ import {
   TextSelect,
   Unplug,
 } from 'lucide-react'
-import { createSessionWsClient, type WsClient } from '../../services/websocket'
+import { createSessionWsClient, WsClient } from '../../services/websocket'
 import { AnsiStreamBuffer } from '../../utils/ansi-preprocessor'
 import {
   CANVAS_GROW_MEMORY_MS,
@@ -32,6 +32,7 @@ import {
   shouldAutoScrollToBottom,
 } from '../../utils/terminal-canvas'
 import { createCursorUpRunState, scanCursorUpRuns } from '../../utils/cursor-up-runs'
+import { useSshStore } from '../../stores/ssh-store'
 import { on } from '../../services/event-bus'
 import {
   TerminalContextMenu,
@@ -96,6 +97,9 @@ export interface SshCredentials {
   password?: string
   privateKey?: string
   sudoPassword?: string
+  clientMode?: 'server' | 'local'
+  agentWsUrl?: string
+  agentToken?: string
 }
 
 interface Props {
@@ -1180,7 +1184,10 @@ export default function TerminalView({
         console.log('[Terminal] Creating session WS client (short-lived ws token)...')
         // 关掉上一个 WsClient：它自带退避重连，不关的话会在后台一直重连（僵尸连接）
         termWsRef.current?.disconnect()
-        const termWs = createSessionWsClient('/ws')
+        const localAgent = creds.clientMode === 'local'
+        if (localAgent && (!creds.agentWsUrl || !creds.agentToken))
+          throw new Error('本机 Agent 未配对；请到设置中完成配对')
+        const termWs = localAgent ? new WsClient(creds.agentWsUrl!) : createSessionWsClient('/ws')
         console.log(
           `[Terminal] Created WsClient, URL: ${termWs['url'].split('?')[0]}, status=${termWs['status']}`,
         )
@@ -1199,6 +1206,7 @@ export default function TerminalView({
             clearTimeout(sshTimeout)
             connectingRef.current = false
             connectedRef.current = true
+            useSshStore.getState().updateSession(sessionId, { status: 'connected' })
             // SSH 连接成功后，执行 fit 调整终端尺寸
             setTimeout(() => {
               if (gen === genRef.current) canvasRefit()
@@ -1215,6 +1223,7 @@ export default function TerminalView({
             clearTimeout(sshTimeout)
             connectingRef.current = false
             if (gen === genRef.current && !disposedRef.current) {
+              useSshStore.getState().updateSession(sessionId, { status: 'error' })
               term.write(`\r\n\x1b[31m[错误] ${errMsg}\x1b[0m\r\n`)
               if (reopenTimeoutRef.current) clearTimeout(reopenTimeoutRef.current)
               if (reconnectingRef.current) reconnect.notifyAttemptFailed()
@@ -1379,9 +1388,26 @@ export default function TerminalView({
         // 用 connectingRef 判会把**初始连接自己**挡掉，后端根本收不到 connect，
         // 用户只看到 20s 后的「[超时] SSH 连接超时」（2026-09-16 在临时实例上实测复现）。
         let initialConnectSent = false
+        if (localAgent) {
+          termWs.on('agent_ready', () => {
+            if (gen !== genRef.current) return
+            if (!sshEstablishedRef.current) {
+              initialConnectSent = true
+              resendConnect(true)
+            } else if (!connectedRef.current && !connectingRef.current) {
+              reconnectingRef.current = true
+              resendConnect()
+            }
+          })
+        }
+
         const unsub = termWs.onStatus((status) => {
           console.log(`[Terminal] onStatus: ${status}`)
           if (status === 'connected') {
+            if (localAgent) {
+              termWs.send({ type: 'agent_auth', token: creds.agentToken })
+              return
+            }
             requestAnimationFrame(() => {
               if (!disposedRef.current && termWs.status === 'connected') setInputQueueNotice(null)
             })

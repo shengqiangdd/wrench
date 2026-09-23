@@ -25,6 +25,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
   const [port, setPort] = useState(String(existing?.port || 22))
   const [username, setUsername] = useState(existing?.username || '')
   const [authType, setAuthType] = useState<AuthType>(existing?.authType || 'password')
+  const [clientMode, setClientMode] = useState<'server' | 'local'>(existing?.clientMode || 'server')
   // 如果是编辑已有连接，existing 中的 password/privateKey 可能是加密的
   // 这里直接展示原始值（加密字符串），让用户重新输入或覆盖
   // 如果加密值以 !e: 开头，显示为占位符提示用户重新输入
@@ -51,13 +52,26 @@ export default function ConnectionForm({ onClose, editId }: Props) {
       port: parseInt(port) || 22,
       username,
       authType,
+      clientMode,
       ...(authType === 'password' ? { password } : { privateKey }),
       sudoPassword: sudoPassword || password || undefined,
       group: group || undefined,
       createdAt: existing?.createdAt || Date.now(),
       lastConnectedAt: existing?.lastConnectedAt,
     }),
-    [existing, name, host, port, username, authType, password, privateKey, sudoPassword, group],
+    [
+      existing,
+      name,
+      host,
+      port,
+      username,
+      authType,
+      clientMode,
+      password,
+      privateKey,
+      sudoPassword,
+      group,
+    ],
   )
 
   // ── useActionState: 表单提交异步状态 ──
@@ -110,6 +124,14 @@ export default function ConnectionForm({ onClose, editId }: Props) {
       return
     }
 
+    if (clientMode === 'local') {
+      setTestStatus('error')
+      setTestMessage(
+        '本机模式不会把凭据发给服务器测试。保存后打开终端连接，Agent 会在本机逐次审批。',
+      )
+      return
+    }
+
     setTestStatus('testing')
     setTestMessage('正在测试连接...')
 
@@ -141,7 +163,7 @@ export default function ConnectionForm({ onClose, editId }: Props) {
       setTestStatus('error')
       setTestMessage(presentSshError(msg).message)
     }
-  }, [host, port, username, password, privateKey, sudoPassword, authType, wsClient])
+  }, [host, port, username, password, privateKey, sudoPassword, authType, clientMode, wsClient])
 
   // 检测输入是否完整、可测试
   const canTest = host && username && (authType === 'password' ? true : !!privateKey)
@@ -215,6 +237,27 @@ export default function ConnectionForm({ onClose, editId }: Props) {
                 autoComplete="username"
                 spellCheck={false}
               />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs text-slate-500">SSH 客户端位置</label>
+              <div className="flex gap-2">
+                {(['server', 'local'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setClientMode(mode)}
+                    className={`flex-1 rounded-md border px-3 py-2 text-xs ${clientMode === mode ? 'border-wrench-500 bg-wrench-500/10 text-wrench-400' : 'border-slate-700 text-slate-400'}`}
+                  >
+                    {mode === 'server' ? 'Wrench 服务端' : '本机 Agent'}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {clientMode === 'server'
+                  ? '由 Wrench 服务器连接；受部署端 WRENCH_EGRESS_ALLOW / STRICT 管理。'
+                  : 'SSH 从此浏览器所在电脑发起；凭据留在本机。仅支持 IP 地址，连接和新 host key 需在 Agent 终端确认。SFTP 尚未实现。'}
+              </p>
             </div>
 
             <div className="sm:col-span-2">

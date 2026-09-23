@@ -12,6 +12,7 @@
 import { useSshStore, decryptConnection } from '../stores/ssh-store'
 import { setSessionCredentials } from './session-credentials'
 import { authedFetch } from './auth'
+import { getLocalAgentSession } from './local-agent'
 import type { WsClient } from './websocket'
 
 interface SessionInfo {
@@ -534,6 +535,11 @@ class SshSessionManager {
     },
   ): Promise<string | null> {
     const { forceNew = false, onStatus } = options || {}
+    const connection = useSshStore.getState().getConnectionById(connectionId)
+    if (connection?.clientMode === 'local') {
+      onStatus?.('本机模式的 SFTP 尚未实现；当前只支持本机 SSH 终端')
+      return null
+    }
 
     const lifecycle = this.lifecycleFor(connectionId)
     if (!forceNew && lifecycle.pending) return lifecycle.pending
@@ -690,6 +696,47 @@ class SshSessionManager {
     try {
       const decryptedConn = await decryptConnection(conn)
 
+      if (conn.clientMode === 'local') {
+        const agent = getLocalAgentSession()
+        if (!agent) throw new Error('本机 Agent 尚未配对；请先到设置中配对')
+        if (generation !== undefined && !this.isCurrentAttempt(connectionId, generation))
+          return null
+        useSshStore.getState().addSession({
+          id: sessionId,
+          connectionId,
+          connectionName: conn.name,
+          host: conn.host,
+          status: 'connecting',
+          terminalCols: 80,
+          terminalRows: 24,
+        })
+        setSessionCredentials(sessionId, {
+          host: conn.host,
+          port: conn.port,
+          username: conn.username,
+          password: decryptedConn.password,
+          privateKey: decryptedConn.privateKey,
+          sudoPassword: decryptedConn.sudoPassword,
+          clientMode: 'local',
+          agentWsUrl: agent.websocketUrl,
+          agentToken: agent.sessionToken,
+        })
+        this.sessions.set(sessionId, {
+          id: sessionId,
+          connectionId,
+          type: 'ssh',
+          status: 'connected',
+          host: conn.host,
+          port: conn.port,
+          username: conn.username,
+        })
+        if (generation !== undefined) this.markConnected(connectionId, generation)
+        this.recordConnectResult(true)
+        this.savePersistedState()
+        onStatus?.('正在等待本机 Agent 审批...')
+        return sessionId
+      }
+
       await this.wsClient.request({
         type: 'connect',
         connectionId: sessionId,
@@ -745,7 +792,7 @@ class SshSessionManager {
       // 记录失败
       const errorType = err instanceof Error ? err.message : 'unknown'
       this.recordConnectResult(false, errorType)
-      onStatus?.('')
+      onStatus?.(conn.clientMode === 'local' ? `本机 SSH 连接失败：${errorType}` : '')
       console.error('[SshSessionManager] SSH connect failed:', err)
       this.markDisconnected(connectionId, generation)
       return null
@@ -765,6 +812,10 @@ class SshSessionManager {
       console.error(
         `[SshSessionManager] createSftpSession failed: conn=${!!conn}, wsClient=${!!this.wsClient}`,
       )
+      return null
+    }
+    if (conn.clientMode === 'local') {
+      onStatus?.('本机模式的 SFTP 尚未实现；当前只支持本机 SSH 终端')
       return null
     }
 

@@ -80,6 +80,10 @@ cd ../frontend && npm run dev
 open http://localhost:5173
 ```
 
+### 本机内网 SSH Agent（预览）
+
+默认 SSH 连接仍由 Wrench 服务端发起。若目标只在当前电脑的 LAN/VPN 可达，可在连接配置中选择「本机 Agent」；该模式当前支持终端，SFTP 尚未实现。Agent 构建和安装步骤、安全限制及浏览器本地网络权限说明见 [本机 SSH Agent 文档](docs/LOCAL-SSH-AGENT.md)。
+
 ### 生产构建
 
 ```bash

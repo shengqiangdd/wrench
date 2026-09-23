@@ -10,6 +10,7 @@
  */
 
 import type { SshCredentials } from '../modules/ssh/Terminal'
+import { getLocalAgentSession } from './local-agent'
 
 /** 每个 session 的解密凭据（供 Terminal 组件建立独立 WS 连接使用） */
 export const sessionCredentials = new Map<string, SshCredentials>()
@@ -50,6 +51,7 @@ export async function resolveSessionCredentials(
 
   try {
     const decrypted = await decryptConnection(conn)
+    const agent = conn.clientMode === 'local' ? getLocalAgentSession() : null
     const creds: SshCredentials = {
       host: conn.host,
       port: conn.port,
@@ -57,6 +59,8 @@ export async function resolveSessionCredentials(
       password: decrypted.password,
       privateKey: decrypted.privateKey,
       sudoPassword: decrypted.sudoPassword || decrypted.password,
+      clientMode: conn.clientMode || 'server',
+      ...(agent ? { agentWsUrl: agent.websocketUrl, agentToken: agent.sessionToken } : {}),
     }
     // 缓存到 Map，避免重复解密
     sessionCredentials.set(sessionId, creds)

@@ -51,7 +51,7 @@ COPY backend/src/ ./src/
 # 仅重编译业务代码（依赖已缓存，cargo 自动检测文件变化）
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release --locked && \
+    cargo build --release --locked --bin wrench-backend && \
     cp /app/target/release/wrench-backend /tmp/wrench-backend
 
 # 验证二进制
