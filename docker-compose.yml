@@ -33,6 +33,7 @@ services:
       # 需要内网主机时再显式填写精确 IP[:端口] 或窄 CIDR[:端口]。
       WRENCH_EGRESS_ALLOW: "192.168.2.0/24:22"
       # JSON profiles approved for browser-space SSH egress selection.
+      # Example shell/.env value: [{"id":"fnas-lan","label":"FNOS 内网","source_ip":"192.168.2.9"}]
       WRENCH_EGRESS_PROFILES: "${WRENCH_EGRESS_PROFILES:-[]}"
       # WRENCH_EGRESS_STRICT: 置 1 时连公网目标也必须写在白名单里（只管理固定几台机时更严）
       WRENCH_EGRESS_STRICT: "${WRENCH_EGRESS_STRICT:-0}"

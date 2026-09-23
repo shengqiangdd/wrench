@@ -321,6 +321,13 @@ environment:
      {"id":"lab","label":"实验室网络","source_ip":"10.20.0.10"}]
 ```
 
+`docker-compose.yml` 和 `docker-compose.prod.yml` 会把 shell 或 `.env` 中的 `WRENCH_EGRESS_PROFILES` 注入容器，默认 `[]` 不添加 profile。例如：
+
+```bash
+export WRENCH_EGRESS_PROFILES='[{"id":"fnas-lan","label":"FNOS 内网","source_ip":"192.168.2.9"}]'
+docker compose up -d --build
+```
+
 Profile 的 `source_ip` 必须是部署容器/主机实际可绑定的单播地址。访客在设置页按浏览器空间选择 profile；偏好保存在该空间中。选择后新建的 REST 和 WebSocket SSH/SFTP 连接会先绑定 `source_ip:0` 再连接，绑定失败时连接直接失败，不会改用默认出口。已建立的连接不变。profile 只选择本机源地址，不扩大目标授权范围：私网目标仍须由 `WRENCH_EGRESS_ALLOW` 放行，`WRENCH_EGRESS_STRICT=1` 对公网目标的要求也保持不变。未配置 profiles 或选择“默认网络”时沿用既有出口行为。
 
 规则速览：
