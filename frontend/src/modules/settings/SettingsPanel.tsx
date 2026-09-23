@@ -6,6 +6,7 @@ import AiSettings from './AiSettings'
 import ImportExport from './ImportExport'
 import AccountSection from './AccountSection'
 import TerminalSettings from './TerminalSettings'
+import EgressProfileSettings from './EgressProfileSettings'
 
 export default function SettingsPanel() {
   const theme = useAppStore((s) => s.theme)
@@ -74,6 +75,8 @@ export default function SettingsPanel() {
               </p>
             </div>
           </section>
+
+          <EgressProfileSettings />
 
           {/* ─── 终端 ─── */}
           <TerminalSettings />

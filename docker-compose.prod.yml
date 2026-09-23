@@ -17,6 +17,8 @@ services:
       WRENCH_REQUIRE_AUTH: "off"
       WRENCH_AUTH_PASSWORD: ""
       WRENCH_EGRESS_ALLOW: "192.168.2.0/24:22"
+      # JSON profiles approved for browser-space SSH egress selection.
+      WRENCH_EGRESS_PROFILES: "${WRENCH_EGRESS_PROFILES:-[]}"
       WRENCH_EGRESS_STRICT: "${WRENCH_EGRESS_STRICT:-0}"
       WRENCH_TRUSTED_PROXIES: "${WRENCH_TRUSTED_PROXIES:-}"
       WRENCH_CSP: "${WRENCH_CSP:-}"

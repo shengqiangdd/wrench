@@ -366,6 +366,17 @@ async fn handle_terminal_connect(
             return;
         }
 
+        let egress_profile = match crate::api::egress_profiles::selected_profile(state, space_id).await {
+            Ok(profile) => profile,
+            Err(e) => {
+                let err = serde_json::json!({
+                    "type": "error", "connectionId": connection_id,
+                    "message": format!("Failed to load egress profile: {e}"), "error": true, "requestId": request_id,
+                });
+                let _ = socket.send(Message::Text(txt(err.to_string()))).await;
+                return;
+            }
+        };
         let new_session = SshSession::new(
             connection_id.clone(),
             host.to_string(),
@@ -373,7 +384,8 @@ async fn handle_terminal_connect(
             username.to_string(),
             known_hosts_path.clone(),
             strict_mode,
-        );
+        )
+        .with_egress_profile(egress_profile);
 
         if password.is_empty() && private_key.is_empty() {
             let err = serde_json::json!({

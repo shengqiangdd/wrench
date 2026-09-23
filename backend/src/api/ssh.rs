@@ -191,6 +191,10 @@ pub async fn connect_ssh(
     let known_hosts_path = body.known_hosts_path.clone();
     let strict_mode = body.strict_mode.unwrap_or(false);
 
+    let egress_profile = match crate::api::egress_profiles::selected_profile(&state, &space.id).await {
+        Ok(profile) => profile,
+        Err(e) => return ApiResponse::error(500, &format!("Failed to load egress profile: {e}")),
+    };
     let session = SshSession::new(
         connection_id.clone(),
         host.clone(),
@@ -198,7 +202,8 @@ pub async fn connect_ssh(
         username.clone(),
         known_hosts_path,
         strict_mode,
-    );
+    )
+    .with_egress_profile(egress_profile);
 
     // Try password auth first, then key auth
     if let Some(password) = &body.password
@@ -401,6 +406,10 @@ pub async fn ensure_connection(
     let known_hosts_path = body.known_hosts_path.clone();
     let strict_mode = body.strict_mode.unwrap_or(false);
 
+    let egress_profile = match crate::api::egress_profiles::selected_profile(&state, &space.id).await {
+        Ok(profile) => profile,
+        Err(e) => return ApiResponse::error(500, &format!("Failed to load egress profile: {e}")),
+    };
     let session = SshSession::new(
         connection_id.clone(),
         host.clone(),
@@ -408,7 +417,8 @@ pub async fn ensure_connection(
         username.clone(),
         known_hosts_path,
         strict_mode,
-    );
+    )
+    .with_egress_profile(egress_profile);
 
     // Try password auth first, then key auth
     if let Some(password) = &body.password

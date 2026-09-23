@@ -269,6 +269,7 @@ server {
 | `WRENCH_AUTH_PASSWORD_FILE` | 无 | 从文件读取登录口令（优先级低于环境变量）。不设置时回退到数据库同目录的 `auth_password` —— 只读，不会自动创建 |
 | `WRENCH_EGRESS_ALLOW` | 空 | **这台机器允许主动连到哪里**（逗号分隔的 `IP[:端口]` / `CIDR[:端口]`，只接受 IP/CIDR）。留空 = 内网/环回/链路本地/云元数据/保留地址一律拒绝。例：`192.168.1.5:22,192.168.1.6:22`。**条目越窄越安全**：每个条目都是「任何人打开网页后可以用来发起连接的目标」，不要整段放开内网 |
 | `WRENCH_EGRESS_STRICT` | `0` | 置 `1` 时公网 TCP 目标也必须在 `WRENCH_EGRESS_ALLOW` 里（只管理固定几台主机时更严） |
+| `WRENCH_EGRESS_PROFILES` | `[]` | 可选 JSON 数组，由部署管理员声明允许访客选择的 SSH 出口源地址 profile；浏览器只能提交已配置的 `id`，不可传接口名或 IP。格式见下方 |
 | `WRENCH_MAX_SESSIONS` | `32` | **全实例同时保活的 SSH 会话数上限**（`0` = 不限）。出口白名单管「能连到哪」，管不住「连多少」：每条终端都是一条真实 SSH 连接 + PTY + 上行日志通道。这条是按实例计数的全局闸门，不随空间码变化 —— 换空间码也绕不过 |
 | `WRENCH_MAX_SESSIONS_PER_SPACE` | `8` | **单个空间同时保活的 SSH 会话数上限**（`0` = 不限）。全局档与单空间档同时生效，先到者拒绝 |
 | `WRENCH_MAX_WS_CONNECTIONS` | `128` | **全实例同时打开的 WebSocket 连接数上限**（`0` = 不限）。SSH 会话闸门只数「已建好会话」的连接，这层把「握手成功但一直不发 connect 消息」的空连接也算进去 —— 缺了它就是最后一个没有闸门的资源入口。到顶后新升级请求返回 503（`code: ws_limit_reached`） |
@@ -315,7 +316,12 @@ environment:
   # 只列真正需要管理的主机；留空 = 内网/环回/链路本地/云元数据地址一律拒绝
   WRENCH_EGRESS_ALLOW: "192.168.1.5:22,192.168.1.6:22"
   # WRENCH_EGRESS_STRICT: "1"   # 连公网目标也要求写进白名单
+  WRENCH_EGRESS_PROFILES: >-
+    [{"id":"office","label":"办公室网络","source_ip":"192.168.1.10"},
+     {"id":"lab","label":"实验室网络","source_ip":"10.20.0.10"}]
 ```
+
+Profile 的 `source_ip` 必须是部署容器/主机实际可绑定的单播地址。访客在设置页按浏览器空间选择 profile；偏好保存在该空间中。选择后新建的 REST 和 WebSocket SSH/SFTP 连接会先绑定 `source_ip:0` 再连接，绑定失败时连接直接失败，不会改用默认出口。已建立的连接不变。profile 只选择本机源地址，不扩大目标授权范围：私网目标仍须由 `WRENCH_EGRESS_ALLOW` 放行，`WRENCH_EGRESS_STRICT=1` 对公网目标的要求也保持不变。未配置 profiles 或选择“默认网络”时沿用既有出口行为。
 
 规则速览：
 

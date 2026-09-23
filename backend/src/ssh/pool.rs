@@ -1,5 +1,7 @@
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::net::TcpSocket;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Duration, timeout};
 
@@ -7,6 +9,7 @@ use russh::client;
 use russh::keys::key::PrivateKeyWithHashAlg;
 use russh_sftp::client::SftpSession;
 
+use crate::config::EgressProfile;
 use crate::ssh::known_hosts::KnownHosts;
 use crate::utils::escape_sh_arg;
 
@@ -24,6 +27,7 @@ pub struct SshSession {
     sftp_init_lock: Arc<Mutex<()>>,
     /// Bounds metadata/stat requests sent concurrently over one SSH connection.
     sftp_parallelism: Arc<Semaphore>,
+    egress_profile: Option<EgressProfile>,
 }
 
 // Default idle timeout: 30 minutes
@@ -108,6 +112,23 @@ fn append_bounded(buffer: &mut Vec<u8>, data: &[u8], limit: usize) -> bool {
     take < data.len()
 }
 
+/// Create and bind a TCP socket to an explicitly selected source address.
+fn build_bound_tcp_socket(source_ip: IpAddr, target_ip: IpAddr) -> std::io::Result<TcpSocket> {
+    if source_ip.is_ipv4() != target_ip.is_ipv4() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "source and target address families differ",
+        ));
+    }
+    let socket = if target_ip.is_ipv4() {
+        TcpSocket::new_v4()?
+    } else {
+        TcpSocket::new_v6()?
+    };
+    socket.bind(SocketAddr::new(source_ip, 0))?;
+    Ok(socket)
+}
+
 impl SshSession {
     /// Create a new SSH session with known_hosts verification.
     ///
@@ -136,7 +157,13 @@ impl SshSession {
             sftp_cache: Arc::new(Mutex::new(None)),
             sftp_init_lock: Arc::new(Mutex::new(())),
             sftp_parallelism: Arc::new(Semaphore::new(8)),
+            egress_profile: None,
         }
+    }
+
+    pub fn with_egress_profile(mut self, profile: Option<EgressProfile>) -> Self {
+        self.egress_profile = profile;
+        self
     }
 
     /// Create an SshHandler with known_hosts verification configured.
@@ -214,7 +241,31 @@ impl SshSession {
             let target = std::net::SocketAddr::new(ip, self.port);
             let config = Self::build_config();
             let handler = self.create_handler(known_hosts_path.clone(), strict_mode);
-            match client::connect(config, target, handler).await {
+            let connect_result = if let Some(profile) = &self.egress_profile {
+                if profile.source_ip.is_ipv4() != ip.is_ipv4() {
+                    last_err = Some(
+                        format!(
+                            "egress profile {} source address family does not match target {}",
+                            profile.id, target
+                        )
+                        .into(),
+                    );
+                    continue;
+                }
+                let socket = build_bound_tcp_socket(profile.source_ip, ip)?;
+                let stream = match socket.connect(target).await {
+                    Ok(stream) => stream,
+                    Err(error) => {
+                        tracing::warn!("SSH TCP 连接 {}（{}）失败：{}", self.host, target, error);
+                        last_err = Some(Box::new(error));
+                        continue;
+                    }
+                };
+                client::connect_stream(config, stream, handler).await
+            } else {
+                client::connect(config, target, handler).await
+            };
+            match connect_result {
                 Ok(handle) => return Ok(handle),
                 Err(e) => {
                     tracing::warn!("SSH 连接 {}（{}）失败：{}", self.host, target, e);
@@ -622,4 +673,24 @@ fn cancellable_command_uses_a_process_group_and_escapes_the_user_command() {
     assert!(wrapped.contains("kill -TERM -- \"-$child\""));
     assert!(wrapped.contains("kill -KILL -- \"-$child\""));
     assert!(wrapped.ends_with("'sleep 30; echo '\\''$danger'\\'''"));
+}
+
+#[cfg(test)]
+mod tcp_bind_tests {
+    use super::build_bound_tcp_socket;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    #[tokio::test]
+    async fn socket_is_bound_to_configured_source_before_connect() {
+        let source = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        let socket = build_bound_tcp_socket(source, IpAddr::V4(Ipv4Addr::LOCALHOST)).unwrap();
+        assert_eq!(socket.local_addr().unwrap().ip(), source);
+        assert_ne!(socket.local_addr().unwrap().port(), 0);
+    }
+
+    #[test]
+    fn socket_builder_rejects_family_mismatch() {
+        assert!(build_bound_tcp_socket(IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)).is_err());
+        assert!(build_bound_tcp_socket(IpAddr::V6(Ipv6Addr::LOCALHOST), IpAddr::V4(Ipv4Addr::LOCALHOST)).is_err());
+    }
 }

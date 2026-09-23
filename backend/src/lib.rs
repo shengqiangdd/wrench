@@ -247,6 +247,10 @@ pub async fn build_app(state: Arc<AppState>) -> Router {
         // 注意：没有 POST。服务端不接收 SSH 凭据（详见 api/connections.rs 顶部契约）。
         .route("/connections/{id}", axum::routing::delete(api::connections::delete_connection))
         // ─── Per-visitor space routes ───
+        .route(
+            "/egress-profiles",
+            get(api::egress_profiles::list).put(api::egress_profiles::update),
+        )
         .route("/space/me", get(api::space::me))
         .route("/space/rotate", axum::routing::post(api::space::rotate))
         .route("/space/attach", axum::routing::post(api::space::attach))

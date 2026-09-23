@@ -3,6 +3,7 @@ pub mod alerts;
 pub mod auth;
 pub mod connections;
 pub mod docker;
+pub mod egress_profiles;
 pub mod health;
 pub mod host_health;
 pub mod hosts;

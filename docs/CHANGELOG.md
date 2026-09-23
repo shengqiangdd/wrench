@@ -15,6 +15,13 @@
 - **WS 路由补上通用限流**：升级请求此前只有鉴权、没有限流，可以被用来高频刷「升级—断开」。
 - 文档：`docs/DEPLOY.md`（「配套闸门」章节）、`backend/.env.example`、`docs/CHANGELOG.md`。
 
+
+## [Unreleased] - SSH 出口网络 profiles
+- 部署管理员可用 `WRENCH_EGRESS_PROFILES` 声明受限 JSON profiles（`id`、`label`、`source_ip`）；无效地址、重复 ID 或额外字段会使服务启动失败。
+- 设置页允许每个浏览器空间选择一个服务端批准的 profile，偏好按 `space_id` 持久化；REST 与 WebSocket SSH 新建连接统一在 `SshSession.connect_authorized` 绑定来源 IP，绑定失败时拒绝连接。
+- Profile 仅控制源地址，不改变 `WRENCH_EGRESS_ALLOW` / `WRENCH_EGRESS_STRICT` 目标授权或 `WRENCH_REQUIRE_AUTH=off` 公网访问语义。
+- 文档：`docs/DEPLOY.md`。
+
 ## [Unreleased] - 客户端 SQLite 架构 + Rust 后端重构
 
 ### 🔐 明文凭据门禁：提交前 / CI / 每周历史扫描（并查出一次真实泄露）

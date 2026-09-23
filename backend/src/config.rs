@@ -1,7 +1,19 @@
+use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EgressProfile {
+    pub id: String,
+    pub label: String,
+    #[serde(rename = "sourceIp", alias = "source_ip")]
+    pub source_ip: IpAddr,
+}
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
+    pub egress_profiles: Vec<EgressProfile>,
     pub host: String,
     pub port: u16,
     pub frontend_dist: PathBuf,
@@ -139,6 +151,7 @@ impl AppConfig {
             std::env::var("WRENCH_MAX_SESSIONS_PER_SPACE").ok().as_deref(),
             DEFAULT_MAX_SESSIONS_PER_SPACE,
         );
+        let egress_profiles = parse_egress_profiles(std::env::var("WRENCH_EGRESS_PROFILES").ok().as_deref())?;
         let max_ws_connections = parse_positive_usize(
             std::env::var("WRENCH_MAX_WS_CONNECTIONS").ok().as_deref(),
             DEFAULT_MAX_WS_CONNECTIONS,
@@ -160,6 +173,7 @@ impl AppConfig {
             max_sessions,
             max_sessions_per_space,
             max_ws_connections,
+            egress_profiles,
         })
     }
 }
@@ -176,6 +190,37 @@ pub const DEFAULT_MAX_SESSIONS_PER_SPACE: usize = 8;
 /// 128 足够十几个人同时用；同时它远低于「把 fd / 内存吃光」的量级（每条 WS 连接
 /// 约数 KB 缓冲 + 一个任务）。真要给几十人同时用，调大这个值即可。
 pub const DEFAULT_MAX_WS_CONNECTIONS: usize = 128;
+
+/// Parse deployment-approved outbound source addresses. Invalid configuration fails startup.
+fn parse_egress_profiles(raw: Option<&str>) -> anyhow::Result<Vec<EgressProfile>> {
+    let Some(raw) = raw.map(str::trim).filter(|raw| !raw.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    let profiles: Vec<EgressProfile> =
+        serde_json::from_str(raw).map_err(|e| anyhow::anyhow!("invalid WRENCH_EGRESS_PROFILES JSON: {e}"))?;
+    let mut ids = std::collections::HashSet::new();
+    for profile in &profiles {
+        if profile.id.is_empty()
+            || profile.id.len() > 64
+            || !profile
+                .id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+        {
+            anyhow::bail!("egress profile id must use 1-64 ASCII letters, digits, '-' or '_'");
+        }
+        if profile.label.trim().is_empty() || profile.label.len() > 128 {
+            anyhow::bail!("egress profile label must contain 1-128 bytes");
+        }
+        if !ids.insert(profile.id.as_str()) {
+            anyhow::bail!("duplicate egress profile id: {}", profile.id);
+        }
+        if profile.source_ip.is_unspecified() || profile.source_ip.is_multicast() {
+            anyhow::bail!("egress profile {} source_ip must be a unicast address", profile.id);
+        }
+    }
+    Ok(profiles)
+}
 
 /// 解析「连接数上限」这类环境变量。
 ///
@@ -270,7 +315,26 @@ fn read_password_file(path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_MAX_SESSIONS, DEFAULT_MAX_SESSIONS_PER_SPACE, parse_positive_usize, parse_require_auth};
+    use super::{
+        DEFAULT_MAX_SESSIONS, DEFAULT_MAX_SESSIONS_PER_SPACE, parse_egress_profiles, parse_positive_usize,
+        parse_require_auth,
+    };
+
+    #[test]
+    fn parses_and_rejects_unsafe_egress_profiles() {
+        let parsed =
+            parse_egress_profiles(Some(r#"[{"id":"lan_a","label":"Office LAN","source_ip":"192.168.1.8"}]"#)).unwrap();
+        assert_eq!(parsed[0].source_ip.to_string(), "192.168.1.8");
+        assert!(parse_egress_profiles(None).unwrap().is_empty());
+        for raw in [
+            r#"[{"id":"bad/id","label":"x","source_ip":"192.168.1.8"}]"#,
+            r#"[{"id":"a","label":"x","source_ip":"0.0.0.0"}]"#,
+            r#"[{"id":"a","label":"x","source_ip":"192.168.1.8"},{"id":"a","label":"y","source_ip":"192.168.1.9"}]"#,
+            r#"[{"id":"a","label":"x","source_ip":"192.168.1.8","interface":"eth0"}]"#,
+        ] {
+            assert!(parse_egress_profiles(Some(raw)).is_err(), "{raw}");
+        }
+    }
 
     #[test]
     fn session_caps_default_and_explicit_zero() {

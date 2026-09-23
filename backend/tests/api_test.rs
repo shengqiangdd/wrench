@@ -30,6 +30,7 @@ fn test_config() -> AppConfig {
         max_sessions: wrench_backend::config::DEFAULT_MAX_SESSIONS,
         max_sessions_per_space: wrench_backend::config::DEFAULT_MAX_SESSIONS_PER_SPACE,
         max_ws_connections: wrench_backend::config::DEFAULT_MAX_WS_CONNECTIONS,
+        egress_profiles: vec![],
     }
 }
 
@@ -97,6 +98,108 @@ async fn health_check_returns_200() {
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(json["data"]["build"].as_str().is_some_and(|build| !build.is_empty()));
+}
+
+/// Egress profile selection accepts only server-approved ids and is stored per browser space.
+#[tokio::test]
+async fn egress_profile_preference_is_approved_and_space_scoped() {
+    let mut config = temp_db_config();
+    config.require_auth = false;
+    config.auth_password = None;
+    config.egress_profiles = vec![wrench_backend::config::EgressProfile {
+        id: "office".into(),
+        label: "Office LAN".into(),
+        source_ip: "192.168.1.10".parse().unwrap(),
+    }];
+    let app = build_test_app_with(config).await;
+
+    let first_space = app
+        .clone()
+        .oneshot(with_connect_info(
+            Request::builder().uri("/api/space/me").body(Body::empty()).unwrap(),
+        ))
+        .await
+        .unwrap();
+    let first_code = first_space
+        .headers()
+        .get("x-space-code")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let invalid = app
+        .clone()
+        .oneshot(with_connect_info(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/egress-profiles")
+                .header("x-space-code", &first_code)
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"profileId":"unapproved"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+
+    let arbitrary_address = app
+        .clone()
+        .oneshot(with_connect_info(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/egress-profiles")
+                .header("x-space-code", &first_code)
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"profileId":"office","sourceIp":"127.0.0.1"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(arbitrary_address.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let selected = app
+        .clone()
+        .oneshot(with_connect_info(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/egress-profiles")
+                .header("x-space-code", &first_code)
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"profileId":"office"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(selected.status(), StatusCode::OK);
+
+    let second_space = app
+        .clone()
+        .oneshot(with_connect_info(
+            Request::builder().uri("/api/space/me").body(Body::empty()).unwrap(),
+        ))
+        .await
+        .unwrap();
+    let second_code = second_space
+        .headers()
+        .get("x-space-code")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let other_profile = app
+        .oneshot(with_connect_info(
+            Request::builder()
+                .uri("/api/egress-profiles")
+                .header("x-space-code", second_code)
+                .body(Body::empty())
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    let bytes = to_bytes(other_profile.into_body(), 64 * 1024).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(body["data"]["selectedProfileId"].is_null(), "{body}");
 }
 
 /// Cancellation tokens are isolated by space and request id.

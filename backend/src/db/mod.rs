@@ -130,6 +130,12 @@ impl Database {
                 tracing::info!("DB migration V7 applied (space-scoped primary keys)");
             }
 
+            if version < 8 {
+                conn.execute_batch(SCHEMA_V8)?;
+                conn.pragma_update(None, "user_version", 8)?;
+                tracing::info!("DB migration V8 applied (space preferences)");
+            }
+
             Ok::<_, anyhow::Error>(())
         })
         .await
@@ -969,6 +975,26 @@ impl Database {
         .await
     }
 
+    /// Read a preference owned by one browser space.
+    pub async fn get_space_preference(&self, space_id: &str, key: &str) -> anyhow::Result<Option<String>> {
+        let (space, key) = (space_id.to_string(), key.to_string());
+        self.exec(move |conn| {
+            let mut stmt = conn.prepare("SELECT value FROM space_preferences WHERE space_id = ?1 AND key = ?2")?;
+            let mut rows = stmt.query_map(rusqlite::params![space, key], |row| row.get::<_, String>(0))?;
+            Ok(rows.next().transpose()?)
+        })
+        .await
+    }
+
+    /// Upsert a preference within its owning browser space.
+    pub async fn set_space_preference(&self, space_id: &str, key: &str, value: &str) -> anyhow::Result<()> {
+        let (space, key, value) = (space_id.to_string(), key.to_string(), value.to_string());
+        self.exec(move |conn| {
+            conn.execute("INSERT INTO space_preferences (space_id, key, value) VALUES (?1, ?2, ?3) ON CONFLICT(space_id, key) DO UPDATE SET value = excluded.value", rusqlite::params![space, key, value])?;
+            Ok(())
+        }).await
+    }
+
     /// 读取服务端设置（`app_settings`）。
     pub async fn get_setting(&self, key: &str) -> anyhow::Result<Option<String>> {
         let key = key.to_string();
@@ -1330,6 +1356,16 @@ ALTER TABLE notification_channels_v7 RENAME TO notification_channels;
 CREATE INDEX IF NOT EXISTS idx_notif_space ON notification_channels(space_id);
 "#;
 
+const SCHEMA_V8: &str = r#"
+CREATE TABLE IF NOT EXISTS space_preferences (
+    space_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (space_id, key),
+    FOREIGN KEY (space_id) REFERENCES spaces(id) ON DELETE CASCADE
+);
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1339,6 +1375,24 @@ mod tests {
 
     async fn test_db() -> Database {
         Database::open_in_memory().await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn space_preferences_are_isolated_between_spaces() {
+        let db = test_db().await;
+        db.create_space("space-a", "hash-a", "now").await.unwrap();
+        db.create_space("space-b", "hash-b", "now").await.unwrap();
+        db.set_space_preference("space-a", "ssh_egress_profile", "lan-a")
+            .await
+            .unwrap();
+        assert_eq!(
+            db.get_space_preference("space-a", "ssh_egress_profile")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("lan-a")
+        );
+        assert_eq!(db.get_space_preference("space-b", "ssh_egress_profile").await.unwrap(), None);
     }
 
     #[test]
@@ -1650,7 +1704,7 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            assert!(version >= 7, "Expected schema version >= 7, got {}", version);
+            assert!(version >= 8, "Expected schema version >= 8, got {}", version);
         });
     }
 }
