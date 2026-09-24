@@ -150,7 +150,13 @@ func connect(args []js.Value) any {
 		if socketCtor.Type() != js.TypeFunction {
 			return errors.New("Direct Sockets unavailable; use the installed Chrome IWA")
 		}
-		sock := socketCtor.New(host, port, map[string]any{"keepAlive": false, "noDelay": true})
+		sock := opts.Get("socket")
+		if sock.Type() == js.TypeUndefined || sock.Type() == js.TypeNull {
+			sock = socketCtor.New(host, port, map[string]any{"keepAlive": false, "noDelay": true})
+		}
+		if sock.Type() != js.TypeObject || sock.Get("opened").Type() != js.TypeObject {
+			return errors.New("a valid browser TCP socket is required")
+		}
 		openedResult := make(chan struct {
 			value js.Value
 			err   error
@@ -271,7 +277,14 @@ func awaitIfPromise(value js.Value) error {
 	return err
 }
 
-func awaitClose(sock js.Value) error { return awaitIfPromise(sock.Call("close")) }
+func awaitClose(sock js.Value) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("close uninitialized TCP socket: %v", recovered)
+		}
+	}()
+	return awaitIfPromise(sock.Call("close"))
+}
 func send(args []js.Value) any {
 	return promise(func() error {
 		activeMu.Lock()

@@ -6,9 +6,9 @@
   "display": "standalone",
   "icons": [
     {
-      "src": "/iwa-icon.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
+      "src": "/iwa-icon.png",
+      "type": "image/png",
+      "sizes": "192x192",
       "purpose": "any"
     }
   ],
@@ -16,7 +16,7 @@
     "direct-sockets": [
       "self"
     ],
-    "direct-sockets-private": [
+    "local-network": [
       "self"
     ],
     "cross-origin-isolated": [

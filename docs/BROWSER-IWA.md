@@ -10,7 +10,7 @@ The ordinary Wrench website cannot open raw TCP sockets. Chrome [Direct Sockets]
 - One active SSH shell per IWA window. SFTP, private-key authentication, multiple sessions, host-key CA/known_hosts import, and automatic terminal resizing are not implemented.
 - The earlier one-shot TCP probe remains available under “Raw TCP transport probe”; it sends no SSH data.
 
-The app only accepts literal RFC1918 IPv4 or IPv6 ULA addresses, port 22, and requires explicit confirmation before opening the socket. It rejects DNS names, public addresses, loopback, link-local, multicast, mapped IPv4-in-IPv6, and alternate ports. This is an app-level restriction: installing an IWA with Direct Sockets grants that application raw TCP capability. The IWA does not provide a general-purpose proxy or listener.
+The app only accepts literal RFC1918 IPv4 or IPv6 ULA addresses and port 22. Pressing Connect is the explicit action to open one socket to the displayed target; Chrome may also ask you to grant this IWA Local Network permission. The app rejects DNS names, public addresses, loopback, link-local, multicast, mapped IPv4-in-IPv6, and alternate ports. This is an app-level restriction: installing an IWA with Direct Sockets grants that application raw TCP capability. The IWA does not provide a general-purpose proxy or listener.
 
 The Go client uses `golang.org/x/crypto/ssh` with explicit modern KEX, cipher, MAC, and host-key allowlists (Ed25519, ECDSA, and RSA/SHA-2; no RSA/SHA-1, DSA, SHA-1 KEX, CBC, or RC4), over a Direct Sockets `ReadableStream`/`WritableStream` adapter. Interoperability tests exercise Ed25519, ECDSA P-256, and RSA keys. Servers offering only legacy SHA-1, DSA, CBC, or RC4 algorithms will be rejected. The first fingerprint is TOFU: users must compare it against a trusted value (for example, a fingerprint collected locally from the SSH host) before confirming. Never accept an unexpected key-change alert. The app does not persist credentials or log terminal data.
 
@@ -44,7 +44,21 @@ The `Release Browser SSH IWA` workflow requires the `WRENCH_IWA_SIGNING_KEY` sec
 
 ## Install for development
 
-IWA installation depends on supported Chrome version/platform. Chrome's [IWA developer flow](https://developer.chrome.com/docs/iwa/introduction) documents Chrome/ChromeOS 120+ and the supported installation path; current Chrome channel and platform restrictions still apply. Download the `.swbn` and `.sha256` either from the published GitHub Release assets or the `wrench-browser-iwa-release` artifact of a successful release workflow. Verify the checksum with `sha256sum -c wrench-browser-iwa.swbn.sha256` (or the matching platform tool) before installation. For development installation, enable `chrome://flags/#enable-isolated-web-app-dev-mode`, restart Chrome, then open `chrome://web-app-internals` and use **Install IWA from Signed Web Bundle**. Follow Chrome's current setup instructions for supported channels/platforms. A normal HTTPS website or unsigned preview package cannot access Direct Sockets. Managed distribution constraints may apply.
+IWA installation depends on supported Chrome version/platform. Chrome's [IWA developer flow](https://developer.chrome.com/docs/iwa/introduction) documents Chrome/ChromeOS 120+; current Chrome channel and platform restrictions still apply. The local development proxy below is only for testing trusted local code. It does not produce a signed, redistributable IWA.
+
+```sh
+cd frontend
+npm ci
+npm run build:iwa
+cd ../browser-iwa/dist
+python3 -m http.server 8000 --bind 127.0.0.1
+```
+
+In Chrome, enable `chrome://flags/#enable-isolated-web-apps` and `chrome://flags/#enable-isolated-web-app-dev-mode`, restart, open `chrome://web-app-internals`, and choose **Install IWA via Dev Mode Proxy** with `http://localhost:8000/`. Keep this server bound to loopback and stop it after testing. The dev proxy assigns a temporary development identity; it is not the production signed identity.
+
+On first private-network connection, grant the IWA's Local Network permission in Chrome if prompted. If the TCP connection remains pending, inspect the installed app's Local Network permission in Chrome's app/site settings. Then enter an RFC1918/ULA SSH address and press Connect. The automated Chromium 152 smoke test required granting `localNetwork` in the disposable browser profile; it verified TCP/SSH authentication, first-use fingerprint confirmation, shell output, and terminal input/output. It did not test a signed production bundle or every Chrome OS/platform permission UI.
+
+For signed distribution, download the `.swbn`, `.sha256`, and `RELEASE-METADATA.txt` from the published GitHub Release assets or the `wrench-browser-iwa-release` artifact of a successful workflow. Verify with `sha256sum -c wrench-browser-iwa.swbn.sha256`. Then follow Chrome's current **Install IWA from Signed Web Bundle** instructions using `chrome://web-app-internals` on a supported channel/platform. A normal HTTPS website or unsigned preview package cannot access Direct Sockets. Managed distribution constraints may apply.
 
 ## Isolation and existing modes
 

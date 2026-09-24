@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { getDirectSocketsStatus, isAllowedSshTcpTarget } from '../services/browser-direct-tcp'
+import {
+  getDirectSocketsStatus,
+  isAllowedSshTcpTarget,
+  type DirectSocketEnvironment,
+} from '../services/browser-direct-tcp'
 import { confirmAndPinHostKey } from './hostkey-pinning'
 
 type IwaSshApi = {
   connect: (options: {
     host: string
     port: number
+    socket: InstanceType<NonNullable<DirectSocketEnvironment['TCPSocket']>>
     username: string
     password: string
     confirmHostKey: (host: string, keyType: string, fingerprint: string) => Promise<boolean>
@@ -100,22 +105,42 @@ export default function BrowserIwaSsh() {
   )
 
   async function connect() {
-    if (
-      !permitted ||
-      !username.trim() ||
-      !password ||
-      !window.confirm(`Open a local TCP connection to ${host.trim()}:22 from this installed IWA?`)
-    )
-      return
+    if (!permitted || !username.trim() || !password) return
     setBusy(true)
-    setStatus('Starting browser SSH client…')
+    setStatus('Requesting local network connection…')
+    let socket: InstanceType<NonNullable<DirectSocketEnvironment['TCPSocket']>> | undefined
     try {
+      const Socket = (globalThis as DirectSocketEnvironment).TCPSocket
+      if (!Socket) throw new Error('Chrome IWA Direct Sockets is unavailable')
+      // Construct synchronously in the Connect click handler so Chrome can show its
+      // Local Network permission prompt while user activation is still present.
+      socket = new Socket(host.trim(), 22, { keepAlive: false, noDelay: true })
+      let socketTimeout: number | undefined
+      try {
+        await Promise.race([
+          socket.opened,
+          new Promise<never>((_, reject) => {
+            socketTimeout = window.setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    'TCP connection timed out. Allow Local Network access for this IWA in Chrome, then retry.',
+                  ),
+                ),
+              12_000,
+            )
+          }),
+        ])
+      } finally {
+        if (socketTimeout !== undefined) window.clearTimeout(socketTimeout)
+      }
       await loadSshWasm()
       const client = window.wrenchIwaSsh
       if (!client) throw new Error('SSH client unavailable')
       await client.connect({
         host: host.trim(),
         port: 22,
+        socket,
         username: username.trim(),
         password,
         confirmHostKey: async (target, type, fingerprint) => {
@@ -142,6 +167,7 @@ export default function BrowserIwaSsh() {
       setStatus(`Connected to ${host.trim()}; password cleared from the form`)
       terminal.current?.focus()
     } catch (error) {
+      if (socket) await Promise.resolve(socket.close()).catch(() => undefined)
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
@@ -210,6 +236,10 @@ export default function BrowserIwaSsh() {
       <p className="my-2 text-xs text-slate-400">
         Only RFC1918 IPv4 and IPv6 ULA literals on port 22; hostnames, public IPs, loopback,
         link-local and alternate ports are rejected.
+      </p>
+      <p className="mb-3 text-xs text-amber-100">
+        Pressing Connect opens one TCP connection to the entered private IP on port 22. Chrome may
+        also ask you to allow this IWA to access local network devices.
       </p>
       <div className="mb-3 flex gap-2">
         <button
