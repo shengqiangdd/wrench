@@ -3,6 +3,12 @@ name: Release Browser SSH IWA
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing draft release tag to package before publishing
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,13 +16,51 @@ permissions:
 jobs:
   signed-iwa:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     timeout-minutes: 30
     environment:
       name: iwa-signing
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.release_tag }}
+
+      - name: Validate target release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$EVENT_TAG"
+          fi
+          if [[ ! "$tag" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || ! git check-ref-format "refs/tags/$tag"; then
+            echo 'Invalid release tag.' >&2
+            exit 1
+          fi
+          release_json="$(gh release view "$tag" --json tagName,isDraft)"
+          actual_tag="$(jq -r '.tagName' <<< "$release_json")"
+          is_draft="$(jq -r '.isDraft' <<< "$release_json")"
+          if [[ "$actual_tag" != "$tag" ]]; then
+            echo 'Release tag does not match the requested tag.' >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' && "$is_draft" != true ]]; then
+            echo 'Manual packaging is only allowed for an existing draft release.' >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == 'release' && "$is_draft" != false ]]; then
+            echo 'Published-release event did not resolve to a published release.' >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v6
         with:
@@ -38,15 +82,26 @@ jobs:
         shell: bash
         env:
           WRENCH_IWA_SIGNING_KEY_SECRET: ${{ secrets.WRENCH_IWA_SIGNING_KEY }}
+          WRENCH_IWA_EXPECTED_BUNDLE_ID: ${{ vars.WRENCH_IWA_BUNDLE_ID }}
         run: |
           if [[ -z "$WRENCH_IWA_SIGNING_KEY_SECRET" ]]; then
             echo 'Missing WRENCH_IWA_SIGNING_KEY in the protected iwa-signing environment.' >&2
             exit 1
           fi
+          if [[ ! "$WRENCH_IWA_EXPECTED_BUNDLE_ID" =~ ^isolated-app://[a-z0-9-]+/$ ]]; then
+            echo 'Set WRENCH_IWA_BUNDLE_ID in the protected iwa-signing environment to the expected IWA origin.' >&2
+            exit 1
+          fi
           umask 077
           key_path="$RUNNER_TEMP/wrench-iwa-signing.pem"
           printf '%s' "$WRENCH_IWA_SIGNING_KEY_SECRET" > "$key_path"
+          actual_id="$(frontend/node_modules/.bin/wbn-dump-id --with-iwa-scheme --key "$key_path")"
+          if [[ "$actual_id" != "$WRENCH_IWA_EXPECTED_BUNDLE_ID" ]]; then
+            echo 'Signing key does not match the pinned WRENCH_IWA_BUNDLE_ID; refusing to change IWA identity.' >&2
+            exit 1
+          fi
           echo "WRENCH_IWA_SIGNING_KEY=$key_path" >> "$GITHUB_ENV"
+          echo "WRENCH_IWA_BUNDLE_ID=$actual_id" >> "$GITHUB_ENV"
           unset WRENCH_IWA_SIGNING_KEY_SECRET
 
       - name: Build and sign IWA
@@ -55,16 +110,19 @@ jobs:
 
       - name: Verify bundle identity and record checksum
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
           bundle='browser-iwa/wrench-browser-iwa.swbn'
           test -s "$bundle"
           frontend/node_modules/.bin/wbn-sign info "$bundle"
-          sha256sum "$bundle" > "$bundle.sha256"
+          (cd browser-iwa && sha256sum wrench-browser-iwa.swbn > wrench-browser-iwa.swbn.sha256)
           {
-            printf 'release_tag=%s\n' "$GITHUB_REF_NAME"
+            printf 'release_tag=%s\n' "$RELEASE_TAG"
             printf 'source_commit=%s\n' "$(git rev-parse HEAD)"
-            printf 'bundle_sha256=%s\n' "$(cut -d ' ' -f 1 "$bundle.sha256")"
+            printf 'bundle_id=%s\n' "$WRENCH_IWA_BUNDLE_ID"
+            printf 'bundle_sha256=%s\n' "$(cut -d ' ' -f 1 browser-iwa/wrench-browser-iwa.swbn.sha256)"
           } > browser-iwa/RELEASE-METADATA.txt
 
       - name: Remove signing key
@@ -81,3 +139,61 @@ jobs:
             browser-iwa/RELEASE-METADATA.txt
           if-no-files-found: error
           retention-days: 90
+
+      - name: Attach or verify GitHub Release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          release_json="$(gh release view "$RELEASE_TAG" --json isImmutable,assets)"
+          is_immutable="$(jq -r '.isImmutable' <<< "$release_json")"
+          mapfile -t existing_assets < <(jq -r '.assets[].name' <<< "$release_json")
+          expected_assets=(
+            wrench-browser-iwa.swbn
+            wrench-browser-iwa.swbn.sha256
+            RELEASE-METADATA.txt
+          )
+          has_any=false
+          has_all=true
+          for asset in "${expected_assets[@]}"; do
+            if printf '%s\n' "${existing_assets[@]}" | grep -Fxq "$asset"; then
+              has_any=true
+            else
+              has_all=false
+            fi
+          done
+
+          if [[ "$has_any" == true ]]; then
+            if [[ "$has_all" != true ]]; then
+              echo 'Release contains only some IWA assets; refusing to overwrite or complete a partial set.' >&2
+              exit 1
+            fi
+            download_dir="$RUNNER_TEMP/existing-iwa-release-assets"
+            mkdir -p "$download_dir"
+            gh release download "$RELEASE_TAG" --dir "$download_dir" \
+              --pattern 'wrench-browser-iwa.swbn' \
+              --pattern 'wrench-browser-iwa.swbn.sha256' \
+              --pattern 'RELEASE-METADATA.txt'
+            (cd "$download_dir" && sha256sum -c wrench-browser-iwa.swbn.sha256)
+            frontend/node_modules/.bin/wbn-sign info "$download_dir/wrench-browser-iwa.swbn"
+            grep -Fxq "release_tag=$RELEASE_TAG" "$download_dir/RELEASE-METADATA.txt"
+            grep -Fxq "source_commit=$(git rev-parse HEAD)" "$download_dir/RELEASE-METADATA.txt"
+            grep -Fxq "bundle_id=$WRENCH_IWA_BUNDLE_ID" "$download_dir/RELEASE-METADATA.txt"
+            existing_sha="$(sha256sum "$download_dir/wrench-browser-iwa.swbn" | cut -d ' ' -f 1)"
+            grep -Fxq "bundle_sha256=$existing_sha" "$download_dir/RELEASE-METADATA.txt"
+            echo 'Matching signed assets are already attached to the release.'
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == 'release' && "$is_immutable" == true ]]; then
+            echo 'Immutable release has no IWA assets. Run this workflow manually against the draft release before publishing.' >&2
+            exit 1
+          fi
+
+          gh release upload "$RELEASE_TAG" \
+            browser-iwa/wrench-browser-iwa.swbn \
+            browser-iwa/wrench-browser-iwa.swbn.sha256 \
+            browser-iwa/RELEASE-METADATA.txt
