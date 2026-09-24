@@ -14,7 +14,9 @@ type IwaSshApi = {
     port: number
     socket: InstanceType<NonNullable<DirectSocketEnvironment['TCPSocket']>>
     username: string
-    password: string
+    password?: string
+    privateKey?: Uint8Array
+    privateKeyPassphrase?: Uint8Array
     confirmHostKey: (host: string, keyType: string, fingerprint: string) => Promise<boolean>
     onData: (data: Uint8Array) => void
   }) => Promise<void>
@@ -63,10 +65,14 @@ function loadSshWasm() {
 export default function BrowserIwaSsh() {
   const [host, setHost] = useState('')
   const [username, setUsername] = useState('')
+  const [authMethod, setAuthMethod] = useState<'password' | 'private-key'>('password')
   const [password, setPassword] = useState('')
+  const [privateKeyFile, setPrivateKeyFile] = useState<File | undefined>(undefined)
+  const [privateKeyPassphrase, setPrivateKeyPassphrase] = useState('')
   const [status, setStatus] = useState('Disconnected')
   const [busy, setBusy] = useState(false)
   const [connected, setConnected] = useState(false)
+  const privateKeyInput = useRef<HTMLInputElement>(null)
   const termContainer = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal | undefined>(undefined)
   const api = useRef<IwaSshApi | undefined>(undefined)
@@ -105,10 +111,18 @@ export default function BrowserIwaSsh() {
   )
 
   async function connect() {
-    if (!permitted || !username.trim() || !password) return
+    const selectedKeyFile = authMethod === 'private-key' ? privateKeyFile : undefined
+    const hasCredential = authMethod === 'password' ? Boolean(password) : Boolean(selectedKeyFile)
+    if (!permitted || !username.trim() || !hasCredential) return
+    if (selectedKeyFile && (selectedKeyFile.size === 0 || selectedKeyFile.size > 64 * 1024)) {
+      setStatus('Private-key files must be between 1 byte and 64 KiB')
+      return
+    }
     setBusy(true)
     setStatus('Requesting local network connection…')
     let socket: InstanceType<NonNullable<DirectSocketEnvironment['TCPSocket']>> | undefined
+    let privateKeyBytes: Uint8Array | undefined
+    let passphraseBytes: Uint8Array | undefined
     try {
       const Socket = (globalThis as DirectSocketEnvironment).TCPSocket
       if (!Socket) throw new Error('Chrome IWA Direct Sockets is unavailable')
@@ -137,12 +151,18 @@ export default function BrowserIwaSsh() {
       await loadSshWasm()
       const client = window.wrenchIwaSsh
       if (!client) throw new Error('SSH client unavailable')
+      if (selectedKeyFile) {
+        privateKeyBytes = new Uint8Array(await selectedKeyFile.arrayBuffer())
+        passphraseBytes = new TextEncoder().encode(privateKeyPassphrase)
+      }
       await client.connect({
         host: host.trim(),
         port: 22,
         socket,
         username: username.trim(),
-        password,
+        ...(privateKeyBytes
+          ? { privateKey: privateKeyBytes, privateKeyPassphrase: passphraseBytes }
+          : { password }),
         confirmHostKey: async (target, type, fingerprint) => {
           return confirmAndPinHostKey(
             target,
@@ -163,13 +183,22 @@ export default function BrowserIwaSsh() {
       })
       api.current = client
       setConnected(true)
-      setPassword('')
-      setStatus(`Connected to ${host.trim()}; password cleared from the form`)
+      if (authMethod === 'password') {
+        setPassword('')
+        setStatus(`Connected to ${host.trim()}; password cleared from the form`)
+      } else {
+        setPrivateKeyFile(undefined)
+        setPrivateKeyPassphrase('')
+        if (privateKeyInput.current) privateKeyInput.current.value = ''
+        setStatus(`Connected to ${host.trim()} with a local private key; key fields cleared`)
+      }
       terminal.current?.focus()
     } catch (error) {
       if (socket) await Promise.resolve(socket.close()).catch(() => undefined)
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
+      privateKeyBytes?.fill(0)
+      passphraseBytes?.fill(0)
       setBusy(false)
     }
   }
@@ -184,18 +213,30 @@ export default function BrowserIwaSsh() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
+      setPassword('')
+      setPrivateKeyFile(undefined)
+      setPrivateKeyPassphrase('')
+      if (privateKeyInput.current) privateKeyInput.current.value = ''
       setBusy(false)
     }
+  }
+
+  function changeAuthMethod(method: 'password' | 'private-key') {
+    setAuthMethod(method)
+    setPassword('')
+    setPrivateKeyFile(undefined)
+    setPrivateKeyPassphrase('')
+    if (privateKeyInput.current) privateKeyInput.current.value = ''
   }
 
   return (
     <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900 p-4">
       <h2 className="mb-2 text-lg font-semibold">Browser-side SSH (IWA only)</h2>
       <p className="mb-4 text-sm text-amber-200">
-        Experimental password + interactive shell vertical slice. Credentials and SSH traffic stay
-        in this browser; this app does not send them to Wrench servers. Host keys use browser-local
-        TOFU pinning; the first fingerprint must be independently checked. A changed key is
-        rejected. No SFTP.
+        Experimental password/private-key + interactive shell vertical slice. Credentials and SSH
+        traffic stay in this browser; this app does not send them to Wrench servers. Host keys use
+        browser-local TOFU pinning; the first fingerprint must be independently checked. A changed
+        key is rejected. No SFTP.
       </p>
       {!capability.available && (
         <p className="mb-3 text-sm text-rose-300">
@@ -222,16 +263,65 @@ export default function BrowserIwaSsh() {
             onChange={(e) => setUsername(e.target.value)}
           />
         </label>
-        <label className="text-sm sm:col-span-2">
-          SSH password (memory only)
-          <input
+        <label className="text-sm">
+          Authentication
+          <select
             className="mt-1 w-full rounded bg-slate-800 p-2"
-            type="password"
-            autoComplete="off"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+            value={authMethod}
+            disabled={busy || connected}
+            onChange={(e) => changeAuthMethod(e.target.value as 'password' | 'private-key')}
+          >
+            <option value="password">Password</option>
+            <option value="private-key">Private key</option>
+          </select>
         </label>
+        {authMethod === 'password' ? (
+          <label className="text-sm">
+            SSH password (browser memory only)
+            <input
+              className="mt-1 w-full rounded bg-slate-800 p-2"
+              type="password"
+              autoComplete="off"
+              value={password}
+              disabled={busy || connected}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+        ) : (
+          <>
+            <label className="text-sm">
+              SSH private-key file (max 64 KiB)
+              <input
+                ref={privateKeyInput}
+                className="mt-1 block w-full rounded bg-slate-800 p-2"
+                type="file"
+                disabled={busy || connected}
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0]
+                  if (file && file.size > 64 * 1024) {
+                    setPrivateKeyFile(undefined)
+                    e.currentTarget.value = ''
+                    setStatus('Private-key files must not exceed 64 KiB')
+                  } else {
+                    setPrivateKeyFile(file)
+                    setStatus(file ? `Selected local key: ${file.name}` : 'Disconnected')
+                  }
+                }}
+              />
+            </label>
+            <label className="text-sm">
+              Key passphrase (optional)
+              <input
+                className="mt-1 w-full rounded bg-slate-800 p-2"
+                type="password"
+                autoComplete="off"
+                value={privateKeyPassphrase}
+                disabled={busy || connected}
+                onChange={(e) => setPrivateKeyPassphrase(e.target.value)}
+              />
+            </label>
+          </>
+        )}
       </div>
       <p className="my-2 text-xs text-slate-400">
         Only RFC1918 IPv4 and IPv6 ULA literals on port 22; hostnames, public IPs, loopback,
@@ -245,7 +335,12 @@ export default function BrowserIwaSsh() {
         <button
           className="rounded bg-blue-700 px-3 py-2 disabled:opacity-50"
           disabled={
-            busy || !capability.available || !permitted || !username || !password || connected
+            busy ||
+            !capability.available ||
+            !permitted ||
+            !username ||
+            (authMethod === 'password' ? !password : !privateKeyFile) ||
+            connected
           }
           onClick={() => void connect()}
         >

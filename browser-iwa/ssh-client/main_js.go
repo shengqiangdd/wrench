@@ -72,6 +72,32 @@ func jsError(value js.Value) error {
 	return errors.New(value.String())
 }
 
+func copyJSBytes(value js.Value, label string, maxBytes int) ([]byte, error) {
+	if value.Type() == js.TypeUndefined || value.Type() == js.TypeNull {
+		return nil, nil
+	}
+	if value.Type() != js.TypeObject || !value.InstanceOf(js.Global().Get("Uint8Array")) {
+		return nil, fmt.Errorf("%s must be a Uint8Array", label)
+	}
+	length := value.Get("byteLength").Int()
+	if length > maxBytes {
+		return nil, fmt.Errorf("%s exceeds the %d-byte limit", label, maxBytes)
+	}
+	result := make([]byte, length)
+	if copied := js.CopyBytesToGo(result, value); copied != len(result) {
+		clear(result)
+		return nil, fmt.Errorf("could not read %s bytes", label)
+	}
+	return result, nil
+}
+
+func zeroJSBytes(value js.Value) {
+	defer func() { _ = recover() }()
+	if value.Type() == js.TypeObject && !value.IsNull() && value.Get("fill").Type() == js.TypeFunction {
+		value.Call("fill", 0)
+	}
+}
+
 func promise(run func() error) js.Value {
 	executor := js.FuncOf(func(this js.Value, args []js.Value) any {
 		resolve, reject := args[0], args[1]
@@ -213,17 +239,48 @@ func connect(args []js.Value) any {
 			return fmt.Errorf("TCP connect: %w", err)
 		}
 		conn := &jsConn{socket: sock, reader: opened.Get("readable").Call("getReader"), writer: opened.Get("writable").Call("getWriter")}
-		password := opts.Get("password").String()
-		if password == "" {
-			_ = conn.Close()
-			return errors.New("password authentication is required")
+		password := ""
+		if passwordValue := opts.Get("password"); passwordValue.Type() == js.TypeString {
+			password = passwordValue.String()
 		}
-		// The shared SSH client performs protocol negotiation, password authentication, and mandatory host-key approval.
-		handshakeTimer := time.AfterFunc(20*time.Second, func() { _ = conn.Close() })
-		client, err := newSSHClient(conn, net.JoinHostPort(host, strconv.Itoa(port)), user, password, func(keyType, fingerprint string) bool {
+		privateKeyJS := opts.Get("privateKey")
+		defer zeroJSBytes(privateKeyJS)
+		privateKey, err := copyJSBytes(privateKeyJS, "SSH private key", 64*1024)
+		if err != nil {
+			_ = conn.Close()
+			return err
+		}
+		defer clear(privateKey)
+		zeroJSBytes(privateKeyJS)
+		passphraseJS := opts.Get("privateKeyPassphrase")
+		defer zeroJSBytes(passphraseJS)
+		passphrase, err := copyJSBytes(passphraseJS, "SSH private-key passphrase", 4096)
+		if err != nil {
+			_ = conn.Close()
+			return err
+		}
+		defer clear(passphrase)
+		zeroJSBytes(passphraseJS)
+		if len(privateKey) > 0 && password != "" {
+			_ = conn.Close()
+			return errors.New("choose either password or private-key authentication")
+		}
+		if len(privateKey) == 0 && len(passphrase) > 0 {
+			_ = conn.Close()
+			return errors.New("private-key passphrase provided without a private key")
+		}
+		confirmHost := func(keyType, fingerprint string) bool {
 			approved, confirmErr := await(confirm.Invoke(host, keyType, fingerprint))
 			return confirmErr == nil && approved.Bool()
-		})
+		}
+		// Authenticate only after host-key approval; private-key inputs are zeroed after the handshake.
+		handshakeTimer := time.AfterFunc(20*time.Second, func() { _ = conn.Close() })
+		var client *ssh.Client
+		if len(privateKey) > 0 {
+			client, err = newSSHClientWithPrivateKey(conn, net.JoinHostPort(host, strconv.Itoa(port)), user, privateKey, passphrase, confirmHost)
+		} else {
+			client, err = newSSHClient(conn, net.JoinHostPort(host, strconv.Itoa(port)), user, password, confirmHost)
+		}
 		handshakeTimer.Stop()
 		if err != nil {
 			_ = conn.Close()

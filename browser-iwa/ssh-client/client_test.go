@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/hex"
+	"encoding/pem"
 	"io"
 	"net"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -254,4 +258,125 @@ func TestSecureSSHConfigExcludesLegacyAlgorithms(t *testing.T) {
 			t.Errorf("secure %s algorithm %q is missing", required.name, required.algorithm)
 		}
 	}
+}
+
+func randomTestPassphrase(t *testing.T) string {
+	t.Helper()
+	value := make([]byte, 32)
+	if _, err := rand.Read(value); err != nil {
+		t.Fatal(err)
+	}
+	return hex.EncodeToString(value)
+}
+
+func TestParseUserPrivateKeySupportsOpenSSHAndEncryptedKeys(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plainBlock, err := ssh.MarshalPrivateKey(privateKey, "local IWA test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainPEM := pem.EncodeToMemory(plainBlock)
+	plainSigner, err := parseUserPrivateKey(plainPEM, nil)
+	if err != nil {
+		t.Fatalf("parse unencrypted OpenSSH key: %v", err)
+	}
+	if plainSigner.PublicKey().Type() != ssh.KeyAlgoED25519 {
+		t.Fatalf("key type = %q, want Ed25519", plainSigner.PublicKey().Type())
+	}
+
+	passphrase := randomTestPassphrase(t)
+	encryptedBlock, err := ssh.MarshalPrivateKeyWithPassphrase(privateKey, "local IWA test", []byte(passphrase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encryptedPEM := pem.EncodeToMemory(encryptedBlock)
+	if _, err := parseUserPrivateKey(encryptedPEM, nil); err == nil {
+		t.Fatal("encrypted key was accepted without its passphrase")
+	} else if !strings.Contains(err.Error(), "encrypted") {
+		t.Fatalf("missing-passphrase error = %q", err)
+	}
+	if _, err := parseUserPrivateKey(encryptedPEM, []byte("wrong passphrase")); err == nil {
+		t.Fatal("encrypted key was accepted with an incorrect passphrase")
+	}
+	if _, err := parseUserPrivateKey(encryptedPEM, []byte(passphrase)); err != nil {
+		t.Fatalf("parse encrypted OpenSSH key: %v", err)
+	}
+	if _, err := parseUserPrivateKey([]byte("not a private key"), nil); err == nil {
+		t.Fatal("malformed private key was accepted")
+	}
+}
+
+func TestNewSSHClientWithPrivateKeyAuthenticates(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	passphrase := randomTestPassphrase(t)
+	privateBlock, err := ssh.MarshalPrivateKeyWithPassphrase(privateKey, "local IWA test", []byte(passphrase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKeyPEM := pem.EncodeToMemory(privateBlock)
+	authorizedSigner, err := ssh.NewSignerFromKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverConfig := testServerConfig(t)
+	serverConfig.PasswordCallback = nil
+	serverConfig.PublicKeyCallback = func(metadata ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+		if metadata.User() != "alice" || !bytes.Equal(key.Marshal(), authorizedSigner.PublicKey().Marshal()) {
+			return nil, ssh.ErrNoAuth
+		}
+		return nil, nil
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	clientConn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverDone := make(chan error, 1)
+	go func() {
+		serverConn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			serverDone <- acceptErr
+			return
+		}
+		server, _, _, handshakeErr := ssh.NewServerConn(serverConn, serverConfig)
+		if handshakeErr != nil {
+			serverDone <- handshakeErr
+			return
+		}
+		serverDone <- server.Wait()
+	}()
+
+	approved := false
+	client, err := newSSHClientWithPrivateKey(clientConn, "192.168.1.8:22", "alice", privateKeyPEM, []byte(passphrase), func(keyType, fingerprint string) bool {
+		if keyType != ssh.KeyAlgoED25519 {
+			t.Errorf("host key type = %q, want Ed25519", keyType)
+		}
+		if fingerprint == "" {
+			t.Error("empty host-key fingerprint")
+		}
+		approved = true
+		return true
+	})
+	if err != nil {
+		t.Fatalf("private-key SSH authentication failed: %v", err)
+	}
+	if !approved {
+		t.Fatal("host key was not confirmed before authentication")
+	}
+	if err := client.Close(); err != nil {
+		t.Errorf("close SSH client: %v", err)
+	}
+	<-serverDone
 }

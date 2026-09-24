@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
@@ -85,6 +85,23 @@ function runChecked(command, args, options = {}) {
   return result.stdout ?? ''
 }
 
+function runWithInput(command, args, input, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: options.cwd ?? frontendDir,
+    encoding: 'utf8',
+    input,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: process.env,
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(
+      `${command} ${args.join(' ')} failed (${result.status ?? result.signal}):\n${result.stderr || result.stdout}`,
+    )
+  }
+  return result.stdout ?? ''
+}
+
 function privateIpv4Addresses() {
   const addresses = []
   for (const entries of Object.values(networkInterfaces())) {
@@ -155,6 +172,9 @@ async function serverLines(child, initialText = '') {
       get lines() {
         return [...lines]
       },
+      get authMethods() {
+        return lines.filter((line) => line.startsWith('AUTH ')).map((line) => line.slice(5))
+      },
       stderr: () => stderr,
     }
   } finally {
@@ -162,11 +182,8 @@ async function serverLines(child, initialText = '') {
   }
 }
 
-async function startSshServer(address, username, password) {
-  const serverBinary = path.join(tempRoot, 'ssh-smoke-server')
-  if (!existsSync(serverBinary)) {
-    runChecked('go', ['build', '-o', serverBinary, './smoke-server'], { cwd: sshDir })
-  }
+async function startSshServer(address, username, password, authorizedKey) {
+  const serverBinary = path.join(tempRoot, 'ssh-smoke-helper')
   const isRoot = process.getuid?.() === 0
   const command = isRoot ? serverBinary : 'sudo'
   const args = isRoot ? [] : ['-n', serverBinary]
@@ -175,7 +192,9 @@ async function startSshServer(address, username, password) {
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   sshProcess = child
-  child.stdin.end(JSON.stringify({ address, username, password }) + '\n')
+  child.stdin.end(
+    JSON.stringify({ address, username, password, authorized_key: authorizedKey }) + '\n',
+  )
   return serverLines(child)
 }
 
@@ -267,6 +286,9 @@ async function runSmoke() {
   const profile = path.join(tempRoot, 'chrome-profile')
   const user = `iwa-smoke-${randomBytes(6).toString('hex')}`
   const password = randomBytes(24).toString('base64url')
+  const keyPassphrase = randomBytes(24).toString('base64url')
+  const privateKeyPath = path.join(tempRoot, 'ssh-login-key')
+  const smokeHelper = path.join(tempRoot, 'ssh-smoke-helper')
   const existingOutputs = generatedOutputs.filter(existsSync)
   if (existingOutputs.length) {
     throw new Error(
@@ -276,6 +298,13 @@ async function runSmoke() {
   outputsCreatedByTest = generatedOutputs
 
   runChecked('openssl', ['genpkey', '-algorithm', 'Ed25519', '-out', signingKey])
+  runChecked('go', ['build', '-o', smokeHelper, './smoke-server'], { cwd: sshDir })
+  const authorizedKey = runWithInput(
+    smokeHelper,
+    ['keygen'],
+    JSON.stringify({ passphrase: keyPassphrase }) + '\n',
+    { cwd: tempRoot },
+  )
   await chmod(signingKey, 0o600)
   runChecked('node', ['scripts/build-iwa.mjs'])
 
@@ -318,7 +347,7 @@ async function runSmoke() {
     { mode: 0o600 },
   )
 
-  const server = await startSshServer(address, user, password)
+  const server = await startSshServer(address, user, password, authorizedKey)
   let currentServer = server
   console.log(`Ephemeral SSH host key: ${server.fingerprint}`)
   await openChromium(executable, profile, signedBundle)
@@ -435,6 +464,8 @@ async function runSmoke() {
 
   await page.getByRole('button', { name: 'Connect', exact: true }).click()
   await waitForText(page, 'section span.self-center.text-sm', /Connected to /)
+  if (!server.authMethods.includes('password'))
+    throw new Error('The smoke SSH server did not observe password authentication.')
   if (dialogFailure) throw new Error(dialogFailure)
   if (firstUsePrompts !== 1)
     throw new Error(`Expected one first-use host-key prompt, got ${firstUsePrompts}.`)
@@ -484,13 +515,24 @@ async function runSmoke() {
 
   await stopProcessGroup(sshProcess, 'SSH host-key generation 1')
   sshProcess = undefined
-  currentServer = await startSshServer(address, user, password)
+  currentServer = await startSshServer(address, user, password, authorizedKey)
   if (currentServer.fingerprint === previousFingerprint)
     throw new Error('Rotated SSH server unexpectedly reused its host key.')
   console.log('Rotated SSH test host key; renewal prompt must show old and new fingerprints.')
-  await page.locator('input[type=password]').fill(password)
+  await page.getByLabel('Authentication').selectOption('private-key')
+  await page.locator('input[type=file]').setInputFiles(privateKeyPath)
+  await page.getByLabel('Key passphrase (optional)').fill(keyPassphrase)
   await page.getByRole('button', { name: 'Connect', exact: true }).click()
-  await waitForText(page, 'section span.self-center.text-sm', /Connected to /)
+  try {
+    await waitForText(page, 'section span.self-center.text-sm', /Connected to /, 10_000)
+  } catch (error) {
+    const status = await page.locator('section span.self-center.text-sm').innerText()
+    throw new Error(
+      `Private-key SSH did not connect (status: ${status}; auth: ${currentServer.authMethods.join(',')}; renewal: ${renewalPrompts}; dialog: ${dialogFailure}): ${error}`,
+    )
+  }
+  if (!currentServer.authMethods.includes('publickey'))
+    throw new Error('The smoke SSH server did not observe public-key authentication.')
   if (dialogFailure) throw new Error(dialogFailure)
   if (renewalPrompts !== 1)
     throw new Error(`Expected one host-key renewal prompt, got ${renewalPrompts}.`)
@@ -499,13 +541,37 @@ async function runSmoke() {
     throw new Error('SSH shell did not restart after host-key renewal.')
   if (page.url() !== bundleId)
     throw new Error('IWA navigation escaped its signed isolated-app origin.')
-  if (consoleMessages.some((message) => message.includes(password)))
-    throw new Error('SSH password appeared in browser console output.')
+  const privateKeyText = await readFile(privateKeyPath, 'utf8')
+  if (
+    consoleMessages.some(
+      (message) =>
+        message.includes(password) ||
+        message.includes(keyPassphrase) ||
+        message.includes(privateKeyText),
+    )
+  )
+    throw new Error('An SSH credential appeared in browser console output.')
+  if (await page.locator('input[type=file]').inputValue())
+    throw new Error('The local private-key file selection remained after authentication.')
+  if (await page.getByLabel('Key passphrase (optional)').inputValue())
+    throw new Error('The private-key passphrase remained in the form after authentication.')
+  const storedCredentials = await page.evaluate(() =>
+    Array.from(
+      { length: localStorage.length },
+      (_, index) => localStorage.getItem(localStorage.key(index) ?? '') ?? '',
+    ),
+  )
+  if (
+    storedCredentials.some(
+      (value) => value.includes(keyPassphrase) || value.includes(privateKeyText),
+    )
+  )
+    throw new Error('Private-key material or passphrase was persisted to IWA local storage.')
   if (externalRequests.length)
     throw new Error(`IWA made unexpected external web requests: ${externalRequests.join(', ')}`)
   if (dialogFailure) throw new Error(dialogFailure)
   console.log(
-    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password SSH; first-use pin and renewal; shell input/output; disconnect; no external web requests or stored/logged password.',
+    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password and encrypted private-key SSH; first-use pin and renewal; shell input/output; disconnect; no external requests or persisted/logged credentials.',
   )
 }
 
