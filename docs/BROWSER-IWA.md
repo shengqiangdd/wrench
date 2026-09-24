@@ -28,7 +28,7 @@ npm run test:iwa-wasm
 
 The WASM binary and Go runtime are generated into `browser-iwa/public/` and ignored by git. `npm run package:iwa:unsigned` builds the same app and creates a generic unsigned Web Bundle for archive inspection. That unsigned `.wbn` uses a reserved `.invalid` origin: it is **not an IWA and cannot be installed**, and Direct Sockets cannot run from it.
 
-A real IWA requires a signing key and Chrome's supported signed distribution flow. IWA identity is derived from the signing public key; losing or rotating that key changes the app identity. Keep the private key offline and out of source control.
+A real IWA requires a signing key and Chrome's supported signed distribution flow. IWA identity is derived from the signing public key; losing or rotating that key changes the app identity. Keep an offline backup and never put the key in source control. If using automated signing, provide the key only through the protected `iwa-signing` Actions environment. Do not create a new key for an established IWA; doing so creates a different app identity.
 
 ```sh
 openssl genpkey -algorithm Ed25519 -out wrench-iwa.pem
@@ -38,9 +38,13 @@ WRENCH_IWA_SIGNING_KEY=/secure/path/wrench-iwa.pem npm run package:iwa
 
 The signed bundle is written to `browser-iwa/wrench-browser-iwa.swbn`. The unsigned intermediate is removed. No key or bundle is checked into this repository. Do not distribute the output until the signing key, source revision, and bundle are reviewed.
 
+### Signed release artifact
+
+The `Release Browser SSH IWA` workflow runs only when a GitHub Release is published. It requires the `WRENCH_IWA_SIGNING_KEY` secret in a GitHub Actions environment named `iwa-signing`; the secret value must be the PEM contents, not a local path. It runs the frontend and SSH client checks, builds and signs the IWA, records its bundle identity and SHA-256, and uploads the `.swbn` as the `wrench-browser-iwa-release` workflow artifact. Configure that environment to restrict allowed release refs and require an authorized reviewer before exposing the signing secret. The workflow writes the secret to a mode-restricted temporary file and removes it at job end. The artifact is retained for 90 days; download and archive the reviewed bundle and checksum in the release process. This workflow does not create a signing key or publish an unsigned bundle as an installable app.
+
 ## Install for development
 
-IWA installation depends on supported Chrome version/platform. Chrome's [IWA developer flow](https://developer.chrome.com/docs/iwa/introduction) requires a supported Chrome/ChromeOS setup and enabling Isolated Web App development mode. In Chrome, enable `chrome://flags/#enable-isolated-web-app-dev-mode`, restart, then use `chrome://web-app-internals` signed bundle installation flow to install the `.swbn`. Follow Chrome's current setup instructions for supported channels/platforms. A normal HTTPS website or unsigned preview package cannot access Direct Sockets. Managed distribution constraints may apply.
+IWA installation depends on supported Chrome version/platform. Chrome's [IWA developer flow](https://developer.chrome.com/docs/iwa/introduction) documents Chrome/ChromeOS 120+ and the supported installation path; current Chrome channel and platform restrictions still apply. Download the `.swbn` from the `wrench-browser-iwa-release` artifact of a successful release workflow and verify it against the accompanying `.sha256` file before installation. For development installation, enable `chrome://flags/#enable-isolated-web-app-dev-mode`, restart Chrome, then open `chrome://web-app-internals` and use **Install IWA from Signed Web Bundle**. Follow Chrome's current setup instructions for supported channels/platforms. A normal HTTPS website or unsigned preview package cannot access Direct Sockets. Managed distribution constraints may apply.
 
 ## Isolation and existing modes
 

@@ -1,0 +1,83 @@
+name: Release Browser SSH IWA
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  signed-iwa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: iwa-signing
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.x"
+
+      - run: npm ci
+        working-directory: frontend
+
+      - run: npm run lint && npm run format:check && npm run type-check && npm run test:unit && npm run test:iwa-ssh
+        working-directory: frontend
+
+      - name: Write protected signing key to runner temp
+        shell: bash
+        env:
+          WRENCH_IWA_SIGNING_KEY_SECRET: ${{ secrets.WRENCH_IWA_SIGNING_KEY }}
+        run: |
+          if [[ -z "$WRENCH_IWA_SIGNING_KEY_SECRET" ]]; then
+            echo 'Missing WRENCH_IWA_SIGNING_KEY in the protected iwa-signing environment.' >&2
+            exit 1
+          fi
+          umask 077
+          key_path="$RUNNER_TEMP/wrench-iwa-signing.pem"
+          printf '%s' "$WRENCH_IWA_SIGNING_KEY_SECRET" > "$key_path"
+          echo "WRENCH_IWA_SIGNING_KEY=$key_path" >> "$GITHUB_ENV"
+          unset WRENCH_IWA_SIGNING_KEY_SECRET
+
+      - name: Build and sign IWA
+        run: npm run package:iwa
+        working-directory: frontend
+
+      - name: Verify bundle identity and record checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle='browser-iwa/wrench-browser-iwa.swbn'
+          test -s "$bundle"
+          frontend/node_modules/.bin/wbn-sign info "$bundle"
+          sha256sum "$bundle" > "$bundle.sha256"
+          {
+            printf 'release_tag=%s\n' "$GITHUB_REF_NAME"
+            printf 'source_commit=%s\n' "$(git rev-parse HEAD)"
+            printf 'bundle_sha256=%s\n' "$(cut -d ' ' -f 1 "$bundle.sha256")"
+          } > browser-iwa/RELEASE-METADATA.txt
+
+      - name: Remove signing key
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/wrench-iwa-signing.pem"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wrench-browser-iwa-release
+          path: |
+            browser-iwa/wrench-browser-iwa.swbn
+            browser-iwa/wrench-browser-iwa.swbn.sha256
+            browser-iwa/RELEASE-METADATA.txt
+          if-no-files-found: error
+          retention-days: 90
