@@ -1,18 +1,33 @@
-# Browser TCP preview (Chrome Isolated Web App)
+# Browser-side SSH preview (Chrome Isolated Web App)
 
-The ordinary Wrench web page cannot open raw TCP sockets. Chrome [Direct Sockets](https://developer.chrome.com/docs/iwa/direct-sockets) is exposed to installed Isolated Web Apps (IWAs), not regular pages. This repository now has an independent IWA shell containing the TCP probe. The regular Wrench web build does not include or expose this feature.
+The ordinary Wrench website cannot open raw TCP sockets. Chrome [Direct Sockets](https://developer.chrome.com/docs/iwa/direct-sockets) is available to installed Isolated Web Apps (IWAs), not ordinary pages. The separate IWA build now contains an experimental SSH terminal backed by a Go WebAssembly client using `golang.org/x/crypto/ssh`. It connects from the user's browser computer directly to an SSH server on that computer's private network. It does not route SSH traffic through Wrench's backend.
 
-## Scope and current status
+## What works
 
-This is a transport smoke test, not an SSH implementation. The app accepts only RFC1918 IPv4 or IPv6 ULA address literals on TCP port 22. It asks for confirmation for each attempt, opens one socket, sends no bytes, and closes it. It does not perform SSH negotiation, check or pin a host key, authenticate, start a terminal, or provide SFTP. The regular Wrench page remains unchanged and does not include this probe; only the separate IWA build contains it. This work adds no backend route and does not change the deployed regular frontend, server-side SSH behavior, egress profile/policy, or existing server/native-Agent modes.
+- Password authentication and an interactive `xterm-256color` shell over Chrome IWA Direct Sockets.
+- SSH server public key fingerprint display and local trust-on-first-use (TOFU) pinning. On first connection, verify the fingerprint through a separate trusted channel before accepting. The pin is stored in this browser profile's local storage. A changed fingerprint is refused. Clearing this app's browser storage clears those pins.
+- Password is only held in the page/Go WebAssembly memory for the connection and cleared from the form after successful login. It is not saved or sent to Wrench servers.
+- One active SSH shell per IWA window. SFTP, private-key authentication, multiple sessions, host-key CA/known_hosts import, and automatic terminal resizing are not implemented.
+- The earlier one-shot TCP probe remains available under “Raw TCP transport probe”; it sends no SSH data.
 
-There is no browser SSH protocol stack wired to Direct Sockets in this repository. The existing Rust `russh` client is used by native/server code and is not currently compiled and integrated as an IWA/WASM SSH client. A real browser SSH implementation still needs protocol negotiation, mandatory host-key verification, authentication UI that keeps credentials local, and terminal/session lifecycle integration. This scaffold intentionally does not claim those features.
+The app only accepts literal RFC1918 IPv4 or IPv6 ULA addresses, port 22, and requires explicit confirmation before opening the socket. It rejects DNS names, public addresses, loopback, link-local, multicast, mapped IPv4-in-IPv6, and alternate ports. This is an app-level restriction: installing an IWA with Direct Sockets grants that application raw TCP capability. The IWA does not provide a general-purpose proxy or listener.
 
-The destination check is an app-level guard, not a browser-enforced network boundary. Direct Sockets grants the installed IWA raw TCP capability. Install only a bundle built from reviewed source and signed with a trusted key. The probe intentionally does not resolve names, accept public/loopback/link-local addresses, allow alternate ports, or expose a proxy/listener.
+The Go client uses `golang.org/x/crypto/ssh` and a Direct Sockets `ReadableStream`/`WritableStream` adapter. The first fingerprint is TOFU: users must compare it against a trusted value (for example, a fingerprint collected locally from the SSH host) before confirming. Never accept an unexpected key-change alert. The app does not persist credentials or log terminal data.
 
 ## Build and sign
 
-Use Node.js 22.13 or newer. IWA bundle identity is derived from the signing public key; losing or rotating that key changes the app identity. Keep the private key offline and out of source control.
+Requirements: Node.js 22.13+, Go 1.25+, and Go module access to `golang.org/x/crypto` at build time. The frontend build compiles the SSH client for `GOOS=js GOARCH=wasm`, copies Go's `wasm_exec.js`, then builds the isolated app:
+
+```sh
+cd frontend
+npm ci
+npm run test:iwa-ssh
+npm run build:iwa
+```
+
+The WASM binary and Go runtime are generated into `browser-iwa/public/` and ignored by git. `npm run package:iwa:unsigned` builds the same app and creates a generic unsigned Web Bundle for archive inspection. That unsigned `.wbn` uses a reserved `.invalid` origin: it is **not an IWA and cannot be installed**, and Direct Sockets cannot run from it.
+
+A real IWA requires a signing key and Chrome's supported signed distribution flow. IWA identity is derived from the signing public key; losing or rotating that key changes the app identity. Keep the private key offline and out of source control.
 
 ```sh
 openssl genpkey -algorithm Ed25519 -out wrench-iwa.pem
@@ -20,16 +35,14 @@ cd frontend
 WRENCH_IWA_SIGNING_KEY=/secure/path/wrench-iwa.pem npm run package:iwa
 ```
 
-The signed bundle is written to `browser-iwa/wrench-browser-iwa.swbn`. The unsigned intermediate is removed. Do not publish the output until the signing key, source revision, and bundle are reviewed. No key or bundle is checked into this repository.
-
-For a keyless packaging check, run `npm run package:iwa:unsigned` from `frontend`. It creates `browser-iwa/wrench-browser-iwa-preview-unsigned.wbn` using a reserved `.invalid` HTTPS origin. This generic unsigned Web Bundle is only for inspecting the archive contents; it is **not an IWA and cannot be installed**. The Direct Sockets capability is unavailable under that HTTPS origin. A real IWA bundle requires a signing key and Chrome's supported signed distribution flow.
+The signed bundle is written to `browser-iwa/wrench-browser-iwa.swbn`. The unsigned intermediate is removed. No key or bundle is checked into this repository. Do not distribute the output until the signing key, source revision, and bundle are reviewed.
 
 ## Install for development
 
-IWA availability and installation are Chrome-version/platform dependent. Chrome's [IWA developer flow](https://developer.chrome.com/docs/iwa/introduction) requires a supported Chrome/ChromeOS setup and enabling Isolated Web App development mode. In Chrome, enable `chrome://flags/#enable-isolated-web-app-dev-mode`, restart, then open `chrome://web-app-internals` and use its signed bundle installation flow to install the `.swbn` file. Follow Chrome's current IWA setup instructions for the exact channel/platform requirements. Production deployment is not equivalent to publishing a normal website; managed ChromeOS distribution and policy/early-access constraints may apply.
+IWA installation depends on supported Chrome version/platform. Chrome's [IWA developer flow](https://developer.chrome.com/docs/iwa/introduction) requires a supported Chrome/ChromeOS setup and enabling Isolated Web App development mode. In Chrome, enable `chrome://flags/#enable-isolated-web-app-dev-mode`, restart, then use `chrome://web-app-internals` signed bundle installation flow to install the `.swbn`. Follow Chrome's current setup instructions for supported channels/platforms. A normal HTTPS website or unsigned preview package cannot access Direct Sockets. Managed distribution constraints may apply.
 
-This app opens as its own installed application window. It does not replace the normal Wrench page or alter server/native-Agent connection modes.
+## Isolation and existing modes
 
-## Automated checks
+This code is included only by `frontend/vite.iwa.config.ts` and `browser-iwa/`. It does not change or enter the normal Wrench web frontend, server-side SSH, native Agent, backend routes, SSH egress profiles, or deployed regular frontend. The server/native-Agent flows remain separate.
 
-`npm run build:iwa` compiles the IWA shell without requiring any signing key. Frontend CI runs this build and unit tests cover target validation, capability detection, explicit approval, socket closure, and manifest policy declarations. A successful build does not prove Chrome installation or device-level Direct Sockets behavior; test the signed bundle in the intended Chrome environment before distributing it.
+CI runs the Go target-policy/fingerprint unit tests, frontend tests, regular build isolation check, IWA manifest check, IWA WASM compilation, and unsigned package inspection. These tests do not replace testing the signed app in a supported Chrome IWA environment against a disposable SSH server.

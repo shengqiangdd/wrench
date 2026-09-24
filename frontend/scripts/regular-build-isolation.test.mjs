@@ -18,10 +18,12 @@ async function filesUnder(dir) {
   return nested.flat()
 }
 
-test('regular frontend build does not include the IWA TCP probe UI', async () => {
+test('regular frontend build does not include IWA-only SSH or TCP probe UI', async () => {
   const files = await filesUnder(buildDir)
   const contents = await Promise.all(files.map((file) => readFile(file)))
   const bundleText = Buffer.concat(contents).toString('utf8')
   assert.equal(bundleText.includes('这里只测试 TCP 传输'), false)
   assert.equal(bundleText.includes('私网 IP 地址'), false)
+  assert.equal(bundleText.includes('Browser-side SSH (IWA only)'), false)
+  assert.equal(bundleText.includes('wrenchIwaSsh'), false)
 })

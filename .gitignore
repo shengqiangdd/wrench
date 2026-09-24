@@ -87,3 +87,7 @@ test-plugins-browser.js
 /browser-iwa/*.wbn
 /browser-iwa/*.swbn
 /browser-iwa/dist/
+
+# Generated IWA SSH WASM and Go runtime assets
+/browser-iwa/public/ssh.wasm
+/browser-iwa/public/wasm_exec.js

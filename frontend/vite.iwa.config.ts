@@ -15,6 +15,7 @@ export default defineConfig({
     alias: {
       react: path.resolve(frontendRoot, 'node_modules/react'),
       'react-dom': path.resolve(frontendRoot, 'node_modules/react-dom'),
+      '@xterm/xterm': path.resolve(frontendRoot, 'node_modules/@xterm/xterm'),
     },
   },
   build: {

@@ -8,6 +8,12 @@ const iwaDir = path.resolve(frontendDir, '../browser-iwa')
 const distDir = path.join(iwaDir, 'dist')
 const bundle = path.join(iwaDir, 'wrench-browser-iwa-preview-unsigned.wbn')
 if (!existsSync(distDir)) throw new Error('Build the IWA assets first with npm run build:iwa')
+for (const asset of ['ssh.wasm', 'wasm_exec.js']) {
+  const assetPath = path.join(distDir, asset)
+  if (!existsSync(assetPath) || !statSync(assetPath).size) {
+    throw new Error(`Missing generated browser SSH asset: ${asset}`)
+  }
+}
 
 rmSync(bundle, { force: true })
 try {
