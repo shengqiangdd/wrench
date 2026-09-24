@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
 
@@ -27,6 +28,33 @@ func TestCleanSFTPPathRejectsTraversalAndInvalidPaths(t *testing.T) {
 			t.Errorf("cleanSFTPPath(%q) = %q, %v; want %q", input, cleaned, err, expected)
 		}
 	}
+}
+
+type symlinkRaceSFTPClient struct {
+	*sftp.Client
+	destination    string
+	lstatCount     int
+	posixRenameHit bool
+}
+
+func (client *symlinkRaceSFTPClient) Lstat(remotePath string) (os.FileInfo, error) {
+	if remotePath == client.destination {
+		client.lstatCount++
+		if client.lstatCount == 2 {
+			if err := client.Client.Remove(remotePath); err != nil {
+				return nil, err
+			}
+			if err := client.Client.Symlink("../outside-dir/report.txt", remotePath); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return client.Client.Lstat(remotePath)
+}
+
+func (client *symlinkRaceSFTPClient) PosixRename(oldPath, newPath string) error {
+	client.posixRenameHit = true
+	return client.Client.PosixRename(oldPath, newPath)
 }
 
 func TestSFTPOperationsOverInMemoryProtocolServer(t *testing.T) {
@@ -130,6 +158,26 @@ func TestSFTPOperationsOverInMemoryProtocolServer(t *testing.T) {
 	outsideAfter, err := downloadSFTP(client, "outside-dir/report.txt")
 	if err != nil || !bytes.Equal(outsideAfter, []byte("outside directory sentinel")) {
 		t.Fatalf("symlink operations changed/followed the outside-directory sentinel: %q, %v", outsideAfter, err)
+	}
+	tracingClient := &symlinkRaceSFTPClient{Client: client, destination: "docs/report.txt"}
+	if err := uploadSFTPWithOverwrite(tracingClient, "docs/report.txt", []byte("raced replacement"), true); err == nil {
+		t.Fatal("upload continued after the destination became a symlink during staging")
+	}
+	if tracingClient.lstatCount != 2 || tracingClient.posixRenameHit {
+		t.Fatalf("race checks = %d destination lstats, rename called = %v; want two checks and no rename", tracingClient.lstatCount, tracingClient.posixRenameHit)
+	}
+	if data, err := downloadSFTP(client, "outside-dir/report.txt"); err != nil || !bytes.Equal(data, []byte("outside directory sentinel")) {
+		t.Fatalf("TOCTOU symlink race changed outside sentinel: %q, %v", data, err)
+	}
+	if err := removeSFTP(client, "docs/report.txt"); err != nil {
+		t.Fatalf("remove TOCTOU symlink fixture: %v", err)
+	}
+	if err := uploadSFTP(client, "docs/report.txt", []byte("private browser transfer")); err != nil {
+		t.Fatalf("restore upload destination after race test: %v", err)
+	}
+	entriesAfterRace, err := listSFTP(client, "docs")
+	if err != nil || len(entriesAfterRace) != 1 || entriesAfterRace[0].Name != "report.txt" {
+		t.Fatalf("staging file was not removed after TOCTOU rejection: %#v, %v", entriesAfterRace, err)
 	}
 	if err := uploadSFTPWithOverwrite(client, "docs/report.txt", []byte("confirmed replacement"), true); err != nil {
 		t.Fatalf("confirmed atomic replacement: %v", err)

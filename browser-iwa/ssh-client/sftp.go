@@ -47,7 +47,9 @@ func cleanSFTPPath(value string) (string, error) {
 
 // rejectSymlinkParents prevents operations from traversing a symlink in any
 // parent component. Final symlinks are handled according to each operation.
-func rejectSymlinkParents(client *sftp.Client, cleaned string) error {
+func rejectSymlinkParents(client interface {
+	Lstat(string) (os.FileInfo, error)
+}, cleaned string) error {
 	if cleaned == "." || cleaned == "/" {
 		return nil
 	}
@@ -165,11 +167,18 @@ func downloadSFTP(client *sftp.Client, remotePath string) ([]byte, error) {
 	return data, nil
 }
 
+type sftpUploadClient interface {
+	Lstat(string) (os.FileInfo, error)
+	OpenFile(string, int) (*sftp.File, error)
+	Remove(string) error
+	PosixRename(string, string) error
+}
+
 func uploadSFTP(client *sftp.Client, remotePath string, data []byte) error {
 	return uploadSFTPWithOverwrite(client, remotePath, data, false)
 }
 
-func uploadSFTPWithOverwrite(client *sftp.Client, remotePath string, data []byte, overwrite bool) (err error) {
+func uploadSFTPWithOverwrite(client sftpUploadClient, remotePath string, data []byte, overwrite bool) (err error) {
 	cleaned, err := cleanSFTPPath(remotePath)
 	if err != nil {
 		return err
@@ -199,11 +208,17 @@ func uploadSFTPWithOverwrite(client *sftp.Client, remotePath string, data []byte
 		}
 	}
 	if statErr != nil {
+		// Recheck the parent immediately before an exclusive create. SFTP has no
+		// portable openat/O_NOFOLLOW operation for parent components.
+		if err := rejectSymlinkParents(client, cleaned); err != nil {
+			return err
+		}
 		return createSFTPFile(client, cleaned, data)
 	}
 
-	// Stage beside the destination, then use the SFTP POSIX rename extension
-	// for atomic replacement. The destination itself is never opened or followed.
+	// Stage beside the destination. SFTP v3 has no portable O_NOFOLLOW flag;
+	// O_EXCL plus an unpredictable name makes creation fail if that name exists.
+	// The destination itself is never opened or followed.
 	var randomName [16]byte
 	if _, err := rand.Read(randomName[:]); err != nil {
 		return fmt.Errorf("generate temporary upload name: %w", err)
@@ -229,6 +244,11 @@ func uploadSFTPWithOverwrite(client *sftp.Client, remotePath string, data []byte
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close temporary remote file: %w", err)
 	}
+	// Revalidate the containing path after the potentially long upload and
+	// immediately before checking the final component and renaming.
+	if err := rejectSymlinkParents(client, cleaned); err != nil {
+		return err
+	}
 	current, err := client.Lstat(cleaned)
 	if err != nil {
 		return fmt.Errorf("recheck upload destination: %w", err)
@@ -246,7 +266,7 @@ func uploadSFTPWithOverwrite(client *sftp.Client, remotePath string, data []byte
 	return nil
 }
 
-func createSFTPFile(client *sftp.Client, remotePath string, data []byte) (err error) {
+func createSFTPFile(client sftpUploadClient, remotePath string, data []byte) (err error) {
 	file, err := client.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 	if err != nil {
 		return fmt.Errorf("create remote file: %w", err)
