@@ -82,3 +82,8 @@ test-plugins-browser.js
 
 # session-local TODO notes
 *_TODO.md
+
+# Locally generated Chrome Isolated Web App bundles
+/browser-iwa/*.wbn
+/browser-iwa/*.swbn
+/browser-iwa/dist/

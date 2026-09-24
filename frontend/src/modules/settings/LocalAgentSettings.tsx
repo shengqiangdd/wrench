@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Laptop, Link2, Unlink } from 'lucide-react'
 import { getLocalAgentPlatform } from '../../services/local-agent-platform'
+import BrowserDirectTcpProbe from './BrowserDirectTcpProbe'
 import {
   checkLocalAgent,
   clearLocalAgentSession,
@@ -136,6 +137,7 @@ export default function LocalAgentSettings() {
           </p>
         )}
       </div>
+      <BrowserDirectTcpProbe />
     </section>
   )
 }

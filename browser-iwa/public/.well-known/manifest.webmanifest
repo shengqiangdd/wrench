@@ -1,0 +1,15 @@
+{
+  "name": "Wrench Browser TCP Preview",
+  "short_name": "Wrench TCP Preview",
+  "version": "0.1.0",
+  "start_url": "/",
+  "display": "standalone",
+  "icons": [
+    { "src": "/iwa-icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }
+  ],
+  "permissions_policy": {
+    "direct-sockets": ["self"],
+    "direct-sockets-private": ["self"],
+    "cross-origin-isolated": ["self"]
+  }
+}
