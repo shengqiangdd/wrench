@@ -535,6 +535,13 @@ async function runSmoke() {
   const initialPtyLine = await waitForServerLine(server, /^PTY \d+ \d+$/)
   const initialPty = initialPtyLine.match(/^PTY (\d+) (\d+)$/)
   if (!initialPty) throw new Error(`Could not parse initial SSH PTY size: ${initialPtyLine}`)
+  const fittedInitial = await page
+    .getByLabel('SSH terminal')
+    .evaluate((element) => [element.dataset.ptyCols, element.dataset.ptyRows])
+  if (initialPty[1] !== fittedInitial[0] || initialPty[2] !== fittedInitial[1])
+    throw new Error(
+      `Initial server PTY ${initialPty[1]}x${initialPty[2]} did not match fitted xterm ${fittedInitial[0]}x${fittedInitial[1]}`,
+    )
   await page.getByLabel('SSH terminal').evaluate((element) => {
     element.style.width = '1000px'
     element.style.height = '620px'
@@ -548,6 +555,13 @@ async function runSmoke() {
     )
   if (Number(resizedPty[1]) > 500 || Number(resizedPty[2]) > 300)
     throw new Error(`Terminal resize exceeded dimension bounds: ${resizedPtyLine}`)
+  const fittedResize = await page
+    .getByLabel('SSH terminal')
+    .evaluate((element) => [element.dataset.ptyCols, element.dataset.ptyRows])
+  if (resizedPty[1] !== fittedResize[0] || resizedPty[2] !== fittedResize[1])
+    throw new Error(
+      `Remote window-change ${resizedPty[1]}x${resizedPty[2]} did not match fitted xterm ${fittedResize[0]}x${fittedResize[1]}`,
+    )
   console.log(`Remote PTY resized: ${initialPtyLine} -> ${resizedPtyLine}`)
   await page.locator('.xterm-helper-textarea').focus()
   await page.locator('.xterm-helper-textarea').pressSequentially('signed-iwa-terminal-roundtrip')

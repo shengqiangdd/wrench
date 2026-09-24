@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
@@ -108,11 +108,19 @@ export default function BrowserIwaSsh() {
   const capability = getDirectSocketsStatus()
   const permitted = isAllowedSshTcpTarget(host.trim(), 22)
 
-  function queueTerminalResize() {
+  const recordTerminalDimensions = useCallback((cols: number, rows: number) => {
+    terminalDimensions.current = { cols, rows }
+    if (termContainer.current) {
+      termContainer.current.dataset.ptyCols = String(cols)
+      termContainer.current.dataset.ptyRows = String(rows)
+    }
+  }, [])
+
+  const queueTerminalResize = useCallback(() => {
     const term = terminal.current
-    if (term) terminalDimensions.current = { cols: term.cols, rows: term.rows }
+    if (term) recordTerminalDimensions(term.cols, term.rows)
     if (api.current) resizeScheduler.current?.schedule(terminalDimensions.current)
-  }
+  }, [recordTerminalDimensions])
 
   useEffect(() => {
     if (!termContainer.current) return
@@ -126,7 +134,7 @@ export default function BrowserIwaSsh() {
     term.loadAddon(fit)
     term.open(termContainer.current)
     const resize = term.onResize(({ cols, rows }) => {
-      terminalDimensions.current = { cols, rows }
+      recordTerminalDimensions(cols, rows)
       queueTerminalResize()
     })
     const resizeObserver = new ResizeObserver(() => {
@@ -142,6 +150,7 @@ export default function BrowserIwaSsh() {
     } catch {
       // Keep the safe 80x24 default until layout becomes measurable.
     }
+    recordTerminalDimensions(term.cols, term.rows)
     term.writeln(
       'Local SSH over Chrome IWA Direct Sockets. Host keys are pinned locally after first confirmation.',
     )
@@ -158,7 +167,7 @@ export default function BrowserIwaSsh() {
       term.dispose()
       terminal.current = undefined
     }
-  }, [])
+  }, [queueTerminalResize, recordTerminalDimensions])
 
   useEffect(
     () => () => {
