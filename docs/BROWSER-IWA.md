@@ -56,9 +56,53 @@ python3 -m http.server 8000 --bind 127.0.0.1
 
 In Chrome, enable `chrome://flags/#enable-isolated-web-apps` and `chrome://flags/#enable-isolated-web-app-dev-mode`, restart, open `chrome://web-app-internals`, and choose **Install IWA via Dev Mode Proxy** with `http://localhost:8000/`. Keep this server bound to loopback and stop it after testing. The dev proxy assigns a temporary development identity; it is not the production signed identity.
 
-On first private-network connection, grant the IWA's Local Network permission in Chrome if prompted. If the TCP connection remains pending, inspect the installed app's Local Network permission in Chrome's app/site settings. Then enter an RFC1918/ULA SSH address and press Connect. The automated Chromium 152 smoke test required granting `localNetwork` in the disposable browser profile; it verified TCP/SSH authentication, first-use fingerprint confirmation, shell output, and terminal input/output. It did not test a signed production bundle or every Chrome OS/platform permission UI.
+On first private-network connection, grant the IWA's Local Network permission in Chrome if prompted. If the TCP connection remains pending, inspect the installed app's Local Network permission in Chrome's app/site settings. Then enter an RFC1918/ULA SSH address and press Connect. The earlier Dev Mode Proxy smoke test verified TCP/SSH authentication, first-use fingerprint confirmation, shell output, and terminal input/output after CDP granted `localNetwork`; it did not exercise signed-bundle installation. The signed-bundle procedure and its native-permission-UI caveat are documented below.
 
 For signed distribution, download the `.swbn`, `.sha256`, and `RELEASE-METADATA.txt` from the published GitHub Release assets or the `wrench-browser-iwa-release` artifact of a successful workflow. Verify with `sha256sum -c wrench-browser-iwa.swbn.sha256`. Then follow Chrome's current **Install IWA from Signed Web Bundle** instructions using `chrome://web-app-internals` on a supported channel/platform. A normal HTTPS website or unsigned preview package cannot access Direct Sockets. Managed distribution constraints may apply.
+
+## Reproduce the signed Chromium smoke test
+
+The signed browser smoke test was run on **Chromium 152.0.7977.82, Debian 12**. Chrome's general IWA documentation lists Chrome/ChromeOS 120+ for the IWA developer flow, but this project has only verified its current `local-network` permission behavior on that Chromium 152 build. Other versions/platforms need their own verification. Direct Sockets runs from the installed `isolated-app://` origin; a regular HTTPS page, `localhost` web page, or unsigned `.wbn` is not a substitute.
+
+The following makes a disposable signing identity and Chrome profile. It writes the signed bundle to the ignored workspace path temporarily and removes it, the profile, and the key when the shell exits. Run it only for local development; never use this ephemeral key for a release or compare its app origin with the production identity.
+
+```sh
+cd frontend
+npm ci
+local_iwa_test_dir=$(mktemp -d /tmp/wrench-iwa-signed-smoke.XXXXXX)
+chmod 700 "$local_iwa_test_dir"
+if test -e ../browser-iwa/wrench-browser-iwa.swbn; then
+  echo 'Refusing to replace an existing signed bundle; use a clean disposable checkout.' >&2
+  exit 1
+fi
+trap 'rm -f ../browser-iwa/wrench-browser-iwa.swbn; rm -rf "$local_iwa_test_dir"' EXIT
+openssl genpkey -algorithm Ed25519 -out "$local_iwa_test_dir/ephemeral.pem"
+chmod 600 "$local_iwa_test_dir/ephemeral.pem"
+WRENCH_IWA_SIGNING_KEY="$local_iwa_test_dir/ephemeral.pem" npm run package:iwa
+bundle_id=$(./node_modules/.bin/wbn-dump-id --with-iwa-scheme --key "$local_iwa_test_dir/ephemeral.pem")
+profile="$local_iwa_test_dir/chrome-profile"
+mkdir -p "$profile"
+printf '%s\n' '{"browser":{"enabled_labs_experiments":["enable-isolated-web-app-dev-mode@1","enable-isolated-web-apps@1"]}}' > "$profile/Local State"
+chmod 600 "$profile/Local State"
+printf 'Temporary directory: %s\nBundle origin: %s\n' "$local_iwa_test_dir" "$bundle_id"
+```
+
+Keep this terminal open so its cleanup trap runs when Chromium exits. The browser launch runs in the foreground; use a second terminal if you need to inspect the app over CDP. Launch the disposable browser with the install-from-file developer switch. On this container the command needs Xvfb and `--no-sandbox` because unprivileged user namespaces are disabled; use a normally sandboxed Chromium on a desktop instead of copying that container-only flag into a daily-use profile.
+
+```sh
+xvfb-run -a /usr/bin/chromium \
+  --no-sandbox --disable-dev-shm-usage \
+  --user-data-dir="$profile" --remote-debugging-port=9222 \
+  --no-first-run --no-default-browser-check \
+  --install-isolated-web-app-from-file="$(pwd)/../browser-iwa/wrench-browser-iwa.swbn" \
+  about:blank
+```
+
+Confirm installation in `chrome://web-app-internals`; its installed bundle path should end in `main.swbn`. Open the installed app from Chrome's app launcher, or attach Playwright to `http://127.0.0.1:9222` and navigate a page to `bundle_id`. In the page verify `isSecureContext` and `crossOriginIsolated` are true, `typeof TCPSocket` is `function`, and the `direct-sockets` and `local-network` policies are allowed. Use a disposable SSH account on an RFC1918/ULA IP, port 22. Compare the displayed host-key fingerprint through a separate trusted channel before confirming it. Verify `ready` appears, type a unique string in the terminal and confirm it echoes, then disconnect. In the tested setup this verified password login, first-use trust prompt, shell output/input, and a changed-host-key renewal prompt.
+
+### Local Network permission test caveat
+
+The automated permission-gate check used Playwright/CDP against the signed installed IWA origin. It reset the origin's browser permission and observed `navigator.permissions.query({name: 'local-network'}) === 'prompt'`. With the permission ungranted, Connect timed out and an accept-counting SSH server observed **zero TCP connections**. The test then called `Browser.grantPermissions({origin, permissions: ['localNetwork']})`; the permission became `granted`, and the SSH connection/terminal test passed. This proves the IWA's permission-policy and socket gate in Chromium. CDP programmatically grants permission, so this check did **not** verify whether Chromium displays the native Local Network permission prompt or how a user grants it through Chrome's UI. Do not report the native prompt as tested based on this procedure.
 
 ## Isolation and existing modes
 
