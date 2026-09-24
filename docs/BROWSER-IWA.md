@@ -22,6 +22,8 @@ WRENCH_IWA_SIGNING_KEY=/secure/path/wrench-iwa.pem npm run package:iwa
 
 The signed bundle is written to `browser-iwa/wrench-browser-iwa.swbn`. The unsigned intermediate is removed. Do not publish the output until the signing key, source revision, and bundle are reviewed. No key or bundle is checked into this repository.
 
+For a keyless packaging check, run `npm run package:iwa:unsigned` from `frontend`. It creates `browser-iwa/wrench-browser-iwa-preview-unsigned.wbn` using a reserved `.invalid` HTTPS origin. This generic unsigned Web Bundle is only for inspecting the archive contents; it is **not an IWA and cannot be installed**. The Direct Sockets capability is unavailable under that HTTPS origin. A real IWA bundle requires a signing key and Chrome's supported signed distribution flow.
+
 ## Install for development
 
 IWA availability and installation are Chrome-version/platform dependent. Chrome's [IWA developer flow](https://developer.chrome.com/docs/iwa/introduction) requires a supported Chrome/ChromeOS setup and enabling Isolated Web App development mode. In Chrome, enable `chrome://flags/#enable-isolated-web-app-dev-mode`, restart, then open `chrome://web-app-internals` and use its signed bundle installation flow to install the `.swbn` file. Follow Chrome's current IWA setup instructions for the exact channel/platform requirements. Production deployment is not equivalent to publishing a normal website; managed ChromeOS distribution and policy/early-access constraints may apply.
