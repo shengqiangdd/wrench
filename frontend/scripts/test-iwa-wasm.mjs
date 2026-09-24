@@ -15,6 +15,16 @@ const wasmPath = path.join(repoDir, 'browser-iwa', 'public', 'ssh.wasm')
 const runtimePath = path.join(repoDir, 'browser-iwa', 'public', 'wasm_exec.js')
 const require = createRequire(import.meta.url)
 
+async function expectResizeFailure(promise, message) {
+  try {
+    await promise
+  } catch (error) {
+    if (String(error).includes(message)) return
+    throw error
+  }
+  throw new Error('expected resize to reject with ' + message)
+}
+
 async function run() {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'wrench-iwa-wasm-test-'))
   const serverPath = path.join(
@@ -34,6 +44,8 @@ async function run() {
   })
   try {
     let portBuffer = ''
+    const serverLines = []
+    let portReceived = false
     const sshPort = await new Promise((resolve, reject) => {
       const timeout = setTimeout(
         () => reject(new Error('mock SSH server startup timed out')),
@@ -43,10 +55,18 @@ async function run() {
       server.stdout.setEncoding('utf8')
       server.stdout.on('data', (chunk) => {
         portBuffer += chunk
-        const newline = portBuffer.indexOf('\n')
-        if (newline !== -1) {
-          clearTimeout(timeout)
-          resolve(Number(portBuffer.slice(0, newline).trim()))
+        let newline = portBuffer.indexOf('\n')
+        while (newline !== -1) {
+          const line = portBuffer.slice(0, newline).trim()
+          portBuffer = portBuffer.slice(newline + 1)
+          if (!portReceived) {
+            portReceived = true
+            clearTimeout(timeout)
+            resolve(Number(line))
+          } else {
+            serverLines.push(line)
+          }
+          newline = portBuffer.indexOf('\n')
         }
       })
     })
@@ -147,9 +167,16 @@ async function run() {
     await waitForOutput('ready')
     await globalThis.wrenchIwaSsh.send('terminal-input-output-check\n')
     await waitForOutput('terminal-input-output-check')
+    await globalThis.wrenchIwaSsh.resize(110, 40)
+    const serverResizeStarted = Date.now()
+    while (!serverLines.includes('WINDOW_CHANGE 110 40') && Date.now() - serverResizeStarted < 5000)
+      await delay(10)
+    if (!serverLines.includes('WINDOW_CHANGE 110 40'))
+      throw new Error('SSH server did not receive window-change 110x40: ' + serverLines.join('|'))
+    await expectResizeFailure(globalThis.wrenchIwaSsh.resize(0, 24), 'columns')
     await globalThis.wrenchIwaSsh.close()
     console.log(
-      'Go/WASM SSH adapter E2E passed: host-key callback, password auth, PTY shell, terminal input and output.',
+      'Go/WASM SSH adapter E2E passed: host-key callback, password auth, PTY shell, terminal I/O, and bounded SSH window-change.',
     )
   } finally {
     try {

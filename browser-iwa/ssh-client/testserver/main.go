@@ -40,21 +40,48 @@ func main() {
 		go func() {
 			defer channel.Close()
 			for req := range reqs {
-				ok := req.Type == "pty-req" || req.Type == "shell"
-				must(req.Reply(ok, nil))
-				if req.Type == "shell" {
+				switch req.Type {
+				case "pty-req":
+					var dimensions struct {
+						Term    string
+						Columns uint32
+						Rows    uint32
+						Width   uint32
+						Height  uint32
+						Modes   string
+					}
+					must(ssh.Unmarshal(req.Payload, &dimensions))
+					fmt.Printf("PTY %d %d\n", dimensions.Columns, dimensions.Rows)
+					must(req.Reply(true, nil))
+				case "shell":
+					must(req.Reply(true, nil))
 					_, _ = io.WriteString(channel, "ready\r\n")
-					buf := make([]byte, 2048)
-					for {
-						n, readErr := channel.Read(buf)
-						if n > 0 {
-							if _, writeErr := channel.Write(buf[:n]); writeErr != nil {
+					go func() {
+						buf := make([]byte, 2048)
+						for {
+							n, readErr := channel.Read(buf)
+							if n > 0 {
+								if _, writeErr := channel.Write(buf[:n]); writeErr != nil {
+									return
+								}
+							}
+							if readErr != nil {
 								return
 							}
 						}
-						if readErr != nil {
-							return
-						}
+					}()
+				case "window-change":
+					var dimensions struct {
+						Columns uint32
+						Rows    uint32
+						Width   uint32
+						Height  uint32
+					}
+					must(ssh.Unmarshal(req.Payload, &dimensions))
+					fmt.Printf("WINDOW_CHANGE %d %d\n", dimensions.Columns, dimensions.Rows)
+				default:
+					if req.WantReply {
+						must(req.Reply(false, nil))
 					}
 				}
 			}

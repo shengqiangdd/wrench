@@ -175,12 +175,37 @@ func handleChannel(channel ssh.Channel, requests <-chan *ssh.Request) {
 		fmt.Printf("CHANNEL REQUEST %s\n", request.Type)
 		switch request.Type {
 		case "pty-req":
+			var dimensions struct {
+				Term    string
+				Columns uint32
+				Rows    uint32
+				Width   uint32
+				Height  uint32
+				Modes   string
+			}
+			if err := ssh.Unmarshal(request.Payload, &dimensions); err != nil {
+				fmt.Printf("PTY request decode failed: %v\n", err)
+				_ = request.Reply(false, nil)
+				continue
+			}
+			fmt.Printf("PTY %d %d\n", dimensions.Columns, dimensions.Rows)
 			_ = request.Reply(true, nil)
+		case "window-change":
+			var dimensions struct {
+				Columns uint32
+				Rows    uint32
+				Width   uint32
+				Height  uint32
+			}
+			if err := ssh.Unmarshal(request.Payload, &dimensions); err != nil {
+				fmt.Printf("window-change decode failed: %v\n", err)
+				continue
+			}
+			fmt.Printf("WINDOW_CHANGE %d %d\n", dimensions.Columns, dimensions.Rows)
 		case "shell":
 			_ = request.Reply(true, nil)
 			_, _ = io.WriteString(channel, "READY\r\n")
-			_, _ = io.Copy(channel, channel)
-			return
+			go io.Copy(channel, channel)
 		case "subsystem":
 			var subsystemRequest struct {
 				Subsystem string

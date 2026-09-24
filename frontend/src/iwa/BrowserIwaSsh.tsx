@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import {
@@ -7,6 +8,7 @@ import {
   type DirectSocketEnvironment,
 } from '../services/browser-direct-tcp'
 import { confirmAndPinHostKey } from './hostkey-pinning'
+import { createTerminalResizeScheduler } from './terminal-resize'
 
 type SftpEntry = {
   name: string
@@ -19,6 +21,8 @@ type IwaSshApi = {
   connect: (options: {
     host: string
     port: number
+    cols: number
+    rows: number
     socket: InstanceType<NonNullable<DirectSocketEnvironment['TCPSocket']>>
     username: string
     password?: string
@@ -28,6 +32,7 @@ type IwaSshApi = {
     onData: (data: Uint8Array) => void
   }) => Promise<void>
   send: (text: string) => Promise<void>
+  resize: (cols: number, rows: number) => Promise<void>
   listDirectory: (path: string) => Promise<SftpEntry[]>
   downloadFile: (path: string) => Promise<Uint8Array>
   uploadFile: (path: string, data: Uint8Array, overwrite?: boolean) => Promise<void>
@@ -95,9 +100,19 @@ export default function BrowserIwaSsh() {
   const uploadInput = useRef<HTMLInputElement>(null)
   const termContainer = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal | undefined>(undefined)
+  const terminalDimensions = useRef({ cols: 80, rows: 24 })
+  const resizeScheduler = useRef<ReturnType<typeof createTerminalResizeScheduler> | undefined>(
+    undefined,
+  )
   const api = useRef<IwaSshApi | undefined>(undefined)
   const capability = getDirectSocketsStatus()
   const permitted = isAllowedSshTcpTarget(host.trim(), 22)
+
+  function queueTerminalResize() {
+    const term = terminal.current
+    if (term) terminalDimensions.current = { cols: term.cols, rows: term.rows }
+    if (api.current) resizeScheduler.current?.schedule(terminalDimensions.current)
+  }
 
   useEffect(() => {
     if (!termContainer.current) return
@@ -107,7 +122,26 @@ export default function BrowserIwaSsh() {
       fontSize: 13,
       theme: { background: '#020617' },
     })
+    const fit = new FitAddon()
+    term.loadAddon(fit)
     term.open(termContainer.current)
+    const resize = term.onResize(({ cols, rows }) => {
+      terminalDimensions.current = { cols, rows }
+      queueTerminalResize()
+    })
+    const resizeObserver = new ResizeObserver(() => {
+      try {
+        fit.fit()
+      } catch {
+        // The terminal container can be temporarily unmeasurable during layout.
+      }
+    })
+    resizeObserver.observe(termContainer.current)
+    try {
+      fit.fit()
+    } catch {
+      // Keep the safe 80x24 default until layout becomes measurable.
+    }
     term.writeln(
       'Local SSH over Chrome IWA Direct Sockets. Host keys are pinned locally after first confirmation.',
     )
@@ -118,6 +152,9 @@ export default function BrowserIwaSsh() {
     })
     return () => {
       input.dispose()
+      resize.dispose()
+      resizeObserver.disconnect()
+      resizeScheduler.current?.cancel()
       term.dispose()
       terminal.current = undefined
     }
@@ -127,6 +164,7 @@ export default function BrowserIwaSsh() {
     () => () => {
       for (const buffer of sensitiveBuffers.current) buffer.fill(0)
       sensitiveBuffers.current.clear()
+      resizeScheduler.current?.cancel()
       if (api.current) void api.current.close()
     },
     [],
@@ -344,6 +382,13 @@ export default function BrowserIwaSsh() {
       await loadSshWasm()
       const client = window.wrenchIwaSsh
       if (!client) throw new Error('SSH client unavailable')
+      const initialDimensions = terminalDimensions.current
+      resizeScheduler.current?.cancel()
+      resizeScheduler.current = createTerminalResizeScheduler(
+        (cols, rows) => api.current?.resize(cols, rows) ?? Promise.resolve(),
+        (error) => setStatus('Terminal resize failed: ' + String(error)),
+      )
+      resizeScheduler.current.setInitial(initialDimensions)
       if (selectedKeyFile) {
         privateKeyBytes = new Uint8Array(await selectedKeyFile.arrayBuffer())
         passphraseBytes = new TextEncoder().encode(privateKeyPassphrase)
@@ -353,6 +398,8 @@ export default function BrowserIwaSsh() {
       await client.connect({
         host: host.trim(),
         port: 22,
+        cols: initialDimensions.cols,
+        rows: initialDimensions.rows,
         socket,
         username: username.trim(),
         ...(privateKeyBytes
@@ -378,6 +425,7 @@ export default function BrowserIwaSsh() {
       })
       api.current = client
       setConnected(true)
+      queueTerminalResize()
       void refreshRemoteDirectory('.')
       if (authMethod === 'password') {
         setPassword('')
@@ -390,6 +438,8 @@ export default function BrowserIwaSsh() {
       }
       terminal.current?.focus()
     } catch (error) {
+      resizeScheduler.current?.cancel()
+      resizeScheduler.current = undefined
       if (socket) await Promise.resolve(socket.close()).catch(() => undefined)
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
@@ -407,10 +457,12 @@ export default function BrowserIwaSsh() {
   }
 
   async function disconnect() {
+    resizeScheduler.current?.cancel()
     setBusy(true)
     try {
       await api.current?.close()
       api.current = undefined
+      resizeScheduler.current = undefined
       setConnected(false)
       setRemotePath('.')
       setRemoteEntries([])
@@ -568,7 +620,7 @@ export default function BrowserIwaSsh() {
       </div>
       <div
         ref={termContainer}
-        className="h-80 overflow-hidden rounded border border-slate-700 p-2"
+        className="h-[min(60vh,32rem)] min-h-48 overflow-hidden rounded border border-slate-700 p-2"
         aria-label="SSH terminal"
       />
       <section

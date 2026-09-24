@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strconv"
 	"sync"
@@ -22,13 +23,15 @@ var active *sshSession
 var promiseCtor = js.Global().Get("Promise")
 
 type sshSession struct {
-	client  *ssh.Client
-	shell   *ssh.Session
-	stdin   io.WriteCloser
-	onData  js.Value
-	sftpMu  sync.Mutex
-	sftp    *sftp.Client
-	sftpErr error
+	client   *ssh.Client
+	shell    *ssh.Session
+	stdin    io.WriteCloser
+	onData   js.Value
+	sftpMu   sync.Mutex
+	sftp     *sftp.Client
+	sftpErr  error
+	resizeMu sync.Mutex
+	closed   bool
 }
 
 type jsConn struct {
@@ -196,6 +199,35 @@ type dummyAddr string
 func (a dummyAddr) Network() string { return "tcp" }
 func (a dummyAddr) String() string  { return string(a) }
 
+func terminalDimensionFromJS(value js.Value, name string, defaultValue, maximum int) (int, error) {
+	if value.Type() == js.TypeUndefined || value.Type() == js.TypeNull {
+		return defaultValue, nil
+	}
+	if value.Type() != js.TypeNumber {
+		return 0, fmt.Errorf("terminal %s must be an integer", name)
+	}
+	number := value.Float()
+	if math.IsNaN(number) || math.IsInf(number, 0) || math.Trunc(number) != number || number < 1 || number > float64(maximum) {
+		return 0, fmt.Errorf("terminal %s must be between 1 and %d", name, maximum)
+	}
+	return int(number), nil
+}
+
+func terminalDimensionsFromJS(colsValue, rowsValue js.Value) (int, int, error) {
+	cols, err := terminalDimensionFromJS(colsValue, "columns", 80, maxTerminalColumns)
+	if err != nil {
+		return 0, 0, err
+	}
+	rows, err := terminalDimensionFromJS(rowsValue, "rows", 24, maxTerminalRows)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := validateTerminalDimensions(cols, rows); err != nil {
+		return 0, 0, err
+	}
+	return cols, rows, nil
+}
+
 func connect(args []js.Value) any {
 	if len(args) == 0 {
 		return promise(func() error { return errors.New("missing connection options") })
@@ -204,6 +236,10 @@ func connect(args []js.Value) any {
 	return promise(func() error {
 		host, user := opts.Get("host").String(), opts.Get("username").String()
 		port := opts.Get("port").Int()
+		cols, rows, err := terminalDimensionsFromJS(opts.Get("cols"), opts.Get("rows"))
+		if err != nil {
+			return err
+		}
 		if !allowedTarget(host, port) {
 			return errors.New("target must be a private IP literal on TCP port 22")
 		}
@@ -238,7 +274,6 @@ func connect(args []js.Value) any {
 			}{value, err}
 		}()
 		var opened js.Value
-		var err error
 		select {
 		case result := <-openedResult:
 			opened, err = result.value, result.err
@@ -321,7 +356,7 @@ func connect(args []js.Value) any {
 			_ = client.Close()
 			return err
 		}
-		if err := shell.RequestPty("xterm-256color", 24, 80, ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 14400, ssh.TTY_OP_OSPEED: 14400}); err != nil {
+		if err := shell.RequestPty("xterm-256color", rows, cols, ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 14400, ssh.TTY_OP_OSPEED: 14400}); err != nil {
 			_ = shell.Close()
 			_ = client.Close()
 			return err
@@ -371,7 +406,10 @@ func (s *sshSession) close() error {
 		s.sftp = nil
 	}
 	s.sftpMu.Unlock()
+	s.resizeMu.Lock()
+	s.closed = true
 	_ = s.shell.Close()
+	s.resizeMu.Unlock()
 	return closeErr
 }
 func awaitIfPromise(value js.Value) error {
@@ -570,6 +608,30 @@ func send(args []js.Value) any {
 		return err
 	})
 }
+func resizeSession(args []js.Value) any {
+	return promise(func() error {
+		if len(args) != 2 {
+			return errors.New("terminal resize requires columns and rows")
+		}
+		cols, rows, err := terminalDimensionsFromJS(args[0], args[1])
+		if err != nil {
+			return err
+		}
+		activeMu.Lock()
+		session := active
+		activeMu.Unlock()
+		if session == nil {
+			return errors.New("no active SSH shell")
+		}
+		session.resizeMu.Lock()
+		defer session.resizeMu.Unlock()
+		if session.closed {
+			return errors.New("SSH shell is closed")
+		}
+		return requestTerminalResize(session.shell, cols, rows)
+	})
+}
+
 func closeSession(_ []js.Value) any {
 	return promise(func() error {
 		activeMu.Lock()
@@ -586,6 +648,7 @@ func main() {
 	api := js.Global().Get("Object").New()
 	api.Set("connect", js.FuncOf(func(_ js.Value, args []js.Value) any { return connect(args) }))
 	api.Set("send", js.FuncOf(func(_ js.Value, args []js.Value) any { return send(args) }))
+	api.Set("resize", js.FuncOf(func(_ js.Value, args []js.Value) any { return resizeSession(args) }))
 	api.Set("listDirectory", js.FuncOf(func(_ js.Value, args []js.Value) any { return sftpList(args) }))
 	api.Set("downloadFile", js.FuncOf(func(_ js.Value, args []js.Value) any { return sftpDownload(args) }))
 	api.Set("uploadFile", js.FuncOf(func(_ js.Value, args []js.Value) any { return sftpUpload(args) }))

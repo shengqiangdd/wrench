@@ -256,6 +256,16 @@ async function openChromium(executable, profile, bundlePath) {
   return output
 }
 
+async function waitForServerLine(server, pattern, timeout = 5_000) {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeout) {
+    const line = server.lines.find((candidate) => pattern.test(candidate))
+    if (line) return line
+    await delay(25)
+  }
+  throw new Error(`SSH server did not emit ${pattern}; observed: ${server.lines.join('|')}`)
+}
+
 async function waitForTerminal(page, needle) {
   await page.waitForFunction(
     (text) => document.querySelector('.xterm-screen')?.innerText?.includes(text) ?? false,
@@ -522,6 +532,23 @@ async function runSmoke() {
   if (firstUsePrompts !== 1)
     throw new Error(`Expected one first-use host-key prompt, got ${firstUsePrompts}.`)
   let terminal = await waitForTerminal(page, 'READY')
+  const initialPtyLine = await waitForServerLine(server, /^PTY \d+ \d+$/)
+  const initialPty = initialPtyLine.match(/^PTY (\d+) (\d+)$/)
+  if (!initialPty) throw new Error(`Could not parse initial SSH PTY size: ${initialPtyLine}`)
+  await page.getByLabel('SSH terminal').evaluate((element) => {
+    element.style.width = '1000px'
+    element.style.height = '620px'
+  })
+  const resizedPtyLine = await waitForServerLine(server, /^WINDOW_CHANGE \d+ \d+$/)
+  const resizedPty = resizedPtyLine.match(/^WINDOW_CHANGE (\d+) (\d+)$/)
+  if (!resizedPty) throw new Error(`Could not parse SSH window-change: ${resizedPtyLine}`)
+  if (resizedPty[1] === initialPty[1] && resizedPty[2] === initialPty[2])
+    throw new Error(
+      `Terminal resize did not change PTY dimensions: ${initialPtyLine} -> ${resizedPtyLine}`,
+    )
+  if (Number(resizedPty[1]) > 500 || Number(resizedPty[2]) > 300)
+    throw new Error(`Terminal resize exceeded dimension bounds: ${resizedPtyLine}`)
+  console.log(`Remote PTY resized: ${initialPtyLine} -> ${resizedPtyLine}`)
   await page.locator('.xterm-helper-textarea').focus()
   await page.locator('.xterm-helper-textarea').pressSequentially('signed-iwa-terminal-roundtrip')
   await page.locator('.xterm-helper-textarea').press('Enter')
@@ -745,7 +772,7 @@ async function runSmoke() {
     throw new Error(`IWA made unexpected external web requests: ${externalRequests.join(', ')}`)
   if (dialogFailure) throw new Error(dialogFailure)
   console.log(
-    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password and encrypted private-key SSH; SFTP list/upload/download/rename/delete/mkdir, including symlink, empty-file, confirmed overwrite and cancellation, and traversal cases; first-use pin and renewal; shell input/output; disconnect; no external requests or persisted/logged credentials.',
+    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password and encrypted private-key SSH; SFTP list/upload/download/rename/delete/mkdir, including symlink, empty-file, confirmed overwrite and cancellation, and traversal cases; first-use pin and renewal; initial PTY sizing and live window-change resize; shell input/output; disconnect; no external requests or persisted/logged credentials.',
   )
 }
 

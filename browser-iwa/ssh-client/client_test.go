@@ -13,6 +13,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -54,6 +55,7 @@ func TestNewSSHClientRequiresAcceptedHostKeyAndAuthenticates(t *testing.T) {
 		t.Fatal(err)
 	}
 	serverDone := make(chan error, 1)
+	windowChangeReceived := make(chan [2]uint32, 1)
 	go func() {
 		serverConn, acceptErr := listener.Accept()
 		if acceptErr != nil {
@@ -73,12 +75,27 @@ func TestNewSSHClientRequiresAcceptedHostKeyAndAuthenticates(t *testing.T) {
 			}
 			go func() {
 				for request := range requests {
-					accepted := request.Type == "pty-req" || request.Type == "shell"
-					_ = request.Reply(accepted, nil)
-					if request.Type == "shell" {
-						_, _ = io.WriteString(channel, "ready\r\n")
-						go io.Copy(io.Discard, channel)
-						return
+					switch request.Type {
+					case "pty-req", "shell":
+						_ = request.Reply(true, nil)
+						if request.Type == "shell" {
+							_, _ = io.WriteString(channel, "ready\r\n")
+							go io.Copy(io.Discard, channel)
+						}
+					case "window-change":
+						var dimensions struct {
+							Columns uint32
+							Rows    uint32
+							Width   uint32
+							Height  uint32
+						}
+						if unmarshalErr := ssh.Unmarshal(request.Payload, &dimensions); unmarshalErr != nil {
+							t.Errorf("decode window-change request: %v", unmarshalErr)
+							continue
+						}
+						windowChangeReceived <- [2]uint32{dimensions.Columns, dimensions.Rows}
+					default:
+						_ = request.Reply(false, nil)
 					}
 				}
 			}()
@@ -122,6 +139,17 @@ func TestNewSSHClientRequiresAcceptedHostKeyAndAuthenticates(t *testing.T) {
 	}
 	if string(line) != "ready\r\n" {
 		t.Fatalf("shell output = %q", line)
+	}
+	if err := requestTerminalResize(session, 123, 45); err != nil {
+		t.Fatalf("request terminal resize: %v", err)
+	}
+	select {
+	case dimensions := <-windowChangeReceived:
+		if dimensions != [2]uint32{123, 45} {
+			t.Fatalf("remote window dimensions = %v; want [123 45]", dimensions)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server did not receive the SSH window-change request")
 	}
 }
 
