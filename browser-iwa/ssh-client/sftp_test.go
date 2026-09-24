@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net"
 	"testing"
 
@@ -14,7 +15,12 @@ func TestCleanSFTPPathRejectsTraversalAndInvalidPaths(t *testing.T) {
 			t.Errorf("cleanSFTPPath(%q) = %q, want error", value, cleaned)
 		}
 	}
-	for input, expected := range map[string]string{".": ".", "docs/guide": "docs/guide", "/home/user/": "/home/user"} {
+	for _, value := range []string{"/home/user", "/home/user/secret"} {
+		if cleaned, err := cleanSFTPPath(value); err == nil {
+			t.Errorf("cleanSFTPPath(%q) = %q, want absolute path rejection", value, cleaned)
+		}
+	}
+	for input, expected := range map[string]string{".": ".", "docs/guide": "docs/guide", "/": "/"} {
 		cleaned, err := cleanSFTPPath(input)
 		if err != nil || cleaned != expected {
 			t.Errorf("cleanSFTPPath(%q) = %q, %v; want %q", input, cleaned, err, expected)
@@ -46,8 +52,26 @@ func TestSFTPOperationsOverInMemoryProtocolServer(t *testing.T) {
 	if err := client.Symlink("report.txt", "docs/report-link"); err != nil {
 		t.Fatalf("create fixture symlink: %v", err)
 	}
+	if err := client.Symlink("docs", "docs-link"); err != nil {
+		t.Fatalf("create parent fixture symlink: %v", err)
+	}
 	if _, err := downloadSFTP(client, "docs/report-link"); err == nil {
 		t.Fatal("download followed a remote symlink")
+	}
+	if _, err := listSFTP(client, "docs-link"); err == nil {
+		t.Fatal("listing followed a parent symlink")
+	}
+	if _, err := downloadSFTP(client, "docs-link/report.txt"); err == nil {
+		t.Fatal("download traversed a parent symlink")
+	}
+	if err := uploadSFTP(client, "docs-link/escaped.txt", []byte("escape")); err == nil {
+		t.Fatal("upload traversed a parent symlink")
+	}
+	if err := mkdirSFTP(client, "docs-link/escaped-dir"); err == nil {
+		t.Fatal("mkdir traversed a parent symlink")
+	}
+	if err := renameSFTP(client, "docs/report.txt", "docs-link/escaped.txt"); err == nil {
+		t.Fatal("rename traversed a destination parent symlink")
 	}
 	if err := removeSFTP(client, "docs/report-link"); err != nil {
 		t.Fatalf("remove fixture symlink: %v", err)
@@ -57,6 +81,16 @@ func TestSFTPOperationsOverInMemoryProtocolServer(t *testing.T) {
 	}
 	if err := uploadSFTP(client, "docs/report.txt", []byte("overwrite")); err == nil {
 		t.Fatal("upload overwrote an existing remote file")
+	}
+	unchanged, err := downloadSFTP(client, "docs/report.txt")
+	if err != nil || !bytes.Equal(unchanged, []byte("private browser transfer")) {
+		t.Fatalf("refused overwrite changed the existing file: %q, %v", unchanged, err)
+	}
+	if _, err := listSFTP(client, "/"); err != nil {
+		t.Fatalf("listing filesystem root: %v", err)
+	}
+	if _, err := listSFTP(client, "/docs"); err == nil {
+		t.Fatal("listing an absolute non-root path succeeded")
 	}
 	if err := uploadSFTP(client, "docs/archive.txt", []byte("existing destination")); err != nil {
 		t.Fatalf("upload rename destination: %v", err)
@@ -104,5 +138,33 @@ func TestSFTPOperationsOverInMemoryProtocolServer(t *testing.T) {
 	}
 	if err := uploadSFTP(client, "large", make([]byte, maxSFTPFileBytes+1)); err == nil {
 		t.Fatal("oversized upload succeeded")
+	}
+	large, err := client.Create("large-download")
+	if err != nil {
+		t.Fatalf("create oversized download fixture: %v", err)
+	}
+	if _, err := large.Write(make([]byte, maxSFTPFileBytes+1)); err != nil {
+		t.Fatalf("write oversized download fixture: %v", err)
+	}
+	if err := large.Close(); err != nil {
+		t.Fatalf("close oversized download fixture: %v", err)
+	}
+	if _, err := downloadSFTP(client, "large-download"); err == nil {
+		t.Fatal("oversized download succeeded")
+	}
+	if err := client.Remove("large-download"); err != nil {
+		t.Fatalf("remove oversized download fixture: %v", err)
+	}
+	for i := 0; i <= maxSFTPEntries; i++ {
+		file, err := client.Create(fmt.Sprintf("entry-%03d", i))
+		if err != nil {
+			t.Fatalf("create listing fixture %d: %v", i, err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatalf("close listing fixture %d: %v", i, err)
+		}
+	}
+	if _, err := listSFTP(client, "/"); err == nil {
+		t.Fatal("listing with more than the entry limit succeeded")
 	}
 }

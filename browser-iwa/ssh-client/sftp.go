@@ -25,11 +25,10 @@ type sftpEntry struct {
 	Kind    string `json:"kind"`
 }
 
-// cleanSFTPPath accepts normalized relative or absolute POSIX paths and rejects traversal.
-// This prevents UI/API path traversal syntax; it is not a remote filesystem sandbox because
-// the account may have permissions through symlinks or absolute paths.
+// cleanSFTPPath accepts normalized relative POSIX paths. The filesystem root is
+// accepted only so callers can list it; operations reject root as a target.
 func cleanSFTPPath(value string) (string, error) {
-	if value == "" || len(value) > maxSFTPPathBytes || strings.ContainsAny(value, "\\\x00") || strings.HasPrefix(value, "//") {
+	if value == "" || len(value) > maxSFTPPathBytes || strings.ContainsAny(value, "\\\x00") || (strings.HasPrefix(value, "/") && value != "/") {
 		return "", errors.New("invalid SFTP path")
 	}
 	for _, segment := range strings.Split(value, "/") {
@@ -44,10 +43,50 @@ func cleanSFTPPath(value string) (string, error) {
 	return cleaned, nil
 }
 
+// rejectSymlinkParents prevents operations from traversing a symlink in any
+// parent component. Final symlinks are handled according to each operation.
+func rejectSymlinkParents(client *sftp.Client, cleaned string) error {
+	if cleaned == "." || cleaned == "/" {
+		return nil
+	}
+	segments := strings.Split(cleaned, "/")
+	parent := "."
+	for _, segment := range segments[:len(segments)-1] {
+		if parent == "." {
+			parent = segment
+		} else {
+			parent = path.Join(parent, segment)
+		}
+		info, err := client.Lstat(parent)
+		if err != nil {
+			return fmt.Errorf("inspect remote parent: %w", err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("SFTP path cannot traverse a symbolic link")
+		}
+		if !info.IsDir() {
+			return errors.New("SFTP path parent is not a directory")
+		}
+	}
+	return nil
+}
+
 func listSFTP(client *sftp.Client, directory string) ([]sftpEntry, error) {
 	cleaned, err := cleanSFTPPath(directory)
 	if err != nil {
 		return nil, err
+	}
+	if cleaned != "/" {
+		if err := rejectSymlinkParents(client, cleaned); err != nil {
+			return nil, err
+		}
+		info, statErr := client.Lstat(cleaned)
+		if statErr != nil {
+			return nil, fmt.Errorf("inspect remote directory: %w", statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return nil, errors.New("only non-symlink directories can be listed")
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -81,6 +120,9 @@ func listSFTP(client *sftp.Client, directory string) ([]sftpEntry, error) {
 func downloadSFTP(client *sftp.Client, remotePath string) ([]byte, error) {
 	cleaned, err := cleanSFTPPath(remotePath)
 	if err != nil {
+		return nil, err
+	}
+	if err := rejectSymlinkParents(client, cleaned); err != nil {
 		return nil, err
 	}
 	info, err := client.Lstat(cleaned)
@@ -121,6 +163,9 @@ func uploadSFTP(client *sftp.Client, remotePath string, data []byte) (err error)
 	if len(data) > maxSFTPFileBytes {
 		return fmt.Errorf("uploaded files must not exceed %d MiB", maxSFTPFileBytes>>20)
 	}
+	if err := rejectSymlinkParents(client, cleaned); err != nil {
+		return err
+	}
 	if _, statErr := client.Lstat(cleaned); statErr == nil {
 		return errors.New("remote destination already exists; refusing to overwrite")
 	} else if !errors.Is(statErr, os.ErrNotExist) {
@@ -155,6 +200,9 @@ func removeSFTP(client *sftp.Client, remotePath string) error {
 	if cleaned == "." || cleaned == "/" {
 		return errors.New("cannot delete the current or root directory")
 	}
+	if err := rejectSymlinkParents(client, cleaned); err != nil {
+		return err
+	}
 	info, err := client.Lstat(cleaned)
 	if err != nil {
 		return fmt.Errorf("inspect remote path: %w", err)
@@ -180,6 +228,12 @@ func renameSFTP(client *sftp.Client, oldPath, newPath string) error {
 	if oldClean == newClean {
 		return errors.New("source and destination are identical")
 	}
+	if err := rejectSymlinkParents(client, oldClean); err != nil {
+		return err
+	}
+	if err := rejectSymlinkParents(client, newClean); err != nil {
+		return err
+	}
 	if _, statErr := client.Lstat(newClean); statErr == nil {
 		return errors.New("rename destination already exists; refusing to overwrite")
 	} else if !errors.Is(statErr, os.ErrNotExist) {
@@ -195,6 +249,9 @@ func mkdirSFTP(client *sftp.Client, directory string) error {
 	}
 	if cleaned == "." || cleaned == "/" {
 		return errors.New("directory already exists")
+	}
+	if err := rejectSymlinkParents(client, cleaned); err != nil {
+		return err
 	}
 	if err := client.Mkdir(cleaned); err != nil {
 		return fmt.Errorf("create remote directory: %w", err)

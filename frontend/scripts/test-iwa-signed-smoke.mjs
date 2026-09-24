@@ -546,6 +546,17 @@ async function runSmoke() {
   await page.getByRole('button', { name: 'Upload', exact: true }).click()
   await page.getByTestId('sftp-entry-roundtrip.txt').waitFor({ state: 'visible' })
   await page.locator('input[aria-label="Upload file"]').setInputFiles({
+    name: 'roundtrip.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('overwrite attempt\n'),
+  })
+  await page.getByRole('button', { name: 'Upload', exact: true }).click()
+  await page.waitForFunction(() =>
+    document
+      .querySelector('[data-testid="sftp-status"]')
+      ?.textContent?.includes('refusing to overwrite'),
+  )
+  await page.locator('input[aria-label="Upload file"]').setInputFiles({
     name: 'empty.txt',
     mimeType: 'text/plain',
     buffer: Buffer.alloc(0),
@@ -694,7 +705,7 @@ async function runSmoke() {
     throw new Error(`IWA made unexpected external web requests: ${externalRequests.join(', ')}`)
   if (dialogFailure) throw new Error(dialogFailure)
   console.log(
-    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password and encrypted private-key SSH; SFTP list/upload/download/rename/delete/mkdir, including empty-file and traversal cases; first-use pin and renewal; shell input/output; disconnect; no external requests or persisted/logged credentials.',
+    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password and encrypted private-key SSH; SFTP list/upload/download/rename/delete/mkdir, including empty-file, overwrite-refusal, and traversal cases; first-use pin and renewal; shell input/output; disconnect; no external requests or persisted/logged credentials.',
   )
 }
 
