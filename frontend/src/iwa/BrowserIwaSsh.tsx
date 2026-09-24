@@ -30,7 +30,7 @@ type IwaSshApi = {
   send: (text: string) => Promise<void>
   listDirectory: (path: string) => Promise<SftpEntry[]>
   downloadFile: (path: string) => Promise<Uint8Array>
-  uploadFile: (path: string, data: Uint8Array) => Promise<void>
+  uploadFile: (path: string, data: Uint8Array, overwrite?: boolean) => Promise<void>
   removePath: (path: string) => Promise<void>
   renamePath: (source: string, destination: string) => Promise<void>
   makeDirectory: (path: string) => Promise<void>
@@ -194,6 +194,12 @@ export default function BrowserIwaSsh() {
     try {
       const source = childRemotePath(entry.name)
       const destination = childRemotePath(name.trim())
+      if (
+        !window.confirm(
+          `Rename ${entry.name} to ${name.trim()}? Existing destinations are never overwritten.`,
+        )
+      )
+        return
       setSftpBusy(true)
       await api.current?.renamePath(source, destination)
       await refreshRemoteDirectory(remotePath)
@@ -206,7 +212,11 @@ export default function BrowserIwaSsh() {
 
   async function deleteRemoteEntry(entry: SftpEntry) {
     const target = childRemotePath(entry.name)
-    if (!window.confirm(`Delete remote path ${target}? Empty directories only.`)) return
+    const confirmation =
+      entry.kind === 'symlink'
+        ? `Delete symbolic link ${target}? This unlinks the link itself; its target is not followed.`
+        : `Delete remote path ${target}? Empty directories only.`
+    if (!window.confirm(confirmation)) return
     setSftpBusy(true)
     try {
       await api.current?.removePath(target)
@@ -231,7 +241,31 @@ export default function BrowserIwaSsh() {
     try {
       data = new Uint8Array(await file.arrayBuffer())
       sensitiveBuffers.current.add(data)
-      await api.current.uploadFile(childRemotePath(file.name), data)
+      const destination = childRemotePath(file.name)
+      const sendUpload = async (overwrite: boolean) => {
+        const transferData = data!.slice()
+        sensitiveBuffers.current.add(transferData)
+        try {
+          await api.current!.uploadFile(destination, transferData, overwrite)
+        } finally {
+          transferData.fill(0)
+          sensitiveBuffers.current.delete(transferData)
+        }
+      }
+      try {
+        await sendUpload(false)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!message.includes('confirm replacement to overwrite')) throw error
+        const confirmed = window.confirm(
+          `Remote file ${file.name} already exists. Replace it? The replacement is atomic and cannot be undone.`,
+        )
+        if (!confirmed) {
+          setSftpStatus('Upload cancelled; remote file was not changed')
+          return
+        }
+        await sendUpload(true)
+      }
       setUploadSelection(undefined)
       if (uploadInput.current) uploadInput.current.value = ''
       await refreshRemoteDirectory(remotePath)
@@ -544,9 +578,9 @@ export default function BrowserIwaSsh() {
         <h3 className="mb-2 font-semibold">SFTP files</h3>
         <p className="mb-3 text-xs text-slate-300">
           Uses the same pinned SSH connection and account permissions. Files are limited to 16 MiB
-          per transfer; uploads refuse to overwrite. Remote permissions follow the SSH server
-          defaults. Paths reject parent traversal, but this is not a filesystem sandbox: the SSH
-          account may access files permitted to that account.
+          per transfer. Replacing a regular file requires confirmation; symlinks cannot be opened,
+          renamed, or replaced. Rename stays in this directory and never replaces an existing path.
+          Remote permissions follow server defaults. Path checks are not a filesystem sandbox.
         </p>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span data-testid="sftp-path" className="mr-auto font-mono text-sm break-all">
@@ -648,13 +682,15 @@ export default function BrowserIwaSsh() {
                           Download {entry.name}
                         </button>
                       )}
-                      <button
-                        className="rounded bg-slate-700 px-2 py-1"
-                        disabled={sftpBusy}
-                        onClick={() => void renameRemoteEntry(entry)}
-                      >
-                        Rename {entry.name}
-                      </button>
+                      {entry.kind !== 'symlink' && (
+                        <button
+                          className="rounded bg-slate-700 px-2 py-1"
+                          disabled={sftpBusy}
+                          onClick={() => void renameRemoteEntry(entry)}
+                        >
+                          Rename {entry.name}
+                        </button>
+                      )}
                       <button
                         className="rounded bg-rose-900 px-2 py-1"
                         disabled={sftpBusy}

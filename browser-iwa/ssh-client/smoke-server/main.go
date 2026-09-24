@@ -192,7 +192,12 @@ func handleChannel(channel ssh.Channel, requests <-chan *ssh.Request) {
 			}
 			fmt.Println("SFTP subsystem accepted")
 			_ = request.Reply(true, nil)
-			server := sftp.NewRequestServer(channel, sftp.InMemHandler())
+			handlers, err := sftp.InMemHandlerWithSymlink(".", "/browser-symlink-dir")
+			if err != nil {
+				fmt.Printf("SFTP fixture setup failed: %v\n", err)
+				return
+			}
+			server := sftp.NewRequestServer(channel, handlers)
 			_ = server.Serve()
 			_ = server.Close()
 			return

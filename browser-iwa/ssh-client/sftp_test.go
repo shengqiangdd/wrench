@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/pkg/sftp"
 )
 
 func TestCleanSFTPPathRejectsTraversalAndInvalidPaths(t *testing.T) {
-	for _, value := range []string{"", "../secret", "a/../secret", "a\\secret", "//host/path", "bad\x00path"} {
+	for _, value := range []string{"", "../secret", "a/../secret", "a\\secret", "//host/path", "bad\x00path", strings.Repeat("a", maxSFTPPathBytes+1)} {
 		if cleaned, err := cleanSFTPPath(value); err == nil {
 			t.Errorf("cleanSFTPPath(%q) = %q, want error", value, cleaned)
 		}
@@ -49,17 +50,57 @@ func TestSFTPOperationsOverInMemoryProtocolServer(t *testing.T) {
 	if err := uploadSFTP(client, "docs/report.txt", []byte("private browser transfer")); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	if err := client.Symlink("report.txt", "docs/report-link"); err != nil {
+	if err := mkdirSFTP(client, "outside-dir"); err != nil {
+		t.Fatalf("create outside sentinel directory: %v", err)
+	}
+	outsideSentinel, err := client.Create("outside-dir/report.txt")
+	if err != nil {
+		t.Fatalf("create outside sentinel: %v", err)
+	}
+	if _, err := outsideSentinel.Write([]byte("outside directory sentinel")); err != nil {
+		t.Fatalf("write outside sentinel: %v", err)
+	}
+	if err := outsideSentinel.Close(); err != nil {
+		t.Fatalf("close outside sentinel: %v", err)
+	}
+	if err := client.Symlink("../outside-dir/report.txt", "docs/report-link"); err != nil {
 		t.Fatalf("create fixture symlink: %v", err)
 	}
-	if err := client.Symlink("docs", "docs-link"); err != nil {
+	if err := client.Symlink("outside-dir", "docs-link"); err != nil {
 		t.Fatalf("create parent fixture symlink: %v", err)
 	}
 	if _, err := downloadSFTP(client, "docs/report-link"); err == nil {
 		t.Fatal("download followed a remote symlink")
 	}
+	if err := uploadSFTP(client, "docs/report-link", []byte("replace target")); err == nil {
+		t.Fatal("upload replaced a symlink or followed its target")
+	}
+	if err := uploadSFTPWithOverwrite(client, "docs/report-link", []byte("replace target"), true); err == nil {
+		t.Fatal("confirmed upload replaced a symlink or followed its target")
+	}
+	if err := uploadSFTPWithOverwrite(client, "docs", []byte("replace directory"), true); err == nil {
+		t.Fatal("confirmed upload replaced a directory")
+	}
+	if err := mkdirSFTP(client, "docs/report-link"); err == nil {
+		t.Fatal("mkdir followed or replaced a final symlink")
+	}
+	if err := renameSFTP(client, "docs/report-link", "docs/renamed-link"); err == nil {
+		t.Fatal("rename followed or moved a final symlink")
+	}
+	if err := renameSFTP(client, "docs/report.txt", "docs-link/report.txt"); err == nil {
+		t.Fatal("rename traversed a symlink destination parent")
+	}
+	if err := renameSFTP(client, "docs/report.txt", "docs/report-link"); err == nil {
+		t.Fatal("rename replaced a final symlink")
+	}
+	if err := renameSFTP(client, "docs/report.txt", "archive/report.txt"); err == nil {
+		t.Fatal("cross-directory rename succeeded")
+	}
 	if _, err := listSFTP(client, "docs-link"); err == nil {
 		t.Fatal("listing followed a parent symlink")
+	}
+	if _, err := listSFTP(client, "docs/report-link"); err == nil {
+		t.Fatal("listing followed a final symlink")
 	}
 	if _, err := downloadSFTP(client, "docs-link/report.txt"); err == nil {
 		t.Fatal("download traversed a parent symlink")
@@ -67,23 +108,41 @@ func TestSFTPOperationsOverInMemoryProtocolServer(t *testing.T) {
 	if err := uploadSFTP(client, "docs-link/escaped.txt", []byte("escape")); err == nil {
 		t.Fatal("upload traversed a parent symlink")
 	}
+	if err := removeSFTP(client, "docs-link/report.txt"); err == nil {
+		t.Fatal("remove traversed a parent symlink")
+	}
 	if err := mkdirSFTP(client, "docs-link/escaped-dir"); err == nil {
 		t.Fatal("mkdir traversed a parent symlink")
 	}
 	if err := renameSFTP(client, "docs/report.txt", "docs-link/escaped.txt"); err == nil {
 		t.Fatal("rename traversed a destination parent symlink")
 	}
+	if err := renameSFTP(client, "docs-link/report.txt", "docs/escaped.txt"); err == nil {
+		t.Fatal("rename traversed a source parent symlink")
+	}
 	if err := removeSFTP(client, "docs/report-link"); err != nil {
 		t.Fatalf("remove fixture symlink: %v", err)
 	}
-	if _, err := client.Stat("docs/report.txt"); err != nil {
-		t.Fatalf("removing the symlink also removed its target: %v", err)
+	targetSentinel, err := downloadSFTP(client, "docs/report.txt")
+	if err != nil || !bytes.Equal(targetSentinel, []byte("private browser transfer")) {
+		t.Fatalf("symlink operations changed/followed the selected-directory target: %q, %v", targetSentinel, err)
+	}
+	outsideAfter, err := downloadSFTP(client, "outside-dir/report.txt")
+	if err != nil || !bytes.Equal(outsideAfter, []byte("outside directory sentinel")) {
+		t.Fatalf("symlink operations changed/followed the outside-directory sentinel: %q, %v", outsideAfter, err)
+	}
+	if err := uploadSFTPWithOverwrite(client, "docs/report.txt", []byte("confirmed replacement"), true); err != nil {
+		t.Fatalf("confirmed atomic replacement: %v", err)
+	}
+	replaced, err := downloadSFTP(client, "docs/report.txt")
+	if err != nil || !bytes.Equal(replaced, []byte("confirmed replacement")) {
+		t.Fatalf("confirmed replacement contents = %q, %v", replaced, err)
 	}
 	if err := uploadSFTP(client, "docs/report.txt", []byte("overwrite")); err == nil {
-		t.Fatal("upload overwrote an existing remote file")
+		t.Fatal("upload overwrote an existing remote file without confirmation")
 	}
 	unchanged, err := downloadSFTP(client, "docs/report.txt")
-	if err != nil || !bytes.Equal(unchanged, []byte("private browser transfer")) {
+	if err != nil || !bytes.Equal(unchanged, []byte("confirmed replacement")) {
 		t.Fatalf("refused overwrite changed the existing file: %q, %v", unchanged, err)
 	}
 	if _, err := listSFTP(client, "/"); err != nil {
@@ -109,7 +168,7 @@ func TestSFTPOperationsOverInMemoryProtocolServer(t *testing.T) {
 		t.Fatalf("list entries = %#v, %v", entries, err)
 	}
 	data, err := downloadSFTP(client, "docs/report.txt")
-	if err != nil || !bytes.Equal(data, []byte("private browser transfer")) {
+	if err != nil || !bytes.Equal(data, []byte("confirmed replacement")) {
 		t.Fatalf("download = %q, %v", data, err)
 	}
 	if err := renameSFTP(client, "docs/report.txt", "docs/archive.txt"); err != nil {

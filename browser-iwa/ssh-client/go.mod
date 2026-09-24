@@ -11,3 +11,5 @@ require (
 	github.com/kr/fs v0.1.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 )
+
+replace github.com/pkg/sftp => ./third_party/pkg-sftp

@@ -387,6 +387,7 @@ async function runSmoke() {
   let dialogFailure = ''
   let previousFingerprint = ''
   let nextPromptAnswer
+  let nextConfirmAnswer
   await page.addInitScript(() => {
     Object.defineProperty(window, 'wrenchIwaSsh', {
       configurable: true,
@@ -436,7 +437,22 @@ async function runSmoke() {
         nextPromptAnswer = undefined
         await dialog.accept(answer)
       }
-    } else if (dialog.type() === 'confirm' && message.startsWith('Delete remote path ')) {
+    } else if (dialog.type() === 'confirm' && message.startsWith('Remote file ')) {
+      if (nextConfirmAnswer === undefined) {
+        dialogFailure = `Unexpected overwrite confirmation: ${message}`
+        await dialog.dismiss()
+      } else {
+        const answer = nextConfirmAnswer
+        nextConfirmAnswer = undefined
+        if (answer) await dialog.accept()
+        else await dialog.dismiss()
+      }
+    } else if (dialog.type() === 'confirm' && message.startsWith('Rename ')) {
+      await dialog.accept()
+    } else if (
+      dialog.type() === 'confirm' &&
+      (message.startsWith('Delete remote path ') || message.startsWith('Delete symbolic link '))
+    ) {
       await dialog.accept()
     } else {
       dialogFailure = `Unexpected browser dialog: ${message}`
@@ -520,6 +536,24 @@ async function runSmoke() {
   }
   if (!terminal.includes('READY')) throw new Error('SSH server shell readiness output was missing.')
 
+  await page
+    .waitForFunction(
+      () => document.querySelector('[data-testid="sftp-status"]')?.textContent === '1 entries',
+    )
+    .catch(async (error) => {
+      const status = await page.getByTestId('sftp-status').innerText()
+      throw new Error(
+        `SFTP symlink fixture listing timed out (status: ${status}; server: ${server.lines.join('|')}): ${error}`,
+      )
+    })
+  const symlinkRow = page.getByTestId('sftp-entry-browser-symlink-dir')
+  if (!(await symlinkRow.isVisible())) throw new Error('SFTP symlink fixture was not listed.')
+  if (await symlinkRow.getByRole('button', { name: 'browser-symlink-dir/' }).count())
+    throw new Error('Browser exposed directory navigation through a symlink.')
+  if (await symlinkRow.getByRole('button', { name: 'Rename browser-symlink-dir' }).count())
+    throw new Error('Browser exposed rename for a symlink.')
+  await symlinkRow.getByRole('button', { name: 'Delete browser-symlink-dir' }).click()
+  await symlinkRow.waitFor({ state: 'detached' })
   await page.waitForFunction(
     () => document.querySelector('[data-testid="sftp-status"]')?.textContent === '0 entries',
   )
@@ -550,11 +584,17 @@ async function runSmoke() {
     mimeType: 'text/plain',
     buffer: Buffer.from('overwrite attempt\n'),
   })
+  nextConfirmAnswer = false
   await page.getByRole('button', { name: 'Upload', exact: true }).click()
   await page.waitForFunction(() =>
     document
       .querySelector('[data-testid="sftp-status"]')
-      ?.textContent?.includes('refusing to overwrite'),
+      ?.textContent?.includes('Upload cancelled'),
+  )
+  nextConfirmAnswer = true
+  await page.getByRole('button', { name: 'Upload', exact: true }).click()
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="sftp-status"]')?.textContent?.includes(' entries'),
   )
   await page.locator('input[aria-label="Upload file"]').setInputFiles({
     name: 'empty.txt',
@@ -577,7 +617,7 @@ async function runSmoke() {
   const download = await downloaded
   const downloadedPath = path.join(tempRoot, 'sftp-roundtrip.txt')
   await download.saveAs(downloadedPath)
-  if ((await readFile(downloadedPath, 'utf8')) !== uploadContents)
+  if ((await readFile(downloadedPath, 'utf8')) !== 'overwrite attempt\n')
     throw new Error('SFTP download contents did not match the uploaded file.')
   nextPromptAnswer = '../escape'
   await page.getByRole('button', { name: 'Rename roundtrip.txt' }).click()
@@ -687,7 +727,7 @@ async function runSmoke() {
       'The Go/WASM bridge did not zero its JavaScript private-key and passphrase buffers.',
     )
   await page.waitForFunction(
-    () => document.querySelector('[data-testid="sftp-status"]')?.textContent === '0 entries',
+    () => document.querySelector('[data-testid="sftp-status"]')?.textContent === '1 entries',
   )
   const storedCredentials = await page.evaluate(() =>
     Array.from(
@@ -705,7 +745,7 @@ async function runSmoke() {
     throw new Error(`IWA made unexpected external web requests: ${externalRequests.join(', ')}`)
   if (dialogFailure) throw new Error(dialogFailure)
   console.log(
-    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password and encrypted private-key SSH; SFTP list/upload/download/rename/delete/mkdir, including empty-file, overwrite-refusal, and traversal cases; first-use pin and renewal; shell input/output; disconnect; no external requests or persisted/logged credentials.',
+    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password and encrypted private-key SSH; SFTP list/upload/download/rename/delete/mkdir, including symlink, empty-file, confirmed overwrite and cancellation, and traversal cases; first-use pin and renewal; shell input/output; disconnect; no external requests or persisted/logged credentials.',
   )
 }
 

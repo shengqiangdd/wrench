@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -90,12 +92,9 @@ func listSFTP(client *sftp.Client, directory string) ([]sftpEntry, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	entries, err := client.ReadDirContext(ctx, cleaned)
+	entries, err := client.ReadDirContextLimit(ctx, cleaned, maxSFTPEntries)
 	if err != nil {
 		return nil, fmt.Errorf("list remote directory: %w", err)
-	}
-	if len(entries) > maxSFTPEntries {
-		return nil, fmt.Errorf("directory contains more than %d entries", maxSFTPEntries)
 	}
 	result := make([]sftpEntry, 0, len(entries))
 	for _, entry := range entries {
@@ -140,6 +139,20 @@ func downloadSFTP(client *sftp.Client, remotePath string) ([]byte, error) {
 		return nil, fmt.Errorf("open remote file: %w", err)
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("inspect opened remote file: %w", err)
+	}
+	currentInfo, err := client.Lstat(cleaned)
+	if err != nil {
+		return nil, fmt.Errorf("recheck remote file path: %w", err)
+	}
+	if currentInfo.Mode()&os.ModeSymlink != 0 || !currentInfo.Mode().IsRegular() ||
+		openedInfo.Mode()&os.ModeSymlink != 0 || !openedInfo.Mode().IsRegular() ||
+		currentInfo.Size() != info.Size() || currentInfo.ModTime() != info.ModTime() || currentInfo.Mode() != info.Mode() ||
+		openedInfo.Size() != info.Size() || openedInfo.ModTime() != info.ModTime() || openedInfo.Mode() != info.Mode() {
+		return nil, errors.New("remote file changed or became a symlink; refusing to download")
+	}
 	data, err := io.ReadAll(io.LimitReader(file, maxSFTPFileBytes+1))
 	if err != nil {
 		clear(data)
@@ -152,7 +165,11 @@ func downloadSFTP(client *sftp.Client, remotePath string) ([]byte, error) {
 	return data, nil
 }
 
-func uploadSFTP(client *sftp.Client, remotePath string, data []byte) (err error) {
+func uploadSFTP(client *sftp.Client, remotePath string, data []byte) error {
+	return uploadSFTPWithOverwrite(client, remotePath, data, false)
+}
+
+func uploadSFTPWithOverwrite(client *sftp.Client, remotePath string, data []byte, overwrite bool) (err error) {
 	cleaned, err := cleanSFTPPath(remotePath)
 	if err != nil {
 		return err
@@ -166,12 +183,71 @@ func uploadSFTP(client *sftp.Client, remotePath string, data []byte) (err error)
 	if err := rejectSymlinkParents(client, cleaned); err != nil {
 		return err
 	}
-	if _, statErr := client.Lstat(cleaned); statErr == nil {
-		return errors.New("remote destination already exists; refusing to overwrite")
-	} else if !errors.Is(statErr, os.ErrNotExist) {
+	existing, statErr := client.Lstat(cleaned)
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return fmt.Errorf("check upload destination: %w", statErr)
 	}
-	file, err := client.OpenFile(cleaned, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if statErr == nil {
+		if existing.Mode()&os.ModeSymlink != 0 {
+			return errors.New("remote destination is a symbolic link; refusing to replace it")
+		}
+		if !existing.Mode().IsRegular() {
+			return errors.New("remote destination is not a regular file")
+		}
+		if !overwrite {
+			return errors.New("remote destination already exists and is a regular file; confirm replacement to overwrite")
+		}
+	}
+	if statErr != nil {
+		return createSFTPFile(client, cleaned, data)
+	}
+
+	// Stage beside the destination, then use the SFTP POSIX rename extension
+	// for atomic replacement. The destination itself is never opened or followed.
+	var randomName [16]byte
+	if _, err := rand.Read(randomName[:]); err != nil {
+		return fmt.Errorf("generate temporary upload name: %w", err)
+	}
+	temporaryPath := path.Join(path.Dir(cleaned), ".wrench-upload-"+hex.EncodeToString(randomName[:]))
+	if len(temporaryPath) > maxSFTPPathBytes {
+		return errors.New("temporary upload path exceeds the SFTP path limit")
+	}
+	file, err := client.OpenFile(temporaryPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if err != nil {
+		return fmt.Errorf("create temporary remote file: %w", err)
+	}
+	renamed := false
+	defer func() {
+		_ = file.Close()
+		if !renamed {
+			_ = client.Remove(temporaryPath)
+		}
+	}()
+	if _, err := io.Copy(file, bytes.NewReader(data)); err != nil {
+		return fmt.Errorf("write temporary remote file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close temporary remote file: %w", err)
+	}
+	current, err := client.Lstat(cleaned)
+	if err != nil {
+		return fmt.Errorf("recheck upload destination: %w", err)
+	}
+	if current.Mode()&os.ModeSymlink != 0 || !current.Mode().IsRegular() {
+		return errors.New("remote destination changed to a non-regular file; refusing to replace it")
+	}
+	if current.Size() != existing.Size() || current.ModTime() != existing.ModTime() || current.Mode() != existing.Mode() {
+		return errors.New("remote destination changed during upload; refusing to replace it")
+	}
+	if err := client.PosixRename(temporaryPath, cleaned); err != nil {
+		return fmt.Errorf("atomically replace remote file: %w", err)
+	}
+	renamed = true
+	return nil
+}
+
+func createSFTPFile(client *sftp.Client, remotePath string, data []byte) (err error) {
+	file, err := client.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 	if err != nil {
 		return fmt.Errorf("create remote file: %w", err)
 	}
@@ -179,7 +255,7 @@ func uploadSFTP(client *sftp.Client, remotePath string, data []byte) (err error)
 	defer func() {
 		_ = file.Close()
 		if !written {
-			_ = client.Remove(cleaned)
+			_ = client.Remove(remotePath)
 		}
 	}()
 	if _, err = io.Copy(file, bytes.NewReader(data)); err != nil {
@@ -228,11 +304,21 @@ func renameSFTP(client *sftp.Client, oldPath, newPath string) error {
 	if oldClean == newClean {
 		return errors.New("source and destination are identical")
 	}
+	if path.Dir(oldClean) != path.Dir(newClean) {
+		return errors.New("renames must stay in the current remote directory")
+	}
 	if err := rejectSymlinkParents(client, oldClean); err != nil {
 		return err
 	}
 	if err := rejectSymlinkParents(client, newClean); err != nil {
 		return err
+	}
+	sourceInfo, statErr := client.Lstat(oldClean)
+	if statErr != nil {
+		return fmt.Errorf("inspect rename source: %w", statErr)
+	}
+	if sourceInfo.Mode()&os.ModeSymlink != 0 || (!sourceInfo.Mode().IsRegular() && !sourceInfo.IsDir()) {
+		return errors.New("only regular files and directories can be renamed")
 	}
 	if _, statErr := client.Lstat(newClean); statErr == nil {
 		return errors.New("rename destination already exists; refusing to overwrite")
@@ -252,6 +338,11 @@ func mkdirSFTP(client *sftp.Client, directory string) error {
 	}
 	if err := rejectSymlinkParents(client, cleaned); err != nil {
 		return err
+	}
+	if _, statErr := client.Lstat(cleaned); statErr == nil {
+		return errors.New("directory destination already exists")
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("check directory destination: %w", statErr)
 	}
 	if err := client.Mkdir(cleaned); err != nil {
 		return fmt.Errorf("create remote directory: %w", err)

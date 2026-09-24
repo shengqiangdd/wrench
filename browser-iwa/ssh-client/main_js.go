@@ -485,6 +485,13 @@ func sftpUpload(args []js.Value) any {
 		if len(args) <= 1 {
 			return errors.New("upload data is required")
 		}
+		overwrite := false
+		if len(args) > 2 && args[2].Type() != js.TypeUndefined && args[2].Type() != js.TypeNull {
+			if args[2].Type() != js.TypeBoolean {
+				return errors.New("overwrite confirmation must be boolean")
+			}
+			overwrite = args[2].Bool()
+		}
 		dataJS := args[1]
 		defer zeroJSBytes(dataJS)
 		data, err := copyJSBytes(dataJS, "upload data", maxSFTPFileBytes)
@@ -496,7 +503,9 @@ func sftpUpload(args []js.Value) any {
 		if err != nil {
 			return err
 		}
-		return session.withSFTP(func(client *sftp.Client) error { return uploadSFTP(client, remotePath, data) })
+		return session.withSFTP(func(client *sftp.Client) error {
+			return uploadSFTPWithOverwrite(client, remotePath, data, overwrite)
+		})
 	})
 }
 

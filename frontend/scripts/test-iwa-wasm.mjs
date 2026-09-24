@@ -1,8 +1,9 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { webcrypto } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import net from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -15,8 +16,20 @@ const runtimePath = path.join(repoDir, 'browser-iwa', 'public', 'wasm_exec.js')
 const require = createRequire(import.meta.url)
 
 async function run() {
-  const server = spawn('go', ['run', './testserver'], {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'wrench-iwa-wasm-test-'))
+  const serverPath = path.join(
+    tempDir,
+    process.platform === 'win32' ? 'testserver.exe' : 'testserver',
+  )
+  const build = spawnSync('go', ['build', '-o', serverPath, './testserver'], {
     cwd: goDir,
+    stdio: 'inherit',
+  })
+  if (build.status !== 0) {
+    await rm(tempDir, { recursive: true, force: true })
+    throw new Error(`mock SSH server build failed (${build.status ?? build.error})`)
+  }
+  const server = spawn(serverPath, [], {
     stdio: ['ignore', 'pipe', 'inherit'],
   })
   try {
@@ -143,6 +156,21 @@ async function run() {
       await globalThis.wrenchIwaSsh?.close()
     } catch {}
     server.kill('SIGTERM')
+    await new Promise((resolve) => {
+      if (server.exitCode !== null || server.signalCode !== null) {
+        resolve()
+        return
+      }
+      const timeout = setTimeout(() => {
+        server.kill('SIGKILL')
+        resolve()
+      }, 5000)
+      server.once('exit', () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+    })
+    await rm(tempDir, { recursive: true, force: true })
   }
 }
 
