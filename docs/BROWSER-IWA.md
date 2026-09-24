@@ -4,7 +4,7 @@ The ordinary Wrench web page cannot open raw TCP sockets. Chrome [Direct Sockets
 
 ## Scope and current status
 
-This is a transport smoke test, not an SSH implementation. The app accepts only RFC1918 IPv4 or IPv6 ULA address literals on TCP port 22. It asks for confirmation for each attempt, opens one socket, sends no bytes, and closes it. It does not perform SSH negotiation, check or pin a host key, authenticate, start a terminal, or provide SFTP. The regular Wrench page remains unchanged and does not include this probe; only the separate IWA build contains it.
+This is a transport smoke test, not an SSH implementation. The app accepts only RFC1918 IPv4 or IPv6 ULA address literals on TCP port 22. It asks for confirmation for each attempt, opens one socket, sends no bytes, and closes it. It does not perform SSH negotiation, check or pin a host key, authenticate, start a terminal, or provide SFTP. The regular Wrench page remains unchanged and does not include this probe; only the separate IWA build contains it. This work adds no backend route and does not change the deployed regular frontend, server-side SSH behavior, egress profile/policy, or existing server/native-Agent modes.
 
 There is no browser SSH protocol stack wired to Direct Sockets in this repository. The existing Rust `russh` client is used by native/server code and is not currently compiled and integrated as an IWA/WASM SSH client. A real browser SSH implementation still needs protocol negotiation, mandatory host-key verification, authentication UI that keeps credentials local, and terminal/session lifecycle integration. This scaffold intentionally does not claim those features.
 
