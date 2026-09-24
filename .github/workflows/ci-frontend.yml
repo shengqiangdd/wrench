@@ -47,3 +47,5 @@ jobs:
         working-directory: frontend
       - run: npm run package:iwa:unsigned
         working-directory: frontend
+      - run: npm run test:iwa-wasm
+        working-directory: frontend

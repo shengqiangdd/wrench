@@ -129,8 +129,8 @@ export default function BrowserIwaSsh() {
                 `First connection to ${target}:22\n${type}\n${firstFingerprint}\n\nVerify this fingerprint with the device owner using a trusted channel before accepting. Store this trust pin in this browser profile?`,
               ),
             (pinned, presented) =>
-              window.alert(
-                `SSH host key changed for ${target}:22. Connection refused.\nPreviously trusted: ${pinned}\nPresented: ${presented}`,
+              window.confirm(
+                `SSH host key changed for ${target}:22.\nPreviously trusted: ${pinned}\nPresented: ${presented}\n\nOnly renew this pin if you verified the new fingerprint with the device owner through a separate trusted channel. Replace the saved pin and continue?`,
               ),
           )
         },
@@ -201,7 +201,7 @@ export default function BrowserIwaSsh() {
           <input
             className="mt-1 w-full rounded bg-slate-800 p-2"
             type="password"
-            autoComplete="current-password"
+            autoComplete="off"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />

@@ -6,7 +6,10 @@ export async function confirmAndPinHostKey(
   fingerprint: string,
   store: HostKeyPinStore,
   confirmFirstUse: (fingerprint: string) => boolean | Promise<boolean>,
-  onMismatch: (storedFingerprint: string, presentedFingerprint: string) => void = () => {},
+  confirmRenewal: (
+    storedFingerprint: string,
+    presentedFingerprint: string,
+  ) => boolean | Promise<boolean> = () => false,
 ): Promise<boolean> {
   const address = host.includes(':') ? `http://[${host}]/` : `http://${host}/`
   const canonicalHost = new URL(address).hostname.replace(/^\[|\]$/g, '').toLowerCase()
@@ -14,8 +17,9 @@ export async function confirmAndPinHostKey(
   const pinned = store.getItem(storageKey)
   if (pinned !== null) {
     if (pinned === fingerprint) return true
-    onMismatch(pinned, fingerprint)
-    return false
+    if (!(await confirmRenewal(pinned, fingerprint))) return false
+    store.setItem(storageKey, fingerprint)
+    return true
   }
   if (!(await confirmFirstUse(fingerprint))) return false
   store.setItem(storageKey, fingerprint)

@@ -32,7 +32,42 @@ describe('IWA browser-local SSH host-key TOFU pins', () => {
     expect(store.setItem).toHaveBeenCalledOnce()
   })
 
-  it('does not store an unapproved key and refuses changed keys', async () => {
+  it('renews a pin only after explicit approval and otherwise rejects a changed key', async () => {
+    const store = storage()
+    await confirmAndPinHostKey('192.168.1.5', 22, 'SHA256:first', store, () => true)
+    const denyRenewal = vi.fn().mockReturnValue(false)
+    expect(
+      await confirmAndPinHostKey(
+        '192.168.1.5',
+        22,
+        'SHA256:changed',
+        store,
+        () => true,
+        denyRenewal,
+      ),
+    ).toBe(false)
+    expect(denyRenewal).toHaveBeenCalledWith('SHA256:first', 'SHA256:changed')
+    const approveRenewal = vi.fn().mockReturnValue(true)
+    expect(
+      await confirmAndPinHostKey(
+        '192.168.1.5',
+        22,
+        'SHA256:changed',
+        store,
+        () => true,
+        approveRenewal,
+      ),
+    ).toBe(true)
+    expect(store.setItem).toHaveBeenLastCalledWith(
+      'wrench-iwa-ssh-hostkey-v1:192.168.1.5:22',
+      'SHA256:changed',
+    )
+    expect(
+      await confirmAndPinHostKey('192.168.1.5', 22, 'SHA256:changed', store, () => false),
+    ).toBe(true)
+  })
+
+  it('does not store an unapproved first-use key', async () => {
     const store = storage()
     expect(await confirmAndPinHostKey('192.168.1.5', 22, 'SHA256:first', store, () => false)).toBe(
       false,
@@ -41,11 +76,6 @@ describe('IWA browser-local SSH host-key TOFU pins', () => {
     expect(await confirmAndPinHostKey('192.168.1.5', 22, 'SHA256:first', store, () => true)).toBe(
       true,
     )
-    const mismatch = vi.fn()
-    expect(
-      await confirmAndPinHostKey('192.168.1.5', 22, 'SHA256:changed', store, () => true, mismatch),
-    ).toBe(false)
-    expect(mismatch).toHaveBeenCalledWith('SHA256:first', 'SHA256:changed')
     expect(store.setItem).toHaveBeenCalledOnce()
   })
 })

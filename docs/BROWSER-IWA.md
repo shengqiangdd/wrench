@@ -5,14 +5,14 @@ The ordinary Wrench website cannot open raw TCP sockets. Chrome [Direct Sockets]
 ## What works
 
 - Password authentication and an interactive `xterm-256color` shell over Chrome IWA Direct Sockets.
-- SSH server public key fingerprint display and local trust-on-first-use (TOFU) pinning. On first connection, verify the fingerprint through a separate trusted channel before accepting. The pin is stored in this browser profile's local storage. A changed fingerprint is refused. Clearing this app's browser storage clears those pins.
+- SSH server public key fingerprint display and local trust-on-first-use (TOFU) pinning. On first connection, verify the fingerprint through a separate trusted channel before accepting. The pin is stored in this IWA origin's local storage, isolated from ordinary Wrench pages and other IWAs. A changed fingerprint is refused unless the user explicitly verifies it out of band and confirms a pin-renewal prompt showing both old and new fingerprints. Clearing this app's browser storage clears those pins.
 - Password is only held in the page/Go WebAssembly memory for the connection and cleared from the form after successful login. It is not saved or sent to Wrench servers.
 - One active SSH shell per IWA window. SFTP, private-key authentication, multiple sessions, host-key CA/known_hosts import, and automatic terminal resizing are not implemented.
 - The earlier one-shot TCP probe remains available under “Raw TCP transport probe”; it sends no SSH data.
 
 The app only accepts literal RFC1918 IPv4 or IPv6 ULA addresses, port 22, and requires explicit confirmation before opening the socket. It rejects DNS names, public addresses, loopback, link-local, multicast, mapped IPv4-in-IPv6, and alternate ports. This is an app-level restriction: installing an IWA with Direct Sockets grants that application raw TCP capability. The IWA does not provide a general-purpose proxy or listener.
 
-The Go client uses `golang.org/x/crypto/ssh` and a Direct Sockets `ReadableStream`/`WritableStream` adapter. The first fingerprint is TOFU: users must compare it against a trusted value (for example, a fingerprint collected locally from the SSH host) before confirming. Never accept an unexpected key-change alert. The app does not persist credentials or log terminal data.
+The Go client uses `golang.org/x/crypto/ssh` with explicit modern KEX, cipher, MAC, and host-key allowlists (Ed25519, ECDSA, and RSA/SHA-2; no RSA/SHA-1, DSA, SHA-1 KEX, CBC, or RC4), over a Direct Sockets `ReadableStream`/`WritableStream` adapter. Interoperability tests exercise Ed25519, ECDSA P-256, and RSA keys. Servers offering only legacy SHA-1, DSA, CBC, or RC4 algorithms will be rejected. The first fingerprint is TOFU: users must compare it against a trusted value (for example, a fingerprint collected locally from the SSH host) before confirming. Never accept an unexpected key-change alert. The app does not persist credentials or log terminal data.
 
 ## Build and sign
 
@@ -23,6 +23,7 @@ cd frontend
 npm ci
 npm run test:iwa-ssh
 npm run build:iwa
+npm run test:iwa-wasm
 ```
 
 The WASM binary and Go runtime are generated into `browser-iwa/public/` and ignored by git. `npm run package:iwa:unsigned` builds the same app and creates a generic unsigned Web Bundle for archive inspection. That unsigned `.wbn` uses a reserved `.invalid` origin: it is **not an IWA and cannot be installed**, and Direct Sockets cannot run from it.
@@ -45,4 +46,4 @@ IWA installation depends on supported Chrome version/platform. Chrome's [IWA dev
 
 This code is included only by `frontend/vite.iwa.config.ts` and `browser-iwa/`. It does not change or enter the normal Wrench web frontend, server-side SSH, native Agent, backend routes, SSH egress profiles, or deployed regular frontend. The server/native-Agent flows remain separate.
 
-CI runs the Go target-policy/fingerprint unit tests, frontend tests, regular build isolation check, IWA manifest check, IWA WASM compilation, and unsigned package inspection. These tests do not replace testing the signed app in a supported Chrome IWA environment against a disposable SSH server.
+CI runs the Go target-policy/fingerprint and SSH handshake tests, frontend tests, regular build isolation check, IWA manifest check, and a Go/WASM integration test. The integration test launches the compiled WASM client against a local SSH test server through a stream-compatible TCP socket shim and verifies host-key callback, password auth, PTY shell startup, input, and output. CI also compiles the IWA and inspects the unsigned package. The shim test does not exercise Chrome's actual Direct Sockets implementation; verify the signed app in supported Chrome against a disposable SSH server before distribution.

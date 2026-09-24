@@ -31,6 +31,7 @@ type jsConn struct {
 	reader  js.Value
 	writer  js.Value
 	readMu  sync.Mutex
+	pending []byte
 	writeMu sync.Mutex
 	close   sync.Once
 }
@@ -81,15 +82,24 @@ func promise(run func() error) js.Value {
 func (c *jsConn) Read(p []byte) (int, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
-	v, err := await(c.reader.Call("read"))
-	if err != nil {
-		return 0, err
+	if len(p) == 0 {
+		return 0, nil
 	}
-	if v.Get("done").Bool() {
-		return 0, io.EOF
+	for len(c.pending) == 0 {
+		v, err := await(c.reader.Call("read"))
+		if err != nil {
+			return 0, err
+		}
+		if v.Get("done").Bool() {
+			return 0, io.EOF
+		}
+		chunk := v.Get("value")
+		c.pending = make([]byte, chunk.Get("byteLength").Int())
+		js.CopyBytesToGo(c.pending, chunk)
 	}
-	chunk := v.Get("value")
-	return js.CopyBytesToGo(p, chunk), nil
+	n := copy(p, c.pending)
+	c.pending = c.pending[n:]
+	return n, nil
 }
 func (c *jsConn) Write(p []byte) (int, error) {
 	c.writeMu.Lock()
@@ -103,7 +113,7 @@ func (c *jsConn) Write(p []byte) (int, error) {
 }
 func (c *jsConn) Close() error {
 	var err error
-	c.close.Do(func() { _, err = await(c.socket.Call("close")) })
+	c.close.Do(func() { err = awaitIfPromise(c.socket.Call("close")) })
 	return err
 }
 func (c *jsConn) LocalAddr() net.Addr              { return dummyAddr("browser-local") }
@@ -249,7 +259,19 @@ func (s *sshSession) close() error {
 	_ = s.shell.Close()
 	return s.client.Close() // ssh.Client closes the underlying Direct Sockets connection.
 }
-func awaitClose(sock js.Value) error { _, err := await(sock.Call("close")); return err }
+func awaitIfPromise(value js.Value) error {
+	if value.Type() != js.TypeObject && value.Type() != js.TypeFunction {
+		return nil
+	}
+	then := value.Get("then")
+	if then.Type() != js.TypeFunction {
+		return nil
+	}
+	_, err := await(value)
+	return err
+}
+
+func awaitClose(sock js.Value) error { return awaitIfPromise(sock.Call("close")) }
 func send(args []js.Value) any {
 	return promise(func() error {
 		activeMu.Lock()
