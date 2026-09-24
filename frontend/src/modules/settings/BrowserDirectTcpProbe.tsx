@@ -23,10 +23,10 @@ export default function BrowserDirectTcpProbe() {
     try {
       await openSshTcpProbe(address, 22, (target, port) =>
         window.confirm(
-          `Allow one TCP connection from this IWA to ${target}:${port}? No SSH authentication data will be sent.`,
+          `允许此 IWA 仅建立一次到 ${target}:${port} 的 TCP 连接吗？不会发送 SSH 认证数据。`,
         ),
       )
-      setMessage(`TCP connection to ${address}:22 opened and closed. 未测试 SSH 协议。`)
+      setMessage(`已建立并关闭到 ${address}:22 的 TCP 连接。未测试 SSH 协议。`)
     } catch (error) {
       setFailed(true)
       setMessage(error instanceof Error ? error.message : 'TCP 探测失败')
@@ -41,9 +41,8 @@ export default function BrowserDirectTcpProbe() {
         <Cable size={16} /> 浏览器 Direct Sockets（实验功能）
       </h4>
       <p className="mb-3 text-xs leading-5 text-slate-400">
-        This is a TCP transport smoke test only. It does not implement SSH, verify host keys, or
-        send passwords/private keys. Targets are restricted to private IP literals on port 22; each
-        connect requires confirmation.
+        这里只测试 TCP 传输，不实现 SSH、不验证主机密钥，也不会发送密码或私钥。目标仅限私网 IP
+        字面值的 TCP 22 端口；每次连接前都需要确认。
       </p>
       {!status.available ? (
         <p role="status" className="flex items-start gap-2 text-xs text-amber-200">
@@ -64,7 +63,7 @@ export default function BrowserDirectTcpProbe() {
             autoComplete="off"
             spellCheck={false}
             maxLength={45}
-            placeholder="192.168.1.20 or fd00::20"
+            placeholder="192.168.1.20 或 fd00::20"
             value={address}
             onChange={(event) => setAddress(event.target.value)}
           />

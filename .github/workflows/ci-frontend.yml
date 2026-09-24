@@ -3,10 +3,14 @@ on:
   push:
     paths:
       - 'frontend/**'
+      - 'browser-iwa/**'
+      - 'docs/BROWSER-IWA.md'
       - '.github/workflows/ci-frontend.yml'
   pull_request:
     paths:
       - 'frontend/**'
+      - 'browser-iwa/**'
+      - 'docs/BROWSER-IWA.md'
       - '.github/workflows/ci-frontend.yml'
 
 jobs:
@@ -33,6 +37,8 @@ jobs:
       - run: npm run test:iwa-manifest
         working-directory: frontend
       - run: npm run build
+        working-directory: frontend
+      - run: npm run test:regular-build-isolation
         working-directory: frontend
       - run: npm run build:iwa
         working-directory: frontend

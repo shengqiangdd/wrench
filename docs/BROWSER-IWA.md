@@ -1,10 +1,10 @@
 # Browser TCP preview (Chrome Isolated Web App)
 
-The ordinary Wrench web page cannot open raw TCP sockets. Chrome [Direct Sockets](https://developer.chrome.com/docs/iwa/direct-sockets) is exposed to installed Isolated Web Apps (IWAs), not regular pages. This repository now has an independent IWA shell that reuses the same deliberately small TCP probe shown in Settings.
+The ordinary Wrench web page cannot open raw TCP sockets. Chrome [Direct Sockets](https://developer.chrome.com/docs/iwa/direct-sockets) is exposed to installed Isolated Web Apps (IWAs), not regular pages. This repository now has an independent IWA shell containing the TCP probe. The regular Wrench web build does not include or expose this feature.
 
 ## Scope and current status
 
-This is a transport smoke test, not an SSH implementation. The app accepts only RFC1918 IPv4 or IPv6 ULA address literals on TCP port 22. It asks for confirmation for each attempt, opens one socket, sends no bytes, and closes it. It does not perform SSH negotiation, check or pin a host key, authenticate, start a terminal, or provide SFTP. The normal Wrench Settings page only reports that Direct Sockets is unavailable; use the separately installed IWA for the probe.
+This is a transport smoke test, not an SSH implementation. The app accepts only RFC1918 IPv4 or IPv6 ULA address literals on TCP port 22. It asks for confirmation for each attempt, opens one socket, sends no bytes, and closes it. It does not perform SSH negotiation, check or pin a host key, authenticate, start a terminal, or provide SFTP. The regular Wrench page remains unchanged and does not include this probe; only the separate IWA build contains it.
 
 There is no browser SSH protocol stack wired to Direct Sockets in this repository. The existing Rust `russh` client is used by native/server code and is not currently compiled and integrated as an IWA/WASM SSH client. A real browser SSH implementation still needs protocol negotiation, mandatory host-key verification, authentication UI that keeps credentials local, and terminal/session lifecycle integration. This scaffold intentionally does not claim those features.
 

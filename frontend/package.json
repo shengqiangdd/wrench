@@ -22,7 +22,8 @@
     "audit": "npm audit",
     "build:iwa": "vite build --config vite.iwa.config.ts",
     "package:iwa": "npm run build:iwa && node scripts/package-iwa.mjs",
-    "test:iwa-manifest": "node --test scripts/iwa-manifest.test.mjs"
+    "test:iwa-manifest": "node --test scripts/iwa-manifest.test.mjs",
+    "test:regular-build-isolation": "node --test scripts/regular-build-isolation.test.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
