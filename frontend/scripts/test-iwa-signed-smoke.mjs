@@ -28,19 +28,22 @@ let sshProcess
 let cleanupStarted = false
 
 async function stopProcessGroup(child, label) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return
-  try {
-    process.kill(-child.pid, 'SIGTERM')
-  } catch {
-    child.kill('SIGTERM')
-  }
-  await Promise.race([new Promise((resolve) => child.once('exit', resolve)), delay(5_000)])
-  if (child.exitCode === null && child.signalCode === null) {
+  if (!child?.pid) return
+  const signalGroup = (signal) => {
     try {
-      process.kill(-child.pid, 'SIGKILL')
+      process.kill(-child.pid, signal)
     } catch {
-      child.kill('SIGKILL')
+      if (child.exitCode === null && child.signalCode === null) child.kill(signal)
     }
+  }
+
+  signalGroup('SIGTERM')
+  if (child.exitCode === null && child.signalCode === null) {
+    await Promise.race([new Promise((resolve) => child.once('exit', resolve)), delay(5_000)])
+  }
+  // The group leader can exit before Chromium/sudo descendants do; always clear the group.
+  signalGroup('SIGKILL')
+  if (child.exitCode === null && child.signalCode === null) {
     await Promise.race([new Promise((resolve) => child.once('exit', resolve)), delay(2_000)])
   }
   if (child.exitCode === null && child.signalCode === null)
