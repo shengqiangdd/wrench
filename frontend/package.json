@@ -26,7 +26,8 @@
     "test:regular-build-isolation": "node --test scripts/regular-build-isolation.test.mjs",
     "package:iwa:unsigned": "npm run build:iwa && node scripts/package-iwa-unsigned.mjs",
     "test:iwa-ssh": "cd ../browser-iwa/ssh-client && go test ./...",
-    "test:iwa-wasm": "node scripts/test-iwa-wasm.mjs"
+    "test:iwa-wasm": "node scripts/test-iwa-wasm.mjs",
+    "test:iwa-signed-smoke": "node scripts/test-iwa-signed-smoke.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

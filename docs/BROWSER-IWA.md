@@ -62,6 +62,18 @@ For signed distribution, download the `.swbn`, `.sha256`, and `RELEASE-METADATA.
 
 ## Reproduce the signed Chromium smoke test
 
+The automated harness is available as `npm run test:iwa-signed-smoke` and as the manual GitHub Actions workflow **Signed IWA Chromium smoke test**. It generates a temporary Ed25519 IWA signing key and SSH host key, signs and installs the IWA in a fresh Chromium profile, tests that an ungranted Local Network permission blocks the socket, then uses CDP to grant permission and checks password login, first-use fingerprint confirmation, terminal input/output, and fingerprint renewal after rotating the SSH host key. It removes its temporary profile, keys, signed bundle, helper binary, child processes, and IWA build outputs it created on exit. It refuses to overwrite pre-existing generated IWA outputs. It neither reads nor uses the production signing secret and does not upload or publish an artifact. The test server binds only to port 22 on an RFC1918 address assigned to the test machine; it refuses other address ranges.
+
+Requirements: Linux, Node.js 22, Go 1.25+, OpenSSL, Chromium with IWA developer-mode installation support, an RFC1918 IPv4 address, a free TCP port 22 on that address, and Playwright from `npm ci`. On a headless host, run with `xvfb-run`. The harness fails when these capabilities are unavailable; it does not silently skip the permission or SSH checks. In a root-only disposable container, set `WRENCH_IWA_CHROMIUM_NO_SANDBOX=1` explicitly; do not use that option with a normal desktop profile. `WRENCH_IWA_CHROMIUM` can select the Chromium executable.
+
+```sh
+cd frontend
+npm ci
+xvfb-run -a npm run test:iwa-signed-smoke
+```
+
+The optional manual workflow uses the current Chrome channel, a fresh profile and temporary key, and has only `contents: read`; it requires no GitHub environment, signing secret, or release permissions. On GitHub-hosted Linux runners it enables `--no-sandbox` only for the disposable test process.
+
 The signed browser smoke test was run on **Chromium 152.0.7977.82, Debian 12**. Chrome's general IWA documentation lists Chrome/ChromeOS 120+ for the IWA developer flow, but this project has only verified its current `local-network` permission behavior on that Chromium 152 build. Other versions/platforms need their own verification. Direct Sockets runs from the installed `isolated-app://` origin; a regular HTTPS page, `localhost` web page, or unsigned `.wbn` is not a substitute.
 
 The following makes a disposable signing identity and Chrome profile. It writes the signed bundle to the ignored workspace path temporarily and removes it, the profile, and the key when the shell exits. Run it only for local development; never use this ephemeral key for a release or compare its app origin with the production identity.

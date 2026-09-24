@@ -1,0 +1,35 @@
+name: Signed IWA Chromium smoke test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-iwa-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.x"
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
+        with:
+          install-dependencies: true
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm ci
+        working-directory: frontend
+      - name: Run disposable signed-IWA browser smoke test
+        working-directory: frontend
+        env:
+          WRENCH_IWA_CHROMIUM: ${{ steps.chrome.outputs.chrome-path }}
+          WRENCH_IWA_CHROMIUM_NO_SANDBOX: "1"
+        run: xvfb-run -a npm run test:iwa-signed-smoke

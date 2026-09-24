@@ -52,7 +52,7 @@ func await(promise js.Value) (js.Value, error) {
 		result <- struct {
 			v   js.Value
 			err error
-		}{err: errors.New(args[0].String())}
+		}{err: jsError(args[0])}
 		return nil
 	})
 	promise.Call("then", then).Call("catch", catch)
@@ -60,6 +60,16 @@ func await(promise js.Value) (js.Value, error) {
 	then.Release()
 	catch.Release()
 	return r.v, r.err
+}
+
+func jsError(value js.Value) error {
+	if value.Type() == js.TypeObject && !value.IsNull() {
+		message := value.Get("message")
+		if message.Type() == js.TypeString && message.String() != "" {
+			return errors.New(message.String())
+		}
+	}
+	return errors.New(value.String())
 }
 
 func promise(run func() error) js.Value {
@@ -112,9 +122,30 @@ func (c *jsConn) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 func (c *jsConn) Close() error {
-	var err error
-	c.close.Do(func() { err = awaitIfPromise(c.socket.Call("close")) })
-	return err
+	var closeErr error
+	c.close.Do(func() {
+		// Direct Sockets rejects TCPSocket.close() while either stream is locked.
+		// Cancel the pending read first so the SSH read goroutine can release its lock.
+		if _, err := await(c.reader.Call("cancel")); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("cancel TCP reader: %w", err))
+		}
+		c.readMu.Lock()
+		c.reader.Call("releaseLock")
+		c.readMu.Unlock()
+
+		// Finish queued SSH writes, then release the writer lock before closing the socket.
+		c.writeMu.Lock()
+		if _, err := await(c.writer.Call("close")); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close TCP writer: %w", err))
+		}
+		c.writer.Call("releaseLock")
+		c.writeMu.Unlock()
+
+		if err := awaitIfPromise(c.socket.Call("close")); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close TCP socket: %w", err))
+		}
+	})
+	return closeErr
 }
 func (c *jsConn) LocalAddr() net.Addr              { return dummyAddr("browser-local") }
 func (c *jsConn) RemoteAddr() net.Addr             { return dummyAddr("direct-socket") }
