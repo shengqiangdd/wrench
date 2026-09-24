@@ -8,6 +8,13 @@ import {
 } from '../services/browser-direct-tcp'
 import { confirmAndPinHostKey } from './hostkey-pinning'
 
+type SftpEntry = {
+  name: string
+  size: number
+  modTime: number
+  kind: 'directory' | 'file' | 'symlink' | 'other'
+}
+
 type IwaSshApi = {
   connect: (options: {
     host: string
@@ -21,6 +28,12 @@ type IwaSshApi = {
     onData: (data: Uint8Array) => void
   }) => Promise<void>
   send: (text: string) => Promise<void>
+  listDirectory: (path: string) => Promise<SftpEntry[]>
+  downloadFile: (path: string) => Promise<Uint8Array>
+  uploadFile: (path: string, data: Uint8Array) => Promise<void>
+  removePath: (path: string) => Promise<void>
+  renamePath: (source: string, destination: string) => Promise<void>
+  makeDirectory: (path: string) => Promise<void>
   close: () => Promise<void>
 }
 
@@ -72,7 +85,14 @@ export default function BrowserIwaSsh() {
   const [status, setStatus] = useState('Disconnected')
   const [busy, setBusy] = useState(false)
   const [connected, setConnected] = useState(false)
+  const [remotePath, setRemotePath] = useState('.')
+  const [remoteEntries, setRemoteEntries] = useState<SftpEntry[]>([])
+  const [sftpStatus, setSftpStatus] = useState('Connect to load remote files')
+  const [sftpBusy, setSftpBusy] = useState(false)
+  const [uploadSelection, setUploadSelection] = useState<File | undefined>(undefined)
+  const sensitiveBuffers = useRef(new Set<Uint8Array>())
   const privateKeyInput = useRef<HTMLInputElement>(null)
+  const uploadInput = useRef<HTMLInputElement>(null)
   const termContainer = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal | undefined>(undefined)
   const api = useRef<IwaSshApi | undefined>(undefined)
@@ -105,10 +125,149 @@ export default function BrowserIwaSsh() {
 
   useEffect(
     () => () => {
+      for (const buffer of sensitiveBuffers.current) buffer.fill(0)
+      sensitiveBuffers.current.clear()
       if (api.current) void api.current.close()
     },
     [],
   )
+
+  async function refreshRemoteDirectory(directory = remotePath) {
+    const client = api.current
+    if (!client) {
+      setSftpStatus('Connect to load remote files')
+      return
+    }
+    setSftpBusy(true)
+    setSftpStatus(`Loading ${directory}…`)
+    try {
+      const entries = await client.listDirectory(directory)
+      entries.sort((left, right) => {
+        const leftDirectory = left.kind === 'directory' ? 0 : 1
+        const rightDirectory = right.kind === 'directory' ? 0 : 1
+        return leftDirectory - rightDirectory || left.name.localeCompare(right.name)
+      })
+      setRemotePath(directory)
+      setRemoteEntries(entries)
+      setSftpStatus(`${entries.length} entries`)
+    } catch (error) {
+      setRemoteEntries([])
+      setSftpStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSftpBusy(false)
+    }
+  }
+
+  function childRemotePath(name: string) {
+    if (
+      !name ||
+      name === '.' ||
+      name === '..' ||
+      name.includes('/') ||
+      name.includes('\\') ||
+      name.includes('\0')
+    )
+      throw new Error('Use one remote name without slashes or parent traversal')
+    if (remotePath === '.') return name
+    if (remotePath === '/') return `/${name}`
+    return `${remotePath.replace(/\/$/, '')}/${name}`
+  }
+
+  async function createRemoteDirectory() {
+    const name = window.prompt('New remote directory name')
+    if (name === null) return
+    try {
+      const destination = childRemotePath(name.trim())
+      setSftpBusy(true)
+      await api.current?.makeDirectory(destination)
+      await refreshRemoteDirectory(remotePath)
+    } catch (error) {
+      setSftpStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSftpBusy(false)
+    }
+  }
+
+  async function renameRemoteEntry(entry: SftpEntry) {
+    const name = window.prompt(`Rename ${entry.name} to`, entry.name)
+    if (name === null) return
+    try {
+      const source = childRemotePath(entry.name)
+      const destination = childRemotePath(name.trim())
+      setSftpBusy(true)
+      await api.current?.renamePath(source, destination)
+      await refreshRemoteDirectory(remotePath)
+    } catch (error) {
+      setSftpStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSftpBusy(false)
+    }
+  }
+
+  async function deleteRemoteEntry(entry: SftpEntry) {
+    const target = childRemotePath(entry.name)
+    if (!window.confirm(`Delete remote path ${target}? Empty directories only.`)) return
+    setSftpBusy(true)
+    try {
+      await api.current?.removePath(target)
+      await refreshRemoteDirectory(remotePath)
+    } catch (error) {
+      setSftpStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSftpBusy(false)
+    }
+  }
+
+  async function uploadSelectedFile() {
+    const file = uploadSelection
+    if (!file || !api.current) return
+    if (file.size > 16 * 1024 * 1024) {
+      setSftpStatus('Uploads must not exceed 16 MiB')
+      return
+    }
+    setSftpBusy(true)
+    setSftpStatus(`Uploading ${file.name}…`)
+    let data: Uint8Array | undefined
+    try {
+      data = new Uint8Array(await file.arrayBuffer())
+      sensitiveBuffers.current.add(data)
+      await api.current.uploadFile(childRemotePath(file.name), data)
+      setUploadSelection(undefined)
+      if (uploadInput.current) uploadInput.current.value = ''
+      await refreshRemoteDirectory(remotePath)
+    } catch (error) {
+      setSftpStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      if (data) {
+        data.fill(0)
+        sensitiveBuffers.current.delete(data)
+      }
+      setSftpBusy(false)
+    }
+  }
+
+  async function downloadRemoteFile(entry: SftpEntry) {
+    setSftpBusy(true)
+    setSftpStatus(`Downloading ${entry.name}…`)
+    let data: Uint8Array | undefined
+    try {
+      data = await api.current!.downloadFile(childRemotePath(entry.name))
+      const blob = new Blob([data])
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = entry.name
+      anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 0)
+      data.fill(0)
+      setSftpStatus(`Downloaded ${entry.name}`)
+    } catch (error) {
+      setSftpStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      data?.fill(0)
+      setSftpBusy(false)
+    }
+  }
 
   async function connect() {
     const selectedKeyFile = authMethod === 'private-key' ? privateKeyFile : undefined
@@ -154,6 +313,8 @@ export default function BrowserIwaSsh() {
       if (selectedKeyFile) {
         privateKeyBytes = new Uint8Array(await selectedKeyFile.arrayBuffer())
         passphraseBytes = new TextEncoder().encode(privateKeyPassphrase)
+        sensitiveBuffers.current.add(privateKeyBytes)
+        sensitiveBuffers.current.add(passphraseBytes)
       }
       await client.connect({
         host: host.trim(),
@@ -183,6 +344,7 @@ export default function BrowserIwaSsh() {
       })
       api.current = client
       setConnected(true)
+      void refreshRemoteDirectory('.')
       if (authMethod === 'password') {
         setPassword('')
         setStatus(`Connected to ${host.trim()}; password cleared from the form`)
@@ -199,6 +361,13 @@ export default function BrowserIwaSsh() {
     } finally {
       privateKeyBytes?.fill(0)
       passphraseBytes?.fill(0)
+      if (privateKeyBytes) sensitiveBuffers.current.delete(privateKeyBytes)
+      if (passphraseBytes) sensitiveBuffers.current.delete(passphraseBytes)
+      if (selectedKeyFile) {
+        setPrivateKeyFile(undefined)
+        setPrivateKeyPassphrase('')
+        if (privateKeyInput.current) privateKeyInput.current.value = ''
+      }
       setBusy(false)
     }
   }
@@ -209,10 +378,17 @@ export default function BrowserIwaSsh() {
       await api.current?.close()
       api.current = undefined
       setConnected(false)
+      setRemotePath('.')
+      setRemoteEntries([])
+      setSftpStatus('Connect to load remote files')
       setStatus('Disconnected')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
     } finally {
+      for (const buffer of sensitiveBuffers.current) buffer.fill(0)
+      sensitiveBuffers.current.clear()
+      setUploadSelection(undefined)
+      if (uploadInput.current) uploadInput.current.value = ''
       setPassword('')
       setPrivateKeyFile(undefined)
       setPrivateKeyPassphrase('')
@@ -233,10 +409,10 @@ export default function BrowserIwaSsh() {
     <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900 p-4">
       <h2 className="mb-2 text-lg font-semibold">Browser-side SSH (IWA only)</h2>
       <p className="mb-4 text-sm text-amber-200">
-        Experimental password/private-key + interactive shell vertical slice. Credentials and SSH
+        Experimental password/private-key SSH terminal and SFTP file transfer. Credentials and SSH
         traffic stay in this browser; this app does not send them to Wrench servers. Host keys use
-        browser-local TOFU pinning; the first fingerprint must be independently checked. A changed
-        key is rejected. No SFTP.
+        browser-local TOFU pinning; independently verify the first fingerprint, and verify a changed
+        fingerprint before explicitly renewing its pin.
       </p>
       {!capability.available && (
         <p className="mb-3 text-sm text-rose-300">
@@ -295,6 +471,7 @@ export default function BrowserIwaSsh() {
                 ref={privateKeyInput}
                 className="mt-1 block w-full rounded bg-slate-800 p-2"
                 type="file"
+                aria-label="SSH private-key file"
                 disabled={busy || connected}
                 onChange={(e) => {
                   const file = e.currentTarget.files?.[0]
@@ -360,6 +537,139 @@ export default function BrowserIwaSsh() {
         className="h-80 overflow-hidden rounded border border-slate-700 p-2"
         aria-label="SSH terminal"
       />
+      <section
+        aria-label="SFTP file transfer"
+        className="mt-5 rounded-lg border border-slate-700 p-3"
+      >
+        <h3 className="mb-2 font-semibold">SFTP files</h3>
+        <p className="mb-3 text-xs text-slate-300">
+          Uses the same pinned SSH connection and account permissions. Files are limited to 16 MiB
+          per transfer; uploads refuse to overwrite. Remote permissions follow the SSH server
+          defaults. Paths reject parent traversal, but this is not a filesystem sandbox: the SSH
+          account may access files permitted to that account.
+        </p>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span data-testid="sftp-path" className="mr-auto font-mono text-sm break-all">
+            {remotePath}
+          </span>
+          <button
+            className="rounded bg-slate-700 px-3 py-1 disabled:opacity-50"
+            disabled={!connected || sftpBusy || remotePath === '.' || remotePath === '/'}
+            onClick={() => {
+              const parent =
+                remotePath === '.' || remotePath === '/'
+                  ? remotePath
+                  : remotePath.lastIndexOf('/') < 0
+                    ? '.'
+                    : remotePath.lastIndexOf('/') === 0
+                      ? '/'
+                      : remotePath.slice(0, remotePath.lastIndexOf('/'))
+              void refreshRemoteDirectory(parent)
+            }}
+          >
+            Parent
+          </button>
+          <button
+            className="rounded bg-slate-700 px-3 py-1 disabled:opacity-50"
+            disabled={!connected || sftpBusy}
+            onClick={() => void refreshRemoteDirectory()}
+          >
+            Refresh
+          </button>
+          <button
+            className="rounded bg-slate-700 px-3 py-1 disabled:opacity-50"
+            disabled={!connected || sftpBusy}
+            onClick={() => void createRemoteDirectory()}
+          >
+            New folder
+          </button>
+        </div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <input
+            ref={uploadInput}
+            aria-label="Upload file"
+            type="file"
+            disabled={!connected || sftpBusy}
+            onChange={(event) => setUploadSelection(event.currentTarget.files?.[0])}
+          />
+          <button
+            className="rounded bg-blue-700 px-3 py-1 disabled:opacity-50"
+            disabled={!connected || sftpBusy || !uploadSelection}
+            onClick={() => void uploadSelectedFile()}
+          >
+            Upload
+          </button>
+          <span data-testid="sftp-status" className="text-xs text-slate-300">
+            {sftpStatus}
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-700">
+                <th className="p-2">Name</th>
+                <th className="p-2">Type</th>
+                <th className="p-2">Size</th>
+                <th className="p-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {remoteEntries.map((entry) => (
+                <tr
+                  key={entry.name}
+                  data-testid={`sftp-entry-${entry.name}`}
+                  className="border-b border-slate-800"
+                >
+                  <td className="max-w-64 p-2 break-all">
+                    {entry.kind === 'directory' ? (
+                      <button
+                        className="text-sky-300 underline"
+                        disabled={sftpBusy}
+                        onClick={() => void refreshRemoteDirectory(childRemotePath(entry.name))}
+                      >
+                        {entry.name}/
+                      </button>
+                    ) : (
+                      entry.name
+                    )}
+                  </td>
+                  <td className="p-2">{entry.kind}</td>
+                  <td className="p-2">
+                    {entry.kind === 'file' ? entry.size.toLocaleString() : '—'}
+                  </td>
+                  <td className="p-2">
+                    <div className="flex flex-wrap gap-1">
+                      {entry.kind === 'file' && (
+                        <button
+                          className="rounded bg-slate-700 px-2 py-1"
+                          disabled={sftpBusy}
+                          onClick={() => void downloadRemoteFile(entry)}
+                        >
+                          Download {entry.name}
+                        </button>
+                      )}
+                      <button
+                        className="rounded bg-slate-700 px-2 py-1"
+                        disabled={sftpBusy}
+                        onClick={() => void renameRemoteEntry(entry)}
+                      >
+                        Rename {entry.name}
+                      </button>
+                      <button
+                        className="rounded bg-rose-900 px-2 py-1"
+                        disabled={sftpBusy}
+                        onClick={() => void deleteRemoteEntry(entry)}
+                      >
+                        Delete {entry.name}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </section>
   )
 }

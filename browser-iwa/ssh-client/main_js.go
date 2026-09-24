@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"syscall/js"
 	"time"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -20,10 +22,13 @@ var active *sshSession
 var promiseCtor = js.Global().Get("Promise")
 
 type sshSession struct {
-	client *ssh.Client
-	shell  *ssh.Session
-	stdin  io.WriteCloser
-	onData js.Value
+	client  *ssh.Client
+	shell   *ssh.Session
+	stdin   io.WriteCloser
+	onData  js.Value
+	sftpMu  sync.Mutex
+	sftp    *sftp.Client
+	sftpErr error
 }
 
 type jsConn struct {
@@ -99,14 +104,21 @@ func zeroJSBytes(value js.Value) {
 }
 
 func promise(run func() error) js.Value {
+	return valuePromise(func() (js.Value, error) {
+		return js.Undefined(), run()
+	})
+}
+
+func valuePromise(run func() (js.Value, error)) js.Value {
 	executor := js.FuncOf(func(this js.Value, args []js.Value) any {
 		resolve, reject := args[0], args[1]
 		go func() {
-			if err := run(); err != nil {
+			value, err := run()
+			if err != nil {
 				reject.Invoke(err.Error())
 				return
 			}
-			resolve.Invoke(js.Undefined())
+			resolve.Invoke(value)
 		}()
 		return nil
 	})
@@ -350,8 +362,17 @@ func (s *sshSession) forward(r io.Reader) {
 	}
 }
 func (s *sshSession) close() error {
+	// Close the underlying transport first so a stalled SFTP request is interrupted
+	// before waiting for the operation lock.
+	closeErr := s.client.Close()
+	s.sftpMu.Lock()
+	if s.sftp != nil {
+		_ = s.sftp.Close()
+		s.sftp = nil
+	}
+	s.sftpMu.Unlock()
 	_ = s.shell.Close()
-	return s.client.Close() // ssh.Client closes the underlying Direct Sockets connection.
+	return closeErr
 }
 func awaitIfPromise(value js.Value) error {
 	if value.Type() != js.TypeObject && value.Type() != js.TypeFunction {
@@ -373,6 +394,158 @@ func awaitClose(sock js.Value) (err error) {
 	}()
 	return awaitIfPromise(sock.Call("close"))
 }
+func currentSession() (*sshSession, error) {
+	activeMu.Lock()
+	defer activeMu.Unlock()
+	if active == nil {
+		return nil, errors.New("no active SSH session")
+	}
+	return active, nil
+}
+
+func stringArg(args []js.Value, index int, label string) (string, error) {
+	if len(args) <= index || args[index].Type() != js.TypeString {
+		return "", fmt.Errorf("%s must be a string", label)
+	}
+	return args[index].String(), nil
+}
+
+func (s *sshSession) withSFTP(operation func(*sftp.Client) error) error {
+	s.sftpMu.Lock()
+	defer s.sftpMu.Unlock()
+	if s.sftp == nil && s.sftpErr == nil {
+		s.sftp, s.sftpErr = sftp.NewClient(s.client)
+	}
+	if s.sftpErr != nil {
+		return fmt.Errorf("SFTP subsystem unavailable: %w", s.sftpErr)
+	}
+	return operation(s.sftp)
+}
+
+func sftpList(args []js.Value) any {
+	return valuePromise(func() (js.Value, error) {
+		directory, err := stringArg(args, 0, "remote directory")
+		if err != nil {
+			return js.Undefined(), err
+		}
+		session, err := currentSession()
+		if err != nil {
+			return js.Undefined(), err
+		}
+		var entries []sftpEntry
+		err = session.withSFTP(func(client *sftp.Client) error {
+			var listErr error
+			entries, listErr = listSFTP(client, directory)
+			return listErr
+		})
+		if err != nil {
+			return js.Undefined(), err
+		}
+		encoded, err := json.Marshal(entries)
+		if err != nil {
+			return js.Undefined(), err
+		}
+		return js.Global().Get("JSON").Call("parse", string(encoded)), nil
+	})
+}
+
+func sftpDownload(args []js.Value) any {
+	return valuePromise(func() (js.Value, error) {
+		remotePath, err := stringArg(args, 0, "remote file path")
+		if err != nil {
+			return js.Undefined(), err
+		}
+		session, err := currentSession()
+		if err != nil {
+			return js.Undefined(), err
+		}
+		var data []byte
+		err = session.withSFTP(func(client *sftp.Client) error {
+			var readErr error
+			data, readErr = downloadSFTP(client, remotePath)
+			return readErr
+		})
+		if err != nil {
+			clear(data)
+			return js.Undefined(), err
+		}
+		result := js.Global().Get("Uint8Array").New(len(data))
+		js.CopyBytesToJS(result, data)
+		clear(data)
+		return result, nil
+	})
+}
+
+func sftpUpload(args []js.Value) any {
+	return promise(func() error {
+		remotePath, err := stringArg(args, 0, "remote file path")
+		if err != nil {
+			return err
+		}
+		if len(args) <= 1 {
+			return errors.New("upload data is required")
+		}
+		dataJS := args[1]
+		defer zeroJSBytes(dataJS)
+		data, err := copyJSBytes(dataJS, "upload data", maxSFTPFileBytes)
+		if err != nil {
+			return err
+		}
+		defer clear(data)
+		session, err := currentSession()
+		if err != nil {
+			return err
+		}
+		return session.withSFTP(func(client *sftp.Client) error { return uploadSFTP(client, remotePath, data) })
+	})
+}
+
+func sftpRemove(args []js.Value) any {
+	return promise(func() error {
+		remotePath, err := stringArg(args, 0, "remote path")
+		if err != nil {
+			return err
+		}
+		session, err := currentSession()
+		if err != nil {
+			return err
+		}
+		return session.withSFTP(func(client *sftp.Client) error { return removeSFTP(client, remotePath) })
+	})
+}
+
+func sftpRename(args []js.Value) any {
+	return promise(func() error {
+		oldPath, err := stringArg(args, 0, "source path")
+		if err != nil {
+			return err
+		}
+		newPath, err := stringArg(args, 1, "destination path")
+		if err != nil {
+			return err
+		}
+		session, err := currentSession()
+		if err != nil {
+			return err
+		}
+		return session.withSFTP(func(client *sftp.Client) error { return renameSFTP(client, oldPath, newPath) })
+	})
+}
+
+func sftpMkdir(args []js.Value) any {
+	return promise(func() error {
+		remotePath, err := stringArg(args, 0, "remote directory path")
+		if err != nil {
+			return err
+		}
+		session, err := currentSession()
+		if err != nil {
+			return err
+		}
+		return session.withSFTP(func(client *sftp.Client) error { return mkdirSFTP(client, remotePath) })
+	})
+}
+
 func send(args []js.Value) any {
 	return promise(func() error {
 		activeMu.Lock()
@@ -404,6 +577,12 @@ func main() {
 	api := js.Global().Get("Object").New()
 	api.Set("connect", js.FuncOf(func(_ js.Value, args []js.Value) any { return connect(args) }))
 	api.Set("send", js.FuncOf(func(_ js.Value, args []js.Value) any { return send(args) }))
+	api.Set("listDirectory", js.FuncOf(func(_ js.Value, args []js.Value) any { return sftpList(args) }))
+	api.Set("downloadFile", js.FuncOf(func(_ js.Value, args []js.Value) any { return sftpDownload(args) }))
+	api.Set("uploadFile", js.FuncOf(func(_ js.Value, args []js.Value) any { return sftpUpload(args) }))
+	api.Set("removePath", js.FuncOf(func(_ js.Value, args []js.Value) any { return sftpRemove(args) }))
+	api.Set("renamePath", js.FuncOf(func(_ js.Value, args []js.Value) any { return sftpRename(args) }))
+	api.Set("makeDirectory", js.FuncOf(func(_ js.Value, args []js.Value) any { return sftpMkdir(args) }))
 	api.Set("close", js.FuncOf(func(_ js.Value, args []js.Value) any { return closeSession(args) }))
 	js.Global().Set("wrenchIwaSsh", api)
 	select {}

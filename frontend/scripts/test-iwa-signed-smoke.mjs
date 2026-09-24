@@ -386,6 +386,31 @@ async function runSmoke() {
   let renewalPrompts = 0
   let dialogFailure = ''
   let previousFingerprint = ''
+  let nextPromptAnswer
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'wrenchIwaSsh', {
+      configurable: true,
+      get() {
+        return this.__wrenchIwaSshForSmoke
+      },
+      set(api) {
+        const connect = api.connect
+        api.connect = async (options) => {
+          const sensitiveBuffers = [options.privateKey, options.privateKeyPassphrase].filter(
+            Boolean,
+          )
+          try {
+            return await connect(options)
+          } finally {
+            window.__wrenchIwaSensitiveBuffersCleared = sensitiveBuffers.map((buffer) =>
+              Array.from(buffer).every((byte) => byte === 0),
+            )
+          }
+        }
+        this.__wrenchIwaSshForSmoke = api
+      },
+    })
+  })
   page.on('dialog', async (dialog) => {
     const message = dialog.message()
     if (message.startsWith(`First connection to ${address}:22\n`)) {
@@ -402,6 +427,17 @@ async function runSmoke() {
       if (!correct) dialogFailure = `Unexpected host-key renewal prompt: ${message}`
       if (correct) await dialog.accept()
       else await dialog.dismiss()
+    } else if (dialog.type() === 'prompt') {
+      if (nextPromptAnswer === undefined) {
+        dialogFailure = `Unexpected browser prompt: ${message}`
+        await dialog.dismiss()
+      } else {
+        const answer = nextPromptAnswer
+        nextPromptAnswer = undefined
+        await dialog.accept(answer)
+      }
+    } else if (dialog.type() === 'confirm' && message.startsWith('Delete remote path ')) {
+      await dialog.accept()
     } else {
       dialogFailure = `Unexpected browser dialog: ${message}`
       await dialog.dismiss()
@@ -473,8 +509,83 @@ async function runSmoke() {
   await page.locator('.xterm-helper-textarea').focus()
   await page.locator('.xterm-helper-textarea').pressSequentially('signed-iwa-terminal-roundtrip')
   await page.locator('.xterm-helper-textarea').press('Enter')
-  terminal = await waitForTerminal(page, 'signed-iwa-terminal-roundtrip')
+  try {
+    terminal = await waitForTerminal(page, 'signed-iwa-terminal-roundtrip')
+  } catch (error) {
+    const status = await page.locator('section span.self-center.text-sm').innerText()
+    const sftpStatus = await page.getByTestId('sftp-status').innerText()
+    throw new Error(
+      `Terminal echo failed (status: ${status}; SFTP: ${sftpStatus}; server: ${server.lines.join('|')}): ${error}`,
+    )
+  }
   if (!terminal.includes('READY')) throw new Error('SSH server shell readiness output was missing.')
+
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="sftp-status"]')?.textContent === '0 entries',
+  )
+  nextPromptAnswer = 'reports'
+  await page.getByRole('button', { name: 'New folder' }).click()
+  await page.getByTestId('sftp-entry-reports').waitFor({ state: 'visible' })
+  await page.getByRole('button', { name: 'reports/' }).click()
+  await page
+    .getByTestId('sftp-path')
+    .getByText('reports')
+    .waitFor({ state: 'visible' })
+    .catch(async () => {
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="sftp-path"]')?.textContent === 'reports',
+      )
+    })
+  const uploadContents = 'signed IWA SFTP roundtrip\n'
+  const uploadBuffer = Buffer.from(uploadContents)
+  await page.locator('input[aria-label="Upload file"]').setInputFiles({
+    name: 'roundtrip.txt',
+    mimeType: 'text/plain',
+    buffer: uploadBuffer,
+  })
+  await page.getByRole('button', { name: 'Upload', exact: true }).click()
+  await page.getByTestId('sftp-entry-roundtrip.txt').waitFor({ state: 'visible' })
+  await page.locator('input[aria-label="Upload file"]').setInputFiles({
+    name: 'empty.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.alloc(0),
+  })
+  await page.getByRole('button', { name: 'Upload', exact: true }).click()
+  await page.getByTestId('sftp-entry-empty.txt').waitFor({ state: 'visible' })
+  const emptyDownloadEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download empty.txt' }).click()
+  const emptyDownload = await emptyDownloadEvent
+  const emptyPath = path.join(tempRoot, 'sftp-empty.txt')
+  await emptyDownload.saveAs(emptyPath)
+  if ((await readFile(emptyPath)).length !== 0)
+    throw new Error('SFTP zero-byte download was not empty.')
+  await page.getByRole('button', { name: 'Delete empty.txt' }).click()
+  await page.getByTestId('sftp-entry-empty.txt').waitFor({ state: 'detached' })
+  const downloaded = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download roundtrip.txt' }).click()
+  const download = await downloaded
+  const downloadedPath = path.join(tempRoot, 'sftp-roundtrip.txt')
+  await download.saveAs(downloadedPath)
+  if ((await readFile(downloadedPath, 'utf8')) !== uploadContents)
+    throw new Error('SFTP download contents did not match the uploaded file.')
+  nextPromptAnswer = '../escape'
+  await page.getByRole('button', { name: 'Rename roundtrip.txt' }).click()
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="sftp-status"]')?.textContent?.includes('without slashes'),
+  )
+  if (!(await page.getByTestId('sftp-entry-roundtrip.txt').isVisible()))
+    throw new Error('Invalid parent traversal rename changed the remote listing.')
+  nextPromptAnswer = 'renamed.txt'
+  await page.getByRole('button', { name: 'Rename roundtrip.txt' }).click()
+  await page.getByTestId('sftp-entry-renamed.txt').waitFor({ state: 'visible' })
+  await page.getByRole('button', { name: 'Delete renamed.txt' }).click()
+  await page.getByTestId('sftp-entry-renamed.txt').waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'Parent', exact: true }).click()
+  await page.getByTestId('sftp-entry-reports').waitFor({ state: 'visible' })
+  await page.getByRole('button', { name: 'Delete reports' }).click()
+  await page.getByTestId('sftp-entry-reports').waitFor({ state: 'detached' })
+  if (dialogFailure) throw new Error(dialogFailure)
+
   if (await page.locator('input[type=password]').inputValue())
     throw new Error('SSH password remained in the form after successful login.')
   previousFingerprint = currentServer.fingerprint
@@ -520,7 +631,7 @@ async function runSmoke() {
     throw new Error('Rotated SSH server unexpectedly reused its host key.')
   console.log('Rotated SSH test host key; renewal prompt must show old and new fingerprints.')
   await page.getByLabel('Authentication').selectOption('private-key')
-  await page.locator('input[type=file]').setInputFiles(privateKeyPath)
+  await page.locator('input[aria-label="SSH private-key file"]').setInputFiles(privateKeyPath)
   await page.getByLabel('Key passphrase (optional)').fill(keyPassphrase)
   await page.getByRole('button', { name: 'Connect', exact: true }).click()
   try {
@@ -551,10 +662,22 @@ async function runSmoke() {
     )
   )
     throw new Error('An SSH credential appeared in browser console output.')
-  if (await page.locator('input[type=file]').inputValue())
+  if (await page.locator('input[aria-label="SSH private-key file"]').inputValue())
     throw new Error('The local private-key file selection remained after authentication.')
   if (await page.getByLabel('Key passphrase (optional)').inputValue())
     throw new Error('The private-key passphrase remained in the form after authentication.')
+  const zeroedBuffers = await page.evaluate(() => window.__wrenchIwaSensitiveBuffersCleared)
+  if (
+    !Array.isArray(zeroedBuffers) ||
+    zeroedBuffers.length !== 2 ||
+    zeroedBuffers.some((value) => !value)
+  )
+    throw new Error(
+      'The Go/WASM bridge did not zero its JavaScript private-key and passphrase buffers.',
+    )
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="sftp-status"]')?.textContent === '0 entries',
+  )
   const storedCredentials = await page.evaluate(() =>
     Array.from(
       { length: localStorage.length },
@@ -571,7 +694,7 @@ async function runSmoke() {
     throw new Error(`IWA made unexpected external web requests: ${externalRequests.join(', ')}`)
   if (dialogFailure) throw new Error(dialogFailure)
   console.log(
-    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password and encrypted private-key SSH; first-use pin and renewal; shell input/output; disconnect; no external requests or persisted/logged credentials.',
+    'PASS: ephemeral signed IWA installed; Direct Sockets permission gate; password and encrypted private-key SSH; SFTP list/upload/download/rename/delete/mkdir, including empty-file and traversal cases; first-use pin and renewal; shell input/output; disconnect; no external requests or persisted/logged credentials.',
   )
 }
 

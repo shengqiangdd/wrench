@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -171,6 +172,7 @@ func handle(connection net.Conn, cfg config, signer ssh.Signer, authorizedKey ss
 func handleChannel(channel ssh.Channel, requests <-chan *ssh.Request) {
 	defer channel.Close()
 	for request := range requests {
+		fmt.Printf("CHANNEL REQUEST %s\n", request.Type)
 		switch request.Type {
 		case "pty-req":
 			_ = request.Reply(true, nil)
@@ -178,6 +180,21 @@ func handleChannel(channel ssh.Channel, requests <-chan *ssh.Request) {
 			_ = request.Reply(true, nil)
 			_, _ = io.WriteString(channel, "READY\r\n")
 			_, _ = io.Copy(channel, channel)
+			return
+		case "subsystem":
+			var subsystemRequest struct {
+				Subsystem string
+			}
+			if err := ssh.Unmarshal(request.Payload, &subsystemRequest); err != nil || subsystemRequest.Subsystem != "sftp" {
+				fmt.Printf("SFTP subsystem rejected: %q\n", subsystemRequest.Subsystem)
+				_ = request.Reply(false, nil)
+				continue
+			}
+			fmt.Println("SFTP subsystem accepted")
+			_ = request.Reply(true, nil)
+			server := sftp.NewRequestServer(channel, sftp.InMemHandler())
+			_ = server.Serve()
+			_ = server.Close()
 			return
 		default:
 			_ = request.Reply(false, nil)
