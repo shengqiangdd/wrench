@@ -57,20 +57,32 @@ PR #80 是它的首秀，一上来 16 失败 / 8 通过。逐条定位后修完�
   `src/**/*.{ts,tsx,css,json}`，已经和 CI 漂开（漏了 IWA 配置、scripts、e2e），
   正是本仓库反复出现的「本地绿、CI 红」来源。
 
-### ⚠️ 顺带发现：`vite.config.ts` 有两个被静默忽略的构建选项（本次未改）
+### 🔧 修好 `vite.config.ts` 里两个「被静默忽略」的构建选项，并把它纳入类型门禁
 
-`vite.config.ts` 一直不在 `tsc` 的 include 里，所以没人发现它自己有 3 个类型错误。
-其中两个不是笔误，而是**选项在当前版本里已不存在**：
+`vite.config.ts` 一直不在 `tsc` 的 include 里，所以没人发现它自己有 3 个类型错误 ——
+其中两个不是笔误，而是**选项在当前版本里已不存在**，属于「注释写着启用了、实际什么都没做」。
 
-- `build.esbuildOptions.drop: ['console', 'debugger']` —— Vite 8 的 `build` 级没有 `esbuildOptions`
-  这个字段（它属于依赖预构建），也就是说**生产构建并没有丢弃 console**；
-- `react({ babel: { plugins: [['babel-plugin-react-compiler', …]] } })` ——
-  `@vitejs/plugin-react` 6 的 `Options` 没有 `babel` 字段（v6 走 `reactCompilerPreset()`），
-  也就是说**React Compiler 并没有真正启用**，而旁边的注释写着「仅在生产环境启用」。
+- **React Compiler 其实从没启用**：旧写法 `react({ babel: { plugins: [['babel-plugin-react-compiler', …]] } })`
+  在 `@vitejs/plugin-react` 6 里被静默忽略（v6 的 `Options` 没有 `babel` 字段）。已按官方路径改为
+  `babel({ presets: [reactCompilerPreset()] })`（`@rolldown/plugin-babel` + `reactCompilerPreset`），
+  仍只在生产环境启用（dev 的 Oxc+HMR 与 Babel 不兼容）。
+  **实测代价**：构建 7s → 13s，dist +123 KiB（+1.2%，10.35 MB → 10.47 MB）；产物里能看到
+  `useMemoCache` / `compiler-runtime`，说明编译器真的跑了。这正是 eslint 配置里那条注释
+  （"the compiler in production, so manual memoization is required in dev"）所依赖的前提。
+- **「生产丢弃 console」从来没生效**：`build.esbuildOptions.drop` 在 Vite 8 的 `build` 级不存在
+  （`esbuildOptions` 属于依赖预构建），实测 dist 里仍有 **161 处** `console.*` 调用。
+  **本轮没有恢复**这个行为：它属于「可调试性」的取舍（丢掉客户端的 console.error/warn 会让排查
+  用户报的问题更难），而当前唯一可用的写法是顶层 `esbuild: { drop: [...] }`，Vite 8 已把它标为
+  deprecated（`Use oxc option instead`）。实测那条路确实有效（161 → 13 处，剩下的都是属性引用：
+  xterm 的 logger 回退、prettier 插件内部、`PluginSandbox` 对 `console.log` 的拦截 —— 均属预期保留），
+  代价约 −15 KiB。要恢复就把那行加回来（写法已留在 `vite.config.ts` 的注释里）。
+- **`manualChunks` 少了显式 `return undefined`**：行为中性，补上后 `noImplicitReturns` 不再报错。
+- 三个错误清掉后 `vite.config.ts` 也进了 `tsconfig.json` 的 include —— 以后构建配置写错选项，
+  类型门禁会当场说话，而不是等它在生产里静默失效。
 
-这两个都涉及「要不要真的改变构建产物」，属于产品决策 —— 不能为了让门禁变绿顺手删掉或改写，
-所以本轮只把 `vite.config.ts` 排除在 include 之外、并在 `tsconfig.json` 里写明原因，留待单独一轮。
-（第三个错误是 `manualChunks` 少了显式 `return undefined`，行为中性，可随那一轮一起修。）
+**依赖变化**：新增 devDependency `@rolldown/plugin-babel`（React Compiler 的 v6 入口），连带
+`picomatch` 4.0.5 → 4.0.7（前者要求 `^4.0.7`）。lock 里这两条 `resolved` 已从本机镜像
+（npmmirror）改回 `registry.npmjs.org`，与仓库其余条目保持一致。
 
 ## [Unreleased] - 修复 CI 三处红灯（后端测试 / 依赖审计 / 包体积）
 

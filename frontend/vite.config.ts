@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite'
 import compression from 'vite-plugin-compression'
 import { createHtmlPlugin } from 'vite-plugin-html'
@@ -88,12 +89,21 @@ const isAnalyze = process.env.ANALYZE === 'true'
 const buildTimestamp = Date.now()
 
 export default defineConfig({
+  // 说明：这里原本有 `build.esbuildOptions.drop: ['console', 'debugger']`（生产丢弃 console / debugger）。
+  // Vite 8 的 `build` 级没有 `esbuildOptions` 这个字段（它属于依赖预构建），所以那个选项一直是
+  // **被静默忽略**的 —— 生产构建从来没有丢弃过 console（实测 dist 里仍有 161 处 console.* 调用）。
+  //
+  // 本轮**没有**恢复这个行为，理由有二：
+  //   1) 它是「可调试性」的取舍 —— 丢掉客户端的 console.error/warn 会让人更难排查用户报的问题；
+  //   2) 目前唯一可用的写法是顶层 `esbuild: { drop: [...] }`，而 Vite 8 已把它标为 deprecated
+  //      （`Use oxc option instead`）。
+  // 实测那条路确实有效（161 → 13 处，剩下的都是属性引用：xterm 的 logger 回退、prettier 插件内部、
+  // 以及 PluginSandbox 对 console.log 的拦截 —— 都属预期保留），代价约 -15 KiB。
+  // 要恢复就把 `esbuild: process.env.NODE_ENV === 'production' ? { drop: ['console','debugger'] } : undefined`
+  // 加回来；想长期保留，最好等 Oxc 侧的等价选项。
   build: {
     minify: 'esbuild',
     sourcemap: process.env.NODE_ENV === 'production' ? false : true,
-    esbuildOptions: {
-      drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
-    },
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -111,6 +121,8 @@ export default defineConfig({
           if (isExternal(id, 'zustand')) return 'vendor-state'
           if (isExternal(id, 'lucide-react')) return 'vendor-lucide'
           if (isExternal(id, 'idb')) return 'vendor-idb'
+          // 其余模块交回打包器自己决定分块（显式返回，别让 noImplicitReturns 报「不是所有路径都有返回值」）
+          return undefined
         },
       },
     },
@@ -118,15 +130,14 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
   },
   plugins: [
-    // React Compiler 仅在生产环境启用（dev 模式下 Oxc+HMR 与 Babel 不兼容）
-    react({
-      babel:
-        process.env.NODE_ENV === 'production'
-          ? {
-              plugins: [['babel-plugin-react-compiler', { target: '19' }]],
-            }
-          : undefined,
-    }),
+    react(),
+    // React Compiler 仅在生产环境启用（dev 模式下 Oxc+HMR 与 Babel 不兼容）。
+    //
+    // 注意：`@vitejs/plugin-react` 6 起**没有** `react({ babel })` 这个入口了 ——
+    // 旧写法（`react({ babel: { plugins: [['babel-plugin-react-compiler', …]] } })`）
+    // 是被静默忽略的，也就是「注释写着生产启用编译器、实际根本没启用」。
+    // v6 的官方路径是 `babel()` 插件 + `reactCompilerPreset()`（见 plugin-react README）。
+    ...(process.env.NODE_ENV === 'production' ? [babel({ presets: [reactCompilerPreset()] })] : []),
     tailwindcss(),
     createHtmlPlugin({
       inject: {

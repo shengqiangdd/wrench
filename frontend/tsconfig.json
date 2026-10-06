@@ -27,18 +27,18 @@
     }
   },
   /*
-   * include 覆盖范围：src + e2e 测试 + 各配置文件。
+   * include 覆盖范围：src + e2e 测试 + 各配置文件（含 vite.config.ts）。
    *
    * 之前只有 `src`，于是 `frontend/e2e/**` 与所有 *.config.ts 都不参与 `tsc --noEmit`
-   * —— E2E 用例写错选择器/类型，类型门禁一句话都不会说（2026-10-06 的 E2E 首秀就是这么
-   * 攒下 16 个失败的）。
-   *
-   * 例外：`vite.config.ts` **暂不在内**。它自己就有 3 个既存类型错误，其中两个是
-   * 「选项在当前 Vite 8 / @vitejs/plugin-react 6 里已不存在、被静默忽略」：
-   *   - `build.esbuildOptions.drop`（Vite 8 里 build 级没有这个字段 → 生产环境并没有丢弃 console）
-   *   - `react({ babel: {...} })`（v6 用 `reactCompilerPreset()`，没有 `babel` 字段 → React Compiler 并未启用）
-   * 这两个都涉及「要不要真的改变构建产物」的产品决策，得单独一轮处理，不能为了让
-   * 门禁变绿而顺手删掉或改写。
+   * —— E2E 用例写错选择器/类型、构建配置写错选项，类型门禁一句话都不会说
+   * （2026-10-06 的 E2E 首秀攒下 16 个失败，`vite.config.ts` 里两个被静默忽略的构建选项
+   * 也是这么藏了很久）。
    */
-  "include": ["src", "e2e", "playwright.config.ts", "vitest.config.ts", "vite.iwa.config.ts", "vite-env.d.ts"]
+  "include": [
+    "src",
+    "e2e",
+    "*.config.ts",
+    "playwright.config.ts",
+    "vite-env.d.ts"
+  ]
 }
