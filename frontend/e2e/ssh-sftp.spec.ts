@@ -41,7 +41,11 @@ test('real SSH terminal and SFTP smoke path', async ({ page }) => {
   await terminal.locator('.xterm-helper-textarea').pressSequentially('printf e2e-ok')
   await terminal.locator('.xterm-helper-textarea').press('Enter')
 
-  await page.keyboard.press('Control+f')
+  // 打开搜索面板走右键菜单的「查找」，而不是 Ctrl+F：焦点在 xterm 的文本框里时，
+  // 这个组合键会被 xterm 自己的按键处理吃掉（第一次尝试就是这么失败的：
+  // 面板始终没出现）。右键菜单是鼠标路径，不经过终端的键盘处理。
+  await terminal.locator('.xterm').click({ button: 'right' })
+  await page.getByText('查找', { exact: true }).click()
   const searchBar = page.getByTestId('terminal-search-bar')
   await expect(searchBar).toBeVisible({ timeout: 10_000 })
   await searchBar.getByPlaceholder('搜索终端内容...').fill('e2e-ok')

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 
 import {
   AUTH_REQUIRED_EVENT,
@@ -33,6 +33,16 @@ export function AuthGate({ children }: AuthGateProps) {
   const [authState, setAuthState] = useState<AuthState>('loading')
   const [error, setError] = useState<string | null>(null)
 
+  /**
+   * 是否已经**从服务端**问出「要不要口令」。
+   *
+   * 没问出来时（后端不可达 / 首次请求就失败）不能把用户丢进登录框：
+   * 那时 `isAuthDisabled()` 还是默认值 false，而登录框本身也需要后端才能登进去 ——
+   * 表现就是「错误页点重试 → 冒出一个永远登不进去的登录框」。实测于 E2E：
+   * `认证错误消息显示并能重试` / `重试按钮可通过键盘访问` 两条用例就是被这个打死的。
+   */
+  const authModeKnownRef = useRef(false)
+
   // 初始化：校验会话 → 安装 fetch 拦截器 → 建立 WS → 载入本地 SSH 连接
   const boot = useCallback(async () => {
     setError(null)
@@ -40,8 +50,9 @@ export function AuthGate({ children }: AuthGateProps) {
     try {
       const valid = await verifySession()
       if (!valid) {
-        if (isAuthDisabled()) {
-          // 门关着时没有「登录」可回：这是真的连不上，交给错误页重试
+        if (isAuthDisabled() || !authModeKnownRef.current) {
+          // 门关着时没有「登录」可回；门开关还没问出来时同样没有 ——
+          // 两种都是「连不上」，交给错误页重试
           setError('无法连接服务器，请稍后重试')
           setAuthState('error')
           return
@@ -74,6 +85,8 @@ export function AuthGate({ children }: AuthGateProps) {
       try {
         const status = await authStatus()
         if (cancelled) return
+        // 问到了：之后 boot() 失败就能区分「要登录」与「连不上」
+        authModeKnownRef.current = true
         // 门关着：不显示任何口令界面，直接进入（服务端也不校验令牌）
         setAuthDisabled(!status.authRequired)
         if (!status.authRequired) {

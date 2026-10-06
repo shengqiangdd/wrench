@@ -15,6 +15,45 @@ async function blockBackend(page: Page) {
   await page.route('**/api/**', (route) => route.abort('connectionrefused'))
 }
 
+/**
+ * 把任意 CSS 颜色画成像素再读回来。
+ *
+ * Tailwind v4 起 `getComputedStyle` 返回的是 `oklch(...)` 而不是 `rgb(...)`
+ * （旧断言写死的 `toMatch(/rgb\(/)` 就是被这个打死的），所以交给浏览器自己解析，
+ * 别把颜色空间的实现细节钉进断言。
+ */
+async function resolvedRgb(page: Page, css: string): Promise<[number, number, number]> {
+  return page.evaluate((value) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = value
+    ctx.fillRect(0, 0, 1, 1)
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+    return [r, g, b] as [number, number, number]
+  }, css)
+}
+
+/** 相对亮度（WCAG 定义）。用来判断「深 / 浅」，而不是把具体色值钉死。 */
+function luminance([r, g, b]: [number, number, number]): number {
+  const channel = (c: number) => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+/** 错误页最外层容器的背景色（从「连接失败」标题往上找到 #root 的直接子节点）。 */
+async function errorPageBackground(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const heading = [...document.querySelectorAll('p')].find((p) => p.textContent === '连接失败')
+    if (!heading) throw new Error('找不到「连接失败」标题')
+    let node: HTMLElement = heading
+    while (node.parentElement && node.parentElement.id !== 'root') node = node.parentElement
+    return getComputedStyle(node).backgroundColor
+  })
+}
+
 test.describe('Wrench 基础功能', () => {
   test('首页正常加载', async ({ page }) => {
     await page.goto('/')
@@ -118,20 +157,27 @@ test.describe('错误页面 UI 验证', () => {
     await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
-    const bgColor = await page.evaluate(() =>
-      getComputedStyle(document.body).backgroundColor
-    )
-    // 深色主题背景 (bg-gray-900 → rgb(17, 24, 39))
-    expect(bgColor).toBe('rgb(17, 24, 39)')
+    // 只断言「暗」，不钉色值：深色主题挂的是错误页最外层容器（不是 document.body），
+    // 且 Tailwind v4 的颜色是 oklch、色板还会随版本调整 ——
+    // 旧断言 `expect(document.body 的背景).toBe('rgb(17, 24, 39)')` 两处都错，只会恒假。
+    expect(luminance(await resolvedRgb(page, await errorPageBackground(page)))).toBeLessThan(0.25)
   })
 
-  test('错误页面包含连接图标', async ({ page }) => {
+  test('错误页面给出可读的失败原因', async ({ page }) => {
     await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
-    // SVG 图标应存在于错误页面中
-    const svgCount = await page.locator('#root svg').count()
-    expect(svgCount).toBeGreaterThan(0)
+    // 原先这条断言「页面上有 svg 图标」，但错误页从来就是纯文字（AuthGate 里没有任何图标），
+    // 属于恒假断言。改成断言它真正该保证的事：除了标题，还得有一句能看懂的说明。
+    const explanation = await page.evaluate(() => {
+      const box = document.querySelector('.text-center')
+      if (!box) throw new Error('找不到错误卡片')
+      return [...box.querySelectorAll('p')]
+        .map((p) => p.textContent?.trim() ?? '')
+        .filter((text) => text && text !== '连接失败')
+        .join('')
+    })
+    expect(explanation.length).toBeGreaterThan(0)
   })
 
   test('重试按钮可通过键盘访问', async ({ page }) => {
@@ -168,11 +214,14 @@ test.describe('错误页面 UI 验证', () => {
     await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
-    const color = await page.evaluate(() =>
-      getComputedStyle(document.querySelector('.text-center p')!).color
-    )
-    // text-gray-400 → rgb(156, 163, 175) 或类似灰色
-    expect(color).toMatch(/rgb\(/)
+    // 深色底 + 浅色字才叫「可读」。同样不钉色值（Tailwind v4 是 oklch），
+    // 旧断言 `toMatch(/rgb\(/)` 拿到的是 `oklch(0.704 0.191 22.216)` 直接失败。
+    const color = await page.evaluate(() => {
+      const el = document.querySelector('.text-center p')
+      if (!el) throw new Error('找不到错误页文案节点')
+      return getComputedStyle(el).color
+    })
+    expect(luminance(await resolvedRgb(page, color))).toBeGreaterThan(0.2)
   })
 })
 
