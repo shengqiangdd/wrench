@@ -69,16 +69,16 @@ pub async fn install_plugin(
         .safe_plugin_path(plugin_id)
         .ok_or_else(|| AppError::BadRequest("Invalid plugin ID".into()))?;
 
-    // Create the plugin directory
-    tokio::fs::create_dir_all(&target_dir)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to create plugin dir: {}", e)))?;
-
     // Download manifest.json / plugin.js
     //
     // 这两个 URL 来自请求体，是服务端替客户端发起的抓取：必须过出口策略
     // （禁私网/环回/链路本地/云元数据，白名单内的内网地址除外），逐跳校验重定向，
     // 并限制响应体大小，避免公开实例被当成内网探测跳板或被灌满磁盘。
+    //
+    // 顺序是有意的：**先授权、后落盘**。此前 `create_dir_all` 排在这两个抓取之前，
+    // 于是被出口策略拒绝的请求会先建出一个空目录；更糟的是当 plugins 目录不可写时
+    // （只读挂载、权限不对），`create_dir_all` 的错误会先一步变成 500，把「策略拒绝」
+    // 伪装成「服务端故障」—— 调用方拿不到 403，也就看不出真实原因。
     let manifest_content = crate::egress::fetch_text(manifest_url, crate::egress::DEFAULT_MAX_FETCH_BYTES)
         .await
         .map_err(|e| AppError::Forbidden(e.to_string()))?
@@ -88,6 +88,11 @@ pub async fn install_plugin(
         .await
         .map_err(|e| AppError::Forbidden(e.to_string()))?
         .body;
+
+    // Create the plugin directory（两个 URL 都授权通过后才产生文件系统副作用）
+    tokio::fs::create_dir_all(&target_dir)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to create plugin dir: {}", e)))?;
 
     // Write manifest.json
     tokio::fs::write(target_dir.join("manifest.json"), &manifest_content)
