@@ -1,4 +1,19 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+
+/**
+ * 让后端「连不上」，用于错误页相关用例。
+ *
+ * 这些用例验证的是**后端不可达**时的界面（AuthGate 拿不到 /api/auth/status →
+ * 显示「连接失败」+「重试」）。别指望运行环境恰好没有后端：CI 的 E2E 作业把
+ * BASE_URL 指向真实栈（活着、健康、WRENCH_REQUIRE_AUTH=off），应用会正常加载，
+ * 于是这些断言永远等不到错误页 —— 这是 2026-10-06 那次 E2E 首跑里 15 个失败的根因。
+ *
+ * 用 `connectionrefused` 而不是默认的 `failed`：控制台里出现的仍是
+ * `net::ERR_CONNECTION_REFUSED`，与既有断言（过滤该串、放行 /ws）保持一致。
+ */
+async function blockBackend(page: Page) {
+  await page.route('**/api/**', (route) => route.abort('connectionrefused'))
+}
 
 test.describe('Wrench 基础功能', () => {
   test('首页正常加载', async ({ page }) => {
@@ -10,6 +25,7 @@ test.describe('Wrench 基础功能', () => {
   })
 
   test('认证失败时显示错误页面', async ({ page }) => {
+    await blockBackend(page)
     await page.goto('/')
     // AuthGate 尝试连接后端 → 失败 → 显示错误状态
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
@@ -20,13 +36,14 @@ test.describe('Wrench 基础功能', () => {
   })
 
   test('认证错误消息显示并能重试', async ({ page }) => {
+    await blockBackend(page)
     await page.goto('/')
     // 等待认证失败
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     // 应该有重试按钮
     const retryBtn = page.getByText('重试')
     await expect(retryBtn).toBeVisible()
-    // 点击重试（后端仍然不可用，应再次显示错误）
+    // 点击重试（后端仍然不可达，应再次显示错误）
     await retryBtn.click()
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 10000 })
     // 不应渲染应用内容
@@ -72,6 +89,7 @@ test.describe('错误处理与 UI', () => {
       }
     })
 
+    await blockBackend(page)
     await page.goto('/')
     // 等待认证失败（预期行为，不是 JS 错误）
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
@@ -97,6 +115,7 @@ test.describe('错误处理与 UI', () => {
 
 test.describe('错误页面 UI 验证', () => {
   test('错误页面背景色为深色主题', async ({ page }) => {
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     const bgColor = await page.evaluate(() =>
@@ -107,6 +126,7 @@ test.describe('错误页面 UI 验证', () => {
   })
 
   test('错误页面包含连接图标', async ({ page }) => {
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     // SVG 图标应存在于错误页面中
@@ -115,6 +135,7 @@ test.describe('错误页面 UI 验证', () => {
   })
 
   test('重试按钮可通过键盘访问', async ({ page }) => {
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     const retryBtn = page.getByText('重试')
@@ -133,6 +154,7 @@ test.describe('错误页面 UI 验证', () => {
         brokenUrls.push(`${resp.status()} ${resp.url()}`)
       }
     })
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     // 只允许预期的后端连接错误
@@ -143,6 +165,7 @@ test.describe('错误页面 UI 验证', () => {
   })
 
   test('错误页面文本对比度可读', async ({ page }) => {
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     const color = await page.evaluate(() =>
@@ -156,6 +179,7 @@ test.describe('错误页面 UI 验证', () => {
 test.describe('响应式与移动端适配', () => {
   test('移动端 viewport 320px 正常渲染', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 568 })
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     // 错误信息完整可见
@@ -164,6 +188,7 @@ test.describe('响应式与移动端适配', () => {
 
   test('平板 viewport 768px 正常渲染', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 })
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     await expect(page.getByText('重试')).toBeVisible()
@@ -171,6 +196,7 @@ test.describe('响应式与移动端适配', () => {
 
   test('桌面 viewport 1440px 正常渲染', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     await expect(page.getByText('重试')).toBeVisible()
@@ -185,6 +211,7 @@ test.describe('可访问性与语义化', () => {
   })
 
   test('重试按钮是 button 元素', async ({ page }) => {
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     const tagName = await page.evaluate(() => {
@@ -195,6 +222,7 @@ test.describe('可访问性与语义化', () => {
   })
 
   test('错误提示元素有可读的文本颜色', async ({ page }) => {
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     // 确保没有全透明或不可见的文本
@@ -206,6 +234,7 @@ test.describe('可访问性与语义化', () => {
 test.describe('性能与资源加载', () => {
   test('页面加载时间在合理范围内', async ({ page }) => {
     const start = Date.now()
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     const loadTime = Date.now() - start
@@ -216,6 +245,7 @@ test.describe('性能与资源加载', () => {
   test('无未捕获的 JavaScript 运行时错误', async ({ page }) => {
     const jsErrors: Error[] = []
     page.on('pageerror', (err) => jsErrors.push(err))
+    await blockBackend(page)
     await page.goto('/')
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     expect(jsErrors.length).toBe(0)
