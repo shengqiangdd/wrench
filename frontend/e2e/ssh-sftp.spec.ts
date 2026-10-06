@@ -53,7 +53,10 @@ test('real SSH terminal and SFTP smoke path', async ({ page }) => {
   await expect(searchBar).toContainText(/\d+\/[1-9]\d*/, { timeout: 15_000 })
   await page.keyboard.press('Escape')
 
-  await page.getByRole('button', { name: '文件' }).click()
+  // 工具栏的「文件 / 终端」是纯文字按钮，必须 exact 匹配：
+  // 否则 `name: '文件'` 会同时命中侧边栏的「文件管理」与工具栏的「批量文件分发」，
+  // Playwright 严格模式直接报 strict mode violation（3 个元素）。
+  await page.getByRole('button', { name: '文件', exact: true }).click()
   const sftp = page.getByTestId('ssh-sftp-panel')
   await expect(sftp).toBeVisible({ timeout: 30_000 })
   const sftpBox = await sftp.boundingBox()
@@ -61,7 +64,7 @@ test('real SSH terminal and SFTP smoke path', async ({ page }) => {
   expect(sftpBox?.height).toBeGreaterThan(0)
   await expect(sftp.locator('.sftp-file-entry').first()).toBeVisible({ timeout: 30_000 })
 
-  await page.getByRole('button', { name: '终端' }).click()
+  await page.getByRole('button', { name: '终端', exact: true }).click()
   await expect(sftp).toBeHidden()
   await expect(terminal.locator('.xterm')).toBeVisible()
   await expect(terminal.locator('.xterm-helper-textarea')).toBeFocused()
