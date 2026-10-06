@@ -21,7 +21,10 @@ test('real SSH terminal and SFTP smoke path', async ({ page }) => {
   await page.getByPlaceholder('端口').fill(sshPort)
   await page.getByPlaceholder('用户名').fill(sshUser!)
   await page.getByPlaceholder('密码（可选）').fill(sshPassword!)
-  await page.getByRole('button', { name: /快速连接/ }).last().click()
+  await page
+    .getByRole('button', { name: /快速连接/ })
+    .last()
+    .click()
 
   const terminal = page.getByTestId('ssh-terminal-panel')
   await expect(terminal).toBeVisible({ timeout: 30_000 })

@@ -52,22 +52,36 @@ function isExternal(id: string, pkg: string) {
 
 // CodeMirror 核心包（基础 + 视图 + 编辑能力）
 const cmCore = [
-  '@codemirror/state', '@codemirror/view', '@codemirror/language',
-  '@codemirror/commands', '@codemirror/search', '@codemirror/autocomplete',
+  '@codemirror/state',
+  '@codemirror/view',
+  '@codemirror/language',
+  '@codemirror/commands',
+  '@codemirror/search',
+  '@codemirror/autocomplete',
   '@codemirror/theme-one-dark',
 ]
 // CodeMirror 常用语言包（高频使用）
 const cmLangsCommon = [
-  '@codemirror/lang-css', '@codemirror/lang-html',
-  '@codemirror/lang-javascript', '@codemirror/lang-json',
-  '@codemirror/lang-markdown', '@codemirror/lang-python',
-  '@codemirror/lang-sql', '@codemirror/lang-xml', '@codemirror/lang-yaml',
+  '@codemirror/lang-css',
+  '@codemirror/lang-html',
+  '@codemirror/lang-javascript',
+  '@codemirror/lang-json',
+  '@codemirror/lang-markdown',
+  '@codemirror/lang-python',
+  '@codemirror/lang-sql',
+  '@codemirror/lang-xml',
+  '@codemirror/lang-yaml',
 ]
 // CodeMirror 扩展语言包（低频使用）
 const cmLangsExtra = [
-  '@codemirror/lang-cpp', '@codemirror/lang-go',
-  '@codemirror/lang-java', '@codemirror/lang-less', '@codemirror/lang-liquid',
-  '@codemirror/lang-php', '@codemirror/lang-rust', '@codemirror/lang-vue',
+  '@codemirror/lang-cpp',
+  '@codemirror/lang-go',
+  '@codemirror/lang-java',
+  '@codemirror/lang-less',
+  '@codemirror/lang-liquid',
+  '@codemirror/lang-php',
+  '@codemirror/lang-rust',
+  '@codemirror/lang-vue',
 ]
 
 const isAnalyze = process.env.ANALYZE === 'true'
@@ -106,11 +120,12 @@ export default defineConfig({
   plugins: [
     // React Compiler 仅在生产环境启用（dev 模式下 Oxc+HMR 与 Babel 不兼容）
     react({
-      babel: process.env.NODE_ENV === 'production' ? {
-        plugins: [
-          ['babel-plugin-react-compiler', { target: '19' }],
-        ],
-      } : undefined,
+      babel:
+        process.env.NODE_ENV === 'production'
+          ? {
+              plugins: [['babel-plugin-react-compiler', { target: '19' }]],
+            }
+          : undefined,
     }),
     tailwindcss(),
     createHtmlPlugin({

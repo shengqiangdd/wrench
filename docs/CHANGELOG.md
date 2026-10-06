@@ -43,10 +43,34 @@ PR #80 是它的首秀，一上来 16 失败 / 8 通过。逐条定位后修完�
 - `getByRole('button', { name: '文件' })` 同时命中侧边栏「文件管理」、工具栏「批量文件分发」与
   工具栏「打开文件面板」，Playwright 严格模式直接报错。加 `exact: true`（「终端」同理）。
 
-### 📌 一并记下 E2E 的两个覆盖盲区（本次未改）
+### 🚦 把 `e2e/` 与前端配置文件纳入类型 / 格式化门禁
 
-- `tsconfig.json` 的 `include` 只有 `src`，`frontend/e2e/**` 不参与 `tsc --noEmit`；
-- prettier 的 glob 也不含 `e2e/` —— 这两个 spec 本来就不在格式化门禁内（改动前就已不符合 prettier）。
+上面暴露出的覆盖盲区：`tsconfig.json` 的 `include` 只有 `src`，prettier 的 glob 也不含 `e2e/`
+—— E2E 用例写错选择器或类型，门禁一句话都不会说（这次的 16 个失败全靠 CI 首秀才浮出来）。
+
+- `tsconfig.json` 的 `include` 加上 `e2e` 与 `playwright.config.ts` / `vitest.config.ts` / `vite.iwa.config.ts`。
+- prettier 的 glob 从「`src/**` + `vite.iwa.config.ts` + `scripts/**`」改成
+  「`src/**` + `e2e/**/*.ts` + `*.config.{ts,js}` + `scripts/**`」—— 原先把 `vite.iwa.config.ts`
+  单独列出来、却漏掉 `vite.config.ts` 与 `eslint.config.js`，本身就是漂移的来源。
+  随之把这两个文件 `prettier --write` 了（纯换行/缩进，无语义变化）。
+- `.githooks/pre-commit` 的 Prettier 检查改为直接调 `npm run format:check`：它此前抄的是
+  `src/**/*.{ts,tsx,css,json}`，已经和 CI 漂开（漏了 IWA 配置、scripts、e2e），
+  正是本仓库反复出现的「本地绿、CI 红」来源。
+
+### ⚠️ 顺带发现：`vite.config.ts` 有两个被静默忽略的构建选项（本次未改）
+
+`vite.config.ts` 一直不在 `tsc` 的 include 里，所以没人发现它自己有 3 个类型错误。
+其中两个不是笔误，而是**选项在当前版本里已不存在**：
+
+- `build.esbuildOptions.drop: ['console', 'debugger']` —— Vite 8 的 `build` 级没有 `esbuildOptions`
+  这个字段（它属于依赖预构建），也就是说**生产构建并没有丢弃 console**；
+- `react({ babel: { plugins: [['babel-plugin-react-compiler', …]] } })` ——
+  `@vitejs/plugin-react` 6 的 `Options` 没有 `babel` 字段（v6 走 `reactCompilerPreset()`），
+  也就是说**React Compiler 并没有真正启用**，而旁边的注释写着「仅在生产环境启用」。
+
+这两个都涉及「要不要真的改变构建产物」，属于产品决策 —— 不能为了让门禁变绿顺手删掉或改写，
+所以本轮只把 `vite.config.ts` 排除在 include 之外、并在 `tsconfig.json` 里写明原因，留待单独一轮。
+（第三个错误是 `manualChunks` 少了显式 `return undefined`，行为中性，可随那一轮一起修。）
 
 ## [Unreleased] - 修复 CI 三处红灯（后端测试 / 依赖审计 / 包体积）
 

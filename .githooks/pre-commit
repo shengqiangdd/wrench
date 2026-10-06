@@ -29,7 +29,10 @@ if [ -d frontend/node_modules ]; then
   npx eslint . --report-unused-disable-directives --max-warnings 0 || fail "ESLint errors found."
 
   echo "  → Prettier..."
-  npx prettier --check "src/**/*.{ts,tsx,css,json}" || fail "Prettier formatting issues found. Run: npm run format"
+  # 走 npm script 而不是重抄一遍 glob：这里原先写的是 `src/**/*.{ts,tsx,css,json}`，
+  # 已经和 CI 的 `format:check` 漂开了（漏了 vite.iwa.config.ts / scripts / e2e / *.config.*），
+  # 属于「本地绿、CI 红」的经典来源。
+  npm run format:check || fail "Prettier formatting issues found. Run: npm run format"
 
   echo "  → Unit tests..."
   npx vitest run || fail "Unit tests failed."

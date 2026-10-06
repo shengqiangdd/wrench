@@ -205,7 +205,7 @@ test.describe('错误页面 UI 验证', () => {
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     // 只允许预期的后端连接错误
     const unexpected = brokenUrls.filter(
-      (u) => !u.includes('/ws') && !u.includes('ERR_CONNECTION_REFUSED')
+      (u) => !u.includes('/ws') && !u.includes('ERR_CONNECTION_REFUSED'),
     )
     expect(unexpected).toEqual([])
   })
@@ -265,7 +265,7 @@ test.describe('可访问性与语义化', () => {
     await expect(page.getByText('连接失败')).toBeVisible({ timeout: 15000 })
     const tagName = await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll('button'))
-      return buttons.find(b => b.textContent?.includes('重试'))?.tagName
+      return buttons.find((b) => b.textContent?.includes('重试'))?.tagName
     })
     expect(tagName).toBe('BUTTON')
   })
