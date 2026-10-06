@@ -1,5 +1,32 @@
 # 📋 变更日志
 
+## [Unreleased] - 移除 3 个未使用的 devDependency（并留下审计方法）
+
+用纯 Node 扫了一遍 `frontend/package.json` 里的 75 个直接依赖（在 `src` / `scripts` / `e2e` /
+`browser-iwa` / `*.config.*` / `index.html` / `.prettierrc` / `.github` / `tools` 里找包名），
+再逐个人工核实，确认三个是死重量：
+
+- **`@testing-library/react` 与 `@testing-library/dom`** —— 仓库的 607 个测试是直接用
+  `react-dom/client` 的 `createRoot` 渲染的（14 个测试文件，配合 `src/test/setup.ts` 里的 act 补丁），
+  **从不 import Testing Library 的 `render`/`screen`**；`@testing-library/jest-dom` 也没有把
+  `@testing-library/dom` 当 peer（它自己的 deps 是 css-tools / aria-query / css.escape /
+  dom-accessibility-api / picocolors / redent），所以移除安全。
+- **`react-compiler-runtime`** —— 它只在「编译器目标为 React 17/18」时才被产物 import。
+  本轮启用编译器后用的是 **React 19 自带的 `react/compiler-runtime`**：产物里的 `useMemoCache`
+  来自 react 内部（`d.H.useMemoCache`），这个独立包一次都没出现。
+
+`npm uninstall` 连带清掉 7 个只被它们用到的传递依赖（`@types/aria-query`、`ansi-regex`、
+`ansi-styles`、`dom-accessibility-api`、`lz-string`、`pretty-format`、`react-is`）：
+lock 里净减 10 条、无新增、也没引入镜像地址。
+
+本地验证：Vitest 60 文件 / 607 测试、ESLint、Prettier、`tsc`（零错误）、一次真实 `vite build`
+（11s，编译器仍生效，dist 10.68 MB 与 CI 的 10.18 MiB 吻合）、`regular-build-isolation`。
+
+> **审计的边界**：这个方法只覆盖「包名出现在源码/配置里」这一种用法，所以 `@types/*`、
+> `@vitest/coverage-v8`、`tailwindcss`（被 `@tailwindcss/vite` 间接用）这类隐式依赖会被误报为
+> 「未引用」—— 必须人工判断。本次只动了逐个核实过的三个；要更彻底得用 `depcheck` 之类的工具
+> 再核一遍，别照单全删。
+
 ## [Unreleased] - 把 CI 配置本身核一遍：13 个 workflow 全部过检，并查清 3 个「消失的 workflow」
 
 `ci-e2e.yml` 的首秀攒了 16 个失败之后，同一类风险还可能在别处 —— 那些**从没运行过**的
