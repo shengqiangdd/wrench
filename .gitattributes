@@ -1,0 +1,22 @@
+# 统一行尾：仓库内一律存 LF，工作区也一律检出 LF。
+#
+# 为什么需要：仓库此前没有 .gitattributes，行尾完全取决于每个人的 core.autocrlf
+# （本机就是 true）。而本仓库的格式门禁对行尾敏感 —— prettier 默认 endOfLine=lf、
+# rustfmt 默认 newline_style=auto —— 于是同一份代码在 Windows 上本地报错、在 Linux CI 上
+# 却是绿的（反之亦然），正是 docs/CHANGELOG.md 里反复出现的「本地绿、CI 红」那类假红/假绿。
+* text=auto eol=lf
+
+# 少数将来若加入就必须保持 CRLF 的类型，显式声明，避免踩坑。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 明确按二进制处理，不让 text=auto 去猜（这些类型本仓库确实有，或将来会有）。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.wbn binary
+*.swbn binary
+*.wasm binary

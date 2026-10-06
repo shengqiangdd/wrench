@@ -23,6 +23,10 @@ jobs:
           workspaces: backend
           cache-targets: false
           shared-key: clippy-v3
+      # 先跑「模块树」检查：孤儿 .rs 文件（没被任何 mod 声明引用）不会被 fmt / clippy / test
+      # 中的任何一条碰到，却是真实发生过的缺陷（`src/ssh/known_hosts_test.rs` 一直躺在源码树里
+      # 但从未被编译）。纯 POSIX sh，不依赖 cargo，毫秒级返回。
+      - run: sh tools/check-rust-modules.sh
       - run: cargo fmt --all --check
         working-directory: backend
       - run: cargo check --locked

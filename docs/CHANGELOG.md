@@ -1,5 +1,63 @@
 # 📋 变更日志
 
+## [Unreleased] - 工作区残留清理 + Rust 模块树门禁
+
+### 🧹 三个「已删除又被带回」的残留文件（工作区 vs HEAD 不一致）
+
+- **现象**：`git status` 常驻 3 个未跟踪文件，而它们恰恰是 HEAD 历史里**已经删过**的东西
+  —— `7c995901` 删 `frontend/yarn.lock`、`95717b8d` 删 `src/ssh/known_hosts_test.rs`、
+  `05fa2243` 删 `backend/Dockerfile`。三个提交都在 main 历史里（`git cat-file -e HEAD:<path>` 全为 absent）。
+- **查证**：本地 `stash@{0}` 是一个含 389 个未跟踪文件的旧 WIP 快照，被应用回了工作区；
+  其中绝大多数路径落在 `.gitignore`（`/scripts/`、`/tests/`、`/tmp/`、`*_TODO.md` …）里所以看不见，
+  只有这 3 个既未被忽略、也未被跟踪的文件冒到 `git status` 上。
+- **为什么必须删而不是留着**：
+  - `backend/Dockerfile` 里 `COPY --from=builder /app/target/release/cloudhub-backend` 引用的是
+    本仓库并不存在的产物（另一个项目的残留），谁照着它构建谁失败；
+  - `frontend/yarn.lock`（yarn v1，370 个条目）与 `package-lock.json` 双锁并存，而脚本 / CI / 文档
+    一律走 `npm ci`，留着只会持续漂移；
+  - `known_hosts_test.rs` 没有被任何 `mod` 声明 → cargo 从不编译它（它直接读 `KnownHosts` 的私有字段
+    `strict_mode` / `path`，真接进模块树反而编译不过），内容与 `known_hosts.rs` 内的测试重复，
+    还带一条恒真断言 `assert!(path.exists() || !path.exists())`。
+- **处理**：三个文件删除，工作区与 HEAD 重新一致。
+
+### 🚦 新增门禁：backend 模块树检查（防「孤儿测试」再回来）
+
+- 上面第 3 条暴露的是**门禁盲区**：`cargo fmt` / `clippy --all-targets` / `test --all-targets`
+  只处理「模块树可达」的文件。一个没被任何 `mod` 声明的 `.rs` 躺在 `src/` 里，这三条命令全绿、
+  CI 的测试数量里也永远没有它 —— 「看起来有覆盖、实际一行没跑」，比没有测试更危险。
+- 新增 `tools/check-rust-modules.sh`（纯 POSIX sh，不依赖 cargo，毫秒级返回）：遍历
+  `backend/src/**/*.rs`，要求每个文件都能在**同目录**找到对应的 `mod` 声明（允许 `pub` / `pub(crate)`
+  前缀）；跳过 crate 根（`main.rs` / `lib.rs`）与 `src/bin/**`（cargo 自动发现的 bin target）。
+  命中即逐行列出文件名并退出 1。已知不覆盖 `#[path = "..."]` 重定向（本仓库未使用）。
+- **接线**：`ci-backend.yml` 在 `cargo fmt` 之前加一步；`.githooks/pre-commit` 放在 `cargo` 分支
+  **外面**（没装 cargo 也要跑）—— 本地与 CI 共用同一份规则，避免「本地绿、CI 红」。
+- **自检**：先对未清理的工作区跑一次，精确命中 `backend/src/ssh/known_hosts_test.rs` 且无其它误报；
+  删除后再跑为绿；再临时植入一个假孤儿文件确认仍能拦下，随后移除。
+
+### 🔤 新增 `.gitattributes`：把行尾钉死成 LF
+
+- **问题**：仓库此前**没有** `.gitattributes`，行尾完全取决于每个人的 `core.autocrlf`。而本仓库的
+  格式门禁对行尾敏感 —— prettier 默认 `endOfLine: lf`（`frontend/.prettierrc` 没覆盖它）、
+  rustfmt 默认 `newline_style: auto` —— 于是同一份代码在 Windows（`autocrlf=true`）上本地报格式错、
+  在 Linux CI 上却是绿的，正是本文件反复出现的「本地绿、CI 红」那类假红/假绿。
+- **改动**：新增仓库根 `.gitattributes`，`* text=auto eol=lf`；`.bat` / `.cmd` / `.ps1` 显式 `eol=crlf`；
+  `png/jpg/jpeg/gif/ico/wbn/swbn/wasm` 显式 `binary`，不让 `text=auto` 去猜。
+- **安全性核对**：加入前后 `git ls-files` 的 555 个文本文件在工作区里**一个 CR 都没有**，
+  所以这次改动不会触发任何重规范化（`git status` 无新增改动，无「LF 将被替换为 CRLF」警告）。
+
+### ✅ 本轮本地已验证 / 未能验证（如实记录）
+
+- **已跑通**：前端 ESLint（`--max-warnings 0`）、Prettier `--check`、Vitest 60 文件 / 607 测试、
+  `test:iwa-manifest`、`test:regular-build-isolation`、`tools/check-secrets.sh`（明文凭据扫描）、
+  `gofmt -l`（`browser-iwa/ssh-client`）、`Cargo.lock` 与 `Cargo.toml` 的依赖一致性
+  （含 `h2 0.4.16`、`dirs 5.0.1`）、以及新的模块树门禁。
+- **未能本地验证**（本机无 Rust 工具链、无网络，交由 CI）：`cargo fmt/check/clippy/test`、
+  `go test ./...`、`npm ci`、`npm run build`、`package:iwa:unsigned`、`test:iwa-wasm`。
+  其中 `npm run type-check` 在本机报 `@xterm/addon-webgl` / `@xterm/addon-unicode11` 找不到，
+  原因是本机 `node_modules` 停留在 2026-08-08，而这两个包是之后（`779b2a6e`）才加进
+  `package.json` / `package-lock.json` 的；锁文件里两条都带 `resolved` + `integrity`，
+  CI 的 `npm ci` 会正常装上 —— **不是 CI 失败，是本机 node_modules 陈旧**。
+
 ## [Unreleased] - 公网可达加固第三轮：数量闸门（连多少）
 - **移动终端键栏与弱网输入**：SSH 移动端键栏提供 Ctrl/Alt 一次性修饰、Esc、Tab、方向键、Enter、粘贴及展开后的常用控制/导航键；按键不抢占系统输入法焦点。终端输入走独立即时 WebSocket 路径，PTY 输出仍在接收侧批处理；重连期间输入暂存限制为 128 帧或 16 KiB，并优先于普通控制消息恢复发送。
 

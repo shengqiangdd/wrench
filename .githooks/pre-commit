@@ -39,6 +39,12 @@ else
   echo "  ⏭  skipped frontend checks (frontend/node_modules missing — run npm install)"
 fi
 
+# ── Backend 模块树检查（纯 POSIX sh，不需要 cargo）──
+# 孤儿 .rs 文件（没被任何 mod 声明引用）不会被 fmt / clippy / test 中的任何一条碰到，
+# 只靠人肉 review 才发现得了 —— 所以放在 cargo 分支外面，没装 cargo 也要跑。
+echo "  → Rust 模块树..."
+sh tools/check-rust-modules.sh || fail "backend/src 下有不会被编译的孤儿 .rs 文件。"
+
 # ── Backend checks（与 CI 的 ci-backend.yml 同一组命令；没装 cargo 就交给 CI） ──
 if command -v cargo > /dev/null 2>&1; then
   cd backend || exit 1
