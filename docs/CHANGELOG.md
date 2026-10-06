@@ -1,5 +1,51 @@
 # 📋 变更日志
 
+## [Unreleased] - 把 CI 配置本身核一遍：13 个 workflow 全部过检，并查清 3 个「消失的 workflow」
+
+`ci-e2e.yml` 的首秀攒了 16 个失败之后，同一类风险还可能在别处 —— 那些**从没运行过**的
+workflow 里。这轮把 13 个 workflow 文件逐个核了一遍。
+
+### ✅ 结论：13 个 workflow 文件本身都没问题
+
+- YAML 全部可解析（用 `js-yaml` 逐个 `load`），触发器也都在预期之内；
+- 三个「消失的 workflow」逐个静态核对：`package-local-ssh-agent.yml` 引用的
+  `docs/LOCAL-SSH-AGENT.md` / `LICENSE` 都在、`cargo test --bin wrench-agent` 已在
+  `ci-backend` 的 `--all-targets` 里跑过（5 passed）；`test-iwa-signed-smoke.yml` 的脚本
+  **自带临时 Ed25519 密钥**（`openssl genpkey`），只依赖 workflow 已提供的
+  `WRENCH_IWA_CHROMIUM` 与 xvfb 的 `DISPLAY`，不需要 secret；`release-iwa.yml` 的密钥依赖
+  是设计如此（`iwa-signing` environment）。
+- 也就是说：它们不需要「修」，只是**还没落地**。
+
+### 🧭 查清的现象：`main` 落后 99 个提交 → 3 个 workflow 既看不到、也触发不了
+
+GitHub **只注册默认分支上的 workflow 文件**。当时的状态是：
+
+- GitHub 上的 `main` 停在 `183c274c`（2026-09-17），本地 `main` 是 `24e71536`（2026-09-25），
+  **领先 99 个提交、零分叉**（可干净快进）；
+- 因此 `package-local-ssh-agent.yml` / `release-iwa.yml` / `test-iwa-signed-smoke.yml` 不在默认分支上：
+  它们不在 `GET /actions/workflows` 列表里，`POST .../dispatches` 直接返回 **404**（手动都触发不了）；
+- 同一个原因让本轮的 PR 对 `origin/main` 的 diff 变成 **214 个文件**（实际改动只有 16 个），
+  也解释了为什么前端与后端的 CI 每次都会一起跑；
+- 另有 **23 个 dependabot PR** 全部基于这个过期的 `main`。
+
+**没有擅自处理**：把 `main` 快进上去属于默认分支操作，且会触发 `docker-amd64.yml`
+（`no-cache` 构建并推送 ghcr.io 镜像），这个决定留给维护者。快进之后 PR 的 diff 会缩回
+16 个文件、那 3 个 workflow 会被注册、dependabot PR 会基于新代码重跑。
+
+### 📖 重写 `.github/workflows/README.md`
+
+原表只列了 7 个 workflow（实际 13 个），触发条件也错：把「push 触发」记在 `docker-build.yml`
+（它其实是**手动**合并多架构 manifest）上，而真正 push 触发的是 `docker-amd64.yml`；
+`ci-docker-size.yml` 的实际路径过滤是 `Dockerfile` / `docker-entrypoint.sh`，也不是「backend/frontend 改动」。
+
+新表逐个文件从 `on:` 块读出来重写，并补上：
+
+- 「为什么有些 workflow 在 Actions 页面看不到、也不能手动触发」（默认分支规则 + 判断方法
+  + 2026-10-06 的实例记录）；
+- 本地 E2E 的**两条**跑法：(a) 只跑「后端不可达」类用例（preview server，无需后端）；
+  (b) 真实链路（`docker-compose.e2e.yml` + `BASE_URL=http://localhost:3001` + `WRENCH_E2E_SSH_*`）
+  —— 这正是 `ci-e2e.yml` 的实际拓扑，也是本轮踩过的坑。
+
 ## [Unreleased] - 让 E2E 套件真正跑起来（16 失败 → 24 通过 / 0 失败）
 
 `CI E2E Tests` 在本仓库**从未运行过**（`ci-e2e.yml` 只在 PR 与定时触发，此前没有 PR 跑过它）。
