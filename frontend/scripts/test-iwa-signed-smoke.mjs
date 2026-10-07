@@ -530,7 +530,14 @@ async function runSmoke() {
   if (granted !== 'granted') throw new Error(`Local Network permission did not grant: ${granted}`)
 
   await page.getByRole('button', { name: 'Connect', exact: true }).click()
-  await waitForText(page, 'section span.self-center.text-sm', /Connected to /)
+  try {
+    await waitForText(page, 'section span.self-center.text-sm', /Connected to /)
+  } catch (error) {
+    const status = await page.locator('section span.self-center.text-sm').innerText()
+    throw new Error(
+      `SSH did not connect after Local Network permission grant (status: ${status}; accepts: ${server.acceptCount}; stderr: ${server.stderr()}): ${error}`,
+    )
+  }
   if (!server.authMethods.includes('password'))
     throw new Error('The smoke SSH server did not observe password authentication.')
   if (dialogFailure) throw new Error(dialogFailure)
