@@ -9,7 +9,10 @@ const goDir = path.join(repoDir, 'browser-iwa', 'ssh-client')
 const publicDir = path.join(repoDir, 'browser-iwa', 'public')
 const output = path.join(publicDir, 'ssh.wasm')
 await mkdir(publicDir, { recursive: true })
-const build = spawnSync('go', ['build', '-trimpath', '-o', output, '.'], {
+const buildArgs = ['build', '-trimpath']
+if (process.env.WRENCH_IWA_SMOKE_BUILD === '1') buildArgs.push('-tags=iwa_smoke')
+buildArgs.push('-o', output, '.')
+const build = spawnSync('go', buildArgs, {
   cwd: goDir,
   env: { ...process.env, GOOS: 'js', GOARCH: 'wasm' },
   stdio: 'inherit',

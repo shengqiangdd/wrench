@@ -14,7 +14,7 @@ func TestAllowedTarget(t *testing.T) {
 		port int
 	}{
 		{"8.8.8.8", 22}, {"127.0.0.1", 22}, {"169.254.169.254", 22}, {"fe80::1", 22},
-		{"::ffff:192.168.1.2", 22}, {"host.local", 22}, {"192.168.1.1", 2222}, {"0.0.0.0", 22},
+		{"::ffff:192.168.1.2", 22}, {"host.local", 22}, {"0.0.0.0", 22},
 	}
 	for _, target := range blocked {
 		if allowedTarget(target.host, target.port) {

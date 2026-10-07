@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// allowedTarget limits IWA SSH to literal private IPv4 or IPv6 ULA addresses on TCP/22.
+// allowedTarget limits IWA SSH to private IP literals and the configured port.
 func allowedTarget(host string, port int) bool {
-	if port != 22 {
+	if !allowedPort(port) {
 		return false
 	}
 	ip, err := netip.ParseAddr(host)

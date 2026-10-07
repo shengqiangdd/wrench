@@ -318,7 +318,7 @@ async function runSmoke() {
   )
   await chmod(signingKey, 0o600)
   runChecked('node', ['scripts/build-iwa.mjs'], {
-    env: { ...process.env, VITE_IWA_SSH_PORT: String(port) },
+    env: { ...process.env, VITE_IWA_SSH_PORT: String(port), WRENCH_IWA_SMOKE_BUILD: '1' },
   })
 
   const bundleId = runChecked(path.join(toolsDir, 'wbn-dump-id'), [
