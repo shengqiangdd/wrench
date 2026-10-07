@@ -1,3 +1,8 @@
+declare const __WRENCH_IWA_SSH_PORT__: number
+
+export const IWA_SSH_PORT =
+  typeof __WRENCH_IWA_SSH_PORT__ === 'undefined' ? 22 : __WRENCH_IWA_SSH_PORT__
+
 export type DirectTcpSocketOpenInfo = {
   readable: ReadableStream<Uint8Array>
   writable: WritableStream<Uint8Array>
@@ -37,8 +42,12 @@ export function getDirectSocketsStatus(
 }
 
 /** Only RFC1918 IPv4 and IPv6 ULA literals are accepted. No DNS or mapped IPs. */
-export function isAllowedSshTcpTarget(address: string, port: number): boolean {
-  if (port !== 22 || address.length > 45 || address.trim() !== address) return false
+export function isAllowedSshTcpTarget(
+  address: string,
+  port: number,
+  allowedPort = IWA_SSH_PORT,
+): boolean {
+  if (port !== allowedPort || address.length > 45 || address.trim() !== address) return false
   return isRfc1918Ipv4(address) || isIpv6Ula(address)
 }
 
@@ -83,7 +92,7 @@ export class DirectSocketsUnavailableError extends Error {
   }
 }
 
-/** Opens one TCP connection to RFC1918/ULA SSH port 22 after explicit confirmation, then closes it. */
+/** Opens one TCP connection to the configured RFC1918/ULA SSH port after confirmation, then closes it. */
 export async function openSshTcpProbe(
   address: string,
   port: number,
@@ -94,7 +103,9 @@ export async function openSshTcpProbe(
   } = {},
 ): Promise<void> {
   if (!isAllowedSshTcpTarget(address, port)) {
-    throw new Error('Target must be an RFC1918 IPv4 or IPv6 ULA literal on TCP port 22')
+    throw new Error(
+      `Target must be an RFC1918 IPv4 or IPv6 ULA literal on TCP port ${IWA_SSH_PORT}`,
+    )
   }
   if (!(await confirmTarget(address, port))) throw new Error('Connection cancelled by user')
 

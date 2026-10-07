@@ -70,7 +70,7 @@ function run(command, args, options = {}) {
     cwd: options.cwd ?? frontendDir,
     encoding: 'utf8',
     stdio: options.stdio ?? 'pipe',
-    env: process.env,
+    env: options.env ?? process.env,
   })
 }
 
@@ -182,7 +182,7 @@ async function serverLines(child, initialText = '') {
   }
 }
 
-async function startSshServer(address, username, password, authorizedKey) {
+async function startSshServer(address, port, username, password, authorizedKey) {
   const serverBinary = path.join(tempRoot, 'ssh-smoke-helper')
   const isRoot = process.getuid?.() === 0
   const command = isRoot ? serverBinary : 'sudo'
@@ -193,7 +193,7 @@ async function startSshServer(address, username, password, authorizedKey) {
   })
   sshProcess = child
   child.stdin.end(
-    JSON.stringify({ address, username, password, authorized_key: authorizedKey }) + '\n',
+    JSON.stringify({ address, port, username, password, authorized_key: authorizedKey }) + '\n',
   )
   return serverLines(child)
 }
@@ -284,9 +284,10 @@ async function runSmoke() {
 
   const address = privateIpv4Addresses()[0]
   if (!address) throw new Error('No RFC1918 IPv4 address is assigned to this machine.')
+  const port = 20_000 + (randomBytes(2).readUInt16BE() % 40_000)
   const executable = findChromium()
   const version = runChecked(executable, ['--version']).trim()
-  console.log(`Chromium: ${version}\nRFC1918 test target: ${address}:22`)
+  console.log(`Chromium: ${version}\nRFC1918 test target: ${address}:${port}`)
   if (!/^(?:Google )?Chrome(?: for Testing)?\s+\d+\.|^Chromium\s+\d+\./.test(version))
     throw new Error(`Unexpected Chromium version output: ${version}`)
 
@@ -316,7 +317,9 @@ async function runSmoke() {
     { cwd: tempRoot },
   )
   await chmod(signingKey, 0o600)
-  runChecked('node', ['scripts/build-iwa.mjs'])
+  runChecked('node', ['scripts/build-iwa.mjs'], {
+    env: { ...process.env, VITE_IWA_SSH_PORT: String(port) },
+  })
 
   const bundleId = runChecked(path.join(toolsDir, 'wbn-dump-id'), [
     '--with-iwa-scheme',
@@ -359,7 +362,7 @@ async function runSmoke() {
     { mode: 0o600 },
   )
 
-  const server = await startSshServer(address, user, password, authorizedKey)
+  const server = await startSshServer(address, port, user, password, authorizedKey)
   let currentServer = server
   console.log(`Ephemeral SSH host key: ${server.fingerprint}`)
   await openChromium(executable, profile, signedBundle)
@@ -426,13 +429,13 @@ async function runSmoke() {
   })
   page.on('dialog', async (dialog) => {
     const message = dialog.message()
-    if (message.startsWith(`First connection to ${address}:22\n`)) {
+    if (message.startsWith(`First connection to ${address}:${port}\n`)) {
       firstUsePrompts += 1
       const correct = message.includes('ssh-ed25519') && message.includes(currentServer.fingerprint)
       if (!correct) dialogFailure = `Unexpected first-use host-key prompt: ${message}`
       if (correct) await dialog.accept()
       else await dialog.dismiss()
-    } else if (message.startsWith(`SSH host key changed for ${address}:22.`)) {
+    } else if (message.startsWith(`SSH host key changed for ${address}:${port}.`)) {
       renewalPrompts += 1
       const correct =
         message.includes(`Previously trusted: ${previousFingerprint}`) &&
@@ -720,7 +723,7 @@ async function runSmoke() {
 
   await stopProcessGroup(sshProcess, 'SSH host-key generation 1')
   sshProcess = undefined
-  currentServer = await startSshServer(address, user, password, authorizedKey)
+  currentServer = await startSshServer(address, port, user, password, authorizedKey)
   if (currentServer.fingerprint === previousFingerprint)
     throw new Error('Rotated SSH server unexpectedly reused its host key.')
   console.log('Rotated SSH test host key; renewal prompt must show old and new fingerprints.')

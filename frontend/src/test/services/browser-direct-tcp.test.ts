@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   DirectSocketsUnavailableError,
   getDirectSocketsStatus,
+  IWA_SSH_PORT,
   isAllowedSshTcpTarget,
   openSshTcpProbe,
   type DirectTcpSocket,
@@ -57,6 +58,13 @@ describe('browser Direct Sockets capability', () => {
 })
 
 describe('browser SSH TCP transport probe target policy', () => {
+  it('defaults to SSH port 22 and permits only the configured IWA port', () => {
+    expect(IWA_SSH_PORT).toBe(22)
+    expect(isAllowedSshTcpTarget('192.168.1.2', 22)).toBe(true)
+    expect(isAllowedSshTcpTarget('192.168.1.2', 22, 22_222)).toBe(false)
+    expect(isAllowedSshTcpTarget('192.168.1.2', 22_222, 22_222)).toBe(true)
+  })
+
   it.each(['10.0.0.1', '172.16.1.1', '172.31.255.254', '192.168.1.2', 'fc00::1', 'fdab:1234::7'])(
     'allows private IP literal %s on SSH port',
     (host) => {

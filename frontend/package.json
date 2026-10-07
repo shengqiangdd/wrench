@@ -23,6 +23,7 @@
     "build:iwa": "node scripts/build-iwa.mjs",
     "package:iwa": "npm run build:iwa && node scripts/package-iwa.mjs",
     "test:iwa-manifest": "node --test scripts/iwa-manifest.test.mjs",
+    "test:iwa-ssh-port": "node --test scripts/iwa-ssh-port.test.mjs",
     "test:regular-build-isolation": "node --test scripts/regular-build-isolation.test.mjs",
     "package:iwa:unsigned": "npm run build:iwa && node scripts/package-iwa-unsigned.mjs",
     "test:iwa-ssh": "cd ../browser-iwa/ssh-client && go test ./...",

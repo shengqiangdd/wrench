@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import {
   getDirectSocketsStatus,
+  IWA_SSH_PORT,
   isAllowedSshTcpTarget,
   type DirectSocketEnvironment,
 } from '../services/browser-direct-tcp'
@@ -106,7 +107,7 @@ export default function BrowserIwaSsh() {
   )
   const api = useRef<IwaSshApi | undefined>(undefined)
   const capability = getDirectSocketsStatus()
-  const permitted = isAllowedSshTcpTarget(host.trim(), 22)
+  const permitted = isAllowedSshTcpTarget(host.trim(), IWA_SSH_PORT)
 
   const recordTerminalDimensions = useCallback((cols: number, rows: number) => {
     terminalDimensions.current = { cols, rows }
@@ -368,7 +369,7 @@ export default function BrowserIwaSsh() {
       if (!Socket) throw new Error('Chrome IWA Direct Sockets is unavailable')
       // Construct synchronously in the Connect click handler so Chrome can show its
       // Local Network permission prompt while user activation is still present.
-      socket = new Socket(host.trim(), 22, { keepAlive: false, noDelay: true })
+      socket = new Socket(host.trim(), IWA_SSH_PORT, { keepAlive: false, noDelay: true })
       let socketTimeout: number | undefined
       try {
         await Promise.race([
@@ -406,7 +407,7 @@ export default function BrowserIwaSsh() {
       }
       await client.connect({
         host: host.trim(),
-        port: 22,
+        port: IWA_SSH_PORT,
         cols: initialDimensions.cols,
         rows: initialDimensions.rows,
         socket,
@@ -417,16 +418,16 @@ export default function BrowserIwaSsh() {
         confirmHostKey: async (target, type, fingerprint) => {
           return confirmAndPinHostKey(
             target,
-            22,
+            IWA_SSH_PORT,
             fingerprint,
             window.localStorage,
             (firstFingerprint) =>
               window.confirm(
-                `First connection to ${target}:22\n${type}\n${firstFingerprint}\n\nVerify this fingerprint with the device owner using a trusted channel before accepting. Store this trust pin in this browser profile?`,
+                `First connection to ${target}:${IWA_SSH_PORT}\n${type}\n${firstFingerprint}\n\nVerify this fingerprint with the device owner using a trusted channel before accepting. Store this trust pin in this browser profile?`,
               ),
             (pinned, presented) =>
               window.confirm(
-                `SSH host key changed for ${target}:22.\nPreviously trusted: ${pinned}\nPresented: ${presented}\n\nOnly renew this pin if you verified the new fingerprint with the device owner through a separate trusted channel. Replace the saved pin and continue?`,
+                `SSH host key changed for ${target}:${IWA_SSH_PORT}.\nPreviously trusted: ${pinned}\nPresented: ${presented}\n\nOnly renew this pin if you verified the new fingerprint with the device owner through a separate trusted channel. Replace the saved pin and continue?`,
               ),
           )
         },
@@ -596,12 +597,12 @@ export default function BrowserIwaSsh() {
         )}
       </div>
       <p className="my-2 text-xs text-slate-400">
-        Only RFC1918 IPv4 and IPv6 ULA literals on port 22; hostnames, public IPs, loopback,
-        link-local and alternate ports are rejected.
+        Only RFC1918 IPv4 and IPv6 ULA literals on port {IWA_SSH_PORT}; hostnames, public IPs,
+        loopback, link-local and alternate ports are rejected.
       </p>
       <p className="mb-3 text-xs text-amber-100">
-        Pressing Connect opens one TCP connection to the entered private IP on port 22. Chrome may
-        also ask you to allow this IWA to access local network devices.
+        Pressing Connect opens one TCP connection to the entered private IP on port {IWA_SSH_PORT}.
+        Chrome may also ask you to allow this IWA to access local network devices.
       </p>
       <div className="mb-3 flex gap-2">
         <button

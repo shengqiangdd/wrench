@@ -20,10 +20,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const port = 22
+const defaultPort = 22
 
 type config struct {
 	Address       string `json:"address"`
+	Port          int    `json:"port"`
 	Username      string `json:"username"`
 	Password      string `json:"password"`
 	AuthorizedKey string `json:"authorized_key"`
@@ -93,11 +94,26 @@ func generateClientKey() error {
 	return err
 }
 
+func configuredPort(port int) (int, error) {
+	if port == 0 {
+		return defaultPort, nil
+	}
+	if port < 1 || port > 65535 {
+		return 0, errors.New("port must be between 1 and 65535")
+	}
+	return port, nil
+}
+
 func serve() error {
 	var cfg config
 	if err := json.NewDecoder(bufio.NewReader(os.Stdin)).Decode(&cfg); err != nil {
 		return fmt.Errorf("read test configuration: %w", err)
 	}
+	port, err := configuredPort(cfg.Port)
+	if err != nil {
+		return err
+	}
+	cfg.Port = port
 	if !isRFC1918(cfg.Address) || cfg.Username == "" || cfg.Password == "" || cfg.AuthorizedKey == "" {
 		return errors.New("private IPv4 address, username, password, and authorized key are required")
 	}
@@ -106,9 +122,9 @@ func serve() error {
 		return fmt.Errorf("parse test authorized key: %w", err)
 	}
 
-	listener, err := net.Listen("tcp", net.JoinHostPort(cfg.Address, strconv.Itoa(port)))
+	listener, err := net.Listen("tcp", net.JoinHostPort(cfg.Address, strconv.Itoa(cfg.Port)))
 	if err != nil {
-		return fmt.Errorf("listen on %s:%d: %w", cfg.Address, port, err)
+		return fmt.Errorf("listen on %s:%d: %w", cfg.Address, cfg.Port, err)
 	}
 	defer listener.Close()
 

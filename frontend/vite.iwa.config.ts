@@ -6,8 +6,15 @@ import { defineConfig } from 'vite'
 
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url))
 const iwaRoot = path.resolve(frontendRoot, '../browser-iwa')
+const sshPort = Number(process.env.VITE_IWA_SSH_PORT ?? 22)
+if (!Number.isInteger(sshPort) || sshPort < 1 || sshPort > 65535) {
+  throw new Error('VITE_IWA_SSH_PORT must be an integer between 1 and 65535')
+}
 
 export default defineConfig({
+  define: {
+    __WRENCH_IWA_SSH_PORT__: JSON.stringify(sshPort),
+  },
   root: iwaRoot,
   publicDir: path.join(iwaRoot, 'public'),
   plugins: [react(), tailwindcss()],
