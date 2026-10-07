@@ -287,7 +287,7 @@ async function runSmoke() {
   const executable = findChromium()
   const version = runChecked(executable, ['--version']).trim()
   console.log(`Chromium: ${version}\nRFC1918 test target: ${address}:22`)
-  if (!/^Chrom(?:e|ium)\s+\d+\./.test(version))
+  if (!/^(?:Google )?Chrome(?: for Testing)?\s+\d+\.|^Chromium\s+\d+\./.test(version))
     throw new Error(`Unexpected Chromium version output: ${version}`)
 
   const signingKey = path.join(tempRoot, 'ephemeral-iwa-ed25519.pem')
