@@ -322,7 +322,9 @@ async function runSmoke() {
     '--with-iwa-scheme',
     '--key',
     signingKey,
-  ]).trim()
+  ])
+    .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '')
+    .trim()
   if (!/^isolated-app:\/\/[a-z0-9-]+\/$/.test(bundleId))
     throw new Error(`Unexpected ephemeral bundle ID: ${bundleId}`)
   runChecked(path.join(toolsDir, 'wbn'), [
