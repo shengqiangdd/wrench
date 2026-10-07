@@ -31,4 +31,5 @@ jobs:
         working-directory: frontend
         env:
           WRENCH_IWA_CHROMIUM: ${{ steps.chrome.outputs.chrome-path }}
+          WRENCH_IWA_CHROMIUM_NO_SANDBOX: '1'
         run: xvfb-run -a npm run test:iwa-signed-smoke
